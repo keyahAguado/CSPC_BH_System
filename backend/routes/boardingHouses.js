@@ -311,7 +311,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
         }
 
         // ─── CASE C: DISPATCH SYSTEM ALERTS TO SASO ADMINISTRATORS (Safe two-column schema insertion) ───
-        const [admins] = await connection.query('SELECT id FROM users WHERE role = "admin"');
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
         const [houseNameRow] = await connection.query('SELECT name FROM boarding_houses WHERE id = ?', [houseId]);
         const houseName = houseNameRow.length > 0 ? houseNameRow[0].name : 'Boarding House';
 

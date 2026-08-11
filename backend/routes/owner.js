@@ -260,7 +260,7 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, r
         const basePrice = houseRows[0].price || 0;
 
         await pool.query(
-            'INSERT INTO rooms (house_id, room_number, gender_type, capacity, price, status) VALUES (?, ?, ?, ?, ?, "available")',
+            "INSERT INTO rooms (house_id, room_number, gender_type, capacity, price, status) VALUES (?, ?, ?, ?, ?, 'available')",
             [req.params.houseId, room_number, gender_type || 'female', parseInt(capacity) || 1, basePrice]
         );
 
