@@ -36,7 +36,7 @@ const uploadAccreditationFiles = upload.fields([
 // 2. [GET] - Retrieve all accredited boarding houses (Public)
 router.get('/accredited', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM boarding_houses WHERE house_status = "accredited"');
+        const [rows] = await pool.query("SELECT * FROM boarding_houses WHERE house_status = 'accredited'");
         res.json({ success: true, count: rows.length, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Failed to retrieve listings.' });

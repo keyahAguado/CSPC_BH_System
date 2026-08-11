@@ -118,7 +118,7 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
 
         // 1. Set payment status to 'paid' in bookings table
         await connection.query(
-            'UPDATE bookings SET payment_status = "paid" WHERE id = ?',
+            "UPDATE bookings SET payment_status = 'paid' WHERE id = ?",
             [bookingId]
         );
 
@@ -244,7 +244,7 @@ router.post('/webhook', async (req, res) => {
 
                         // 1. Settle booking payment status
                         await connection.query(
-                            'UPDATE bookings SET payment_status = "paid" WHERE id = ?',
+                            "UPDATE bookings SET payment_status = 'paid' WHERE id = ?",
                             [parsedBookingId]
                         );
 

@@ -1,4 +1,4 @@
-import pool from './db.js'; 
+import pool from './db.js';
 
 /**
  * Scans all boarding houses, updates their compliance status, 
@@ -6,7 +6,7 @@ import pool from './db.js';
  */
 export async function runComplianceCheck() {
     try {
-        const [houses] = await pool.query('SELECT * FROM boarding_houses WHERE house_status != "archived"');
+        const [houses] = await pool.query("SELECT * FROM boarding_houses WHERE house_status != 'archived'");
         const now = new Date();
         const thirtyDaysFromNow = new Date();
         thirtyDaysFromNow.setDate(now.getDate() + 30);
@@ -45,7 +45,7 @@ export async function runComplianceCheck() {
             if (house.compliance_status !== newStatus) {
                 // If expired, automatically archive the house
                 if (newStatus === 'expired') {
-                    await pool.query('UPDATE boarding_houses SET compliance_status = ?, house_status = "archived" WHERE id = ?', [newStatus, house.id]);
+                    await pool.query("UPDATE boarding_houses SET compliance_status = ?, house_status = 'archived' WHERE id = ?", [newStatus, house.id]);
                 } else {
                     await pool.query('UPDATE boarding_houses SET compliance_status = ? WHERE id = ?', [newStatus, house.id]);
                 }
@@ -57,7 +57,7 @@ export async function runComplianceCheck() {
                         `URGENT: Your boarding house "${house.name}" has been AUTOMATICALLY ARCHIVED because the following documents expired: ${expiredList.join(', ')}.`
                     ]);
                     // Also notify Admin
-                    const [admins] = await pool.query('SELECT id FROM users WHERE role = "admin"');
+                    const [admins] = await pool.query("SELECT id FROM users WHERE role = 'admin'");
                     for (const admin of admins) {
                         await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                             admin.id,

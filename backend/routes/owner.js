@@ -552,7 +552,7 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
 
         // 1. Confirm the booking status
         await connection.query(
-            'UPDATE bookings SET status = "confirmed" WHERE id = ?',
+            "UPDATE bookings SET status = 'confirmed' WHERE id = ?",
             [bookingId]
         );
 
@@ -606,7 +606,7 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, 
             return res.status(404).json({ success: false, message: 'Record not found.' });
         }
 
-        await pool.query('UPDATE bookings SET status = "rejected" WHERE id = ?', [req.params.id]);
+        await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ?", [req.params.id]);
 
         await pool.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',

@@ -289,7 +289,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
         }
 
         const [pendingBookingRows] = await connection.query(
-            'SELECT id FROM bookings WHERE student_id = ? AND house_id = ? AND status = "pending"',
+            "SELECT id FROM bookings WHERE student_id = ? AND house_id = ? AND status = 'pending'",
             [studentId, houseId]
         );
         if (pendingBookingRows.length > 0) {
@@ -390,7 +390,7 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
         }
 
         await pool.query(
-            'UPDATE bookings SET status = "cancelled" WHERE id = ?',
+            "UPDATE bookings SET status = 'cancelled' WHERE id = ?",
             [req.params.id]
         );
 
