@@ -121,6 +121,14 @@ router.post('/login', async (req, res) => {
 
         const user = rows[0];
 
+        // ─── ADDED SECURITY GUARD: BLOCK SUSPENDED USERS ───
+        if (user.status === 'inactive') {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been deactivated/suspended. Please contact SASO.'
+            });
+        }
+
         // Self-healing: If user exists via Google SSO (no password set yet), set their password on manual login
         if (!user.password && password) {
             const hashedPassword = await bcrypt.hash(password, 10);
@@ -215,6 +223,12 @@ router.get('/google/callback',
         try {
             const user = req.user;
             const targetOrigin = req.query.state ? decodeURIComponent(req.query.state) : (process.env.FRONTEND_URL || 'http://localhost:5173');
+
+            // ─── ADDED SECURITY GUARD: BLOCK GOOGLE SSO SUSPENDED USERS ───
+            if (user.status === 'inactive') {
+                return res.redirect(`${targetOrigin}/login?error=suspended`);
+            }
+            // ──────────────────────────────────────────────────────────────
 
             const token = jwt.sign(
                 { id: user.id, email: user.email, role: user.role },

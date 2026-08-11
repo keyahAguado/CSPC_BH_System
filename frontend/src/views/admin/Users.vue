@@ -228,6 +228,7 @@ onMounted(() => {
             <option value="all">All States</option>
             <option value="active">Active</option>
             <option value="inactive">Suspended</option>
+            <option value="pending">Pending</option>
           </select>
         </div>
       </div>
@@ -268,9 +269,12 @@ onMounted(() => {
                       {{ user.role }}
                     </span>
                     <div class="flex items-center gap-1.5">
-                      <div class="w-2 h-2 rounded-full" :class="user.status === 'active' ? 'bg-emerald-505' : 'bg-rose-500'" :style="{ backgroundColor: user.status === 'active' ? '#10b981' : '#f43f5e' }"></div>
-                      <span class="text-[9px] font-black uppercase tracking-wider" :class="user.status === 'active' ? 'text-emerald-600' : 'text-rose-600'">
-                        {{ user.status === 'active' ? 'Active' : 'Suspended' }}
+                      <div class="w-2 h-2 rounded-full" 
+                        :class="user.status === 'active' ? 'bg-emerald-500' : (user.status === 'pending' ? 'bg-amber-500' : 'bg-rose-500')" 
+                        :style="{ backgroundColor: user.status === 'active' ? '#10b981' : (user.status === 'pending' ? '#f59e0b' : '#f43f5e') }"></div>
+                      <span class="text-[9px] font-black uppercase tracking-wider" 
+                        :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
+                        {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
                       </span>
                     </div>
                   </div>
@@ -363,10 +367,10 @@ onMounted(() => {
                   <td class="py-6 px-6 border-r border-slate-100">
                     <div class="flex items-center justify-center gap-2">
                       <div class="w-2.5 h-2.5 rounded-full" 
-                        :class="user.status === 'active' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]'"></div>
+                        :class="user.status === 'active' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : (user.status === 'pending' ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]')"></div>
                       <span class="text-[10px] font-black uppercase tracking-widest leading-none"
-                        :class="user.status === 'active' ? 'text-emerald-600' : 'text-rose-600'">
-                        {{ user.status === 'active' ? 'Active' : 'Suspended' }}
+                        :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
+                        {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
                       </span>
                     </div>
                   </td>
@@ -449,7 +453,7 @@ onMounted(() => {
 
     <!-- Custom Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="text-[#2a528a] mb-4 flex justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
