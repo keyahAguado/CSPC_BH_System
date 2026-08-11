@@ -107,18 +107,9 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             ORDER BY avg_rating DESC, COUNT(r.id) DESC
             LIMIT 1
         `);
-        const [[ratingRow]] = await pool.query(`
-            SELECT name, rating 
-            FROM boarding_houses 
-            WHERE house_status = 'accredited' 
-            ORDER BY rating DESC, name ASC 
-            LIMIT 1
-        `);
         let mostRated = 'N/A';
         if (bestReviewed) {
             mostRated = bestReviewed.name;
-        } else if (ratingRow) {
-            mostRated = ratingRow.name;
         }
 
         // Student Residency Overview Chart — counts unique active CSPC students per accredited house
