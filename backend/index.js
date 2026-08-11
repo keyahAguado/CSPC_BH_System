@@ -5,6 +5,7 @@ import 'dotenv/config'; // Loads environment variables as the very first step
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import passport from 'passport';
 import pool from './config/db.js'; // Database connection pool (resolves natively to 127.0.0.1:3306)
 import './config/passport.js';
@@ -101,6 +102,16 @@ cron.schedule('0 0 * * *', async () => {
         console.error('[CRON EXECUTION ERROR] Compliance checking failed:', err);
     }
 });
+
+// ─── AUTO-CREATE UPLOADS DIRECTORY ON STARTUP ───
+// Ensures the public/uploads folder is always present on cloud servers
+const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('📁 Successfully created missing uploads directory:', uploadsDir);
+}
+// ────────────────────────────────────────────────
+
 
 app.use(express.json({
     verify: (req, res, buf) => {
