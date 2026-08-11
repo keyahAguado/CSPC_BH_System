@@ -395,7 +395,7 @@ onMounted(() => {
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Owner Name</span>
                   <span class="font-semibold text-slate-800">{{ app.owner_name }}</span>
                 </div>
-/
+
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Email</span>
                   <span class="text-slate-600 font-medium text-xs">{{ app.owner_email }}</span>
