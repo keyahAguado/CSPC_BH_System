@@ -30,9 +30,9 @@ const autoBackfillBarangays = async () => {
     try {
         const [houses] = await pool.query("SELECT id, location FROM boarding_houses WHERE barangay IS NULL OR barangay = ''");
         const knownBarangays = [
-            'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis', 
-            'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate', 
-            'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia', 
+            'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
+            'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
+            'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
             'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
         ];
         for (const h of houses) {
@@ -466,7 +466,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
             [admin_comments || 'Accredited', houseId]
         );
 
-        await connection.query('UPDATE users SET status = "active" WHERE id = ?', [owner_id]);
+        await connection.query('UPDATE users SET status = ? WHERE id = ?', ['active', owner_id]);
 
         await connection.query('DELETE FROM checklist_results WHERE house_id = ?', [houseId]);
         if (checklist && checklist.length > 0) {
