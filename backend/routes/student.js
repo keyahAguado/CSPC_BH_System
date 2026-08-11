@@ -230,7 +230,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
 
         // --- SYSTEM GUARD 2: Prevent students with already approved stays from double-booking ---
         const [confirmedBookings] = await connection.query(
-            'SELECT id FROM bookings WHERE student_id = ? AND status = "confirmed"',
+            "SELECT id FROM bookings WHERE student_id = ? AND status = 'confirmed'",
             [studentId]
         );
         if (confirmedBookings.length > 0) {
