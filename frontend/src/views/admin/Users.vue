@@ -311,12 +311,20 @@ onMounted(() => {
                 </template>
               </div>
 
+              <!-- Action button for Mobile with Locked state for Pending -->
               <div class="pt-1">
-                <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                        class="w-full rounded-xl py-2.5 font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
-                        :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
-                  {{ user.status === 'active' ? 'Deactivate Account' : 'Activate Account' }}
-                </button>
+                <template v-if="user.status === 'pending'">
+                  <div class="bg-amber-50 border border-amber-100 text-amber-600 rounded-xl py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wider">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
+                  </div>
+                </template>
+                <template v-else>
+                  <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
+                          class="w-full rounded-xl py-2.5 font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
+                          :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
+                    {{ user.status === 'active' ? 'Deactivate Account' : 'Activate Account' }}
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -394,11 +402,19 @@ onMounted(() => {
                         </span>
                       </template>
 
-                      <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                        class="px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
-                        :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
-                        {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
-                      </button>
+                      <!-- SAFEGUARD: Hides manual activation button and replaces with status badge for Pending Landlords -->
+                      <template v-if="user.status === 'pending'">
+                        <span class="inline-block text-[8px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-100 px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="This account is currently awaiting boarding house accreditation approval.">
+                          <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
+                        </span>
+                      </template>
+                      <template v-else>
+                        <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
+                          class="px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
+                          :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
+                          {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
+                        </button>
+                      </template>
                     </div>
                   </td>
                 </tr>
@@ -453,7 +469,7 @@ onMounted(() => {
 
     <!-- Custom Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="text-[#2a528a] mb-4 flex justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
