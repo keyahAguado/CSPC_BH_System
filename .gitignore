@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Secrets
+.env
+.env.production
+**/.env
+**/.env.production
+frontend/.env
+backend/.env
+
+# Compiled outputs
+dist/
+dev-dist/
+**/dist/
+**/dev-dist/
+
+.DS_Store
+
+# Ignore dynamic user uploads 
+**/uploads/

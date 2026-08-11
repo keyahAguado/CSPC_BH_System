@@ -1,0 +1,89 @@
+services:
+  # --- Virtual Database Service ---
+  db:
+    image: mysql:8.0         
+    container_name: cspc_mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: cspc_boarding_db
+      MYSQL_USER: cspc_user
+      MYSQL_PASSWORD: cspc_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./backend/config/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # --- Express API Backend Service ---
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cspc_backend_api
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+    # ─── HOT-RELOADING DEVELOPMENT OVERRIDES ───
+    volumes:
+      - ./backend:/app # Syncs host file edits directly into the container
+      - /app/node_modules # Protects container's native Linux packages from Windows overrides
+    # Overrides production "node index.js" with nodemon execution during development
+    command: npx nodemon index.js
+    depends_on:
+      - db
+
+volumes:
+  db_data:
+
+# services:
+#   # --- Virtual Database Service ---
+#   db:
+#     image: mysql:8.0
+#     container_name: cspc_mysql_db
+#     restart: always
+#     environment:
+#       MYSQL_ROOT_PASSWORD: rootpassword
+#       MYSQL_DATABASE: cspc_boarding_db
+#       MYSQL_USER: cspc_user
+#       MYSQL_PASSWORD: cspc_password
+#     ports:
+#       - "3306:3306"
+#     volumes:
+#       - db_data:/var/lib/mysql
+#       - ./backend/config/init.sql:/docker-entrypoint-initdb.d/init.sql
+#     healthcheck:
+#       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+
+#   # --- Express API Backend Service ---
+#   backend:
+#     build:
+#       context: ./backend
+#       dockerfile: Dockerfile
+#     container_name: cspc_backend_api
+#     restart: always
+#     ports:
+#       - "3000:3000"
+#     env_file:
+#       - ./backend/.env
+#     environment:
+#       - DB_HOST=db
+#     # ─── HOT-RELOADING DEVELOPMENT OVERRIDES ───
+#     volumes:
+#       - ./backend:/app # Syncs host file edits directly into the container
+#       - /app/node_modules # Protects container's native Linux packages from Windows overrides
+#     # Overrides production "node index.js" with nodemon execution during development
+#     command: npx nodemon index.js
+#     depends_on:
+#       db:
+#         condition: service_healthy
+
+# volumes:
+#   db_data:
