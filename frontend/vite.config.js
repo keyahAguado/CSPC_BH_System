@@ -48,6 +48,22 @@ export default defineConfig({
                 statuses: [0, 200]
               }
             }
+          },
+          {
+            // Caches individual boarding house detail pages (HouseDetails.vue → /api/student/house/:id)
+            // Allows students to read house info, coordinates, amenities, and reviews offline
+            urlPattern: /\/api\/student\/house\/\d+/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'student-house-detail-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 Days
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
           }
         ]
       },
