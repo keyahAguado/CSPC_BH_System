@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import { useOfflineStatus } from '../../utils/offlineHelper.js';
 
 const router = useRouter();
 const houses = ref([]);
@@ -13,6 +14,8 @@ const maxPrice = ref('');
 const selectedRatings = ref([]);
 const showLoginModal = ref(false);
 
+const { isOffline } = useOfflineStatus();
+
 const token = localStorage.getItem('cspc_token');
 const userRaw = localStorage.getItem('cspc_user');
 const currentUser = userRaw ? JSON.parse(userRaw) : null;
@@ -22,20 +25,18 @@ import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
 const API = getApiBaseUrl();
 
-const isOffline = ref(false);
+const isOfflineFlag = ref(false);
 
 const fetchHouses = async () => {
   try {
     isLoading.value = true;
-    isOffline.value = false;
+    isOfflineFlag.value = false;
     const res = await axios.get('/api/student/houses');
     houses.value = res.data.houses || [];
   } catch (e) {
     console.error('Failed to load houses', e);
-    // If the request failed and we have no houses loaded, the user is likely offline
-    // and the service worker cache has not been populated yet (first visit offline)
     if (houses.value.length === 0) {
-      isOffline.value = true;
+      isOfflineFlag.value = true;
     }
   } finally {
     isLoading.value = false;
@@ -263,13 +264,13 @@ onMounted(fetchHouses);
             <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Loading boarding houses...</p>
           </div>
 
-          <!-- Offline Banner (shown when network failed and cache is empty) -->
-          <div v-else-if="isOffline" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
+          <!-- Offline Banner -->
+          <div v-else-if="isOffline || isOfflineFlag" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
             <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
             </svg>
-            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">You are offline</p>
-            <p class="text-slate-400 font-bold text-[10px]">Browse online first to cache listings for offline viewing.</p>
+            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">No Internet Connection</p>
+            <p class="text-slate-400 font-bold text-[10px]">You are currently offline. Please connect to the internet to view available boarding houses.</p>
           </div>
 
           <!-- DYNAMIC ACCREDITED HOUSES GRID -->

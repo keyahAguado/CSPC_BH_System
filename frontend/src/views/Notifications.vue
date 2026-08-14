@@ -4,12 +4,15 @@ import axios from 'axios';
 import OwnerNav from '../components/partials/OwnerNav.vue';
 import AdminNav from '../components/partials/AdminNav.vue';
 import StudentNav from '../components/partials/StudentNav.vue';
+import { useOfflineStatus } from '../utils/offlineHelper.js';
 
 const notifications = ref([]);
 const isLoading = ref(true);
 const token = localStorage.getItem('cspc_token');
 const user = JSON.parse(localStorage.getItem('cspc_user') || '{}');
 const API = import.meta.env.VITE_API_URL;
+
+const { isOffline } = useOfflineStatus();
 
 const fetchNotifications = async () => {
   try {
@@ -22,6 +25,7 @@ const fetchNotifications = async () => {
     }
   } catch (err) {
     console.error('Failed to fetch notifications:', err);
+    // Silently fail — the offline banner handles the UI state
   } finally {
     isLoading.value = false;
   }
@@ -152,6 +156,15 @@ onMounted(() => {
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Compiling Inbox...</p>
+      </div>
+
+      <!-- Offline Banner -->
+      <div v-else-if="isOffline" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border-2 border-dashed border-amber-200 p-10 max-w-xl mx-auto text-center">
+        <svg class="w-12 h-12 text-amber-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
+        </svg>
+        <p class="text-amber-600 font-black uppercase tracking-widest text-[11px]">No Internet Connection</p>
+        <p class="text-slate-400 font-bold text-[10px]">Please connect to the internet to view your notifications.</p>
       </div>
 
       <div v-else class="space-y-6">

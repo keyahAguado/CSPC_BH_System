@@ -2,10 +2,13 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import { useOfflineStatus } from '../../utils/offlineHelper.js';
 
 const bookings = ref([]);
 const isLoading = ref(true);
-const alerts = ref([]); // Store active Toast Alerts
+const alerts = ref([]);
+
+const { isOffline } = useOfflineStatus();
 
 const token = localStorage.getItem('cspc_token');
 import { getApiBaseUrl } from '../../config/api';
@@ -90,7 +93,7 @@ const fetchBookings = async () => {
     bookings.value = res.data.bookings || [];
   } catch (e) {
     console.error('Failed to load bookings', e);
-    showSystemAlert('Could not fetch active bookings.', 'warning');
+    // Silently fail — the offline banner handles the UI state
   } finally {
     isLoading.value = false;
   }
@@ -236,6 +239,15 @@ onMounted(() => {
       <div v-if="isLoading" class="bg-white rounded-3xl p-20 text-center shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
         <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Loading bookings...</p>
+      </div>
+
+      <!-- Offline Banner -->
+      <div v-else-if="isOffline" class="bg-white rounded-3xl p-20 text-center shadow-sm border-2 border-dashed border-amber-200">
+        <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
+        </svg>
+        <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-2">No Internet Connection</p>
+        <p class="text-slate-400 font-bold text-[10px]">Please connect to the internet to view your bookings.</p>
       </div>
 
       <!-- Bookings Container -->
