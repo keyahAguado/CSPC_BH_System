@@ -13,6 +13,13 @@ export const getApiBaseUrl = () => {
     const hostname = window.location.hostname;
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isNgrok = hostname.includes('ngrok');
+    const isVercel = hostname.includes('vercel.app');
+
+    // On Vercel production, use relative paths so requests go through the Vercel proxy
+    // and stay same-origin — required for the service worker to intercept and cache them
+    if (isVercel) {
+      return '';
+    }
 
     // When accessing via Ngrok, return origin so requests use Vite proxy without invalid :3000 port
     if (isNgrok) {
