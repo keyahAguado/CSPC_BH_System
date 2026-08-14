@@ -15,6 +15,7 @@ const selectedRatings = ref([]);
 const showLoginModal = ref(false);
 
 const { isOffline } = useOfflineStatus();
+const isOfflineFlag = ref(false);
 
 const token = localStorage.getItem('cspc_token');
 const userRaw = localStorage.getItem('cspc_user');
@@ -25,9 +26,13 @@ import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
 const API = getApiBaseUrl();
 
-const isOfflineFlag = ref(false);
-
 const fetchHouses = async () => {
+  // Skip network call entirely if already offline — show banner immediately
+  if (!navigator.onLine) {
+    isLoading.value = false;
+    isOfflineFlag.value = true;
+    return;
+  }
   try {
     isLoading.value = true;
     isOfflineFlag.value = false;

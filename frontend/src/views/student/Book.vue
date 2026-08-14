@@ -49,6 +49,11 @@ const form = ref({
 });
 
 const fetchData = async () => {
+  if (!navigator.onLine) {
+    errorMsg.value = 'You are currently offline. Please connect to the internet to make a booking.';
+    isLoading.value = false;
+    return;
+  }
   try {
     const res = await axios.get(`/api/student/house/${houseId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -65,7 +70,7 @@ const fetchData = async () => {
     form.value.address = currentUser.address || '';
   } catch (e) {
     console.error('Failed to load house data', e);
-    errorMsg.value = 'Failed to load house details.';
+    errorMsg.value = 'Unable to load house details. Please check your connection.';
   } finally {
     isLoading.value = false;
   }
@@ -126,7 +131,7 @@ const submitBooking = async () => {
     showSuccessModal.value = true;
 
   } catch (e) {
-    errorMsg.value = e.response?.data?.message || 'Booking submission failed. Please try again.';
+    errorMsg.value = e.response?.data?.message || 'Unable to submit booking. Please check your connection and try again.';
   } finally {
     isSaving.value = false;
   }

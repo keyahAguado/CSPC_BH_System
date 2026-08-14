@@ -15,6 +15,11 @@ const API = import.meta.env.VITE_API_URL;
 const { isOffline } = useOfflineStatus();
 
 const fetchNotifications = async () => {
+  // Skip network call entirely if already offline — show banner immediately
+  if (!navigator.onLine) {
+    isLoading.value = false;
+    return;
+  }
   try {
     isLoading.value = true;
     const res = await axios.get(`/api/notifications`, {
@@ -25,7 +30,6 @@ const fetchNotifications = async () => {
     }
   } catch (err) {
     console.error('Failed to fetch notifications:', err);
-    // Silently fail — the offline banner handles the UI state
   } finally {
     isLoading.value = false;
   }

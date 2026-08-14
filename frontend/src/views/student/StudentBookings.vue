@@ -68,7 +68,7 @@ const execCancelReservation = async () => {
     }
   } catch (err) {
     console.error('Cancel booking failed:', err);
-    showSystemAlert('Failed to cancel reservation.', 'error');
+    showSystemAlert('Unable to cancel. Please check your connection and try again.', 'error');
   }
 };
 
@@ -85,6 +85,11 @@ try {
 const currentUser = currentUserObj;
 
 const fetchBookings = async () => {
+  // Skip network call entirely if already offline — show banner immediately
+  if (!navigator.onLine) {
+    isLoading.value = false;
+    return;
+  }
   try {
     isLoading.value = true;
     const res = await axios.get(`/api/student/bookings`, {
@@ -93,7 +98,7 @@ const fetchBookings = async () => {
     bookings.value = res.data.bookings || [];
   } catch (e) {
     console.error('Failed to load bookings', e);
-    // Silently fail — the offline banner handles the UI state
+    // Silently fail — offline banner handles the UI
   } finally {
     isLoading.value = false;
   }
@@ -130,7 +135,7 @@ const requestExtension = async (bookingId) => {
     showSystemAlert('Stay extension request submitted successfully.', 'success');
   } catch (e) {
     console.error('Extension failed', e);
-    showSystemAlert('Failed to submit stay extension request.', 'error');
+    showSystemAlert('Unable to submit extension. Please check your connection and try again.', 'error');
   }
 };
 
@@ -153,7 +158,7 @@ const triggerPayment = async (booking) => {
     }
   } catch (error) {
     console.error('[PAYMENT ERROR] Failed to initialize checkout:', error);
-    showSystemAlert('Failed to initiate payment. Please try again.', 'error');
+    showSystemAlert('Unable to start payment. Please check your connection and try again.', 'error');
   } finally {
     isPaying.value[booking.id] = false;
   }
@@ -161,6 +166,7 @@ const triggerPayment = async (booking) => {
 
 // Auto-verify payment on return from successful PayMongo Checkout
 const checkUrlQueryOnMount = async () => {
+  if (!navigator.onLine) return; // Skip if offline — payment verification requires internet
   const urlParams = new URLSearchParams(window.location.search);
   const isSuccess = urlParams.get('payment_success') === 'true';
   const bookingId = urlParams.get('bookingId');
@@ -174,16 +180,13 @@ const checkUrlQueryOnMount = async () => {
       });
 
       if (response.data.success) {
-        // Clear query parameters from URL for clean display
         window.history.replaceState({}, document.title, window.location.pathname);
-        
-        // Triggers the sliding success toast alert on redirect mount
         showSystemAlert('Payment Settled successfully! Your stay configuration has updated.', 'success');
         await fetchBookings();
       }
     } catch (err) {
       console.error('Failed to settle payment:', err);
-      showSystemAlert('Verification transaction failed. Please contact landlord.', 'error');
+      showSystemAlert('Payment verification could not be completed. Please contact your landlord to confirm.', 'error');
     }
   }
 };
