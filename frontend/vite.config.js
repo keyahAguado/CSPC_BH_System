@@ -64,6 +64,22 @@ export default defineConfig({
                 statuses: [0, 200]
               }
             }
+          },
+          {
+            // Caches boarding house images served through the Vercel proxy from /uploads/
+            // Uses CacheFirst since images rarely change — serve from cache instantly offline
+            urlPattern: /\/uploads\/.+\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'house-images-cache',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 Days
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
           }
         ]
       },
