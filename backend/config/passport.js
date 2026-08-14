@@ -13,6 +13,14 @@ passport.use(new GoogleStrategy({
             return done(null, false, { message: 'No email found in Google account.' });
         }
 
+        // ─── INSTITUTIONAL DOMAIN GUARD ───
+        // Only @my.cspc.edu.ph accounts are permitted to authenticate via Google SSO.
+        // Any other domain is rejected before any database interaction occurs.
+        if (!email.endsWith('@my.cspc.edu.ph')) {
+            return done(null, false, { message: 'unauthorized_domain' });
+        }
+        // ──────────────────────────────────
+
         const newUser = {
             google_id: profile.id,
             name: profile.displayName || email.split('@')[0],

@@ -18,14 +18,30 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3000000,
         runtimeCaching: [
           {
-            // Dynamically caches backend API listings (like boarding house lists) for offline views
+            // Caches the public landing page listings (HomeView.vue)
             urlPattern: /\/api\/boarding-houses\/accredited/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-listings-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7 // Caches data for 7 Days
+                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 Days
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            // Caches the student dashboard listings (StudentDashboard.vue → /api/student/houses)
+            // This is the primary endpoint students use — must be cached for offline browsing
+            urlPattern: /\/api\/student\/houses/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'student-houses-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 Days
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -45,7 +61,7 @@ export default defineConfig({
         icons: [
           {
             src: 'pwa-192x192.png',
-            sizes: '512x512',
+            sizes: '192x192',
             type: 'image/png'
           },
           {

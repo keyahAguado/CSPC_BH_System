@@ -22,13 +22,21 @@ import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
 const API = getApiBaseUrl();
 
+const isOffline = ref(false);
+
 const fetchHouses = async () => {
   try {
     isLoading.value = true;
+    isOffline.value = false;
     const res = await axios.get('/api/student/houses');
     houses.value = res.data.houses || [];
   } catch (e) {
     console.error('Failed to load houses', e);
+    // If the request failed and we have no houses loaded, the user is likely offline
+    // and the service worker cache has not been populated yet (first visit offline)
+    if (houses.value.length === 0) {
+      isOffline.value = true;
+    }
   } finally {
     isLoading.value = false;
   }
@@ -253,6 +261,15 @@ onMounted(fetchHouses);
           <div v-if="isLoading" class="py-24 text-center bg-white rounded-[2rem] border border-slate-200/60 shadow-sm">
             <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Loading boarding houses...</p>
+          </div>
+
+          <!-- Offline Banner (shown when network failed and cache is empty) -->
+          <div v-else-if="isOffline" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
+            <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
+            </svg>
+            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">You are offline</p>
+            <p class="text-slate-400 font-bold text-[10px]">Browse online first to cache listings for offline viewing.</p>
           </div>
 
           <!-- DYNAMIC ACCREDITED HOUSES GRID -->

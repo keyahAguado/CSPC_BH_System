@@ -212,8 +212,14 @@ router.post('/webhook', async (req, res) => {
             .update(baseString)
             .digest('hex');
 
-        // Check if computed signature matches the PayMongo header to block unauthorized requests
-        if (computedSignature !== paymongoSig) {
+        // Use timing-safe comparison to prevent timing attack exploits
+        // Both buffers must be equal length — if they differ in length it is already a mismatch
+        const computedBuffer = Buffer.from(computedSignature, 'hex');
+        const receivedBuffer = Buffer.from(paymongoSig, 'hex');
+        const signaturesMatch = computedBuffer.length === receivedBuffer.length &&
+            crypto.timingSafeEqual(computedBuffer, receivedBuffer);
+
+        if (!signaturesMatch) {
             console.warn('[SECURITY WARNING] PayMongo Webhook signature verification failed!');
             return res.status(401).send('Signature verification failed.');
         }
