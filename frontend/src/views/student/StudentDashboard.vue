@@ -27,15 +27,11 @@ import { getApiBaseUrl, getImageUrl } from '../../config/api';
 const API = getApiBaseUrl();
 
 const fetchHouses = async () => {
-  // Skip network call entirely if already offline — show banner immediately
-  if (!navigator.onLine) {
-    isLoading.value = false;
-    isOfflineFlag.value = true;
-    return;
-  }
   try {
     isLoading.value = true;
     isOfflineFlag.value = false;
+    // Always attempt the fetch — if offline, the SW will serve from cache automatically.
+    // Only show the offline banner if both network and cache fail (no response at all).
     const res = await axios.get('/api/student/houses');
     houses.value = res.data.houses || [];
   } catch (e) {

@@ -85,11 +85,6 @@ try {
 const currentUser = currentUserObj;
 
 const fetchBookings = async () => {
-  // Skip network call entirely if already offline — show banner immediately
-  if (!navigator.onLine) {
-    isLoading.value = false;
-    return;
-  }
   try {
     isLoading.value = true;
     const res = await axios.get(`/api/student/bookings`, {
@@ -166,7 +161,7 @@ const triggerPayment = async (booking) => {
 
 // Auto-verify payment on return from successful PayMongo Checkout
 const checkUrlQueryOnMount = async () => {
-  if (!navigator.onLine) return; // Skip if offline — payment verification requires internet
+  if (!navigator.onLine) return;
   const urlParams = new URLSearchParams(window.location.search);
   const isSuccess = urlParams.get('payment_success') === 'true';
   const bookingId = urlParams.get('bookingId');
