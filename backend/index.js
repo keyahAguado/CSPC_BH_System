@@ -103,7 +103,6 @@ app.get('/api/tables', async (req, res) => {
 // ===================================================
 // AUTOMATED COMPLIANCE & BOOKING SCHEDULER (DAILY)
 // ===================================================
-// Automatically executes your compliance checking rules at midnight (00:00) every day
 cron.schedule('0 0 * * *', async () => {
     console.log('[CRON EXECUTION] Running daily compliance check...');
     try {
@@ -111,6 +110,27 @@ cron.schedule('0 0 * * *', async () => {
     } catch (err) {
         console.error('[CRON EXECUTION ERROR] Compliance checking failed:', err);
     }
+});
+
+// ===================================================
+// RENDER FREE TIER KEEP-ALIVE PING (Every 14 minutes)
+// Prevents the Render instance from spinning down during active use,
+// which causes 30-50 second cold start delays on OAuth and API calls.
+// ===================================================
+cron.schedule('*/14 * * * *', () => {
+    const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    import('https').then(({ default: https }) => {
+        https.get(`${url}/api/test`, (res) => {
+            console.log(`[KEEP-ALIVE] Ping sent. Status: ${res.statusCode}`);
+        }).on('error', () => {
+            // Silent fail — non-critical
+        });
+    }).catch(() => {
+        // Fallback for http
+        import('http').then(({ default: http }) => {
+            http.get(`http://localhost:${process.env.PORT || 3000}/api/test`, () => {});
+        });
+    });
 });
 
 // ─── AUTO-CREATE UPLOADS DIRECTORY ON STARTUP ───
