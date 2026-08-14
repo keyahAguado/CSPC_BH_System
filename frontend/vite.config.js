@@ -19,6 +19,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Caches the public landing page listings (HomeView.vue)
+            // Pattern matches both relative /api/... and full cross-origin URLs (production backend)
             urlPattern: /\/api\/boarding-houses\/accredited/i,
             handler: 'NetworkFirst',
             options: {
@@ -34,8 +35,8 @@ export default defineConfig({
           },
           {
             // Caches the student dashboard listings (StudentDashboard.vue → /api/student/houses)
-            // This is the primary endpoint students use — must be cached for offline browsing
-            urlPattern: /\/api\/student\/houses/i,
+            // Uses a broad pattern that matches the path regardless of the backend domain
+            urlPattern: /\/api\/student\/houses(\?.*)?$/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'student-houses-cache',
