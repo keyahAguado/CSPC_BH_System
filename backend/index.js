@@ -35,6 +35,16 @@ app.use(cors());
 app.use(express.json());
 app.use(passport.initialize());
 
+// Disable HTTP caching for all API routes so responses always return 200 (never 304).
+// This is required for Workbox service worker runtime caching to store responses —
+// Workbox only caches status 0 and 200, never 304 "Not Modified" responses.
+app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+});
+
 // Serve the physical public uploads folder statically so browsers can load images safely
 app.use('/uploads', express.static(path.resolve('public/uploads')));
 
