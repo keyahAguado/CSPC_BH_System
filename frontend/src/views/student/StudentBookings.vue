@@ -298,8 +298,14 @@ const printReceipt = () => {
 
   <script>
     window.addEventListener('load', function() {
-      setTimeout(function() { window.print(); }, 400);
+      setTimeout(function() { 
+        window.print();
+        setTimeout(function() { window.close(); }, 500);
+      }, 400);
     });
+    window.onafterprint = function() {
+      window.close();
+    };
   <\/script>
 </body>
 </html>`);

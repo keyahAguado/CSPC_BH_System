@@ -102,7 +102,12 @@ const getNotifType = (message) => {
   if (
     msg.includes('alert:') || 
     msg.includes('warning:') || 
-    msg.includes('expiry')
+    msg.includes('expiry') ||
+    msg.includes('expir') ||
+    msg.includes('expired') ||
+    msg.includes('expiring') ||
+    msg.includes('fast expiring') ||
+    msg.includes('due')
   ) {
     return 'expiry';
   }

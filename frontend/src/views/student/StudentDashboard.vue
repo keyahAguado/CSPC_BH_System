@@ -288,6 +288,8 @@ onMounted(fetchHouses);
                 <img
                   :src="getImageUrl(house.img)"
                   :alt="house.name"
+                  loading="lazy"
+                  decoding="async"
                   class="w-full h-full object-cover grayscale-[5%] hover:grayscale-0 transition duration-500"
                   @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
                 >

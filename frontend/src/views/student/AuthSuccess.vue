@@ -17,38 +17,37 @@ onMounted(() => {
       localStorage.setItem('cspc_token', token);
       localStorage.setItem('cspc_user', JSON.stringify(user));
 
-      // 2. Perform Dynamic Redirection based on Role
+      // Determine target path
+      let targetPath = '/';
       if (user.role === 'admin') {
-        router.push('/admin/dashboard');
+        targetPath = '/admin/dashboard';
       } 
       else if (user.role === 'owner') {
-        // Redirection based on boarding house status (none, pending, accredited, rejected)
         if (user.houseStatus === 'none') {
-          router.push('/owner/accreditation');
+          targetPath = '/owner/accreditation';
         } else if (user.houseStatus === 'pending') {
-          router.push('/owner/pending-review');
+          targetPath = '/owner/pending-review';
         } else {
-          router.push('/owner/dashboard');
+          targetPath = '/owner/dashboard';
         }
       } 
       else if (user.role === 'student') {
-        // Enforce Profile Completion check (from your legacy EJS logic)
         if (!user.student_id || !user.course || !user.year_section) {
-          router.push('/student/profile'); // Profile setup required
+          targetPath = '/student/profile';
         } else {
-          router.push('/student/dashboard'); // Ready to browse/book
+          targetPath = '/student/dashboard';
         }
-      } 
-      else {
-        router.push('/');
       }
+
+      // Hard redirect ensures PWA / iOS WebApp initializes clean session state without manual refresh
+      window.location.href = targetPath;
 
     } catch (err) {
       console.error('Failed to parse Google user payload:', err);
-      router.push('/login?error=invalid_payload');
+      window.location.href = '/login?error=invalid_payload';
     }
   } else {
-    router.push('/login?error=no_token');
+    window.location.href = '/login?error=no_token';
   }
 });
 </script>

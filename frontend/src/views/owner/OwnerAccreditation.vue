@@ -1137,9 +1137,9 @@ const submitApplication = async () => {
                   </div>
 
                   <div 
-                    class="rounded-[2rem] overflow-hidden border-4 border-white shadow-xl aspect-video relative bg-slate-50 group cursor-pointer" 
+                    class="rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl h-[380px] sm:h-[450px] w-full relative bg-slate-50 group cursor-pointer" 
                   >
-                    <div ref="mapContainer" class="w-full h-full min-h-[350px]"></div>
+                    <div ref="mapContainer" class="w-full h-full"></div>
                     <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
                       <span class="bg-white/90 backdrop-blur-md px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
                         <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin

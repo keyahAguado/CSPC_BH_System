@@ -122,7 +122,7 @@ onMounted(() => {
                class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group">
             
             <div class="aspect-video overflow-hidden bg-slate-100 relative">
-              <img :src="getImageUrl(house.img)" class="w-full h-full object-cover grayscale-[10%] group-hover:grayscale-0 transition duration-500" @error="e => e.target.src = 'https://placehold.co/600x400?text=No+Photo'" alt="House photo" />
+              <img :src="getImageUrl(house.img)" loading="lazy" decoding="async" class="w-full h-full object-cover grayscale-[10%] group-hover:grayscale-0 transition duration-500" @error="e => e.target.src = 'https://placehold.co/600x400?text=No+Photo'" alt="House photo" />
               <div class="absolute top-3 right-3 bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-widest shadow-lg">
                 Accredited
               </div>

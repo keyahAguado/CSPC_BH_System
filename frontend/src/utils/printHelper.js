@@ -75,8 +75,14 @@ function openPrintWindow(html, title, landscape = false) {
   </div>
   <script>
     window.addEventListener('load', function() {
-      setTimeout(function() { window.print(); }, 600);
+      setTimeout(function() { 
+        window.print();
+        setTimeout(function() { window.close(); }, 500);
+      }, 600);
     });
+    window.onafterprint = function() {
+      window.close();
+    };
   <\/script>
 </body>
 </html>`);
