@@ -7,7 +7,22 @@ import { registerSW } from 'virtual:pwa-register';
 import axios from 'axios';
 import { getApiBaseUrl } from './config/api';
 
+// Evaluate the base URL once at startup — correct for all standard environments.
+// The request interceptor below re-evaluates it lazily per request, which guarantees
+// correctness even on first-load in LAN/ngrok scenarios where the hostname is already
+// known to the browser at module evaluation time.
 axios.defaults.baseURL = getApiBaseUrl();
+
+// Per-request base URL re-evaluation: prevents stale localhost URLs on first load
+// by recalculating the correct API base every time a request is dispatched.
+axios.interceptors.request.use(config => {
+  const dynamicBase = getApiBaseUrl();
+  // Only override if the URL is relative (no protocol), ensuring absolute URLs are untouched
+  if (config.url && !config.url.startsWith('http')) {
+    config.baseURL = dynamicBase;
+  }
+  return config;
+});
 
 // ngrok free-tier shows a browser interstitial warning page for all tunnel requests.
 // This header tells ngrok to skip that page and return the actual API response.

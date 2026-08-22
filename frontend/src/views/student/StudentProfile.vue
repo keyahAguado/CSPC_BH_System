@@ -2,12 +2,14 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import FlashAlert from '../../components/partials/FlashAlert.vue';
 
 const user = ref({});
 const isLoading = ref(true);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
+const alertRef = ref(null);
 
 const token = localStorage.getItem('cspc_token');
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
@@ -99,8 +101,14 @@ const saveProfile = async () => {
     });
     
     successMsg.value = 'Profile updated successfully!';
+    if (alertRef.value) {
+      alertRef.value.showSystemAlert('Profile updated successfully!', 'success');
+    }
   } catch (e) {
-    errorMsg.value = 'Failed to save profile. Please try again.';
+    errorMsg.value = e.response?.data?.message || 'Failed to save profile. Please try again.';
+    if (alertRef.value) {
+      alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    }
     console.error(e);
   } finally {
     isSaving.value = false;
@@ -114,6 +122,7 @@ onMounted(fetchProfile);
 
 <template>
   <div class="bg-slate-100 min-h-screen font-sans">
+    <FlashAlert ref="alertRef" />
     <StudentNav />
 
     <div v-if="isLoading" class="flex items-center justify-center py-32">

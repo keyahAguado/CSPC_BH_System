@@ -3,11 +3,14 @@ import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import axios from 'axios';
+import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { getImageUrl } from '../../config/api.js';
 
 const router = useRouter();
 const route = useRoute();
 const token = localStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
+const alertRef = ref(null);
 
 const currentUser = ref(JSON.parse(localStorage.getItem('cspc_user') || '{}'));
 const activeStep = ref(1);
@@ -46,6 +49,13 @@ const mainHouseImg = ref(null);
 const mainHouseImgPreview = ref('');
 const selectedPhotos = ref([]); 
 const maxPhotosLimit = 10;
+
+const barangaysList = ref([
+  'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
+  'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
+  'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
+  'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
+]);
 
 const criteria = ref([
   { id: 1, label: 'Business Permit Application Form', permit_key: 'permit_business_form' },
@@ -205,14 +215,14 @@ async function fetchHouseDetails() {
       
       // Load saved main display exterior image
       if (house.img) {
-        mainHouseImgPreview.value = `${API}/uploads/${house.img}`;
+        mainHouseImgPreview.value = getImageUrl(house.img);
       }
 
       // Populate extra image cells from databases
       selectedPhotos.value = [];
-      if (house.img_1) selectedPhotos.value.push({ file: null, previewUrl: `${API}/uploads/${house.img_1}` });
-      if (house.img_2) selectedPhotos.value.push({ file: null, previewUrl: `${API}/uploads/${house.img_2}` });
-      if (house.img_3) selectedPhotos.value.push({ file: null, previewUrl: `${API}/uploads/${house.img_3}` });
+      if (house.img_1) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_1), dbValue: house.img_1 });
+      if (house.img_2) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_2), dbValue: house.img_2 });
+      if (house.img_3) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_3), dbValue: house.img_3 });
 
       // Store current file names for permits preview
       criteria.value.forEach(p => {
@@ -280,7 +290,8 @@ const handlePhotosSelected = async (event) => {
     const processedFile = await transcodeHeicFile(file);
     selectedPhotos.value.push({
       file: processedFile,
-      previewUrl: URL.createObjectURL(processedFile)
+      previewUrl: URL.createObjectURL(processedFile),
+      dbValue: null
     });
   }
 };
@@ -293,24 +304,75 @@ const removePhoto = (index) => {
 };
 
 // High-Precision Coordinates Parser
-const extractCoords = (url) => {
-  if (!url) return;
+const isResolvingMap = ref(false);
+
+const extractCoordsFromString = (text) => {
+  if (!text) return false;
+  const rawUrl = String(text).trim();
+  let decoded = rawUrl;
+  try { decoded = decodeURIComponent(rawUrl); } catch (e) {}
+
   const regexArr = [
     /@(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /query=(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
-    /q=(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/
+    /[?&]query=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /!3d(-?\d+\.\d+).*?!4d(-?\d+\.\d+)/,
+    /3d(-?\d+\.\d+).*?4d(-?\d+\.\d+)/,
+    /[?&]q=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /[?&]ll=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /[?&]center=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /place\/[^\/]*\/@?(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /search\/[^\/]*\/@?(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /dir\/[^\/]*\/@?(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/,
+    /(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/
   ];
 
-  for (const regex of regexArr) {
-    const match = url.match(regex);
-    if (match) {
-      const lat = parseFloat(match[1]);
-      const lng = parseFloat(match[2]);
-      updateCoords(lat, lng);
-      reverseGeocode(lat, lng);
-      return;
+  for (const textToTest of [rawUrl, decoded]) {
+    for (const regex of regexArr) {
+      const match = textToTest.match(regex);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          updateCoords(lat, lng);
+          reverseGeocode(lat, lng);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+};
+
+const isShortUrl = (url) => {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname;
+    return h === 'maps.app.goo.gl' || h === 'goo.gl';
+  } catch (e) { return false; }
+};
+
+const extractCoords = async (url) => {
+  if (!url) return;
+  const raw = String(url).trim();
+
+  // If it already has parseable coords, extract directly
+  if (extractCoordsFromString(raw)) return;
+
+  // Short URL — resolve server-side first
+  if (isShortUrl(raw)) {
+    isResolvingMap.value = true;
+    try {
+      const res = await axios.get('/api/utils/resolve-map-link', { params: { url: raw } });
+      if (res.data.success && res.data.resolvedUrl) {
+        if (!extractCoordsFromString(res.data.resolvedUrl)) {
+          console.warn('[MAP] Resolved URL has no extractable coordinates:', res.data.resolvedUrl);
+        }
+      }
+    } catch (err) {
+      console.error('[MAP] Failed to resolve short URL:', err.message);
+    } finally {
+      isResolvingMap.value = false;
     }
   }
 };
@@ -356,13 +418,41 @@ const detectMyLocation = () => {
   }
 };
 
-// Google Reverse Geocoder
+// Google Reverse Geocoder — builds proper Philippine local address, no Plus Codes
 const reverseGeocode = (lat, lng) => {
   if (!googleInstance) return;
   const geocoder = new googleInstance.maps.Geocoder();
   geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-    if (status === "OK" && results[0]) {
-      locationAddress.value = results[0].formatted_address;
+    if (status === 'OK' && results && results.length > 0) {
+      // Find the most detailed result that isn't a pure Plus Code result
+      const target = results.find(r =>
+        r.formatted_address && !/^[A-Z0-9]{4,}\+[A-Z0-9]{2,}/.test(r.formatted_address.trim())
+      ) || results[0];
+
+      const components = target.address_components || [];
+      const get = (...types) => {
+        for (const type of types) {
+          const c = components.find(c => c.types.includes(type) && !c.types.includes('plus_code'));
+          if (c) return c.long_name;
+        }
+        return null;
+      };
+
+      // Philippine address order: street/route, barangay, municipality/city, province, country
+      const parts = [
+        get('street_number') && get('route') ? `${get('street_number')} ${get('route')}` : get('route'),
+        get('sublocality_level_1', 'sublocality', 'neighborhood'),  // Barangay
+        get('locality', 'administrative_area_level_3'),              // Municipality / City
+        get('administrative_area_level_2'),                          // Province
+        get('country')
+      ].filter(Boolean);
+
+      if (parts.length >= 2) {
+        locationAddress.value = parts.join(', ');
+      } else {
+        // Fallback: strip leading Plus Code segment
+        locationAddress.value = target.formatted_address.replace(/^[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s*/, '');
+      }
     }
   });
 };
@@ -649,8 +739,8 @@ const submitApplication = async () => {
       fd.append('house_img', mainHouseImg.value);
     }
 
-    // Append remaining database-stored extra images
-    const dbPhotos = selectedPhotos.value.filter(p => !p.file).map(p => p.previewUrl.replace(`${API}/uploads/`, ''));
+    // Append remaining database-stored extra images — pass the full stored value (Cloudinary URL or legacy filename)
+    const dbPhotos = selectedPhotos.value.filter(p => !p.file).map(p => p.dbValue || '').filter(Boolean);
     fd.append('existing_photos', JSON.stringify(dbPhotos));
 
     // Append newly uploaded extra photos
@@ -680,6 +770,9 @@ const submitApplication = async () => {
 
     if (response.data.success) {
       successMsg.value = 'Onboarding complete! Awaiting SASO approval.';
+      if (alertRef.value) {
+        alertRef.value.showSystemAlert('Onboarding application submitted! Awaiting SASO approval.', 'success');
+      }
       const updatedUser = { ...currentUser.value, houseStatus: 'pending', houseId: response.data.houseId };
       localStorage.setItem('cspc_user', JSON.stringify(updatedUser));
       setTimeout(() => {
@@ -689,6 +782,9 @@ const submitApplication = async () => {
   } catch (err) {
     console.error(err);
     errorMsg.value = err.response?.data?.message || 'Accreditation application failed. Please verify files and try again.';
+    if (alertRef.value) {
+      alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    }
   } finally {
     isSaving.value = false;
   }
@@ -698,6 +794,7 @@ const submitApplication = async () => {
 
 <template>
   <div class="bg-[#eef6ff] min-h-screen font-sans pb-24">
+    <FlashAlert ref="alertRef" />
     <!-- Navbar -->
     <nav class="bg-[#2a528a] px-10 py-5 flex justify-between items-center text-white shadow-md">
       <div class="flex items-center gap-3">
@@ -857,7 +954,7 @@ const submitApplication = async () => {
                   <div v-if="existingFiles[p.permit_key]" class="mt-2 flex flex-col gap-1.5">
                     <div class="flex items-center gap-2">
                       <p class="text-[9px] text-green-600 font-black uppercase tracking-widest"><i class="fa-solid fa-circle-check"></i> Current file:</p>
-                      <a :href="`${API}/uploads/${existingFiles[p.permit_key]}`" target="_blank" class="text-[9px] font-black text-blue-600 hover:underline uppercase tracking-widest overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">{{ existingFiles[p.permit_key] }}</a>
+                      <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[9px] font-black text-blue-600 hover:underline uppercase tracking-widest overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
                     </div>
                   </div>
                 </div>
@@ -898,7 +995,7 @@ const submitApplication = async () => {
             
             <!-- Dynamic Interior / Extra Photos Uploader -->
             <div class="border-t border-slate-100 pt-6">
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Additional Property Photos (Up to 3 Photos will populate database rows img_1 to img_3)</label>
+              <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
               
               <div class="flex items-center justify-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-blue-400 transition cursor-pointer mb-6">
                 <input 
@@ -947,6 +1044,14 @@ const submitApplication = async () => {
             <div>
               <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Contact Number</label>
               <input type="text" v-model="contactNumber" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="e.g. 09123456789" />
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Official Barangay (Nabua)</label>
+              <select v-model="selectedBarangay" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer">
+                <option value="">Select Barangay</option>
+                <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
+              </select>
             </div>
 
             <div>
@@ -1043,31 +1148,8 @@ const submitApplication = async () => {
                   </div>
                 </div>
 
-                <!-- STEP C: OPTIONAL LINK EXTRACTION -->
-                <div class="pt-6 border-t border-slate-200/60">
-                  <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                      <div class="bg-slate-300 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-sm">C</div>
-                      <label class="text-[11px] font-black text-slate-400 uppercase tracking-widest">Google Maps Link (Optional)</label>
-                    </div>
-                    <span class="text-[8px] font-black text-slate-300 uppercase tracking-widest">Backup Method</span>
-                  </div>
-                  <div class="flex gap-2">
-                    <input 
-                      type="text" 
-                      v-model="mapLink" 
-                      class="flex-1 bg-white/50 border border-slate-200 p-4 rounded-2xl text-xs font-bold focus:bg-white focus:border-blue-400 outline-none transition" 
-                      placeholder="Paste Maps Link here..."
-                    />
-                    <button 
-                      type="button" 
-                      @click="extractCoords(mapLink)" 
-                      class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 rounded-2xl text-[9px] font-black uppercase tracking-widest transition"
-                    >
-                      Extract <i class="fa-solid fa-wand-magic-sparkles ml-1" />
-                    </button>
-                  </div>
-                </div>
+                <!-- STEP C removed: Google Maps short link extraction was unreliable.
+                     Use GPS button or the Places search (Step A) instead. -->
               </div>
             </div>
 

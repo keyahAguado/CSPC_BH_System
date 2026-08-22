@@ -98,11 +98,11 @@ onMounted(() => {
       <div class="grid grid-cols-2 gap-20 pt-16 mt-auto">
         <div class="text-center">
           <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Prepared By: SASO Administrator</p>
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Prepared By: SASO Coordinator</p>
         </div>
         <div class="text-center">
           <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Noted By: SASO Director</p>
+          <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Approved By: SASO Director</p>
         </div>
       </div>
 

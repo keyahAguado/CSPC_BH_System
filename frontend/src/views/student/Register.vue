@@ -1,7 +1,10 @@
 <script setup>
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import axios from 'axios';
 import Header from '../../components/partials/Header.vue';
+
+const router = useRouter();
 
 const name = ref('');
 const phone = ref('');
@@ -9,6 +12,7 @@ const address = ref('');
 const email = ref('');
 const password = ref('');
 
+const showPassword = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const isLoading = ref(false);
@@ -35,11 +39,11 @@ const handleRegister = async () => {
       const { token, user } = response.data;
       localStorage.setItem('cspc_token', token);
       localStorage.setItem('cspc_user', JSON.stringify(user));
-      successMessage.value = 'Registration successful! Awaiting SASO approval...';
+      successMessage.value = 'Registration successful! Redirecting to accreditation...';
 
       setTimeout(() => {
-        window.location.href = '/users/owner/accreditation';
-      }, 1500);
+        router.push('/owner/accreditation');
+      }, 1200);
     }
   } catch (error) {
     console.error('Registration failed:', error);
@@ -56,7 +60,7 @@ const handleRegister = async () => {
 
     <main class="min-h-[85vh] flex items-center justify-center p-6 bg-blue-50">
       <div class="bg-white rounded-3xl shadow-xl p-10 max-w-lg w-full relative border border-slate-100">
-        <a href="/login-options" class="absolute top-8 right-8 text-blue-900 font-bold text-xl">&lt;</a>
+        <router-link to="/login" class="absolute top-8 right-8 text-blue-900 font-bold text-xl hover:opacity-75 transition">&lt;</router-link>
 
         <h1 class="text-3xl font-black text-center mb-8 text-blue-900 uppercase tracking-tight">
           OWNER REGISTRATION
@@ -94,7 +98,12 @@ const handleRegister = async () => {
 
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">Create Password</label>
-            <input v-model="password" type="password" placeholder="Min. 8 characters" class="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:border-blue-500 outline-none font-medium" required />
+            <div class="relative">
+              <input v-model="password" :type="showPassword ? 'text' : 'password'" placeholder="Min. 8 characters" class="w-full border border-slate-200 p-2.5 pr-10 rounded-lg text-sm focus:border-blue-500 outline-none font-medium" required />
+              <button type="button" @click="showPassword = !showPassword" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                <i :class="showPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+              </button>
+            </div>
           </div>
 
           <div class="flex justify-center pt-6">
@@ -105,7 +114,7 @@ const handleRegister = async () => {
         </form>
 
         <p class="text-center mt-6 text-slate-500 text-xs font-bold uppercase tracking-wide">
-          Already registered? <a href="/login" class="text-blue-600 underline font-semibold">Log in here</a>
+          Already registered? <router-link to="/login" class="text-blue-600 underline font-semibold">Log in here</router-link>
         </p>
       </div>
     </main>

@@ -11,6 +11,7 @@ const houseId = route.params.id;
 
 const house = ref({});
 const reviews = ref([]);
+const housePhotos = ref([]); // gallery photos from house_photos table
 const avgRating = ref(0);
 const isLoading = ref(true);
 const showLoginModal = ref(false);
@@ -18,17 +19,27 @@ const showLoginModal = ref(false);
 const token = localStorage.getItem('cspc_token');
 const isGuest = !token;
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
+import { formatAddress } from '../../utils/formatAddress.js';
 
 const API = getApiBaseUrl();
 
-// Photo carousel
+// Photo carousel & Lightbox
 const currentPhotoIndex = ref(0);
+const showLightbox = ref(false);
+const lightboxPhoto = ref('');
+
+const openLightbox = (url) => {
+  lightboxPhoto.value = url;
+  showLightbox.value = true;
+};
 const photos = computed(() => {
   const imgs = [];
   if (house.value.img) imgs.push(getImageUrl(house.value.img));
-  if (house.value.img_1) imgs.push(getImageUrl(house.value.img_1));
-  if (house.value.img_2) imgs.push(getImageUrl(house.value.img_2));
-  if (house.value.img_3) imgs.push(getImageUrl(house.value.img_3));
+  // Use housePhotos array if available, fall back to img_1/2/3
+  const galleryPhotos = housePhotos.value.length > 0
+    ? housePhotos.value
+    : [house.value.img_1, house.value.img_2, house.value.img_3].filter(Boolean);
+  galleryPhotos.forEach(p => { if (p) imgs.push(getImageUrl(p)); });
   return imgs;
 });
 
@@ -275,6 +286,7 @@ const fetchData = async () => {
     house.value = res.data.house || {};
     reviews.value = res.data.reviews || [];
     avgRating.value = res.data.avgRating || 0;
+    housePhotos.value = res.data.photos || [];
     mapApiKey = res.data.googleMapsApiKey;
   } catch (e) {
     console.error('Failed to load house data', e);
@@ -396,7 +408,7 @@ onMounted(fetchData);
           <div class="flex flex-wrap items-center gap-3">
             <div class="flex items-center gap-2 bg-white text-slate-600 px-4 py-2 rounded-full border border-slate-200/80 shadow-sm">
               <i class="fa-solid fa-location-dot text-blue-500 text-[11px]"></i>
-              <span class="font-bold text-[10px] uppercase tracking-widest leading-none">{{ house.location || 'Location Pending' }}</span>
+              <span class="font-bold text-[10px] uppercase tracking-widest leading-none">{{ formatAddress(house) || 'Location Pending' }}</span>
             </div>
             
             <div v-if="showCampusBadge" class="flex items-center gap-2 bg-[#2563eb] text-white px-4 py-2 rounded-full shadow-md shadow-blue-100/50">
@@ -511,30 +523,58 @@ onMounted(fetchData);
 
       <!-- GALLERY SECTION -->
       <div class="bg-white p-8 md:p-12 border-x border-slate-200/50">
-        <div class="flex items-center gap-3 mb-6 text-left">
-          <div class="bg-blue-500 w-1.5 h-6 rounded-full"></div>
-          <h2 class="text-base font-black uppercase tracking-widest text-slate-900">Property Gallery</h2>
-        </div>
-        
-        <div class="relative flex items-center gap-4">
-          <button @click="prevPhoto" class="text-slate-300 hover:text-blue-600 hover:scale-110 transition text-4xl select-none leading-none cursor-pointer focus:outline-none">‹</button>
-          
-          <div class="rounded-3xl overflow-hidden aspect-video w-full border border-slate-100 shadow-lg bg-slate-50 relative flex items-center justify-center">
-            <img v-if="currentPhoto" :src="currentPhoto" class="w-full h-full object-contain" alt="Property Main Gallery">
-            <div v-else class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No interior photos uploaded yet</div>
+        <div class="flex items-center justify-between mb-6 text-left">
+          <div class="flex items-center gap-3">
+            <div class="bg-blue-500 w-1.5 h-6 rounded-full"></div>
+            <h2 class="text-base font-black uppercase tracking-widest text-slate-900">Property Gallery Showcase</h2>
           </div>
-          
-          <button @click="nextPhoto" class="text-slate-300 hover:text-blue-600 hover:scale-110 transition text-4xl select-none leading-none cursor-pointer focus:outline-none">›</button>
+          <span v-if="photos.length > 0" class="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+            Photo {{ currentPhotoIndex + 1 }} of {{ photos.length }}
+          </span>
         </div>
         
-        <div v-if="photos.length > 1" class="flex justify-center gap-2.5 mt-5">
-          <span
-            v-for="(_, i) in photos"
-            :key="i"
-            @click="currentPhotoIndex = i"
-            class="w-2 h-2 rounded-full cursor-pointer transition-all duration-300"
-            :class="i === currentPhotoIndex ? 'bg-blue-600 scale-125' : 'bg-slate-200'"
-          ></span>
+        <!-- Main Featured Image Stage -->
+        <div class="relative group">
+          <div class="rounded-[2.5rem] overflow-hidden aspect-[16/9] w-full border border-slate-200/80 shadow-xl bg-slate-900 relative flex items-center justify-center cursor-pointer"
+               @click="currentPhoto && openLightbox(currentPhoto)">
+            <img v-if="currentPhoto" :src="currentPhoto" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Property Gallery Photo">
+            <div v-else class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No property photos available</div>
+
+            <!-- Overlay Click to Expand -->
+            <div v-if="currentPhoto" class="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-6">
+              <span class="text-white text-[10px] font-black uppercase tracking-widest bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 flex items-center gap-2">
+                <i class="fa-solid fa-expand"></i> Click for Fullscreen Preview
+              </span>
+            </div>
+          </div>
+
+          <!-- Left/Right Nav Buttons -->
+          <button v-if="photos.length > 1" @click.stop="prevPhoto" 
+                  class="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-12 h-12 rounded-full shadow-lg backdrop-blur-md flex items-center justify-center text-xl font-black transition active:scale-95 cursor-pointer z-10">
+            ‹
+          </button>
+          <button v-if="photos.length > 1" @click.stop="nextPhoto" 
+                  class="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-12 h-12 rounded-full shadow-lg backdrop-blur-md flex items-center justify-center text-xl font-black transition active:scale-95 cursor-pointer z-10">
+            ›
+          </button>
+        </div>
+        
+        <!-- Interactive Thumbnails Strip -->
+        <div v-if="photos.length > 1" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 mt-6">
+          <div v-for="(photo, i) in photos" :key="i"
+               @click="currentPhotoIndex = i"
+               class="aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 relative group"
+               :class="i === currentPhotoIndex ? 'border-blue-600 scale-105 shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'">
+            <img :src="photo" class="w-full h-full object-cover" alt="Thumbnail" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Lightbox Fullscreen Preview Modal -->
+      <div v-if="showLightbox" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[200] flex items-center justify-center p-4" @click="showLightbox = false">
+        <div class="relative max-w-5xl w-full max-h-[90vh] flex items-center justify-center" @click.stop>
+          <button @click="showLightbox = false" class="absolute -top-12 right-0 text-white hover:text-red-400 text-3xl font-bold cursor-pointer transition">&times;</button>
+          <img :src="lightboxPhoto" class="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/10" alt="Full Preview" />
         </div>
       </div>
 
@@ -639,7 +679,7 @@ onMounted(fetchData);
             <div class="shrink-0">
               <img
                 v-if="review.profile_pic"
-                :src="`${API}/uploads/${review.profile_pic}`"
+                :src="getImageUrl(review.profile_pic)"
                 class="w-12 h-12 rounded-2xl object-cover shadow-sm border border-slate-100"
               >
               <div

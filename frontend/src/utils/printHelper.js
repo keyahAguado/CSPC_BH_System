@@ -47,6 +47,8 @@ const BASE_STYLES = `
   .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; gap: 24px; align-items: center; }
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 8pt; font-weight: 700; text-transform: uppercase; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .print-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 7.5pt; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+  .print-footer strong { color: #1e4a8d; font-weight: 900; }
 `;
 
 function getReportDate() {
@@ -119,8 +121,11 @@ export function printMasterlist(houses, reportDate) {
       <tbody>${rows || '<tr><td colspan="7" class="text-center small">No accredited boarding houses on record.</td></tr>'}</tbody>
     </table>
     <div class="signatories">
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Staff</div></div>
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Noted By: SASO Director</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Coordinator</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Approved By: SASO Director</div></div>
+    </div>
+    <div class="print-footer">
+      Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
     </div>`, 'Accredited Masterlist Report');
 }
 
@@ -130,7 +135,7 @@ export function printCompliance(houses, reportDate) {
     if (!dateStr) return '<span class="na">N/A</span>';
     const d = new Date(dateStr);
     const isExp = d < new Date();
-    return `<span class="${isExp ? 'expiry-exp' : 'expiry-ok'}">${d.toLocaleDateString('en-PH', { month: 'short', year: '2-digit' })}</span>`;
+    return `<span class="${isExp ? 'expiry-exp' : 'expiry-ok'}">${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>`;
   }
 
   const rows = (houses || []).map(h => `
@@ -175,22 +180,63 @@ export function printCompliance(houses, reportDate) {
       <tbody>${rows || '<tr><td colspan="10" class="text-center small">No records found.</td></tr>'}</tbody>
     </table>
     <div class="signatories">
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Audited By: Compliance Officer</div></div>
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Noted By: SASO Director</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Coordinator</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Approved By: SASO Director</div></div>
+    </div>
+    <div class="print-footer">
+      Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
     </div>`, 'Compliance Audit Report', true);
 }
 
 /** EMERGENCY REGISTRY REPORT */
 export function printEmergencyRegistry(residents, targetArea, reportDate) {
-  const rows = (residents || []).map(r => `
-    <tr>
-      <td><div class="bold upper">${r.resident_name || ''}</div><div class="small">${r.student_email || ''}</div></td>
-      <td class="text-center"><span class="badge ${r.sex === 'Male' ? 'badge-blue' : 'badge-pink'}">${r.sex || 'N/A'}</span></td>
-      <td><div class="bold upper">${r.course || 'N/A'}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
-      <td><div class="bold">${r.house_name || ''}</div><div class="small">${r.house_location || ''} | RM #${r.room_number || 'N/A'}</div></td>
-      <td class="bold">${r.guardian_name || 'N/A'}</td>
-      <td class="text-right bold" style="color:#dc2626">${r.emergency_contact || 'N/A'}</td>
-    </tr>`).join('');
+  // Group residents by boarding house name
+  const grouped = {};
+  (residents || []).forEach(r => {
+    const houseKey = r.house_name || 'Unassigned Boarding House';
+    if (!grouped[houseKey]) {
+      grouped[houseKey] = {
+        location: r.house_location || '',
+        phone: r.house_owner_phone || '',
+        list: []
+      };
+    }
+    grouped[houseKey].list.push(r);
+  });
+
+  const houseKeys = Object.keys(grouped);
+
+  const houseTablesHtml = houseKeys.length === 0
+    ? '<table><tbody><tr><td class="text-center small">No residency records found.</td></tr></tbody></table>'
+    : houseKeys.map(houseName => {
+        const group = grouped[houseName];
+        const rows = group.list.map(r => `
+          <tr>
+            <td><div class="bold upper">${r.resident_name || ''}</div><div class="small">${r.student_email || ''} | ${r.student_phone || 'N/A'}</div></td>
+            <td class="text-center"><span class="badge ${r.sex === 'Male' ? 'badge-blue' : 'badge-pink'}">${r.sex || 'N/A'}</span></td>
+            <td><div class="bold upper">${r.course || 'N/A'}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
+            <td><div class="bold">Room #${r.room_number || 'N/A'}</div></td>
+            <td class="bold">${r.guardian_name || 'N/A'}</td>
+            <td class="text-right bold" style="color:#dc2626">${r.emergency_contact || 'N/A'}</td>
+          </tr>`).join('');
+
+        return `
+          <div style="margin-top: 24px; margin-bottom: 8px; padding: 10px 14px; background-color: #f1f5f9; border-left: 5px solid #1e4a8d; border-radius: 6px;">
+            <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
+              ${houseName} <span style="font-size: 10px; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
+            </div>
+            <div style="font-size: 10px; color: #475569; margin-top: 4px; font-weight: 600;">
+              ${group.location}${group.phone ? ` &nbsp;&bull;&nbsp; Owner Contact: ${group.phone}` : ''}
+            </div>
+          </div>
+          <table>
+            <thead><tr>
+              <th>Student Resident</th><th class="text-center">Sex</th><th>Course / Year</th>
+              <th>Room</th><th>Guardian</th><th class="text-right">Emergency Contact</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      }).join('');
 
   openPrintWindow(`
     <div class="header">
@@ -205,18 +251,15 @@ export function printEmergencyRegistry(residents, targetArea, reportDate) {
     </div>
     <div class="title-section">
       <h2>Emergency Student Residency Registry</h2>
-      <div class="subtitle">Target Zone: ${targetArea || 'Unified Registry'}</div>
+      <div class="subtitle">Summary of Lists per Boarding House | Zone: ${targetArea || 'Unified Registry'}</div>
     </div>
-    <table>
-      <thead><tr>
-        <th>Student Resident</th><th class="text-center">Sex</th><th>Course / Year</th>
-        <th>House &amp; Room</th><th>Guardian</th><th class="text-right">Emergency Contact</th>
-      </tr></thead>
-      <tbody>${rows || '<tr><td colspan="6" class="text-center small">No residency records found.</td></tr>'}</tbody>
-    </table>
+    ${houseTablesHtml}
     <div class="signatories">
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Safety Officer</div></div>
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Noted By: Disaster Response Team</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Coordinator</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Approved By: SASO Director</div></div>
+    </div>
+    <div class="print-footer">
+      Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
     </div>`, 'Emergency Student Residency Registry');
 }
 
@@ -260,8 +303,11 @@ export function printTransactions(transactions, reportDate) {
       </tbody>
     </table>
     <div class="signatories">
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Administrator</div></div>
-      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Noted By: SASO Director</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Prepared By: SASO Coordinator</div></div>
+      <div class="signatory"><div class="signatory-line"></div><div class="signatory-label">Approved By: SASO Director</div></div>
+    </div>
+    <div class="print-footer">
+      Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
     </div>`, 'Student Reservation Report');
 }
 

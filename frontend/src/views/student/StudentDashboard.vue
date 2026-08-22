@@ -3,7 +3,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
+import { formatAddress } from '../../utils/formatAddress.js';
 
 const router = useRouter();
 const houses = ref([]);
@@ -304,7 +306,7 @@ onMounted(fetchHouses);
                 <h2 class="font-black text-xl text-slate-900 leading-tight uppercase tracking-tight mb-1.5">{{ house.name }}</h2>
                 <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5">
                   <i class="fa-solid fa-location-dot text-[9px] text-blue-500"></i>
-                  {{ house.location }}
+                  {{ formatAddress(house) }}
                 </p>
               </div>
 
@@ -342,6 +344,7 @@ onMounted(fetchHouses);
         </section>
       </div>
     </main>
+
   </div>
 </template>
 

@@ -126,8 +126,8 @@ onMounted(() => {
                   </span>
                 </td>
                 <td v-for="p in ['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire']" :key="p" class="px-4 py-4">
-                  <span v-if="h['expiry_permit_' + p]" :class="new Date(h['expiry_permit_' + p]) < new Date() ? 'text-red-500 font-black' : 'text-slate-600'">
-                    {{ new Date(h['expiry_permit_' + p]).toLocaleDateString('en-PH', { month: 'short', year: '2-digit' }) }}
+                  <span v-if="h['expiry_permit_' + p]" :class="new Date(h['expiry_permit_' + p]) < new Date() ? 'text-red-500 font-black' : 'text-slate-600 font-bold'">
+                    {{ new Date(h['expiry_permit_' + p]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
                   </span>
                   <span v-else class="text-slate-300">N/A</span>
                 </td>
@@ -166,7 +166,7 @@ onMounted(() => {
               ]" :key="p.key" class="px-4 py-2.5 flex justify-between items-center">
                 <span class="text-slate-400 font-bold uppercase text-[10px]">{{ p.label }}</span>
                 <span v-if="h['expiry_permit_' + p.key]" :class="new Date(h['expiry_permit_' + p.key]) < new Date() ? 'text-red-500 font-black' : 'text-slate-700 font-semibold'">
-                  {{ new Date(h['expiry_permit_' + p.key]).toLocaleDateString('en-PH', { month: 'short', year: '2-digit' }) }}
+                  {{ new Date(h['expiry_permit_' + p.key]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
                 </span>
                 <span v-else class="text-slate-300 text-xs">N/A</span>
               </div>
@@ -179,11 +179,11 @@ onMounted(() => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-20 pt-10 md:pt-16 mt-auto">
           <div class="text-center">
             <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Audited By: Compliance Officer</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Prepared By: SASO Coordinator</p>
           </div>
           <div class="text-center">
             <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Noted By: SASO Director</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Approved By: SASO Director</p>
           </div>
         </div>
 

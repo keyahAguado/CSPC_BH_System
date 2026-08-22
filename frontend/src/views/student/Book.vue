@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import FlashAlert from '../../components/partials/FlashAlert.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -14,7 +15,9 @@ const isLoading = ref(true);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
-const showSuccessModal = ref(false);
+const showConfirmModal = ref(false);   // Pre-submission review modal
+const showSuccessModal = ref(false);   // Post-submission result modal
+const alertRef = ref(null);
 
 const token = localStorage.getItem('cspc_token');
 const isGuest = !token;
@@ -48,6 +51,22 @@ const form = ref({
   payment_method: 'cash' // Default selection
 });
 
+// Dynamic min check-in date (Today)
+const minCheckInDate = computed(() => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+});
+
+// Silently clamp any selected date so past dates are silently prevented without popup alerts
+const handleCheckInDateChange = () => {
+  if (form.value.check_in_date && form.value.check_in_date < minCheckInDate.value) {
+    form.value.check_in_date = minCheckInDate.value;
+  }
+};
+
 const fetchData = async () => {
   if (!navigator.onLine) {
     errorMsg.value = 'You are currently offline. Please connect to the internet to make a booking.';
@@ -61,13 +80,33 @@ const fetchData = async () => {
     house.value = res.data.house || {};
     rooms.value = res.data.rooms || [];
 
-    // Pre-fill user details from active profile session
+    // 1. Initial pre-fill from cached local session
     form.value.resident_name = currentUser.name || '';
     form.value.age = currentUser.age || '';
     form.value.contact_number = currentUser.phone || '';
     form.value.emergency_contact = currentUser.emergency_contact || '';
     form.value.guardian_name = currentUser.guardian_name || '';
     form.value.address = currentUser.address || '';
+
+    // 2. Fresh real-time fetch from backend profile endpoint for 100% complete pre-filling
+    if (token) {
+      try {
+        const profileRes = await axios.get('/api/student/profile', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (profileRes.data.success && profileRes.data.user) {
+          const u = profileRes.data.user;
+          if (u.name) form.value.resident_name = u.name;
+          if (u.age) form.value.age = u.age;
+          if (u.phone) form.value.contact_number = u.phone;
+          if (u.emergency_contact) form.value.emergency_contact = u.emergency_contact;
+          if (u.guardian_name) form.value.guardian_name = u.guardian_name;
+          if (u.address) form.value.address = u.address;
+        }
+      } catch (profileErr) {
+        console.error('Failed to fetch real-time profile data:', profileErr);
+      }
+    }
   } catch (e) {
     console.error('Failed to load house data', e);
     errorMsg.value = 'Unable to load house details. Please check your connection.';
@@ -114,11 +153,19 @@ const depositNote = computed(() => {
 const formatMoney = (val) =>
   Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const submitBooking = async () => {
+// Step 1: Form submit opens the review/confirmation modal — nothing is sent yet
+const openConfirmModal = () => {
   if (isGuest) {
     errorMsg.value = 'You must be logged in to book.';
     return;
   }
+  showConfirmModal.value = true;
+};
+
+// Step 2: "Ok, Submit Booking" in the confirm modal — this is where the booking is actually sent
+const confirmAndSubmit = async () => {
+  if (isSaving.value) return; // Hard guard: prevent double-fire
+  showConfirmModal.value = false;
   isSaving.value = true;
   successMsg.value = '';
   errorMsg.value = '';
@@ -126,18 +173,18 @@ const submitBooking = async () => {
     await axios.post(`/api/student/book/${houseId}`, form.value, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    
-    // Open the informative success modal instead of auto-redirecting instantly
     showSuccessModal.value = true;
-
   } catch (e) {
     errorMsg.value = e.response?.data?.message || 'Unable to submit booking. Please check your connection and try again.';
+    if (alertRef.value) {
+      alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    }
   } finally {
     isSaving.value = false;
   }
 };
 
-// Redirects the student to their bookings page upon clicking the close button
+// Navigates to bookings after the success modal is acknowledged
 const handleSuccessModalClose = () => {
   showSuccessModal.value = false;
   router.push('/student/bookings');
@@ -149,6 +196,7 @@ onMounted(fetchData);
 
 <template>
   <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
+    <FlashAlert ref="alertRef" />
     <StudentNav />
 
     <main class="max-w-4xl mx-auto py-10 px-6">
@@ -174,7 +222,7 @@ onMounted(fetchData);
           <i class="fa-solid fa-circle-info text-rose-500"></i> {{ errorMsg }}
         </div>
 
-        <form @submit.prevent="submitBooking" class="space-y-6 text-left">
+        <form @submit.prevent="openConfirmModal" class="space-y-6 text-left">
 
           <!-- STEP 1: SCHEDULE -->
           <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/50 animate-fade-in">
@@ -185,7 +233,7 @@ onMounted(fetchData);
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Check-In Date</label>
-                <input type="date" v-model="form.check_in_date" required
+                <input type="date" v-model="form.check_in_date" :min="minCheckInDate" @change="handleCheckInDateChange" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
               <div>
@@ -280,9 +328,14 @@ onMounted(fetchData);
 
           <!-- STEP 3: PERSONAL DETAILS -->
           <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/50">
-            <div class="flex items-center gap-3 mb-6">
-              <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-100">3</div>
-              <h2 class="text-sm font-black uppercase tracking-widest text-slate-900">Personal Details</h2>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-100">3</div>
+                <h2 class="text-sm font-black uppercase tracking-widest text-slate-900">Personal Details</h2>
+              </div>
+              <div class="inline-flex items-center gap-1.5 text-[9px] font-black text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/60 uppercase tracking-widest self-start sm:self-auto">
+                <i class="fa-solid fa-circle-check text-emerald-500"></i> Auto-Filled from Profile
+              </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="md:col-span-2">
@@ -449,6 +502,89 @@ onMounted(fetchData);
     </main>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- PRE-SUBMISSION REVIEW MODAL: Confirm before sending       -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
+      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+        <!-- Header -->
+        <div class="bg-slate-900 px-8 py-6 flex items-center gap-4">
+          <div class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-clipboard-check text-white text-2xl"></i>
+          </div>
+          <div>
+            <h3 class="text-white font-black text-lg uppercase tracking-tight leading-none">Review Your Booking</h3>
+            <span class="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1.5 block">Please confirm the details below before submitting</span>
+          </div>
+        </div>
+
+        <!-- Body: Summary of what's about to be submitted -->
+        <div class="p-8 space-y-4 max-h-[60vh] overflow-y-auto">
+          <div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">House</p>
+              <p class="font-bold text-slate-800">{{ house.name }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Room</p>
+              <p class="font-bold text-slate-800">
+                {{ rooms.find(r => r.id === form.roomId)?.room_number || '—' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Name</p>
+              <p class="font-bold text-slate-800">{{ form.resident_name || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Age</p>
+              <p class="font-bold text-slate-800">{{ form.age || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Check-In Date</p>
+              <p class="font-bold text-slate-800">{{ form.check_in_date || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Duration</p>
+              <p class="font-bold text-slate-800">{{ form.months || '—' }} Month(s)</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Contact</p>
+              <p class="font-bold text-slate-800">{{ form.contact_number || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p>
+              <p class="font-bold text-slate-800 uppercase">{{ form.payment_method === 'paymongo' ? 'GCash / Card (Online)' : 'Cash (Over-the-Counter)' }}</p>
+            </div>
+            <div class="col-span-2">
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Address</p>
+              <p class="font-bold text-slate-800">{{ form.address || '—' }}</p>
+            </div>
+          </div>
+
+          <!-- Move-in cost callout -->
+          <div class="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 mt-2">
+            <p class="text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Estimated Move-in Cost</p>
+            <p class="text-2xl font-black text-emerald-600">₱{{ formatMoney(initialPayment) }}</p>
+            <p class="text-[10px] text-emerald-700/70 font-bold mt-0.5">{{ advanceLabel }} + {{ depositLabel }}</p>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="px-8 pb-8 pt-4 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100">
+          <button type="button" @click="showConfirmModal = false"
+            class="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[11px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
+            <i class="fa-solid fa-arrow-left text-[10px]"></i> Back to Form
+          </button>
+          <button type="button" @click="confirmAndSubmit" :disabled="isSaving"
+            class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-slate-900 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
+            <div v-if="isSaving" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            {{ isSaving ? 'Submitting...' : 'Submit Booking' }}
+            <i v-if="!isSaving" class="fa-solid fa-check text-[10px]"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- CUSTOM INFORMATIONAL MODAL: Booking Success & Next Steps   -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="handleSuccessModalClose">
@@ -470,6 +606,17 @@ onMounted(fetchData);
             Hello, <strong class="text-slate-900">{{ form.resident_name }}</strong>! Your room reservation request for <strong class="text-slate-900">{{ house.name }}</strong> has been successfully sent to the landlord.
           </p>
 
+          <!-- Max Waiting Time Callout -->
+          <div class="bg-amber-50/80 border border-amber-200/80 p-4 rounded-2xl flex items-center gap-3.5">
+            <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-md shadow-amber-200">
+              <i class="fa-solid fa-clock"></i>
+            </div>
+            <div class="text-left">
+              <p class="text-[10px] font-black uppercase tracking-widest text-amber-800">Max Waiting Time: 24 Hours</p>
+              <p class="text-[11px] text-amber-900/90 font-bold leading-tight mt-0.5">Please allow up to 24 hours for the landlord to verify room availability and confirm your request.</p>
+            </div>
+          </div>
+
           <!-- Conditional Steps: Online PayMongo Flow -->
           <div v-if="form.payment_method === 'paymongo'" class="space-y-4">
             <h4 class="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b border-slate-100 pb-2">Next Steps for Online Payment</h4>
@@ -478,8 +625,8 @@ onMounted(fetchData);
               <div class="flex items-start gap-3.5">
                 <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">1</div>
                 <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will check room availability and verify your reservation details.</p>
+                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review (Max 24h)</h5>
+                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will check room availability and verify your reservation details within 24 hours.</p>
                 </div>
               </div>
               <!-- Step 2 -->
@@ -509,8 +656,8 @@ onMounted(fetchData);
               <div class="flex items-start gap-3.5">
                 <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">1</div>
                 <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will review your reservation request and approve your slot.</p>
+                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review (Max 24h)</h5>
+                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will review your reservation request and approve your slot within 24 hours.</p>
                 </div>
               </div>
               <!-- Step 2 -->
@@ -526,9 +673,12 @@ onMounted(fetchData);
         </div>
 
         <!-- Footer Actions -->
-        <div class="px-8 pb-8 flex justify-end">
+        <div class="px-8 pb-8 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100 pt-4">
+          <button type="button" @click="router.push('/student/house/' + houseId)" class="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[11px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
+            <i class="fa-solid fa-house text-[10px]"></i> Back to House
+          </button>
           <button type="button" @click="handleSuccessModalClose" class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-slate-900 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
-            OK, Got It <i class="fa-solid fa-arrow-right text-[10px]"></i>
+            View My Bookings <i class="fa-solid fa-arrow-right text-[10px]"></i>
           </button>
         </div>
       </div>

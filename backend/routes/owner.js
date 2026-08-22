@@ -1,8 +1,7 @@
 import express from 'express';
-import multer from 'multer';
-import path from 'path';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
+import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
 
 const router = express.Router();
 
@@ -12,26 +11,9 @@ const verifyOwner = (req, res, next) => {
     return res.status(403).json({ success: false, message: 'Access denied.' });
 };
 
-// Multer Storage Configuration for Owner Media Files (Interior uploads & Profile pictures)
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'public/uploads/'),
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
-});
-
-const uploadOwnerMedia = upload.fields([
-    { name: 'img', maxCount: 1 },
-    { name: 'img_1', maxCount: 1 },
-    { name: 'img_2', maxCount: 1 },
-    { name: 'img_3', maxCount: 1 }
-]);
+// Multer using memory storage for all owner file uploads
+// uploadOwnerMedia uses .any() to accept img + up to 10 dynamic new_photo_N fields
+const uploadOwnerMedia = memoryUpload.any();
 
 // Self-healing database sanitizer: Guarantees clean, single-serialized JSON strings
 const sanitizeJSONInput = (val) => {
@@ -57,7 +39,7 @@ const sanitizeJSONInput = (val) => {
 router.get('/profile', authenticateToken, async (req, res) => {
     try {
         const [rows] = await pool.query(
-            'SELECT id, email, role, name, phone, address, profile_pic FROM users WHERE id = ?',
+            'SELECT id, email, role, name, phone, address, profile_pic, (google_id IS NOT NULL AND google_id != "") AS isGoogleUser, (password IS NOT NULL AND password != "") AS hasPassword FROM users WHERE id = ?',
             [req.user.id]
         );
 
@@ -77,17 +59,18 @@ const updateProfileHandler = async (req, res) => {
     try {
         const { name, phone, address } = req.body;
 
-        // Fetch existing picture path to preserve if no new file is being uploaded
+        // Fetch existing picture to preserve if no new file uploaded
         const [existing] = await pool.query('SELECT profile_pic FROM users WHERE id = ?', [req.user.id]);
-        let profilePicFilename = existing.length > 0 ? existing[0].profile_pic : null;
+        let profilePicUrl = existing.length > 0 ? existing[0].profile_pic : null;
 
         if (req.file) {
-            profilePicFilename = req.file.filename;
+            const result = await uploadBufferToCloudinary(req.file.buffer, 'profile_pics');
+            profilePicUrl = result.url;
         }
 
         await pool.query(
             'UPDATE users SET name = ?, phone = ?, address = ?, profile_pic = ? WHERE id = ?',
-            [name, phone, address || '', profilePicFilename, req.user.id]
+            [name, phone, address || '', profilePicUrl, req.user.id]
         );
 
         res.json({ success: true, message: 'Profile updated successfully.' });
@@ -98,8 +81,8 @@ const updateProfileHandler = async (req, res) => {
 };
 
 // Map both endpoints to the same handler to prevent frontend routing breaks
-router.post('/profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
-router.post('/update-profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
+router.post('/profile', authenticateToken, memoryUpload.single('profile_pic'), updateProfileHandler);
+router.post('/update-profile', authenticateToken, memoryUpload.single('profile_pic'), updateProfileHandler);
 
 // =========================================================================
 // OWNER DASHBOARD & STATISTICS ENDPOINT
@@ -154,9 +137,16 @@ router.get('/edit/:id', authenticateToken, verifyOwner, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
 
+        // Fetch all photos from house_photos table (up to 10)
+        const [photoRows] = await pool.query(
+            'SELECT photo_url FROM house_photos WHERE house_id = ? ORDER BY sort_order ASC',
+            [req.params.id]
+        );
+
         res.json({
             success: true,
             house: houseRows[0],
+            photos: photoRows.map(r => r.photo_url),
             googleMapsApiKey: process.env.VITE_GOOGLE_MAPS_API_KEY || ''
         });
     } catch (err) {
@@ -166,20 +156,44 @@ router.get('/edit/:id', authenticateToken, verifyOwner, async (req, res) => {
 
 // D. POST - Save Edited Boarding House details
 router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async (req, res) => {
+    const connection = await pool.getConnection();
     try {
+        await connection.beginTransaction();
+
         const {
             house_name, location, price, contact_number, map_link, description,
             latitude, longitude, advance_months, deposit_months, deposit_type,
-            existing_img, existing_img_1, existing_img_2, existing_img_3,
-            amenities_free, amenities_paid // ◄── Read directly as clean JSON strings
+            existing_img, amenities_free, amenities_paid
         } = req.body;
 
-        const img = (req.files && req.files['img']) ? req.files['img'][0].filename : existing_img;
-        const img_1 = (req.files && req.files['img_1']) ? req.files['img_1'][0].filename : existing_img_1;
-        const img_2 = (req.files && req.files['img_2']) ? req.files['img_2'][0].filename : existing_img_2;
-        const img_3 = (req.files && req.files['img_3']) ? req.files['img_3'][0].filename : existing_img_3;
+        // Existing photos array sent from frontend as JSON
+        let existingPhotos = [];
+        try { existingPhotos = JSON.parse(req.body.existing_photos || '[]'); } catch(e) {}
 
-        // Sanitize amenities arrays safely into JSON strings
+        // Upload any new photo files to Cloudinary concurrently in parallel
+        let newPhotoUrls = [];
+        if (req.files && Array.isArray(req.files)) {
+            const photoFiles = req.files.filter(f => f.fieldname !== 'img');
+            if (photoFiles.length > 0) {
+                const uploadPromises = photoFiles.map(f => uploadBufferToCloudinary(f.buffer, 'house_images'));
+                const results = await Promise.all(uploadPromises);
+                newPhotoUrls = results.map(r => r.url);
+            }
+        }
+
+        // Merge: existing first, new appended, cap at 10
+        const allPhotos = [...existingPhotos, ...newPhotoUrls].slice(0, 10);
+
+        // Upload featured image if replaced
+        let featuredImg = existing_img || null;
+        if (req.files && Array.isArray(req.files)) {
+            const imgFile = req.files.find(f => f.fieldname === 'img');
+            if (imgFile) {
+                const result = await uploadBufferToCloudinary(imgFile.buffer, 'house_images');
+                featuredImg = result.url;
+            }
+        }
+
         const sanitizedFree = sanitizeJSONInput(amenities_free);
         const sanitizedPaid = sanitizeJSONInput(amenities_paid);
 
@@ -191,14 +205,20 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
         };
         const computedBarangay = extractBarangay(location, req.body.barangay);
 
-        await pool.query(
+        // Keep img_1/2/3 in sync for backwards compatibility
+        const img_1 = allPhotos[0] || null;
+        const img_2 = allPhotos[1] || null;
+        const img_3 = allPhotos[2] || null;
+
+        await connection.query(
             `UPDATE boarding_houses 
              SET name = ?, img = ?, img_1 = ?, img_2 = ?, img_3 = ?, location = ?, barangay = ?, map_link = ?, price = ?, phone_contact = ?, description = ?,
                  latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?,
                  amenities_free = ?, amenities_paid = ?
              WHERE id = ? AND owner_id = ?`,
             [
-                house_name, img, img_1, img_2, img_3, location, computedBarangay, map_link, parseFloat(price) || 0, contact_number, description || '',
+                house_name, featuredImg, img_1, img_2, img_3, location, computedBarangay, map_link,
+                parseFloat(price) || 0, contact_number, description || '',
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
                 parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || 'refundable',
                 sanitizedFree, sanitizedPaid,
@@ -206,10 +226,27 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
             ]
         );
 
+        // Replace house_photos for this house
+        await connection.query('DELETE FROM house_photos WHERE house_id = ?', [req.params.id]);
+        for (let i = 0; i < allPhotos.length; i++) {
+            await connection.query(
+                'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                [req.params.id, allPhotos[i], i]
+            );
+        }
+
+        // Keep room prices in sync
+        await connection.query('UPDATE rooms SET price = ? WHERE house_id = ?',
+            [parseFloat(price) || 0, req.params.id]);
+
+        await connection.commit();
         res.json({ success: true, message: 'Property details updated successfully.' });
     } catch (err) {
+        await connection.rollback();
         console.error('Update details error:', err.message);
         res.status(500).json({ success: false, message: 'Database failed to save updates.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -266,6 +303,228 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, r
 
         res.json({ success: true, message: 'Room created successfully.' });
     } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// F1. PUT - Edit an existing room
+router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        const { room_number, gender_type, capacity } = req.body;
+
+        // Verify room belongs to owner's house
+        const [roomRows] = await pool.query(
+            `SELECT r.id, r.house_id 
+             FROM rooms r 
+             JOIN boarding_houses bh ON r.house_id = bh.id 
+             WHERE r.id = ? AND bh.owner_id = ?`,
+            [req.params.roomId, req.user.id]
+        );
+
+        if (roomRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
+        }
+
+        await pool.query(
+            `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ? WHERE id = ?`,
+            [room_number, gender_type || 'female', parseInt(capacity) || 1, req.params.roomId]
+        );
+
+        res.json({ success: true, message: 'Room details updated successfully.' });
+    } catch (err) {
+        console.error('Edit room error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// F2. DELETE - Delete a room (Guarded against rooms with active boarders)
+router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        // Verify ownership
+        const [roomRows] = await pool.query(
+            `SELECT r.id, r.house_id 
+             FROM rooms r 
+             JOIN boarding_houses bh ON r.house_id = bh.id 
+             WHERE r.id = ? AND bh.owner_id = ?`,
+            [req.params.roomId, req.user.id]
+        );
+
+        if (roomRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
+        }
+
+        // Check if active occupants exist
+        const [occupantRows] = await pool.query(
+            `SELECT COUNT(*) as count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
+            [req.params.roomId]
+        );
+
+        if (occupantRows[0].count > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.'
+            });
+        }
+
+        await pool.query('DELETE FROM rooms WHERE id = ?', [req.params.roomId]);
+
+        res.json({ success: true, message: 'Room deleted successfully.' });
+    } catch (err) {
+        console.error('Delete room error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// =========================================================================
+// BOARDING HOUSE REMOVAL ENDPOINT
+// =========================================================================
+
+// DELETE - Remove a boarding house (Guarded against houses with active occupants)
+router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Verify the house belongs to this owner
+        const [houseRows] = await connection.query(
+            'SELECT id, name FROM boarding_houses WHERE id = ? AND owner_id = ?',
+            [req.params.houseId, req.user.id]
+        );
+
+        if (houseRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Boarding house not found or unauthorized action.' });
+        }
+
+        // Guard: block removal if any room has active occupants
+        const [activeOccupants] = await connection.query(
+            `SELECT COUNT(*) AS count
+             FROM occupants o
+             JOIN rooms r ON o.room_id = r.id
+             WHERE r.house_id = ? AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
+            [req.params.houseId]
+        );
+
+        if (activeOccupants[0].count > 0) {
+            await connection.rollback();
+            return res.status(400).json({
+                success: false,
+                message: `Cannot remove this boarding house. There are ${activeOccupants[0].count} active occupant(s) still residing. Please check them out first.`
+            });
+        }
+
+        // Hard delete — ON DELETE CASCADE handles rooms, bookings, checklist data, etc.
+        await connection.query('DELETE FROM boarding_houses WHERE id = ? AND owner_id = ?', [req.params.houseId, req.user.id]);
+
+        await connection.commit();
+        res.json({ success: true, message: 'Boarding house removed successfully.' });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Remove boarding house error:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to remove boarding house. Please try again.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// F1. PUT - Edit an existing room
+router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        const { room_number, gender_type, capacity } = req.body;
+        const roomId = parseInt(req.params.roomId);
+
+        if (!room_number || !room_number.toString().trim()) {
+            return res.status(400).json({ success: false, message: 'Room number is required.' });
+        }
+
+        const parsedCapacity = parseInt(capacity);
+        if (!parsedCapacity || parsedCapacity < 1) {
+            return res.status(400).json({ success: false, message: 'Capacity must be at least 1.' });
+        }
+
+        // Verify room belongs to owner's house
+        const [roomRows] = await pool.query(
+            `SELECT r.id, r.house_id 
+             FROM rooms r 
+             JOIN boarding_houses bh ON r.house_id = bh.id 
+             WHERE r.id = ? AND bh.owner_id = ?`,
+            [roomId, req.user.id]
+        );
+
+        if (roomRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
+        }
+
+        const houseId = roomRows[0].house_id;
+
+        // Guard: prevent duplicate room number within the same house (excluding this room itself)
+        const [duplicateRows] = await pool.query(
+            `SELECT id FROM rooms WHERE house_id = ? AND room_number = ? AND id != ?`,
+            [houseId, room_number.toString().trim(), roomId]
+        );
+
+        if (duplicateRows.length > 0) {
+            return res.status(409).json({ success: false, message: `Room number "${room_number}" already exists in this property. Please use a different number.` });
+        }
+
+        // Guard: new capacity cannot be less than current active occupant count
+        const [occupantCount] = await pool.query(
+            `SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
+            [roomId]
+        );
+        if (parsedCapacity < occupantCount[0].count) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot set capacity to ${parsedCapacity}. This room currently has ${occupantCount[0].count} active occupant(s).`
+            });
+        }
+
+        await pool.query(
+            `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ? WHERE id = ?`,
+            [room_number.toString().trim(), gender_type || 'female', parsedCapacity, roomId]
+        );
+
+        res.json({ success: true, message: 'Room details updated successfully.' });
+    } catch (err) {
+        console.error('Edit room error:', err.message);
+        res.status(500).json({ success: false, message: 'Database error while updating room. Please try again.' });
+    }
+});
+
+// F2. DELETE - Delete a room (Guarded against rooms with active boarders)
+router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        // Verify ownership
+        const [roomRows] = await pool.query(
+            `SELECT r.id, r.house_id 
+             FROM rooms r 
+             JOIN boarding_houses bh ON r.house_id = bh.id 
+             WHERE r.id = ? AND bh.owner_id = ?`,
+            [req.params.roomId, req.user.id]
+        );
+
+        if (roomRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
+        }
+
+        // Check if active occupants exist
+        const [occupantRows] = await pool.query(
+            `SELECT COUNT(*) as count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
+            [req.params.roomId]
+        );
+
+        if (occupantRows[0].count > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.'
+            });
+        }
+
+        await pool.query('DELETE FROM rooms WHERE id = ?', [req.params.roomId]);
+
+        res.json({ success: true, message: 'Room deleted successfully.' });
+    } catch (err) {
+        console.error('Delete room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -442,7 +701,7 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, asy
                 'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [
                     student_id,
-                    `NOTICE: Your residency at "${house_name}" has been checked out by the property owner/administrator. We hope you had a comfortable stay.`
+                    `NOTICE: Your residency at "${house_name}" has been checked out by the property owner. We hope you had a comfortable stay.`
                 ]
             );
             console.log(`[CHECKOUT] Notification dispatched => student_id=${student_id}, house="${house_name}"`);

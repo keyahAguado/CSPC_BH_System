@@ -22,6 +22,13 @@ const advanceMonths = ref(1);
 const depositMonths = ref(1);
 const depositType = ref('refundable');
 
+const barangaysList = ref([
+  'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
+  'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
+  'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
+  'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
+]);
+
 // Amenities configurations 
 const freeAmenities = ref(['Wi-Fi', '24/7 Water', 'CCTV', 'Electric Fan', 'Caretaker', 'Study Area', 'Visitor Area', 'Fire Exit']);
 const paidAmenities = ref(['Aircon', 'Laundry', 'Parking', 'Refrigerator', 'Electricity', 'Water Bill', 'Balcony', 'Kitchen Use']);
@@ -241,22 +248,70 @@ const updateCoords = (lat, lng) => {
   }
 };
 
-const extractCoords = (url) => {
-  if (!url) return;
+const isResolvingMap = ref(false);
+
+const extractCoordsFromString = (text) => {
+  if (!text) return false;
+  const rawUrl = String(text).trim();
+  let decoded = rawUrl;
+  try { decoded = decodeURIComponent(rawUrl); } catch (e) {}
+
   const regexArr = [
     /@(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /query=(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /q=(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/
+    /[?&]query=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /!3d(-?\d+\.\d+).*?!4d(-?\d+\.\d+)/,
+    /3d(-?\d+\.\d+).*?4d(-?\d+\.\d+)/,
+    /[?&]q=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /[?&]ll=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/,
+    /place\/[^\/]*\/@?(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/,
+    /(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/
   ];
 
-  for (const regex of regexArr) {
-    const match = url.match(regex);
-    if (match) {
-      const lat = parseFloat(match[1]);
-      const lng = parseFloat(match[2]);
-      updateCoords(lat, lng);
-      return;
+  for (const textToTest of [rawUrl, decoded]) {
+    for (const regex of regexArr) {
+      const match = textToTest.match(regex);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          updateCoords(lat, lng);
+          reverseGeocode(lat, lng);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+};
+
+const isShortUrl = (url) => {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname;
+    return h === 'maps.app.goo.gl' || h === 'goo.gl';
+  } catch (e) { return false; }
+};
+
+const extractCoords = async (url) => {
+  if (!url) return;
+  const raw = String(url).trim();
+
+  if (extractCoordsFromString(raw)) return;
+
+  if (isShortUrl(raw)) {
+    isResolvingMap.value = true;
+    try {
+      const res = await axios.get('/api/utils/resolve-map-link', { params: { url: raw } });
+      if (res.data.success && res.data.resolvedUrl) {
+        if (!extractCoordsFromString(res.data.resolvedUrl)) {
+          console.warn('[MAP] Resolved URL has no extractable coordinates:', res.data.resolvedUrl);
+        }
+      }
+    } catch (err) {
+      console.error('[MAP] Failed to resolve short URL:', err.message);
+    } finally {
+      isResolvingMap.value = false;
     }
   }
 };
@@ -289,8 +344,36 @@ const reverseGeocode = (lat, lng) => {
   if (!googleInstance) return;
   const geocoder = new googleInstance.maps.Geocoder();
   geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-    if (status === "OK" && results[0]) {
-      locationAddress.value = results[0].formatted_address;
+    if (status === 'OK' && results && results.length > 0) {
+      // Find the most detailed result that isn't a pure Plus Code result
+      const target = results.find(r =>
+        r.formatted_address && !/^[A-Z0-9]{4,}\+[A-Z0-9]{2,}/.test(r.formatted_address.trim())
+      ) || results[0];
+
+      const components = target.address_components || [];
+      const get = (...types) => {
+        for (const type of types) {
+          const c = components.find(c => c.types.includes(type) && !c.types.includes('plus_code'));
+          if (c) return c.long_name;
+        }
+        return null;
+      };
+
+      // Philippine address order: street/route, barangay, municipality/city, province, country
+      const parts = [
+        get('street_number') && get('route') ? `${get('street_number')} ${get('route')}` : get('route'),
+        get('sublocality_level_1', 'sublocality', 'neighborhood'),  // Barangay
+        get('locality', 'administrative_area_level_3'),              // Municipality / City
+        get('administrative_area_level_2'),                          // Province
+        get('country')
+      ].filter(Boolean);
+
+      if (parts.length >= 2) {
+        locationAddress.value = parts.join(', ');
+      } else {
+        // Fallback: strip leading Plus Code segment
+        locationAddress.value = target.formatted_address.replace(/^[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s*/, '');
+      }
     }
   });
 };
@@ -368,7 +451,8 @@ const handlePhotosSelected = async (e) => {
     const processedFile = await transcodeHeicFile(file);
     selectedPhotos.value.push({
       file: processedFile,
-      previewUrl: URL.createObjectURL(processedFile)
+      previewUrl: URL.createObjectURL(processedFile),
+      dbValue: null
     });
   }
 };
@@ -412,9 +496,13 @@ const loadHouseDetails = async () => {
         }
 
         selectedPhotos.value = [];
-        if (houseData.img_1) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(houseData.img_1) });
-        if (houseData.img_2) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(houseData.img_2) });
-        if (houseData.img_3) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(houseData.img_3) });
+        // Load from house_photos table (up to 10), fall back to img_1/2/3 if empty
+        const photosFromServer = response.data.photos || [];
+        const legacyPhotos = [houseData.img_1, houseData.img_2, houseData.img_3].filter(Boolean);
+        const photoList = photosFromServer.length > 0 ? photosFromServer : legacyPhotos;
+        photoList.forEach(url => {
+          selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(url), dbValue: url });
+        });
 
         selectedFreeAmenities.value = parseAmenities(houseData.amenities_free);
         selectedPaidAmenities.value = parseAmenities(houseData.amenities_paid);
@@ -474,30 +562,16 @@ const handleSubmit = async () => {
       formData.append('existing_img', mainImageOnRecord.value);
     }
 
-    const photosToProcess = selectedPhotos.value.slice(0, 3);
-    let existing_img_1 = '';
-    let existing_img_2 = '';
-    let existing_img_3 = '';
+    // Send existing photo URLs as JSON array
+    const existingPhotos = selectedPhotos.value.filter(p => !p.file).map(p => p.dbValue || '').filter(Boolean);
+    formData.append('existing_photos', JSON.stringify(existingPhotos));
 
-    photosToProcess.forEach((p, idx) => {
-      const fieldNum = idx + 1;
-      if (!p.file) {
-        const urlParts = p.previewUrl.split('/');
-        const filename = urlParts[urlParts.length - 1];
-        
-        if (filename && !filename.startsWith('blob:')) {
-            if (fieldNum === 1) existing_img_1 = filename;
-            if (fieldNum === 2) existing_img_2 = filename;
-            if (fieldNum === 3) existing_img_3 = filename;
-        }
-      } else {
-         formData.append(`img_${fieldNum}`, p.file);
+    // Send new photo files individually
+    selectedPhotos.value.forEach((p, idx) => {
+      if (p.file) {
+        formData.append(`new_photo_${idx}`, p.file);
       }
     });
-
-    formData.append('existing_img_1', existing_img_1);
-    formData.append('existing_img_2', existing_img_2);
-    formData.append('existing_img_3', existing_img_3);
 
     const response = await axios.post(`/api/owner/edit/${houseId.value}`, formData, {
       headers: {
@@ -648,6 +722,17 @@ onMounted(() => {
               </label>
               <input type="number" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
             </div>
+
+            <div>
+              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+                <i class="fa-solid fa-location-dot text-blue-600"></i>
+                Official Barangay (Nabua)
+              </label>
+              <select v-model="selectedBarangay" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm cursor-pointer">
+                <option value="">Select Official Barangay</option>
+                <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
+              </select>
+            </div>
             
             <!-- Advance & Deposit Policy -->
             <div class="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200">
@@ -745,31 +830,8 @@ onMounted(() => {
                   </div>
                 </div>
 
-                <!-- STEP C -->
-                <div class="pt-6 border-t border-slate-200/60">
-                  <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                      <div class="bg-slate-300 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-sm">C</div>
-                      <label class="text-[10px] sm:text-[11px] font-black text-slate-400 uppercase tracking-widest">Google Maps Link (Optional)</label>
-                    </div>
-                    <span class="text-[7px] sm:text-[8px] font-black text-slate-300 uppercase tracking-widest">Backup Method</span>
-                  </div>
-                  <div class="flex flex-col sm:flex-row gap-2">
-                    <input 
-                      type="text" 
-                      v-model="mapLink" 
-                      class="flex-1 bg-white/50 border border-slate-200 p-3 sm:p-4 rounded-2xl text-xs font-bold focus:bg-white focus:border-blue-400 outline-none transition" 
-                      placeholder="Paste Maps Link here..."
-                    />
-                    <button 
-                      type="button" 
-                      @click="extractCoords(mapLink)" 
-                      class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 sm:py-0 rounded-2xl text-[9px] font-black uppercase tracking-widest transition flex items-center justify-center gap-1"
-                    >
-                      Extract <i class="fa-solid fa-wand-magic-sparkles ml-1" />
-                    </button>
-                  </div>
-                </div>
+                <!-- Step C removed: Google Maps short link extraction was unreliable.
+                     Use GPS button or the Places search (Step A) instead. -->
               </div>
             </div>
 

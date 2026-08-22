@@ -2,8 +2,8 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
-
 import { getImageUrl } from '../../config/api';
+import { formatAddress } from '../../utils/formatAddress.js';
 
 // States
 const user = ref('');
@@ -62,24 +62,47 @@ const fetchDashboardData = async () => {
   }
 };
 
-const removeHouse = async (houseId) => {
-  if (!confirm('Are you sure you want to remove this boarding house? This action cannot be undone.')) {
-    return;
+// Confirmation States
+const showConfirmModal = ref(false);
+const confirmTitle = ref('');
+const confirmMessage = ref('');
+const confirmAction = ref(null);
+
+const triggerConfirm = (title, message, action) => {
+  confirmTitle.value = title;
+  confirmMessage.value = message;
+  confirmAction.value = action;
+  showConfirmModal.value = true;
+};
+
+const executeConfirm = async () => {
+  showConfirmModal.value = false;
+  if (confirmAction.value) {
+    await confirmAction.value();
+    confirmAction.value = null;
   }
+};
 
-  try {
-    const response = await axios.delete(`/api/owner/boarding-houses/${houseId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+const removeHouse = (houseId) => {
+  triggerConfirm(
+    'Confirm Removal',
+    'Are you sure you want to remove this boarding house? This action cannot be undone.',
+    async () => {
+      try {
+        const response = await axios.delete(`/api/owner/boarding-houses/${houseId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
 
-    if (response.data.success) {
-      showSystemAlert('Boarding house removed successfully.', 'success');
-      fetchDashboardData();
+        if (response.data.success) {
+          showSystemAlert('Boarding house removed successfully.', 'success');
+          fetchDashboardData();
+        }
+      } catch (error) {
+        console.error('Error removing boarding house:', error);
+        showSystemAlert(error.response?.data?.message || 'Failed to remove the boarding house. Please try again.', 'error');
+      }
     }
-  } catch (error) {
-    console.error('Error removing boarding house:', error);
-    showSystemAlert(error.response?.data?.message || 'Failed to remove the boarding house. Please try again.', 'error');
-  }
+  );
 };
 
 onMounted(() => {
@@ -200,7 +223,7 @@ onMounted(() => {
               <h2 class="font-black text-lg text-slate-900 leading-tight mb-1 uppercase tracking-tight">
                 {{ house.name }}
               </h2>
-              <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{{ house.location }}</p>
+              <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{{ formatAddress(house) }}</p>
             </div>
 
             <!-- Actions Panel -->
@@ -247,5 +270,20 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <!-- Custom Confirmation Modal -->
+    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+        <div class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
+        <p class="text-slate-500 text-xs font-bold leading-relaxed mb-6">{{ confirmMessage }}</p>
+        <div class="flex gap-3">
+          <button @click="executeConfirm" class="flex-1 bg-red-600 hover:bg-slate-900 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition shadow-md cursor-pointer">Remove</button>
+          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition cursor-pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

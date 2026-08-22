@@ -16,12 +16,23 @@ const newRoomNumber = ref('');
 const newGenderType = ref('female');
 const newCapacity = ref('');
 
+// Form states for editing room
+const showEditModal = ref(false);
+const editingRoomId = ref(null);
+const editRoomNumber = ref('');
+const editGenderType = ref('female');
+const editCapacity = ref('');
+
+// Delete confirmation modal states
+const showDeleteConfirmModal = ref(false);
+const deletingRoomId = ref(null);
+const deletingRoomNumber = ref('');
+
 const isLoading = ref(true);
 const isSubmitting = ref(false);
 const showAddModal = ref(false);
 const alertRef = ref(null);
 const token = localStorage.getItem('cspc_token');
-const API = import.meta.env.VITE_API_URL;
 
 const showSystemAlert = (message, type = 'error') => {
   if (alertRef.value) {
@@ -32,7 +43,6 @@ const showSystemAlert = (message, type = 'error') => {
 const fetchRooms = async () => {
   try {
     isLoading.value = true;
-    
     const houseId = route.params.id; 
 
     const response = await axios.get(`/api/owner/rooms/${houseId}`, {
@@ -86,6 +96,85 @@ const handleSaveRoom = async () => {
   } catch (error) {
     console.error('Failed to add room:', error);
     showSystemAlert(error.response?.data?.message || 'Failed to add new room.', 'error');
+  } finally {
+    isSubmitting.value = false;
+  }
+};
+
+// --- Edit Room ---
+const openEditModal = (room) => {
+  editingRoomId.value = room.id;
+  editRoomNumber.value = room.room_number;
+  editGenderType.value = room.gender_type;
+  editCapacity.value = room.capacity;
+  showEditModal.value = true;
+};
+
+const closeEditModal = () => {
+  showEditModal.value = false;
+  editingRoomId.value = null;
+};
+
+const handleUpdateRoom = async () => {
+  if (!editRoomNumber.value || !editCapacity.value) {
+    showSystemAlert('Please fill in all room details.', 'error');
+    return;
+  }
+
+  try {
+    isSubmitting.value = true;
+    const response = await axios.put(`/api/owner/rooms/edit/${editingRoomId.value}`, {
+      room_number: editRoomNumber.value,
+      gender_type: editGenderType.value,
+      capacity: editCapacity.value
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.data.success) {
+      showSystemAlert('Room details updated successfully!', 'success');
+      closeEditModal();
+      fetchRooms();
+    }
+  } catch (error) {
+    console.error('Failed to edit room:', error);
+    showSystemAlert(error.response?.data?.message || 'Failed to update room details.', 'error');
+  } finally {
+    isSubmitting.value = false;
+  }
+};
+
+// --- Delete Room ---
+const openDeleteModal = (room) => {
+  if (room.occupant_count > 0) {
+    showSystemAlert('Cannot delete room with active occupants. Please check out boarders first.', 'warning');
+    return;
+  }
+  deletingRoomId.value = room.id;
+  deletingRoomNumber.value = room.room_number;
+  showDeleteConfirmModal.value = true;
+};
+
+const closeDeleteModal = () => {
+  showDeleteConfirmModal.value = false;
+  deletingRoomId.value = null;
+};
+
+const handleDeleteRoom = async () => {
+  try {
+    isSubmitting.value = true;
+    const response = await axios.delete(`/api/owner/rooms/delete/${deletingRoomId.value}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.data.success) {
+      showSystemAlert(`Room ${deletingRoomNumber.value} removed successfully.`, 'success');
+      closeDeleteModal();
+      fetchRooms();
+    }
+  } catch (error) {
+    console.error('Failed to delete room:', error);
+    showSystemAlert(error.response?.data?.message || 'Failed to delete room.', 'error');
   } finally {
     isSubmitting.value = false;
   }
@@ -183,9 +272,17 @@ onMounted(() => {
                   <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
                   <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
                 </div>
-                <router-link :to="'/owner/rooms/details/' + room.id" class="w-full bg-[#2a528a] text-white text-[10px] font-black px-4 py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
-                  View Details
-                </router-link>
+                <div class="flex items-center gap-2 pt-2">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
+                    View
+                  </router-link>
+                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Edit
+                  </button>
+                  <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -195,9 +292,9 @@ onMounted(() => {
                 <thead>
                   <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
-                    <th class="px-8 py-5 text-center">Action</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
                     <th class="px-8 py-5 text-center">Current Status</th>
+                    <th class="px-8 py-5 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -208,11 +305,6 @@ onMounted(() => {
                   </tr>
                   <tr v-for="room in femaleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors group">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center">
-                      <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
-                        View Details
-                      </router-link>
-                    </td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
@@ -223,6 +315,19 @@ onMounted(() => {
                       <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
                       <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
                       <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                    </td>
+                    <td class="px-8 py-5 text-center">
+                      <div class="flex items-center justify-center gap-2">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
+                          Details
+                        </router-link>
+                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Edit
+                        </button>
+                        <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-100 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -260,9 +365,17 @@ onMounted(() => {
                   <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
                   <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
                 </div>
-                <router-link :to="'/owner/rooms/details/' + room.id" class="w-full bg-[#2a528a] text-white text-[10px] font-black px-4 py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
-                  View Details
-                </router-link>
+                <div class="flex items-center gap-2 pt-2">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
+                    View
+                  </router-link>
+                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Edit
+                  </button>
+                  <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -272,9 +385,9 @@ onMounted(() => {
                 <thead>
                   <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
-                    <th class="px-8 py-5 text-center">Action</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
                     <th class="px-8 py-5 text-center">Current Status</th>
+                    <th class="px-8 py-5 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -285,11 +398,6 @@ onMounted(() => {
                   </tr>
                   <tr v-for="room in maleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center">
-                      <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
-                        View Details
-                      </router-link>
-                    </td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
@@ -301,6 +409,19 @@ onMounted(() => {
                       <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
                       <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
                     </td>
+                    <td class="px-8 py-5 text-center">
+                      <div class="flex items-center justify-center gap-2">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
+                          Details
+                        </router-link>
+                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Edit
+                        </button>
+                        <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-100 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -310,7 +431,7 @@ onMounted(() => {
 
         <!-- Global Action Buttons -->
         <div class="mt-16 flex flex-wrap justify-center gap-6 pb-20">
-          <button @click="toggleAddModal" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black text-[12px] uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-black hover:shadow-none transition-all duration-300 flex items-center gap-3 active:scale-95 focus:outline-none">
+          <button @click="toggleAddModal" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black text-[12px] uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-black hover:shadow-none transition-all duration-300 flex items-center gap-3 active:scale-95 focus:outline-none cursor-pointer">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14" />
               <path d="M12 5v14" />
@@ -327,7 +448,7 @@ onMounted(() => {
       <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
         <div class="flex justify-between items-center mb-8">
           <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Add New Room</h2>
-          <button @click="toggleAddModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none">
+          <button @click="toggleAddModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
@@ -348,10 +469,67 @@ onMounted(() => {
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
             <input v-model="newCapacity" type="number" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
-          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50">
+          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
             {{ isSubmitting ? 'Saving Room...' : 'Save Room' }}
           </button>
         </form>
+      </div>
+    </div>
+
+    <!-- ===== Edit Room Modal ===== -->
+    <div v-show="showEditModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+      <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Edit Room Details</h2>
+          <button @click="closeEditModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <form @submit.prevent="handleUpdateRoom" class="space-y-6">
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
+            <input v-model="editRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gender Specification</label>
+            <select v-model="editGenderType" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+              <option value="female">Female's Room</option>
+              <option value="male">Male's Room</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
+            <input v-model="editCapacity" type="number" min="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+          </div>
+          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
+            {{ isSubmitting ? 'Updating Room...' : 'Update Room' }}
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ===== Delete Room Confirmation Modal ===== -->
+    <div v-if="showDeleteConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+        <div class="text-red-500 mb-4 flex justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Delete Room {{ deletingRoomNumber }}?</h3>
+        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
+          Are you sure you want to remove this room from your property? This action cannot be undone.
+        </p>
+        
+        <div class="flex gap-3">
+          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 disabled:opacity-50 cursor-pointer">
+            {{ isSubmitting ? 'Deleting...' : 'Delete Room' }}
+          </button>
+          <button @click="closeDeleteModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
 

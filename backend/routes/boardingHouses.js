@@ -1,26 +1,13 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
+import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
 
 const router = express.Router();
 
-// 1. Configure Multer for File Uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'public/uploads/'),
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 10 * 1024 * 1024 }
-});
-
-const uploadAccreditationFiles = upload.fields([
+// Multer using memory storage — files buffered in RAM, then streamed to Cloudinary
+const uploadAccreditationFiles = memoryUpload.fields([
     { name: 'permit_business_form', maxCount: 1 },
     { name: 'permit_cedula', maxCount: 1 },
     { name: 'permit_dti', maxCount: 1 },
@@ -32,6 +19,15 @@ const uploadAccreditationFiles = upload.fields([
     { name: 'house_img', maxCount: 1 },
     { name: 'house_photos', maxCount: 10 }
 ]);
+
+// Helper: upload a single named field buffer to Cloudinary, return URL or fallback
+const uploadField = async (files, fieldName, folder) => {
+    if (files && files[fieldName] && files[fieldName][0]) {
+        const result = await uploadBufferToCloudinary(files[fieldName][0].buffer, folder);
+        return result.url;
+    }
+    return null;
+};
 
 // 2. [GET] - Retrieve all accredited boarding houses (Public)
 router.get('/accredited', async (req, res) => {
@@ -196,7 +192,7 @@ router.get('/documents', authenticateToken, async (req, res) => {
 });
 
 // 6. [POST] - Update a single legal document dynamically (Standard or Custom)
-router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), async (req, res) => {
+router.post('/documents/update/:id', authenticateToken, memoryUpload.single('permit_file'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -209,13 +205,15 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             return res.status(400).json({ success: false, message: 'Please select a file.' });
         }
 
-        const filename = req.file.filename;
+        // Upload to Cloudinary
+        const uploadResult = await uploadBufferToCloudinary(req.file.buffer, 'permits');
+        const fileUrl = uploadResult.url;
         let reqLabel = '';
 
         // Safe Date Parsing: Converts empty strings to NULL to prevent MySQL Strict Mode errors
         const parsedExpiryDate = (expiry_date && expiry_date.trim() !== '') ? expiry_date : null;
 
-        console.log(`[DOC UPDATE] Received => house_id: ${houseId}, identifier: "${identifier}", is_custom: ${is_custom}, file: "${filename}"`);
+        console.log(`[DOC UPDATE] Received => house_id: ${houseId}, identifier: "${identifier}", is_custom: ${is_custom}, file: "${fileUrl}"`);
 
         // Fetch current status of the boarding house to execute conditional status transitions
         const [houseCheck] = await connection.query(
@@ -253,12 +251,12 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             if (existingDoc.length > 0) {
                 await connection.query(
                     'UPDATE house_documents SET file_path = ?, expiry_date = ? WHERE house_id = ? AND criteria_id = ?',
-                    [filename, parsedExpiryDate, houseId, criteriaId]
+                    [fileUrl, parsedExpiryDate, houseId, criteriaId]
                 );
             } else {
                 await connection.query(
                     'INSERT INTO house_documents (house_id, criteria_id, file_path, expiry_date) VALUES (?, ?, ?, ?)',
-                    [houseId, criteriaId, filename, parsedExpiryDate]
+                    [houseId, criteriaId, fileUrl, parsedExpiryDate]
                 );
             }
 
@@ -294,7 +292,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
                 `UPDATE boarding_houses 
                  SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, document_update_pending = 1, last_updated_document = ? 
                  WHERE id = ? AND owner_id = ?`,
-                [filename, parsedExpiryDate, targetStatus, identifier, houseId, req.user.id]
+                [fileUrl, parsedExpiryDate, targetStatus, identifier, houseId, req.user.id]
             );
 
             const labels = {
@@ -363,15 +361,26 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             amenities_free, amenities_paid, existing_photos
         } = req.body;
 
-        const getFilename = (fieldName) => {
-            return req.files && req.files[fieldName] ? req.files[fieldName][0].filename : null;
+        // Upload a field buffer to Cloudinary; returns the URL or null if no new file
+        const uploadField = async (fieldName, folder) => {
+            if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
+                const result = await uploadBufferToCloudinary(req.files[fieldName][0].buffer, folder);
+                return result.url;
+            }
+            return null;
         };
 
         const getExpiry = (fieldName) => req.body[`expiry_permit_${fieldName}`] || null;
 
-        const uploadedPhotos = req.files && req.files['house_photos'] ? req.files['house_photos'].map(f => f.filename) : [];
+        // Upload all house photos to Cloudinary concurrently in parallel
+        let uploadedPhotoUrls = [];
+        if (req.files && req.files['house_photos'] && req.files['house_photos'].length > 0) {
+            const photoPromises = req.files['house_photos'].map(f => uploadBufferToCloudinary(f.buffer, 'house_photos'));
+            const uploadResults = await Promise.all(photoPromises);
+            uploadedPhotoUrls = uploadResults.map(res => res.url);
+        }
         const parsedExistingPhotos = existing_photos ? JSON.parse(existing_photos) : [];
-        const combinedPhotos = [...parsedExistingPhotos, ...uploadedPhotos];
+        const combinedPhotos = [...parsedExistingPhotos, ...uploadedPhotoUrls];
 
         // Sanitize amenities input
         const sanitizedFree = sanitizeJSONInput(amenities_free);
@@ -389,31 +398,31 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             }
 
             const existingHouse = existingRows[0];
-            const house_img = getFilename('house_img') || existingHouse.img;
+            const house_img = (await uploadField('house_img', 'house_images')) || existingHouse.img;
 
             const img_1 = combinedPhotos[0] || null;
             const img_2 = combinedPhotos[1] || null;
             const img_3 = combinedPhotos[2] || null;
 
-            const permit_business_form = getFilename('permit_business_form') || existingHouse.permit_business_form;
-            const permit_cedula = getFilename('permit_cedula') || existingHouse.permit_cedula;
-            const permit_dti = getFilename('permit_dti') || existingHouse.permit_dti;
-            const permit_barangay = getFilename('permit_barangay') || existingHouse.permit_barangay;
-            const permit_building = getFilename('permit_building') || existingHouse.permit_building;
-            const permit_zoning = getFilename('permit_zoning') || existingHouse.permit_zoning;
-            const permit_sanitary = getFilename('permit_sanitary') || existingHouse.permit_sanitary;
-            const permit_fire = getFilename('permit_fire') || existingHouse.permit_fire;
+            const permit_business_form = (await uploadField('permit_business_form', 'permits')) || existingHouse.permit_business_form;
+            const permit_cedula        = (await uploadField('permit_cedula', 'permits'))         || existingHouse.permit_cedula;
+            const permit_dti           = (await uploadField('permit_dti', 'permits'))            || existingHouse.permit_dti;
+            const permit_barangay      = (await uploadField('permit_barangay', 'permits'))       || existingHouse.permit_barangay;
+            const permit_building      = (await uploadField('permit_building', 'permits'))       || existingHouse.permit_building;
+            const permit_zoning        = (await uploadField('permit_zoning', 'permits'))         || existingHouse.permit_zoning;
+            const permit_sanitary      = (await uploadField('permit_sanitary', 'permits'))       || existingHouse.permit_sanitary;
+            const permit_fire          = (await uploadField('permit_fire', 'permits'))           || existingHouse.permit_fire;
 
             const parseDate = (val) => val ? new Date(val) : null;
 
             const expiry_permit_business_form = getExpiry('business_form') ? parseDate(getExpiry('business_form')) : existingHouse.expiry_permit_business_form;
-            const expiry_permit_cedula = getExpiry('cedula') ? parseDate(getExpiry('cedula')) : existingHouse.expiry_permit_cedula;
-            const expiry_permit_dti = getExpiry('dti') ? parseDate(getExpiry('dti')) : existingHouse.expiry_permit_dti;
-            const expiry_permit_barangay = getExpiry('barangay') ? parseDate(getExpiry('barangay')) : existingHouse.expiry_permit_barangay;
-            const expiry_permit_building = getExpiry('building') ? parseDate(getExpiry('building')) : existingHouse.expiry_permit_building;
-            const expiry_permit_zoning = getExpiry('zoning') ? parseDate(getExpiry('zoning')) : existingHouse.expiry_permit_zoning;
-            const expiry_permit_sanitary = getExpiry('sanitary') ? parseDate(getExpiry('sanitary')) : existingHouse.expiry_permit_sanitary;
-            const expiry_permit_fire = getExpiry('fire') ? parseDate(getExpiry('fire')) : existingHouse.expiry_permit_fire;
+            const expiry_permit_cedula        = getExpiry('cedula')        ? parseDate(getExpiry('cedula'))        : existingHouse.expiry_permit_cedula;
+            const expiry_permit_dti           = getExpiry('dti')           ? parseDate(getExpiry('dti'))           : existingHouse.expiry_permit_dti;
+            const expiry_permit_barangay      = getExpiry('barangay')      ? parseDate(getExpiry('barangay'))      : existingHouse.expiry_permit_barangay;
+            const expiry_permit_building      = getExpiry('building')      ? parseDate(getExpiry('building'))      : existingHouse.expiry_permit_building;
+            const expiry_permit_zoning        = getExpiry('zoning')        ? parseDate(getExpiry('zoning'))        : existingHouse.expiry_permit_zoning;
+            const expiry_permit_sanitary      = getExpiry('sanitary')      ? parseDate(getExpiry('sanitary'))      : existingHouse.expiry_permit_sanitary;
+            const expiry_permit_fire          = getExpiry('fire')          ? parseDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
             await pool.query(
                 `UPDATE boarding_houses 
@@ -438,6 +447,15 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 ]
             );
 
+            // Sync all photos into house_photos table
+            await pool.query('DELETE FROM house_photos WHERE house_id = ?', [house_id]);
+            for (let i = 0; i < combinedPhotos.length; i++) {
+                await pool.query(
+                    'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                    [house_id, combinedPhotos[i], i]
+                );
+            }
+
             return res.json({
                 success: true,
                 message: 'Accreditation application updated successfully!',
@@ -446,15 +464,15 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         }
 
         // ================= CASE B: NEW REGISTRATION =================
-        const permit_business_form = getFilename('permit_business_form');
-        const permit_cedula = getFilename('permit_cedula');
-        const permit_dti = getFilename('permit_dti');
-        const permit_barangay = getFilename('permit_barangay');
-        const permit_building = getFilename('permit_building');
-        const permit_zoning = getFilename('permit_zoning');
-        const permit_sanitary = getFilename('permit_sanitary');
-        const permit_fire = getFilename('permit_fire');
-        const house_img = getFilename('house_img');
+        const house_img        = await uploadField('house_img', 'house_images');
+        const permit_business_form = await uploadField('permit_business_form', 'permits');
+        const permit_cedula        = await uploadField('permit_cedula', 'permits');
+        const permit_dti           = await uploadField('permit_dti', 'permits');
+        const permit_barangay      = await uploadField('permit_barangay', 'permits');
+        const permit_building      = await uploadField('permit_building', 'permits');
+        const permit_zoning        = await uploadField('permit_zoning', 'permits');
+        const permit_sanitary      = await uploadField('permit_sanitary', 'permits');
+        const permit_fire          = await uploadField('permit_fire', 'permits');
 
         const img_1 = combinedPhotos[0] || null;
         const img_2 = combinedPhotos[1] || null;
@@ -478,27 +496,32 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 permit_business_form, permit_cedula, permit_dti, permit_barangay,
                 permit_building, permit_zoning, permit_sanitary, permit_fire,
                 getExpiry('business_form') ? new Date(getExpiry('business_form')) : null,
-                getExpiry('cedula') ? new Date(getExpiry('cedula')) : null,
-                getExpiry('dti') ? new Date(getExpiry('dti')) : null,
-                getExpiry('barangay') ? new Date(getExpiry('barangay')) : null,
-                getExpiry('building') ? new Date(getExpiry('building')) : null,
-                getExpiry('zoning') ? new Date(getExpiry('zoning')) : null,
-                getExpiry('sanitary') ? new Date(getExpiry('sanitary')) : null,
-                getExpiry('fire') ? new Date(getExpiry('fire')) : null,
+                getExpiry('cedula')        ? new Date(getExpiry('cedula'))        : null,
+                getExpiry('dti')           ? new Date(getExpiry('dti'))           : null,
+                getExpiry('barangay')      ? new Date(getExpiry('barangay'))      : null,
+                getExpiry('building')      ? new Date(getExpiry('building'))      : null,
+                getExpiry('zoning')        ? new Date(getExpiry('zoning'))        : null,
+                getExpiry('sanitary')      ? new Date(getExpiry('sanitary'))      : null,
+                getExpiry('fire')          ? new Date(getExpiry('fire'))          : null,
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
                 parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || null
             ]
         );
 
-        // ─── NEW: NOTIFY ALL ADMINS OF NEW ACCREDITATION APPLICATION ───
+        const newHouseId = result.insertId;
+        for (let i = 0; i < combinedPhotos.length; i++) {
+            await pool.query(
+                'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                [newHouseId, combinedPhotos[i], i]
+            );
+        }
+
+        // Notify all admins of new accreditation application
         try {
             const [admins] = await pool.query("SELECT id FROM users WHERE role = 'admin'");
             const adminMessage = `SYSTEM: A new boarding house application "${house_name}" has been submitted for accreditation review.`;
             for (const admin of admins) {
-                await pool.query(
-                    'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                    [admin.id, adminMessage]
-                );
+                await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [admin.id, adminMessage]);
             }
         } catch (notifErr) {
             console.error('Failed to notify admins of new application:', notifErr.message);

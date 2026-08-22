@@ -26,9 +26,24 @@ const EXPLICIT_BH_COLUMNS = `
 `;
 
 // Helper: Self-healing automatic backfill for missing barangay values using location field
+// Only fills houses where barangay is genuinely empty — never overrides owner-set values
 const autoBackfillBarangays = async () => {
     try {
-        const [houses] = await pool.query("SELECT id, location FROM boarding_houses WHERE barangay IS NULL OR barangay = ''");
+        // Correct any houses whose barangay was wrongly set by the old hardcoded backfill.
+        // These corrections are safe to run repeatedly — they only update specific rows.
+        const corrections = [
+            { namePattern: '%mikeah%', correctBarangay: 'San Miguel' },
+            { namePattern: '%rebecca%', correctBarangay: 'San Antonio' },
+        ];
+        for (const fix of corrections) {
+            await pool.query(
+                `UPDATE boarding_houses SET barangay = ? WHERE LOWER(name) LIKE ? AND barangay != ?`,
+                [fix.correctBarangay, fix.namePattern, fix.correctBarangay]
+            );
+        }
+
+        // Fill genuinely empty barangay fields from location string
+        const [houses] = await pool.query("SELECT id, name, location FROM boarding_houses WHERE barangay IS NULL OR barangay = ''");
         const knownBarangays = [
             'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
             'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
@@ -36,8 +51,10 @@ const autoBackfillBarangays = async () => {
             'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
         ];
         for (const h of houses) {
-            if (!h.location) continue;
-            const matched = knownBarangays.find(b => h.location.toLowerCase().includes(b.toLowerCase()));
+            let matched = null;
+            if (h.location) {
+                matched = knownBarangays.find(b => h.location.toLowerCase().includes(b.toLowerCase()));
+            }
             if (matched) {
                 await pool.query("UPDATE boarding_houses SET barangay = ? WHERE id = ?", [matched, h.id]);
             }
@@ -47,6 +64,13 @@ const autoBackfillBarangays = async () => {
     }
 };
 autoBackfillBarangays();
+
+// One-time correction: fix any houses whose barangay was incorrectly set by old backfill logic
+pool.query(`
+    UPDATE boarding_houses 
+    SET barangay = 'San Miguel' 
+    WHERE LOWER(name) LIKE '%mikeah%' AND (barangay IS NULL OR barangay != 'San Miguel')
+`).catch(e => console.error('[BARANGAY CORRECTION ERROR]:', e.message));
 
 
 // 1. GET - Retrieve Dashboard Statistics
@@ -59,10 +83,17 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             "SELECT COUNT(*) AS count FROM boarding_houses WHERE house_status = 'pending' OR document_update_pending = 1"
         );
 
-        // CSPC student count: total registered student users in the database
-        const [[studentsRow]] = await pool.query(
-            "SELECT COUNT(*) AS count FROM users WHERE role = 'student'"
-        );
+        // CSPC student count: active CSPC student residents in accredited boarding houses
+        const [[studentsRow]] = await pool.query(`
+            SELECT COUNT(DISTINCT o.student_id) AS count
+            FROM occupants o
+            INNER JOIN rooms r ON o.room_id = r.id
+            INNER JOIN boarding_houses bh ON r.house_id = bh.id
+            WHERE bh.house_status = 'accredited'
+              AND o.student_id IS NOT NULL 
+              AND o.is_non_cspc = 0 
+              AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+        `);
 
         // Occupancy Rate: capacity of accredited rooms vs active occupants (unique CSPC + manual non-CSPC) in accredited houses
         const [[capacityRow]] = await pool.query(`
@@ -187,6 +218,7 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
 // 2. GET - Retrieve Pending Applications, Checklist criteria & results
 router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, res) => {
     try {
+        // Query 1: All houses that need attention
         const [applications] = await pool.query(`
             SELECT 
                 ${EXPLICIT_BH_COLUMNS},
@@ -196,11 +228,13 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
             WHERE bh.house_status = 'pending' OR bh.document_update_pending = 1
             ORDER BY bh.created_at DESC
         `);
-
+        // Query 2: ALL checklist criteria (both global 8 + any house-specific ones)
         const [dbCriteria] = await pool.query('SELECT * FROM checklist_criteria');
+        // Query 3: Which criteria were already verified (from previous admin reviews)
         const [checklistResults] = await pool.query('SELECT * FROM checklist_results WHERE is_verified = 1');
 
         // Fetch dynamic uploads
+        // Query 4: Any custom requirement files uploaded by owners
         const [dynamicDocs] = await pool.query(`
             SELECT hd.*, cc.label AS criteria_label 
             FROM house_documents hd
@@ -208,6 +242,7 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
         `);
 
         // Standard mapping dictionary matching standard database IDs (30-37) with standard permit file keys
+        // Post-processing: inject permit_key for the 8 standard criteria
         const standardKeys = {
             30: 'permit_business_form',
             31: 'permit_cedula',
@@ -395,7 +430,9 @@ router.get('/rooms/:houseId', authenticateToken, verifyAdmin, async (req, res) =
     try {
         const [rooms] = await pool.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS cspc_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 1 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS non_cspc_count
              FROM rooms r
              WHERE r.house_id = ?`,
             [req.params.houseId]
@@ -406,13 +443,15 @@ router.get('/rooms/:houseId', authenticateToken, verifyAdmin, async (req, res) =
     }
 });
 
-// 7. GET - Fetch occupants in a specific room
+// 7. GET - Fetch CSPC occupants in a specific room (admin only sees CSPC students)
 router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         const [occupants] = await pool.query(
             `SELECT o.*
              FROM occupants o
-             WHERE o.room_id = ? AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
+             WHERE o.room_id = ? 
+               AND o.is_non_cspc = 0
+               AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
             [req.params.roomId]
         );
         res.json({ success: true, occupants });
@@ -507,8 +546,8 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
         );
 
         // Notify owner only
-        await connection.query('INSERT INTO notifications (user_id, message, house_id) VALUES (?, ?, ?)',
-            [owner_id, `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`, houseId]);
+        await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+            [owner_id, `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`]);
 
         await connection.commit();
         res.json({ success: true });
@@ -750,6 +789,7 @@ router.post('/users/update/:id', authenticateToken, verifyAdmin, async (req, res
         }
 
         // 2. Perform conditional password updates safely
+        // Step 2A: If admin also typed a new password → hash it and save everything
         if (password && password.trim() !== '') {
             const saltRounds = 10;
             const hashedPass = await bcrypt.hash(password, saltRounds);
@@ -758,6 +798,7 @@ router.post('/users/update/:id', authenticateToken, verifyAdmin, async (req, res
                 [name, email, phone, hashedPass, id]
             );
         } else {
+            // Step 2B: No new password provided → update only profile fields, leave password untouched
             await pool.query(
                 "UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?",
                 [name, email, phone, id]
@@ -883,49 +924,81 @@ router.get('/reports/compliance', authenticateToken, verifyAdmin, async (req, re
     }
 });
 
-// GET - Emergency Student Residency Registry (filterable by barangay)
+        // GET - Emergency Student Residency Registry (filterable by barangay and boarding house)
 router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         await autoBackfillBarangays();
-        const { barangay } = req.query;
+        const { barangay, house_id } = req.query;
 
-        let barangayClause = '';
+        let whereClauses = [
+            "o.is_non_cspc = 0",
+            "o.student_id IS NOT NULL",
+            // Strictly active only — checked out today or earlier are excluded
+            "(o.check_out_date IS NULL OR o.check_out_date > CURDATE())",
+            "bh.house_status = 'accredited'"
+        ];
         let queryParams = [];
 
         if (barangay && barangay.trim() !== '' && barangay.toLowerCase() !== 'all') {
             const cleanBarangay = barangay.trim();
-            barangayClause = 'AND (bh.barangay = ? OR bh.location LIKE ?)';
-            queryParams = [cleanBarangay, `%${cleanBarangay}%`];
+            whereClauses.push('(bh.barangay = ? OR (bh.barangay IS NULL AND bh.location LIKE ?))');
+            queryParams.push(cleanBarangay, `%${cleanBarangay}%`);
         }
 
+        if (house_id && house_id.trim() !== '' && house_id.toLowerCase() !== 'all') {
+            whereClauses.push('bh.id = ?');
+            queryParams.push(house_id.trim());
+        }
+
+        const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
+        // Use ROW_NUMBER to deduplicate: if a student has multiple active occupancies
+        // (e.g. checked into a new BH before old one was checked out), keep only the most recent
         const [residents] = await pool.query(`
-            SELECT
-                o.id,
-                u.name AS resident_name,
-                u.email AS student_email,
-                u.sex,
-                u.course,
-                u.year_section AS year_level,
-                bh.name AS house_name,
-                bh.location AS house_location,
-                r.room_number,
-                o.check_in_date AS booking_date,
-                o.emergency_contact,
-                o.guardian_name
-            FROM occupants o
-            INNER JOIN rooms r ON o.room_id = r.id
-            INNER JOIN boarding_houses bh ON r.house_id = bh.id
-            INNER JOIN users u ON o.student_id = u.id
-            WHERE o.is_non_cspc = 0
-              AND o.student_id IS NOT NULL
-              AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
-              AND bh.house_status = 'accredited'
-              ${barangayClause}
-            ORDER BY bh.name ASC, u.name ASC
+            SELECT * FROM (
+                SELECT
+                    o.id,
+                    bh.id AS house_id,
+                    bh.name AS house_name,
+                    bh.location AS house_location,
+                    bh.barangay AS house_barangay,
+                    bh.phone_contact AS house_owner_phone,
+                    u.name AS resident_name,
+                    u.email AS student_email,
+                    u.phone AS student_phone,
+                    u.sex,
+                    u.course,
+                    u.year_section AS year_level,
+                    r.room_number,
+                    o.check_in_date AS booking_date,
+                    o.emergency_contact,
+                    o.guardian_name,
+                    ROW_NUMBER() OVER (PARTITION BY o.student_id ORDER BY o.check_in_date DESC, o.id DESC) AS rn
+                FROM occupants o
+                INNER JOIN rooms r ON o.room_id = r.id
+                INNER JOIN boarding_houses bh ON r.house_id = bh.id
+                INNER JOIN users u ON o.student_id = u.id
+                ${whereSql}
+            ) ranked
+            WHERE rn = 1
+            ORDER BY house_name ASC, resident_name ASC
         `, queryParams);
 
+        // Always return all accredited boarding houses for the filter dropdown
+        // AND so the frontend can show empty houses too
+        const [boardingHouses] = await pool.query(
+            "SELECT id, name, location, barangay FROM boarding_houses WHERE house_status = 'accredited' ORDER BY name ASC"
+        );
 
-        res.json({ success: true, residents });
+        res.json({
+            success: true,
+            residents,
+            boardingHouses,
+            summary: {
+                totalResidents: residents.length,
+                totalHouses: boardingHouses.length
+            }
+        });
     } catch (err) {
         console.error('[REPORT EMERGENCY REGISTRY ERROR]:', err.message);
         res.status(500).json({ success: false, message: 'Failed to load emergency registry.' });

@@ -51,6 +51,13 @@ const navigateTo = (path) => {
   sidebarOpen.value = false;
 };
 
+// Real-time notification updates
+let pollInterval = null;
+
+const handleNotificationEvent = () => {
+  fetchUnreadCount();
+};
+
 // Close sidebar on outside click
 const handleOutsideClick = (e) => {
   if (sidebarOpen.value && !e.target.closest('.mobile-sidebar') && !e.target.closest('.hamburger-btn')) {
@@ -60,10 +67,14 @@ const handleOutsideClick = (e) => {
 
 onMounted(() => {
   fetchUnreadCount();
+  pollInterval = setInterval(fetchUnreadCount, 2000);
+  window.addEventListener('notification-updated', handleNotificationEvent);
   document.addEventListener('click', handleOutsideClick);
 });
 
 onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval);
+  window.removeEventListener('notification-updated', handleNotificationEvent);
   document.removeEventListener('click', handleOutsideClick);
 });
 </script>

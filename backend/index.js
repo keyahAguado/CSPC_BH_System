@@ -13,7 +13,7 @@ import cron from 'node-cron';
 import { runComplianceCheck } from './config/complianceManager.js';
 
 
-// =========================================================================
+// ===================================================`======================
 // SECTION 2: ROUTER HANDLERS IMPORTS
 // =========================================================================
 import authRouter from './routes/auth.js';                    // Consolidated Authentication (JWT Login, Google SSO)
@@ -22,7 +22,6 @@ import studentRouter from './routes/student.js';                // Student Profi
 import ownerRouter from './routes/owner.js';                    // Owner Profile & file-handling actions
 import adminRouter from './routes/admin.js';                    // SASO Admin dashboard & accreditation checklist actions
 import notificationRouter from './routes/notifications.js';    // Real-time unread alerts & inbox manager
-
 import paymentRoutes from './routes/payment.js';
 
 const app = express();
@@ -84,10 +83,95 @@ app.use('/api/notifications', notificationRouter);
 
 app.use('/api/payment', paymentRoutes);
 
+// =========================================================================
+// UTILITY: Resolve Google Maps short URLs server-side
+// maps.app.goo.gl short links have no coordinates in them — they require
+// server-side redirect resolution since browsers block cross-origin redirects.
+// =========================================================================
+import https from 'https';
+import http from 'http';
+
+app.get('/api/utils/resolve-map-link', (req, res) => {
+    const { url } = req.query;
+    if (!url) {
+        return res.status(400).json({ success: false, message: 'Missing url parameter.' });
+    }
+
+    // Only allow Google Maps domains to prevent open-redirect abuse
+    const allowedHosts = ['maps.app.goo.gl', 'goo.gl', 'maps.google.com', 'www.google.com', 'google.com'];
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(url);
+    } catch (e) {
+        return res.status(400).json({ success: false, message: 'Invalid URL format.' });
+    }
+
+    if (!allowedHosts.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h))) {
+        return res.status(403).json({ success: false, message: 'Only Google Maps URLs are supported.' });
+    }
+
+    // Follow redirects up to 6 hops using GET to ensure Location headers are returned
+    const followRedirects = (currentUrl, hopsLeft, cb) => {
+        if (hopsLeft <= 0) return cb(null, currentUrl);
+
+        let parsed;
+        try { parsed = new URL(currentUrl); } catch (e) { return cb(e); }
+
+        const mod = parsed.protocol === 'https:' ? https : http;
+        const options = {
+            hostname: parsed.hostname,
+            path: parsed.pathname + parsed.search,
+            method: 'GET',
+            timeout: 8000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5'
+            }
+        };
+
+        const reqObj = mod.request(options, (r) => {
+            // Always consume the response body to free the socket
+            r.resume();
+            if ([301, 302, 303, 307, 308].includes(r.statusCode) && r.headers.location) {
+                let next = r.headers.location;
+                // Resolve relative redirects
+                if (next.startsWith('/')) {
+                    next = `${parsed.protocol}//${parsed.host}${next}`;
+                }
+                followRedirects(next, hopsLeft - 1, cb);
+            } else {
+                cb(null, currentUrl);
+            }
+        });
+        reqObj.on('error', (err) => cb(err));
+        reqObj.on('timeout', () => { reqObj.destroy(); cb(new Error('Timeout resolving URL.')); });
+        reqObj.end();
+    };
+
+    followRedirects(url, 6, (err, finalUrl) => {
+        if (err) {
+            console.error('[MAP RESOLVE ERROR]', err.message);
+            return res.status(502).json({ success: false, message: 'Could not resolve the map link. Please try again.' });
+        }
+        console.log(`[MAP RESOLVE] ${url} → ${finalUrl}`);
+        res.json({ success: true, resolvedUrl: finalUrl });
+    });
+});
+
 
 // B. Simple Connection Test Endpoint
 app.get('/api/test', (req, res) => {
     res.json({ success: true, message: "Hello from the CSPC Boarding House system backend API!" });
+});
+
+// C. OAuth Config Debug (shows what callback URL the server loaded — remove before production)
+app.get('/api/debug/oauth', (req, res) => {
+    res.json({
+        GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL || '(not set)',
+        FRONTEND_URL: process.env.FRONTEND_URL || '(not set)',
+        GOOGLE_CLIENT_ID_SET: !!process.env.GOOGLE_CLIENT_ID,
+    });
 });
 
 // C. Database Diagnostic Table Inspector

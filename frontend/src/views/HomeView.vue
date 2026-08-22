@@ -4,6 +4,7 @@ import axios from 'axios';
 import Header from '../components/partials/Header.vue';
 
 import { getImageUrl } from '../config/api';
+import { formatAddress } from '../utils/formatAddress.js';
 
 const houses = ref([]);
 const isLoading = ref(true);
@@ -135,7 +136,7 @@ onMounted(() => {
               </div>
               
               <p class="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-6 truncate">
-                <i class="fa-solid fa-location-dot mr-1"></i> {{ house.location }}
+                <i class="fa-solid fa-location-dot mr-1"></i> {{ formatAddress(house) }}
               </p>
     
               <button @click="toggleModal" class="mt-auto w-full bg-[#2a528a] text-white px-4 py-3 rounded-lg text-[9px] font-black tracking-[0.2em] uppercase hover:bg-black transition shadow-md focus:outline-none">
@@ -154,9 +155,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Footer -->
-    <footer class="py-8 bg-slate-900 text-center text-slate-500 border-t border-slate-800">
-      <p class="text-[9px] font-black uppercase tracking-[0.3em]">&copy; 2026 CSPC Boarding House System v1.0</p>
-    </footer>
+
   </div>
 </template>

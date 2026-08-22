@@ -28,6 +28,9 @@ const passwordForm = ref({
   newPassword: '',
   confirmPassword: ''
 });
+const showCurrentPassword = ref(false);
+const showNewPassword = ref(false);
+const showConfirmPassword = ref(false);
 const isUpdatingPassword = ref(false);
 
 const alertRef = ref(null);
@@ -96,6 +99,13 @@ const fetchProfile = async () => {
       if (data.profile_pic) {
         filePreview.value = getImageUrl(data.profile_pic);
       }
+
+      // Explicitly reset password form to prevent credential manager autofill bleeding across accounts
+      passwordForm.value = {
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      };
     }
   } catch (error) {
     console.error('Failed to load profile details:', error);
@@ -170,21 +180,26 @@ const handleChangePassword = async () => {
 
   try {
     isUpdatingPassword.value = true;
+    const payload = {
+      newPassword: passwordForm.value.newPassword
+    };
+    if (user.value.hasPassword) {
+      payload.currentPassword = passwordForm.value.currentPassword;
+    }
+
     const res = await axios.post(
       `/api/auth/change-password`,
-      {
-        currentPassword: passwordForm.value.currentPassword,
-        newPassword: passwordForm.value.newPassword
-      },
+      payload,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
     if (res.data.success) {
-      showSystemAlert('Your account password has been changed successfully.', 'success');
+      showSystemAlert(res.data.message || 'Your account password has been updated successfully.', 'success');
       passwordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' };
+      await fetchProfile();
     }
   } catch (e) {
-    showSystemAlert(e.response?.data?.message || 'Failed to update credentials. Please check your current password.', 'error');
+    showSystemAlert(e.response?.data?.message || 'Failed to update credentials. Please check your inputs.', 'error');
     console.error(e);
   } finally {
     isUpdatingPassword.value = false;
@@ -286,30 +301,61 @@ onMounted(() => {
               <h2 class="text-2xl font-black text-[#1e293b] uppercase tracking-tight">Security Credentials</h2>
             </div>
 
-            <form @submit.prevent="handleChangePassword" class="space-y-8 max-w-lg">
-              <div>
+            <!-- Google SSO Info Banner -->
+            <div v-if="user.isGoogleUser" class="mb-6 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-start gap-3">
+              <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Your account is connected to <strong>Google SSO</strong>. {{ user.hasPassword ? 'You can update your local password below anytime.' : 'Set a password below to enable manual Email + Password login as well.' }}</span>
+            </div>
+
+            <form @submit.prevent="handleChangePassword" autocomplete="off" class="space-y-6 max-w-lg">
+              <!-- Dummy fields to trap browser password manager autofill -->
+              <input type="text" name="prevent_autofill_user" class="hidden" tabindex="-1" autocomplete="off" />
+              <input type="password" name="prevent_autofill_pass" class="hidden" tabindex="-1" autocomplete="new-password" />
+
+              <!-- Current Password (Required whenever a password already exists) -->
+              <div v-if="user.hasPassword">
                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Current Password</label>
-                <input v-model="passwordForm.currentPassword" type="password" required 
-                  class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                <div class="relative">
+                  <input v-model="passwordForm.currentPassword" :type="showCurrentPassword ? 'text' : 'password'" required 
+                    name="current_password_field" autocomplete="new-password" placeholder="Enter your current password"
+                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                  <button type="button" @click="showCurrentPassword = !showCurrentPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                    <i :class="showCurrentPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">New Password</label>
-                <input v-model="passwordForm.newPassword" type="password" required 
-                  class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                <div class="relative">
+                  <input v-model="passwordForm.newPassword" :type="showNewPassword ? 'text' : 'password'" required 
+                    name="new_password_field" autocomplete="new-password" placeholder="At least 6 characters"
+                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                  <button type="button" @click="showNewPassword = !showNewPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                    <i :class="showNewPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Confirm New Password</label>
-                <input v-model="passwordForm.confirmPassword" type="password" required 
-                  class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                <div class="relative">
+                  <input v-model="passwordForm.confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" required 
+                    name="confirm_password_field" autocomplete="new-password" placeholder="Repeat new password"
+                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                  <button type="button" @click="showConfirmPassword = !showConfirmPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                    <i :class="showConfirmPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                  </button>
+                </div>
               </div>
 
               <div class="pt-6 flex justify-center">
                 <button type="submit" :disabled="isUpdatingPassword" 
                   class="bg-blue-600 hover:bg-black text-white font-black py-4 px-16 rounded-xl text-[11px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer">
                   <div v-if="isUpdatingPassword" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  {{ isUpdatingPassword ? 'Updating Password...' : 'Change Password' }}
+                  {{ isUpdatingPassword ? 'Saving Password...' : (user.hasPassword ? 'Update Password' : 'Create Account Password') }}
                 </button>
               </div>
             </form>

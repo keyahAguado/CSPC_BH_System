@@ -1,12 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { h } from 'vue'; // Statically imports render function utility for Placeholders
+import { h } from 'vue';
 
 // 1. Root & Auth Views
 import HomeView from '../views/HomeView.vue';
-import LoginOptions from '../views/student/LoginOptions.vue';
 import Login from '../views/student/Login.vue';
 import Register from '../views/student/Register.vue';
 import AuthSuccess from '../views/student/AuthSuccess.vue';
+import OwnerDetailsRegister from '../views/student/OwnerDetailsRegister.vue';
 
 // 2. Student Dashboard Views
 import StudentDashboard from '../views/student/StudentDashboard.vue';
@@ -41,7 +41,6 @@ import AdminUsers from '../views/admin/Users.vue';
 // 5. Shared Views
 import Notifications from '../views/Notifications.vue';
 
-// Fallback Placeholder for unbuilt Admin screens (Uses render functions to avoid runtime compilation crashes)
 const Placeholder = {
     render() {
         return h('div', {
@@ -54,30 +53,34 @@ const routes = [
     {
         path: '/',
         name: 'Home',
-        component: HomeView
-    },
-    {
-        path: '/login-options',
-        alias: '/users/login-options',
-        name: 'LoginOptions',
-        component: LoginOptions
+        component: HomeView,
+        meta: { title: 'Home' }
     },
     {
         path: '/login',
-        alias: '/users/login',
+        alias: ['/login-options', '/users/login', '/users/login-options'],
         name: 'Login',
-        component: Login
+        component: Login,
+        meta: { title: 'Sign In' }
     },
     {
         path: '/register',
         alias: '/users/register',
         name: 'Register',
-        component: Register
+        component: Register,
+        meta: { title: 'Student Registration' }
+    },
+    {
+        path: '/register/owner-details',
+        name: 'OwnerDetailsRegister',
+        component: OwnerDetailsRegister,
+        meta: { title: 'Landlord Onboarding' }
     },
     {
         path: '/auth-success',
         name: 'AuthSuccess',
-        component: AuthSuccess
+        component: AuthSuccess,
+        meta: { title: 'Authenticating' }
     },
 
     // Student Protected Routes 
@@ -85,36 +88,42 @@ const routes = [
         path: '/student/dashboard',
         alias: '/users/student/dashboard',
         name: 'StudentDashboard',
-        component: StudentDashboard
+        component: StudentDashboard,
+        meta: { title: 'Student Portal' }
     },
     {
         path: '/student/profile',
         alias: '/users/student/profile',
         name: 'StudentProfile',
-        component: StudentProfile
+        component: StudentProfile,
+        meta: { title: 'Student Profile' }
     },
     {
         path: '/student/house/:id',
         alias: '/users/student/house/:id',
         name: 'StudentHouseDetails',
-        component: StudentHouseDetails
+        component: StudentHouseDetails,
+        meta: { title: 'Property Details' }
     },
     {
         path: '/student/notifications',
         name: 'StudentNotifications',
-        component: Notifications
+        component: Notifications,
+        meta: { title: 'Student Notifications' }
     },
     {
         path: '/student/bookings',
         alias: '/users/student/bookings',
         name: 'StudentBookings',
-        component: StudentBookings
+        component: StudentBookings,
+        meta: { title: 'My Reservations' }
     },
     {
         path: '/student/book/:id',
         alias: '/users/student/book/:id',
         name: 'StudentBook',
-        component: StudentBook
+        component: StudentBook,
+        meta: { title: 'Reserve Room' }
     },
 
     // Owner Protected Routes 
@@ -122,19 +131,22 @@ const routes = [
         path: '/owner/dashboard',
         alias: '/users/owner/dashboard',
         name: 'OwnerDashboard',
-        component: OwnerDashboard
+        component: OwnerDashboard,
+        meta: { title: 'Landlord Dashboard' }
     },
     {
         path: '/owner/accreditation',
         alias: '/users/owner/accreditation',
         name: 'OwnerAccreditation',
-        component: OwnerAccreditation
+        component: OwnerAccreditation,
+        meta: { title: 'Property Accreditation Application' }
     },
     {
         path: '/owner/pending-review',
         alias: '/users/owner/pending-review',
         name: 'OwnerPendingReview',
-        component: OwnerPendingReview
+        component: OwnerPendingReview,
+        meta: { title: 'Accreditation Review Status' }
     },
     {
         path: '/owner/documents/:id?',
@@ -144,25 +156,29 @@ const routes = [
             '/users/owner/documents'
         ],
         name: 'OwnerDocuments',
-        component: OwnerDocuments
+        component: OwnerDocuments,
+        meta: { title: 'Legal Documents Management' }
     },
     {
         path: '/owner/bookings',
         alias: '/users/owner/bookings',
         name: 'OwnerBookings',
-        component: OwnerBookings
+        component: OwnerBookings,
+        meta: { title: 'Reservation Requests' }
     },
     {
         path: '/owner/edit/:id',
         alias: '/users/owner/edit/:id',
         name: 'OwnerEdit',
-        component: OwnerEdit
+        component: OwnerEdit,
+        meta: { title: 'Edit Boarding House' }
     },
     {
         path: '/owner/rooms/:id',
         alias: '/users/owner/rooms/:id',
         name: 'OwnerRooms',
-        component: OwnerRooms
+        component: OwnerRooms,
+        meta: { title: 'Manage Rooms & Pricing' }
     },
     {
         path: '/owner/rooms/details/:id',
@@ -172,31 +188,36 @@ const routes = [
             '/users/owner/view/:id'
         ],
         name: 'OwnerViewDetails',
-        component: OwnerViewDetails
+        component: OwnerViewDetails,
+        meta: { title: 'Room Details' }
     },
     {
         path: '/owner/notifications',
         alias: '/users/owner/notifications',
         name: 'OwnerNotifications',
-        component: Notifications
+        component: Notifications,
+        meta: { title: 'Landlord Notifications' }
     },
     {
         path: '/owner/profile',
         alias: '/users/owner/profile',
         name: 'OwnerProfile',
-        component: OwnerProfile
+        component: OwnerProfile,
+        meta: { title: 'Landlord Profile' }
     },
 
     // Admin Protected Routes
     {
         path: '/admin/dashboard',
         name: 'AdminDashboard',
-        component: AdminDashboard
+        component: AdminDashboard,
+        meta: { title: 'Admin Dashboard' }
     },
     {
         path: '/admin/pending-applications',
         name: 'AdminPendingApplications',
-        component: AdminPendingApplications
+        component: AdminPendingApplications,
+        meta: { title: 'Accreditation Applications' }
     },
     {
         path: '/admin/new-application',
@@ -205,49 +226,58 @@ const routes = [
     {
         path: '/admin/emergency-monitoring',
         name: 'AdminEmergencyMonitoring',
-        component: AdminEmergencyMonitoring
+        component: AdminEmergencyMonitoring,
+        meta: { title: 'Emergency Monitoring Registry' }
     },
     {
         path: '/admin/notifications',
         name: 'AdminNotifications',
-        component: Notifications
+        component: Notifications,
+        meta: { title: 'Admin Notifications' }
     },
     {
         path: '/admin/registered',
         name: 'AdminRegistered',
-        component: AdminRegistered
+        component: AdminRegistered,
+        meta: { title: 'Accredited Boarding Houses' }
     },
     {
         path: '/admin/archived',
         name: 'AdminArchived',
-        component: AdminArchived
+        component: AdminArchived,
+        meta: { title: 'Archived Properties' }
     },
     {
         path: '/admin/users',
         name: 'AdminUsers',
-        component: AdminUsers
+        component: AdminUsers,
+        meta: { title: 'User Account Management' }
     },
 
     // Dynamic Printable Reports Routes
     {
         path: '/admin/reports/masterlist',
         name: 'ReportMasterlist',
-        component: ReportMasterlist
+        component: ReportMasterlist,
+        meta: { title: 'Masterlist Audit Report' }
     },
     {
         path: '/admin/reports/compliance',
         name: 'ReportCompliance',
-        component: ReportCompliance
+        component: ReportCompliance,
+        meta: { title: 'Accreditation Compliance Audit' }
     },
     {
         path: '/admin/reports/emergency-registry',
         name: 'ReportEmergency',
-        component: ReportEmergency
+        component: ReportEmergency,
+        meta: { title: 'Emergency Residency Audit' }
     },
     {
         path: '/admin/reports/transactions',
         name: 'ReportTransactions',
-        component: ReportTransactions
+        component: ReportTransactions,
+        meta: { title: 'Reservation Transactions Audit' }
     }
 ];
 
@@ -256,8 +286,13 @@ const router = createRouter({
     routes
 });
 
-// ─── Global Navigation Guard 
-// ─── Global Navigation Guard 
+// ─── Global Title Guard ───────────────────────────────────────────
+router.afterEach((to) => {
+    const baseTitle = "CSPC's Boarding House System";
+    document.title = to.meta && to.meta.title ? `${to.meta.title} | ${baseTitle}` : baseTitle;
+});
+
+// ─── Global Navigation Guard ───────────────────────────────────────
 router.beforeEach((to, from, next) => {
     let user = null;
 
@@ -274,17 +309,21 @@ router.beforeEach((to, from, next) => {
     const token = localStorage.getItem('cspc_token');
     const isLoggedIn = !!(token && user);
 
+    // ─── OWNER ONBOARDING: always allow (no token yet at this point) ───
+    if (to.name === 'OwnerDetailsRegister') {
+        return next();
+    }
     // ─── ADMIN ROUTES: block completely if not logged in as admin ───
     if (to.path.startsWith('/admin/')) {
         if (!isLoggedIn || user.role !== 'admin') {
-            return next('/login');
+            return next('/login-options');
         }
         return next();
     }
 
     // ─── STUDENT ROUTES: block completely if not logged in as student ───
     if (to.path.startsWith('/student/') || to.path.startsWith('/users/student/')) {
-    
+
         const isGuestAllowed = to.name === 'StudentDashboard' || to.name === 'StudentHouseDetails';
 
         if (isGuestAllowed) {
@@ -292,22 +331,20 @@ router.beforeEach((to, from, next) => {
         }
 
         if (!isLoggedIn || user.role !== 'student') {
-            return next('/login');
+            return next('/login-options');
         }
         return next();
     }
 
-    // ─── OWNER ROUTES (your existing logic, now gated behind a login check first) ───
+    // ─── OWNER ROUTES ───────────────────────────────────────────────────
     if (to.path.startsWith('/owner/') || to.path.startsWith('/users/owner/')) {
         if (!isLoggedIn || user.role !== 'owner') {
-            return next('/login');
+            return next('/login-options');
         }
 
-        // Resolves any casing mismatches from backend database columns
         const houseStatus = user.houseStatus || user.house_status || 'none';
 
         if (to.name === 'OwnerAccreditation') {
-            // ─── SECURE ONBOARDING BYPASS ───
             if (to.query.new === 'true' || to.query.houseId) {
                 return next();
             }
@@ -341,7 +378,6 @@ router.beforeEach((to, from, next) => {
             return next();
         }
 
-        // Fallback Block
         if (houseStatus !== 'accredited') {
             if (houseStatus === 'pending' || houseStatus === 'rejected') {
                 return next('/owner/pending-review');

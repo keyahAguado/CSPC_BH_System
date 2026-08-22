@@ -2,9 +2,11 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
+
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
+import { formatAddress } from '../../utils/formatAddress.js';
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
@@ -64,6 +66,26 @@ const isOccupantsView = ref(false);
 
 const bhPhotos = ref([]);
 const currentPhotoIndex = ref(0);
+const showLightbox = ref(false);
+
+const getPhotoLabel = (idx) => {
+  if (idx === 0) return 'Featured Exterior Photo';
+  if (idx === 1) return 'Interior View 1';
+  if (idx === 2) return 'Interior View 2';
+  if (idx === 3) return 'Interior View 3';
+  return `Photo ${idx + 1}`;
+};
+
+const prevPhoto = () => {
+  if (bhPhotos.value.length === 0) return;
+  currentPhotoIndex.value = (currentPhotoIndex.value - 1 + bhPhotos.value.length) % bhPhotos.value.length;
+};
+
+const nextPhoto = () => {
+  if (bhPhotos.value.length === 0) return;
+  currentPhotoIndex.value = (currentPhotoIndex.value + 1) % bhPhotos.value.length;
+};
+
 const reviews = ref([]);
 const isLoadingReviews = ref(false);
 const mapElement = ref(null);
@@ -205,17 +227,7 @@ const closeBhInfo = () => {
   reviews.value = [];
 };
 
-const nextPhoto = () => {
-  if (bhPhotos.value.length > 1) {
-    currentPhotoIndex.value = (currentPhotoIndex.value + 1) % bhPhotos.value.length;
-  }
-};
 
-const prevPhoto = () => {
-  if (bhPhotos.value.length > 1) {
-    currentPhotoIndex.value = (currentPhotoIndex.value - 1 + bhPhotos.value.length) % bhPhotos.value.length;
-  }
-};
 
 // Documents Viewer
 const openDocs = (house) => {
@@ -592,7 +604,7 @@ onMounted(async () => {
                   <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 <p class="font-bold text-[11px] uppercase tracking-widest text-slate-600">
-                  {{ (activeHouse.location && activeHouse.location.toLowerCase() !== 'pending' && activeHouse.location.trim() !== '') ? activeHouse.location : `Near ${activeHouse.name}` }}
+                  {{ formatAddress(activeHouse) || `Near ${activeHouse.name}` }}
                 </p>
               </div>
               <div v-if="activeHouse.avg_rating" class="flex items-center gap-1.5 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20">
@@ -601,28 +613,61 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="max-w-3xl mx-auto space-y-8 w-full">
-            <!-- Map and Gallery Container -->
-            <div class="bg-slate-50 rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm space-y-6">
-              
+          <div class="max-w-none space-y-8 w-full">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <!-- Map Section -->
-              <div class="flex flex-col">
+              <div class="bg-slate-50 rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col">
                 <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 mb-3">Location Map</h2>
-                <div class="rounded-2xl overflow-hidden border border-slate-200 shadow-inner bg-white relative w-full h-[350px]">
-                  <div ref="mapElement" class="w-full h-full"></div>
+                <div class="rounded-2xl overflow-hidden border border-slate-200 shadow-inner bg-white relative w-full flex-1 min-h-[320px]">
+                  <div ref="mapElement" class="w-full h-full min-h-[320px]"></div>
                 </div>
               </div>
 
-              <!-- Property Gallery Section -->
-              <div class="flex flex-col pt-4 border-t border-slate-200/60">
-                <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 mb-3">Property Gallery</h2>
-                <div class="relative flex items-center justify-center rounded-xl overflow-hidden border border-slate-200/80 shadow-xs bg-slate-900 w-full max-w-sm mx-auto h-[160px] sm:h-[180px]">
-                  <button @click="prevPhoto" class="absolute left-2 z-10 bg-white/80 hover:bg-white text-slate-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-black shadow transition cursor-pointer">&lsaquo;</button>
-                  <img :src="getImageUrl(bhPhotos[currentPhotoIndex])" class="w-full h-full object-cover" />
-                  <button @click="nextPhoto" class="absolute right-2 z-10 bg-white/80 hover:bg-white text-slate-700 w-7 h-7 rounded-full flex items-center justify-center text-sm font-black shadow transition cursor-pointer">&rsaquo;</button>
+              <!-- Enhanced Property Gallery Section -->
+              <div class="bg-slate-50 rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Property Gallery</h2>
+                    <span v-if="bhPhotos.length > 0" class="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white px-2.5 py-1 rounded-full border border-slate-200 shadow-2xs">
+                      {{ currentPhotoIndex + 1 }} of {{ bhPhotos.length }}
+                    </span>
+                  </div>
+
+                  <!-- Main Stage Photo Viewer -->
+                  <div v-if="bhPhotos.length > 0" class="relative group rounded-2xl overflow-hidden border border-slate-200 shadow-inner bg-slate-900 aspect-video w-full flex items-center justify-center cursor-pointer" @click="showLightbox = true">
+                    <img :src="getImageUrl(bhPhotos[currentPhotoIndex])" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="Property Photo" />
+                    
+                    <!-- Badge Overlay -->
+                    <div class="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/20 shadow-md">
+                      <i class="fa-solid fa-camera mr-1.5 text-blue-400"></i> {{ getPhotoLabel(currentPhotoIndex) }}
+                    </div>
+
+                    <!-- Lightbox Hint Overlay -->
+                    <div class="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-md text-white px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/20 opacity-0 group-hover:opacity-100 transition shadow-md">
+                      <i class="fa-solid fa-expand mr-1"></i> Expand Photo
+                    </div>
+
+                    <!-- Nav Controls -->
+                    <button v-if="bhPhotos.length > 1" @click.stop="prevPhoto" class="absolute left-2.5 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shadow-lg transition cursor-pointer active:scale-95 z-10">&lsaquo;</button>
+                    <button v-if="bhPhotos.length > 1" @click.stop="nextPhoto" class="absolute right-2.5 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shadow-lg transition cursor-pointer active:scale-95 z-10">&rsaquo;</button>
+                  </div>
+
+                  <!-- Fallback Empty Photos -->
+                  <div v-else class="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center flex flex-col items-center justify-center min-h-[220px]">
+                    <i class="fa-solid fa-image text-slate-300 text-3xl mb-2"></i>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">No Property Photos Uploaded</p>
+                  </div>
+                </div>
+
+                <!-- Interactive Thumbnails Carousel Row -->
+                <div v-if="bhPhotos.length > 1" class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-200/60 overflow-x-auto pb-1">
+                  <button v-for="(img, idx) in bhPhotos" :key="idx" @click="currentPhotoIndex = idx"
+                          class="relative w-16 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 cursor-pointer focus:outline-none"
+                          :class="currentPhotoIndex === idx ? 'border-blue-600 ring-2 ring-blue-400/30 scale-105 shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'">
+                    <img :src="getImageUrl(img)" class="w-full h-full object-cover" />
+                  </button>
                 </div>
               </div>
-
             </div>
 
             <!-- Amenities -->
@@ -866,6 +911,20 @@ onMounted(async () => {
         </button>
       </div>
     </div>
+
+    <!-- Fullscreen Lightbox Modal for BH Gallery -->
+    <div v-if="showLightbox && bhPhotos.length > 0" class="fixed inset-0 z-[250] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" @click="showLightbox = false">
+      <div class="relative max-w-5xl max-h-[90vh] w-full flex flex-col items-center justify-center" @click.stop>
+        <button @click="showLightbox = false" class="absolute -top-12 right-0 text-white/80 hover:text-white text-3xl font-black focus:outline-none cursor-pointer">&times;</button>
+        <img :src="getImageUrl(bhPhotos[currentPhotoIndex])" class="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl border border-white/10" />
+        <div class="mt-4 bg-slate-900/80 text-white px-5 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-white/10 flex items-center gap-3">
+          <span>{{ getPhotoLabel(currentPhotoIndex) }}</span>
+          <span class="text-slate-500">|</span>
+          <span class="text-blue-400">{{ currentPhotoIndex + 1 }} / {{ bhPhotos.length }}</span>
+        </div>
+      </div>
+    </div>
+
 
   </div>
 </template>

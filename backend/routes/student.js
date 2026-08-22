@@ -1,34 +1,9 @@
 import express from 'express';
-import multer from 'multer';
-import path from 'path';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
+import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
 
 const router = express.Router();
-
-// 1. Configure Multer Storage for Uploaded Profile Pictures
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'public/uploads/'),
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // Limit size to 5MB
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|webp/;
-        const isValidExt = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const isValidMime = allowedTypes.test(file.mimetype);
-        if (isValidExt && isValidMime) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only JPG, JPEG, PNG, and WEBP images are allowed.'));
-        }
-    }
-});
 
 // 2. [GET] - Retrieve Active Student Profile
 router.get('/profile', authenticateToken, async (req, res) => {
@@ -45,7 +20,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 });
 
 // 3. [POST] - Update Student Profile
-router.post('/update-profile', authenticateToken, upload.single('profile_pic'), async (req, res) => {
+router.post('/update-profile', authenticateToken, memoryUpload.single('profile_pic'), async (req, res) => {
     try {
         const userId = req.user.id;
         const {
@@ -53,9 +28,10 @@ router.post('/update-profile', authenticateToken, upload.single('profile_pic'), 
             dob, age, address, phone, emergency_contact, guardian_name
         } = req.body;
 
-        let profilePicPath = req.body.existing_profile_pic || null;
+        let profilePicUrl = req.body.existing_profile_pic || null;
         if (req.file) {
-            profilePicPath = req.file.filename;
+            const result = await uploadBufferToCloudinary(req.file.buffer, 'profile_pics');
+            profilePicUrl = result.url;
         }
 
         await pool.query(
@@ -67,7 +43,7 @@ router.post('/update-profile', authenticateToken, upload.single('profile_pic'), 
             [
                 student_id || null, sex || null, course || null, year_section || null,
                 dob ? new Date(dob) : null, age ? parseInt(age) : null, address || null, phone || null,
-                emergency_contact || null, guardian_name || null, profilePicPath,
+                emergency_contact || null, guardian_name || null, profilePicUrl,
                 userId
             ]
         );
@@ -75,7 +51,7 @@ router.post('/update-profile', authenticateToken, upload.single('profile_pic'), 
         res.json({
             success: true,
             message: 'Profile updated successfully!',
-            profile_pic: profilePicPath
+            profile_pic: profilePicUrl
         });
 
     } catch (err) {
@@ -145,12 +121,19 @@ router.get('/house/:id', async (req, res) => {
             WHERE r.house_id = ?
         `, [houseId]);
 
+        // Fetch all gallery photos (up to 10)
+        const [photoRows] = await pool.query(
+            'SELECT photo_url FROM house_photos WHERE house_id = ? ORDER BY sort_order ASC',
+            [houseId]
+        );
+
         res.json({
             success: true,
             house: houseRows[0],
             reviews,
             avgRating,
             rooms,
+            photos: photoRows.map(r => r.photo_url),
             googleMapsApiKey: process.env.VITE_GOOGLE_MAPS_API_KEY || ''
         });
     } catch (err) {
@@ -289,7 +272,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
         }
 
         const [pendingBookingRows] = await connection.query(
-            "SELECT id FROM bookings WHERE student_id = ? AND house_id = ? AND status = 'pending'",
+            "SELECT id FROM bookings WHERE student_id = ? AND house_id = ? AND status = 'pending' FOR UPDATE",
             [studentId, houseId]
         );
         if (pendingBookingRows.length > 0) {
@@ -317,6 +300,19 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
         );
 
         const refNo = `REF-${insertResult.insertId.toString().padStart(4, '0')}`;
+        
+        // Auto-update student profile in MySQL so all future bookings are pre-filled 100% automatically
+        await connection.query(
+            `UPDATE users 
+             SET phone = COALESCE(NULLIF(?, ''), phone),
+                 age = COALESCE(?, age),
+                 emergency_contact = COALESCE(NULLIF(?, ''), emergency_contact),
+                 guardian_name = COALESCE(NULLIF(?, ''), guardian_name),
+                 address = COALESCE(NULLIF(?, ''), address)
+             WHERE id = ?`,
+            [contact_number, parseInt(age) || null, emergency_contact, guardian_name, address, studentId]
+        );
+
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [studentId, `RESERVATION SUBMITTED: Your booking request ${refNo} has been submitted! Awaiting landlord review.`]
@@ -343,7 +339,7 @@ router.get('/bookings', authenticateToken, async (req, res) => {
         const studentId = req.user.id;
         const [bookings] = await pool.query(
             `SELECT b.*, r.room_number, r.gender_type as room_gender,
-                    bh.name as house_name, bh.location as house_location, 
+                    bh.name as house_name, bh.location as house_location, bh.barangay as house_barangay,
                     bh.advance_months, bh.deposit_months, bh.deposit_type,
                     o.check_in_date AS occupant_check_in,
                     o.check_out_date AS occupant_check_out

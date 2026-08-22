@@ -303,7 +303,7 @@ onMounted(() => {
                 </div>
                 <div>
                   <a :href="getImageUrl(p.current_file)" target="_blank" class="text-xs font-bold text-blue-600 hover:underline truncate max-w-[200px] block">
-                    {{ p.current_file }}
+                    View Current File
                   </a>
                   <p class="text-[10px] font-semibold text-slate-400">
                     Expiry: {{ p.current_expiry ? new Date(p.current_expiry).toLocaleDateString() : 'N/A' }}

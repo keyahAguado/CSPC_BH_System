@@ -29,7 +29,7 @@ export async function runComplianceCheck() {
 
             for (const p of permits) {
                 const expiryDate = house[p.key];
-                if (!expiryDate) continue;
+                if (!expiryDate) continue;  // no expiry date → skip this permit
 
                 const date = new Date(expiryDate);
                 if (date < now) {
@@ -74,14 +74,19 @@ export async function runComplianceCheck() {
         }
 
         // --- BOOKING DURATION CHECK ---
+        // Notifies owner and student exactly twice: at 7 days before end, and on the end date.
+        // Uses DAY() comparison to fire only on the specific day, not every day for 7 days.
         const [expiringBookings] = await pool.query(`
             SELECT b.*, bh.name as house_name, bh.owner_id, u.name as student_name
             FROM bookings b
             JOIN boarding_houses bh ON b.house_id = bh.id
             JOIN users u ON b.student_id = u.id
             WHERE b.status = 'confirmed' 
-            AND DATE_ADD(b.check_in_date, INTERVAL b.months MONTH) <= DATE_ADD(?, INTERVAL 7 DAY)
-        `, [now]);
+            AND (
+                DATE_ADD(b.check_in_date, INTERVAL b.months MONTH) = CURDATE()
+                OR DATE_ADD(b.check_in_date, INTERVAL b.months MONTH) = DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+            )
+        `, []);
 
         for (const booking of expiringBookings) {
             const endDate = new Date(booking.check_in_date);
@@ -89,15 +94,17 @@ export async function runComplianceCheck() {
 
             const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
 
-            let msg = "";
+            let ownerMsg, studentMsg;
             if (daysLeft <= 0) {
-                msg = `The stay for student ${booking.student_name} at "${booking.house_name}" has officially ENDED. Please process their checkout or extend their stay.`;
+                ownerMsg = `STAY ENDED: The stay of ${booking.student_name} at "${booking.house_name}" has officially ended today. Please process their checkout.`;
+                studentMsg = `STAY ENDED: Your stay at "${booking.house_name}" has ended today. Please coordinate with your landlord for checkout.`;
             } else {
-                msg = `Reminder: The stay for ${booking.student_name} at "${booking.house_name}" will end in ${daysLeft} days.`;
+                ownerMsg = `REMINDER: The stay of ${booking.student_name} at "${booking.house_name}" ends in ${daysLeft} days. Please prepare for checkout or a stay extension.`;
+                studentMsg = `REMINDER: Your stay at "${booking.house_name}" ends in ${daysLeft} days. Contact your landlord if you wish to extend.`;
             }
 
-            await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.owner_id, msg]);
-            await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.student_id, msg]);
+            await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.owner_id, ownerMsg]);
+            await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.student_id, studentMsg]);
         }
 
         console.log('[COMPLIANCE] Daily check completed.');

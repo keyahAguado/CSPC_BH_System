@@ -394,10 +394,26 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (18,'admin@my.cspc.edu.ph','$2b$10$oclWU10MJCZhGfX3VWXPYuvHfA5RApLQa83/oR.qb1SoDHL5jMhv6',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
+INSERT INTO `users` VALUES (18,'admin@cspc.edu.ph','$2b$10$cpDttrjeTdo0iTVyB4DQbOwrvFlpOy6lzwXajdxhBE7xdLVmaKMI.',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
-/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+--
+-- Table structure for table `house_photos`
+--
+
+DROP TABLE IF EXISTS `house_photos`;
+CREATE TABLE `house_photos` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `house_id` int NOT NULL,
+  `photo_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `sort_order` int DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `house_id` (`house_id`),
+  CONSTRAINT `house_photos_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+/*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
 /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;

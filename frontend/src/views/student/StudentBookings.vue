@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
+import { formatAddress } from '../../utils/formatAddress.js';
 
 const bookings = ref([]);
 const isLoading = ref(true);
@@ -192,9 +193,117 @@ const viewReceipt = (booking) => {
   showReceiptModal.value = true;
 };
 
-// Triggers the browser's native print dialog for the receipt modal
+// Triggers a compact receipt print window instead of printing the whole page
 const printReceipt = () => {
-  window.print();
+  if (!activeReceipt.value) return;
+  const r = activeReceipt.value;
+
+  const advanceAmt = (parseInt(r.advance_months || 1) * parseFloat(r.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const depositAmt = (parseInt(r.deposit_months || 0) * parseFloat(r.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const totalAmt = parseFloat(r.initial_payment || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const refNo = `REF-${r.id.toString().padStart(4, '0')}`;
+  const printDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const depositLine = parseInt(r.deposit_months) > 0
+    ? `<tr><td>Security Deposit (${r.deposit_months} Mo)</td><td class="amt">&#8369;${depositAmt}</td></tr>`
+    : '';
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Receipt ${refNo}</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 9pt;
+      color: #1e293b;
+      background: #fff;
+      width: 80mm;
+      padding: 6mm 8mm 10mm;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: 700; }
+    .upper { text-transform: uppercase; }
+    .divider { border: none; border-top: 1px dashed #94a3b8; margin: 6px 0; }
+    .divider-solid { border: none; border-top: 1.5px solid #1e293b; margin: 6px 0; }
+    .logo-section { text-align: center; padding-bottom: 8px; }
+    .logo-section img { width: 40px; height: 40px; object-fit: contain; }
+    .org { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; }
+    .sub { font-size: 6.5pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+    .title { font-size: 11pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 2px; }
+    .ref { font-size: 8pt; color: #2563eb; font-weight: 700; letter-spacing: 0.1em; }
+    table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+    table td { padding: 2px 0; font-size: 8.5pt; vertical-align: top; }
+    table td.label { color: #64748b; width: 45%; }
+    table td.value { font-weight: 700; text-align: right; }
+    .breakdown td { padding: 1.5px 0; font-size: 8pt; }
+    .breakdown td.amt { text-align: right; font-weight: 700; }
+    .total-row td { font-size: 10pt; font-weight: 900; padding-top: 4px; }
+    .total-row td.amt { color: #059669; }
+    .footer { text-align: center; font-size: 7pt; color: #94a3b8; margin-top: 8px; line-height: 1.5; }
+    .status-badge { display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 10px; font-size: 7pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
+  </style>
+</head>
+<body>
+  <div class="logo-section">
+    <img src="/img/CSPC_logo.png" alt="CSPC" onerror="this.style.display='none'" />
+    <div class="org">Camarines Sur Polytechnic Colleges</div>
+    <div class="sub">Boarding House Management System</div>
+  </div>
+
+  <hr class="divider-solid" />
+
+  <div class="center title">Payment Receipt</div>
+  <div class="center ref">${refNo}</div>
+  <div class="center" style="margin-top:3px"><span class="status-badge">Paid via PayMongo</span></div>
+
+  <hr class="divider" />
+
+  <table>
+    <tr><td class="label">Date</td><td class="value">${printDate}</td></tr>
+    <tr><td class="label">Resident</td><td class="value upper">${r.resident_name || ''}</td></tr>
+    <tr><td class="label">Boarding House</td><td class="value upper">${r.house_name || ''}</td></tr>
+    <tr><td class="label">Room</td><td class="value">Room ${r.room_number || 'N/A'}</td></tr>
+    <tr><td class="label">Duration</td><td class="value">${r.months || 0} Month(s)</td></tr>
+    <tr><td class="label">Monthly Rent</td><td class="value">&#8369;${parseFloat(r.monthly_rent || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
+  </table>
+
+  <hr class="divider" />
+
+  <table class="breakdown">
+    <tr>
+      <td colspan="2" style="font-size:7pt;font-weight:900;text-transform:uppercase;color:#94a3b8;letter-spacing:0.1em;padding-bottom:3px">
+        Move-in Cost Breakdown
+      </td>
+    </tr>
+    <tr><td>Advance Rent (${r.advance_months || 1} Mo)</td><td class="amt">&#8369;${advanceAmt}</td></tr>
+    ${depositLine}
+    <tr class="total-row">
+      <td class="bold upper">Total Paid</td>
+      <td class="amt">&#8369;${totalAmt}</td>
+    </tr>
+  </table>
+
+  <hr class="divider-solid" />
+
+  <div class="footer">
+    Official receipt for move-in cost payment.<br/>Keep this for your records.
+  </div>
+
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 400);
+    });
+  <\/script>
+</body>
+</html>`);
+  win.document.close();
 };
 
 // Combined mounting hook runs standard fetch and checks redirection query parameters
@@ -277,11 +386,9 @@ onMounted(() => {
                     </h3>
                     <p class="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest inline-flex items-start gap-1.5 leading-snug">
                       <i class="fa-solid fa-location-dot text-[9px] text-blue-500 shrink-0 mt-0.5"></i>
-                      <span>{{ booking.house_location || 'Address Pending' }}</span>
+                      <span>{{ formatAddress({ barangay: booking.house_barangay, location: booking.house_location }) || 'Address Pending' }}</span>
                     </p>
                   </td>
-
-                  <!-- Duration -->
                   <td class="p-8">
                     <div class="flex flex-col gap-1">
                       <span class="text-sm font-black text-blue-600">{{ booking.months }} Months</span>
@@ -439,7 +546,7 @@ onMounted(() => {
                 </h3>
                 <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 mt-0.5">
                   <i class="fa-solid fa-location-dot text-[9px] text-blue-500"></i>
-                  <span>{{ booking.house_location || 'Address Pending' }}</span>
+                  <span>{{ formatAddress({ barangay: booking.house_barangay, location: booking.house_location }) || 'Address Pending' }}</span>
                 </p>
               </div>
 
@@ -691,8 +798,8 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Instructions / Print Action -->
-      <div class="mt-8 pt-6 border-t border-slate-100 flex gap-3 no-print">
+      <!-- Actions -->
+      <div class="mt-8 pt-6 border-t border-slate-100 flex gap-3">
         <button @click="printReceipt" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3 rounded-xl uppercase tracking-widest transition flex items-center justify-center gap-2 cursor-pointer">
           <i class="fa-solid fa-print"></i> Print PDF
         </button>
@@ -706,14 +813,5 @@ onMounted(() => {
 </template>
 
 <style>
-@media print {
-  body { background: white !important; margin: 0 !important; padding: 0 !important; }
-  /* Hide the rest of the application including navbars, background, and main wrappers */
-  .no-print, nav, footer, button, main, header, table { display: none !important; }
-  
-  /* Render only the modal content cleanly on the center of the white page */
-  .fixed { position: absolute !important; inset: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-  .bg-white { box-shadow: none !important; border: none !important; padding: 0 !important; }
-  .rounded-3xl { border-radius: 0 !important; }
-}
+/* Receipt print styles no longer needed — handled by dedicated print window */
 </style>

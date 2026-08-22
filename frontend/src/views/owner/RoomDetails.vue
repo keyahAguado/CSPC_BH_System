@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { getImageUrl } from '../../config/api.js';
 
 // --- Accordion toggle state for mobile ---
 const expandedOccupants = ref(new Set());
@@ -311,7 +312,7 @@ onMounted(() => {
                   <td class="px-5 py-4">
                     <div class="flex items-center gap-3 justify-center">
                       <div class="w-10 h-10 rounded-full overflow-hidden bg-slate-200 flex-shrink-0">
-                        <img :src="pb.profile_pic ? `${API}/uploads/${pb.profile_pic}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(pb.student_name)}`" class="w-full h-full object-cover" />
+                        <img :src="pb.profile_pic ? getImageUrl(pb.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(pb.student_name)}`" class="w-full h-full object-cover" />
                       </div>
                       <div class="text-left">
                         <p class="font-black text-slate-800 text-[13px] uppercase">{{ pb.student_name }}</p>
@@ -526,9 +527,12 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center">
                     <div v-if="occ.payment_status === 'Paid'" class="flex flex-col items-center">
                       <span class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Paid</span>
-                      <button @click="handleTogglePayment(occ)" class="text-[7px] font-black text-slate-300 hover:text-red-500 uppercase tracking-tighter underline mt-0.5 cursor-pointer">Undo</button>
+                      <button @click="handleTogglePayment(occ)" class="text-[7px] font-black text-slate-400 hover:text-red-500 uppercase tracking-tighter underline mt-1 cursor-pointer">
+                        Mark Unpaid
+                      </button>
                     </div>
-                    <div v-else>
+                    <div v-else class="flex flex-col items-center">
+                      <span class="inline-block bg-orange-50 text-orange-600 border border-orange-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mb-1">Unpaid</span>
                       <button @click="handleTogglePayment(occ)" class="bg-blue-600 text-white text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
                         Mark Paid
                       </button>
