@@ -361,11 +361,24 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             amenities_free, amenities_paid, existing_photos
         } = req.body;
 
+        // Safe Date Parser: Ensures empty/invalid strings return NULL rather than NaN Date objects
+        const parseSafeDate = (val) => {
+            if (!val || typeof val !== 'string' || val.trim() === '') return null;
+            const timestamp = Date.parse(val);
+            if (isNaN(timestamp)) return null;
+            return new Date(timestamp);
+        };
+
         // Upload a field buffer to Cloudinary; returns the URL or null if no new file
         const uploadField = async (fieldName, folder) => {
             if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
-                const result = await uploadBufferToCloudinary(req.files[fieldName][0].buffer, folder);
-                return result.url;
+                try {
+                    const result = await uploadBufferToCloudinary(req.files[fieldName][0].buffer, folder);
+                    return result.url;
+                } catch (uploadErr) {
+                    console.error(`[CLOUDINARY UPLOAD ERROR] Field "${fieldName}":`, uploadErr.message);
+                    throw new Error(`File upload failed for ${fieldName}: ${uploadErr.message}`);
+                }
             }
             return null;
         };
@@ -413,16 +426,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             const permit_sanitary      = (await uploadField('permit_sanitary', 'permits'))       || existingHouse.permit_sanitary;
             const permit_fire          = (await uploadField('permit_fire', 'permits'))           || existingHouse.permit_fire;
 
-            const parseDate = (val) => val ? new Date(val) : null;
-
-            const expiry_permit_business_form = getExpiry('business_form') ? parseDate(getExpiry('business_form')) : existingHouse.expiry_permit_business_form;
-            const expiry_permit_cedula        = getExpiry('cedula')        ? parseDate(getExpiry('cedula'))        : existingHouse.expiry_permit_cedula;
-            const expiry_permit_dti           = getExpiry('dti')           ? parseDate(getExpiry('dti'))           : existingHouse.expiry_permit_dti;
-            const expiry_permit_barangay      = getExpiry('barangay')      ? parseDate(getExpiry('barangay'))      : existingHouse.expiry_permit_barangay;
-            const expiry_permit_building      = getExpiry('building')      ? parseDate(getExpiry('building'))      : existingHouse.expiry_permit_building;
-            const expiry_permit_zoning        = getExpiry('zoning')        ? parseDate(getExpiry('zoning'))        : existingHouse.expiry_permit_zoning;
-            const expiry_permit_sanitary      = getExpiry('sanitary')      ? parseDate(getExpiry('sanitary'))      : existingHouse.expiry_permit_sanitary;
-            const expiry_permit_fire          = getExpiry('fire')          ? parseDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
+            const expiry_permit_business_form = getExpiry('business_form') ? parseSafeDate(getExpiry('business_form')) : existingHouse.expiry_permit_business_form;
+            const expiry_permit_cedula        = getExpiry('cedula')        ? parseSafeDate(getExpiry('cedula'))        : existingHouse.expiry_permit_cedula;
+            const expiry_permit_dti           = getExpiry('dti')           ? parseSafeDate(getExpiry('dti'))           : existingHouse.expiry_permit_dti;
+            const expiry_permit_barangay      = getExpiry('barangay')      ? parseSafeDate(getExpiry('barangay'))      : existingHouse.expiry_permit_barangay;
+            const expiry_permit_building      = getExpiry('building')      ? parseSafeDate(getExpiry('building'))      : existingHouse.expiry_permit_building;
+            const expiry_permit_zoning        = getExpiry('zoning')        ? parseSafeDate(getExpiry('zoning'))        : existingHouse.expiry_permit_zoning;
+            const expiry_permit_sanitary      = getExpiry('sanitary')      ? parseSafeDate(getExpiry('sanitary'))      : existingHouse.expiry_permit_sanitary;
+            const expiry_permit_fire          = getExpiry('fire')          ? parseSafeDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
             await pool.query(
                 `UPDATE boarding_houses 
@@ -495,14 +506,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 sanitizedFree, sanitizedPaid, 'pending',
                 permit_business_form, permit_cedula, permit_dti, permit_barangay,
                 permit_building, permit_zoning, permit_sanitary, permit_fire,
-                getExpiry('business_form') ? new Date(getExpiry('business_form')) : null,
-                getExpiry('cedula')        ? new Date(getExpiry('cedula'))        : null,
-                getExpiry('dti')           ? new Date(getExpiry('dti'))           : null,
-                getExpiry('barangay')      ? new Date(getExpiry('barangay'))      : null,
-                getExpiry('building')      ? new Date(getExpiry('building'))      : null,
-                getExpiry('zoning')        ? new Date(getExpiry('zoning'))        : null,
-                getExpiry('sanitary')      ? new Date(getExpiry('sanitary'))      : null,
-                getExpiry('fire')          ? new Date(getExpiry('fire'))          : null,
+                parseSafeDate(getExpiry('business_form')),
+                parseSafeDate(getExpiry('cedula')),
+                parseSafeDate(getExpiry('dti')),
+                parseSafeDate(getExpiry('barangay')),
+                parseSafeDate(getExpiry('building')),
+                parseSafeDate(getExpiry('zoning')),
+                parseSafeDate(getExpiry('sanitary')),
+                parseSafeDate(getExpiry('fire')),
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
                 parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || null
             ]
@@ -534,8 +545,8 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         });
 
     } catch (err) {
-        console.error('Accreditation Submission Error:', err.message);
-        res.status(500).json({ success: false, message: 'Failed to process accreditation application.' });
+        console.error('Accreditation Submission Error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to process accreditation application.' });
     }
 });
 
