@@ -81,11 +81,12 @@ const transcodeHeicFile = async (file) => {
   }
 };
 
-const fetchProfile = async () => {
+const fetchProfile = async (retries = 2) => {
   try {
     isLoading.value = true;
     const response = await axios.get(`/api/owner/profile`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15000 // 15s timeout to handle Render cold starts
     });
 
     if (response.data.success) {
@@ -109,7 +110,12 @@ const fetchProfile = async () => {
     }
   } catch (error) {
     console.error('Failed to load profile details:', error);
-    showSystemAlert('Could not fetch profile details.', 'warning');
+    if (retries > 0) {
+      // Retry once after 3s — handles Render cold start delays
+      setTimeout(() => fetchProfile(retries - 1), 3000);
+    } else {
+      showSystemAlert('Could not fetch profile details. The server may be waking up — please try refreshing.', 'warning');
+    }
   } finally {
     isLoading.value = false;
   }

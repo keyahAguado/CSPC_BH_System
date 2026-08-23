@@ -38,8 +38,12 @@ const sanitizeJSONInput = (val) => {
 // A. GET - Retrieve active Owner profile records
 router.get('/profile', authenticateToken, async (req, res) => {
     try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ success: false, message: 'Invalid session token.' });
+        }
+
         const [rows] = await pool.query(
-            'SELECT id, email, role, name, phone, address, profile_pic, (google_id IS NOT NULL AND google_id != "") AS isGoogleUser, (password IS NOT NULL AND password != "") AS hasPassword FROM users WHERE id = ?',
+            'SELECT id, email, role, name, phone, address, profile_pic, google_id, password FROM users WHERE id = ?',
             [req.user.id]
         );
 
@@ -47,9 +51,26 @@ router.get('/profile', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Owner profile not found.' });
         }
 
-        res.json({ success: true, user: rows[0] });
+        const u = rows[0];
+        const isGoogleUser = Boolean(u.google_id && String(u.google_id).trim() !== '');
+        const hasPassword = Boolean(u.password && String(u.password).trim() !== '');
+
+        res.json({
+            success: true,
+            user: {
+                id: u.id,
+                email: u.email,
+                role: u.role,
+                name: u.name,
+                phone: u.phone,
+                address: u.address,
+                profile_pic: u.profile_pic,
+                isGoogleUser,
+                hasPassword
+            }
+        });
     } catch (err) {
-        console.error('Fetch Profile Error:', err.message);
+        console.error('Fetch Owner Profile Error:', err.message);
         res.status(500).json({ success: false, message: 'Database failed to retrieve profile.' });
     }
 });

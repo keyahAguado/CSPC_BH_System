@@ -49,6 +49,14 @@ axios.interceptors.response.use(
 // Register the PWA service worker automatically
 registerSW({ immediate: true });
 
+// Auto-reload the PWA when a new version is deployed and the service worker updates.
+// This ensures installed phone apps pick up changes without needing a manual refresh.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+}
+
 const app = createApp(App);
 app.use(router);
 app.mount('#app');

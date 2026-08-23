@@ -23,8 +23,11 @@ const isOfflineFlag = ref(false);
 const token = localStorage.getItem('cspc_token');
 const userRaw = localStorage.getItem('cspc_user');
 const currentUser = userRaw ? JSON.parse(userRaw) : null;
-const isGuest = computed(() => route.query.guest === 'true' || !token || currentUser?.role !== 'student');
+// A user is a guest only if they have no token — role check removed since
+// the student dashboard is already behind the student auth guard in the router
+const isGuest = computed(() => route.query.guest === 'true' || !token);
 const displayName = computed(() => isGuest.value ? 'Guest' : (currentUser?.name || 'Guest'));
+
 
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
@@ -69,7 +72,7 @@ const toggleRating = (num) => {
 };
 
 const handleBook = (houseId) => {
-  if (isGuest) {
+  if (isGuest.value) {
     showLoginModal.value = true;
   } else {
     router.push(`/student/book/${houseId}`);

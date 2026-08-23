@@ -14,9 +14,15 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/auth-success/, /^\/api\/auth/],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'], // Automatically caches static files for offline usability
         maximumFileSizeToCacheInBytes: 3000000,
         runtimeCaching: [
+          {
+            // Bypasses Service Worker cache for Google OAuth callback & token handoff
+            urlPattern: /\/(auth-success|api\/auth)/i,
+            handler: 'NetworkOnly'
+          },
           {
             // Caches the public landing page listings (HomeView.vue)
             // Pattern matches both relative /api/... and full cross-origin URLs (production backend)
