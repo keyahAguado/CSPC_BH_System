@@ -5,12 +5,14 @@ import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js'
 
 const router = express.Router();
 
-// 2. [GET] - Retrieve Active Student Profile
 router.get('/profile', authenticateToken, async (req, res) => {
     try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ success: false, message: 'Invalid session token.' });
+        }
         const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
         if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'User not found.' });
+            return res.status(404).json({ success: false, message: 'User profile not found.' });
         }
         res.json({ success: true, user: rows[0] });
     } catch (err) {

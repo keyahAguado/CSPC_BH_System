@@ -68,7 +68,7 @@ const routes = [
         alias: '/users/register',
         name: 'Register',
         component: Register,
-        meta: { title: 'Student Registration' }
+        meta: { title: 'Landlord Registration' }
     },
     {
         path: '/register/owner-details',

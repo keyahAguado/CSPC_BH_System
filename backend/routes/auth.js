@@ -20,16 +20,19 @@ export const authenticateToken = (req, res, next) => {
         if (err) return res.status(403).json({ success: false, message: 'Expired Token.' });
         
         try {
-            // Suggestion B: Active Session Revocation (Real-time DB status check)
-            const [rows] = await pool.query('SELECT status FROM users WHERE id = ?', [decoded.id]);
-            if (rows.length === 0 || rows[0].status === 'suspended' || rows[0].status === 'blocked') {
+            if (!decoded || !decoded.id) {
+                return res.status(403).json({ success: false, message: 'Invalid Token Payload.' });
+            }
+            const [rows] = await pool.query('SELECT id, status FROM users WHERE id = ?', [decoded.id]);
+            if (rows.length > 0 && (rows[0].status === 'suspended' || rows[0].status === 'blocked')) {
                 return res.status(401).json({ success: false, message: 'Your account has been suspended by SASO.' });
             }
-            req.user = decoded; // Contains { id, email, role }
+            req.user = decoded;
             next();
         } catch (dbErr) {
-            console.error('Session verification DB error:', dbErr.message);
-            return res.status(500).json({ success: false, message: 'Database error during session check.' });
+            console.warn('Session verification DB warning (falling back to JWT payload):', dbErr.message);
+            req.user = decoded;
+            next();
         }
     });
 };

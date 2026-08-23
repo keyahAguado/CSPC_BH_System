@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 
@@ -8,6 +8,7 @@ import { useOfflineStatus } from '../../utils/offlineHelper.js';
 import { formatAddress } from '../../utils/formatAddress.js';
 
 const router = useRouter();
+const route = useRoute();
 const houses = ref([]);
 const isLoading = ref(true);
 const searchInput = ref('');
@@ -22,7 +23,8 @@ const isOfflineFlag = ref(false);
 const token = localStorage.getItem('cspc_token');
 const userRaw = localStorage.getItem('cspc_user');
 const currentUser = userRaw ? JSON.parse(userRaw) : null;
-const isGuest = !token;
+const isGuest = computed(() => route.query.guest === 'true' || !token || currentUser?.role !== 'student');
+const displayName = computed(() => isGuest.value ? 'Guest' : (currentUser?.name || 'Guest'));
 
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
@@ -187,7 +189,7 @@ onMounted(fetchHouses);
           <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-3 lg:mb-6 border-b border-slate-200/50 pb-3 lg:pb-6">
             <div>
               <h1 class="text-3xl font-black text-slate-900 mb-1 uppercase tracking-tight">
-                Welcome, {{ currentUser?.name || 'Guest Student' }}
+                Welcome, {{ displayName }}
               </h1>
               <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">CSPC Housing Selection Portal</p>
             </div>
