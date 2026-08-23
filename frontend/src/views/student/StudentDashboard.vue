@@ -272,13 +272,22 @@ onMounted(fetchHouses);
             <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Loading boarding houses...</p>
           </div>
 
-          <!-- Offline Banner -->
-          <div v-else-if="isOffline || isOfflineFlag" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
+          <!-- Subtle Offline Notice (When displaying cached houses) -->
+          <div v-if="(isOffline || isOfflineFlag) && houses.length > 0" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
+            <span class="flex items-center gap-2">
+              <i class="fa-solid fa-wifi text-amber-500"></i>
+              Offline Mode • Showing cached boarding house listings
+            </span>
+            <span class="text-[9px] bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Cached</span>
+          </div>
+
+          <!-- Offline Empty State (Only if NO cached houses exist) -->
+          <div v-else-if="(isOffline || isOfflineFlag) && houses.length === 0" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
             <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
             </svg>
             <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">No Internet Connection</p>
-            <p class="text-slate-400 font-bold text-[10px]">You are currently offline. Please connect to the internet to view available boarding houses.</p>
+            <p class="text-slate-400 font-bold text-[10px]">No offline cached data available yet. Please connect to the internet.</p>
           </div>
 
           <!-- DYNAMIC ACCREDITED HOUSES GRID -->

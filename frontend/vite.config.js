@@ -25,9 +25,8 @@ export default defineConfig({
           },
           {
             // Caches the public landing page listings (HomeView.vue)
-            // Pattern matches both relative /api/... and full cross-origin URLs (production backend)
             urlPattern: /\/api\/boarding-houses\/accredited/i,
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-listings-cache',
               expiration: {
@@ -41,9 +40,8 @@ export default defineConfig({
           },
           {
             // Caches the student dashboard listings (StudentDashboard.vue → /api/student/houses)
-            // Uses a broad pattern that matches the path regardless of the backend domain
             urlPattern: /\/api\/student\/houses(\?.*)?$/i,
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'student-houses-cache',
               expiration: {
@@ -57,9 +55,8 @@ export default defineConfig({
           },
           {
             // Caches individual boarding house detail pages (HouseDetails.vue → /api/student/house/:id)
-            // Allows students to read house info, coordinates, amenities, and reviews offline
             urlPattern: /\/api\/student\/house\/\d+/i,
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'student-house-detail-cache',
               expiration: {
