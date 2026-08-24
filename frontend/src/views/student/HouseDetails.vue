@@ -1,5 +1,4 @@
-<script setup>
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -27,6 +26,11 @@ const API = getApiBaseUrl();
 const currentPhotoIndex = ref(0);
 const showLightbox = ref(false);
 const lightboxPhoto = ref('');
+const isPhotoLoading = ref(true);
+
+watch(currentPhotoIndex, () => {
+  isPhotoLoading.value = true;
+});
 
 const openLightbox = (url) => {
   lightboxPhoto.value = url;
@@ -567,11 +571,24 @@ onMounted(fetchData);
         <div class="relative group">
           <div class="rounded-[2.5rem] overflow-hidden aspect-[16/9] w-full border border-slate-200/80 shadow-xl bg-slate-900 relative flex items-center justify-center cursor-pointer"
                @click="currentPhoto && openLightbox(currentPhoto)">
-            <img v-if="currentPhoto" :src="currentPhoto" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Property Gallery Photo">
+            
+            <!-- Skeleton Loader while image decodes/loads -->
+            <div v-if="isPhotoLoading && currentPhoto" class="absolute inset-0 bg-slate-800 animate-pulse flex flex-col items-center justify-center gap-2 z-10">
+              <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading Photo...</p>
+            </div>
+
+            <img v-if="currentPhoto" 
+                 :src="currentPhoto" 
+                 decoding="async"
+                 @load="isPhotoLoading = false"
+                 @error="isPhotoLoading = false"
+                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                 alt="Property Gallery Photo">
             <div v-else class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No property photos available</div>
 
             <!-- Overlay Click to Expand -->
-            <div v-if="currentPhoto" class="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-6">
+            <div v-if="currentPhoto && !isPhotoLoading" class="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-6">
               <span class="text-white text-[10px] font-black uppercase tracking-widest bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 flex items-center gap-2">
                 <i class="fa-solid fa-expand"></i> Click for Fullscreen Preview
               </span>
@@ -593,9 +610,13 @@ onMounted(fetchData);
         <div v-if="photos.length > 1" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 mt-6">
           <div v-for="(photo, i) in photos" :key="i"
                @click="currentPhotoIndex = i"
-               class="aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 relative group"
+               class="aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 relative group bg-slate-100"
                :class="i === currentPhotoIndex ? 'border-blue-600 scale-105 shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'">
-            <img :src="photo" class="w-full h-full object-cover" alt="Thumbnail" />
+            <img :src="photo" 
+                 loading="lazy"
+                 decoding="async"
+                 class="w-full h-full object-cover" 
+                 alt="Thumbnail" />
           </div>
         </div>
       </div>
