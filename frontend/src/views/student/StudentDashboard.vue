@@ -12,7 +12,7 @@ const route = useRoute();
 // Instant initialization from persistent localStorage cache for 0ms offline rendering
 const initialCachedHouses = (() => {
   try {
-    const raw = localStorage.getItem('cspc_cached_student_houses');
+    const raw = localStorage.getItem('cspc_cached_student_houses') || localStorage.getItem('cspc_cached_accredited_houses');
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
@@ -56,7 +56,7 @@ const fetchHouses = async () => {
   } catch (e) {
     console.error('Failed to load houses from network:', e);
     try {
-      const cached = localStorage.getItem('cspc_cached_student_houses');
+      const cached = localStorage.getItem('cspc_cached_student_houses') || localStorage.getItem('cspc_cached_accredited_houses');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
