@@ -134,12 +134,19 @@ onMounted(() => {
         <h3 class="text-2xl font-black text-black text-center mb-12 tracking-tight uppercase">Current Offers</h3>
         
         <!-- Subtle Offline Notice (When displaying cached houses) -->
-        <div v-if="isOffline" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
-          <span class="flex items-center gap-2">
-            <i class="fa-solid fa-wifi text-amber-500"></i>
-            Offline Mode • Showing cached boarding house listings
+        <div v-if="isOffline" class="mb-6 p-4 bg-amber-50 border border-amber-300/80 rounded-2xl text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-amber-100/90 flex items-center justify-center text-amber-600 shrink-0">
+              <i class="fa-solid fa-wifi-slash text-sm"></i>
+            </div>
+            <div>
+              <p class="text-xs font-black uppercase tracking-wide text-amber-950">You are currently offline • Displaying saved boarding houses</p>
+              <p class="text-[11px] font-semibold text-amber-800">Please check your internet connection to view real-time availability and updates.</p>
+            </div>
+          </div>
+          <span class="self-start sm:self-auto text-[9px] bg-amber-200/80 text-amber-950 px-2.5 py-1 rounded-full font-black uppercase tracking-wider shrink-0">
+            Offline Saved Copy
           </span>
-          <span class="text-[9px] bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Cached</span>
         </div>
 
         <!-- Loading State Indicator -->

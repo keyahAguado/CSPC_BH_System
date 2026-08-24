@@ -301,21 +301,28 @@ onMounted(fetchHouses);
           </div>
 
           <!-- Subtle Offline Notice (When displaying cached houses) -->
-          <div v-if="isOffline || isOfflineFlag" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
-            <span class="flex items-center gap-2">
-              <i class="fa-solid fa-wifi text-amber-500"></i>
-              Offline Mode • Showing cached boarding house listings
+          <div v-if="isOffline || isOfflineFlag" class="mb-6 p-4 bg-amber-50 border border-amber-300/80 rounded-2xl text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-amber-100/90 flex items-center justify-center text-amber-600 shrink-0">
+                <i class="fa-solid fa-wifi-slash text-sm"></i>
+              </div>
+              <div>
+                <p class="text-xs font-black uppercase tracking-wide text-amber-950">You are currently offline • Displaying saved boarding houses</p>
+                <p class="text-[11px] font-semibold text-amber-800">Please check your internet connection to view real-time availability and updates.</p>
+              </div>
+            </div>
+            <span class="self-start sm:self-auto text-[9px] bg-amber-200/80 text-amber-950 px-2.5 py-1 rounded-full font-black uppercase tracking-wider shrink-0">
+              Offline Saved Copy
             </span>
-            <span class="text-[9px] bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Cached</span>
           </div>
 
           <!-- Offline Empty State (Only if NO cached houses exist) -->
-          <div v-if="!isLoading && houses.length === 0" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
-            <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
-            </svg>
-            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">No Boarding Houses Found</p>
-            <p class="text-slate-400 font-bold text-[10px]">No offline cached data available yet. Please connect to the internet.</p>
+          <div v-if="!isLoading && houses.length === 0" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm px-6">
+            <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-500 mx-auto mb-4">
+              <i class="fa-solid fa-wifi-slash text-xl"></i>
+            </div>
+            <p class="text-amber-800 font-black uppercase tracking-widest text-[11px] mb-1">No Saved Boarding Houses Available</p>
+            <p class="text-slate-500 font-bold text-xs max-w-sm mx-auto">Please check your internet connection and connect to the internet to load and save available boarding houses.</p>
           </div>
 
           <!-- DYNAMIC ACCREDITED HOUSES GRID -->
