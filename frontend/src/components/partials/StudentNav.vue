@@ -30,11 +30,11 @@ const fetchUnreadCount = async () => {
 };
 
 const handleLogout = () => {
-  localStorage.removeItem('cspc_token');
-  localStorage.removeItem('cspc_user');
+  localStorage.clear();
+  sessionStorage.clear();
   showConfirmModal.value = false;
   sidebarOpen.value = false;
-  router.push('/login');
+  window.location.replace('/login-options');
 };
 
 const triggerLogoutConfirm = () => {

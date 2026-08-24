@@ -474,7 +474,88 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             });
         }
 
-        // ================= CASE B: NEW REGISTRATION =================
+        // ================= CASE B: NEW REGISTRATION (WITH DUPLICATE GUARD) =================
+        // Check if an unaccredited/existing house row already exists for this owner to prevent duplicate creation on network retry
+        const [existingOwnerHouse] = await pool.query(
+            `SELECT id FROM boarding_houses 
+             WHERE owner_id = ? AND (house_status IN ('pending', 'rejected', 'archived') OR name = ?) 
+             ORDER BY id DESC LIMIT 1`,
+            [ownerId, house_name]
+        );
+
+        if (existingOwnerHouse.length > 0) {
+            const existingId = existingOwnerHouse[0].id;
+            const house_img = (await uploadField('house_img', 'house_images'));
+            const permit_business_form = (await uploadField('permit_business_form', 'permits'));
+            const permit_cedula        = (await uploadField('permit_cedula', 'permits'));
+            const permit_dti           = (await uploadField('permit_dti', 'permits'));
+            const permit_barangay      = (await uploadField('permit_barangay', 'permits'));
+            const permit_building      = (await uploadField('permit_building', 'permits'));
+            const permit_zoning        = (await uploadField('permit_zoning', 'permits'));
+            const permit_sanitary      = (await uploadField('permit_sanitary', 'permits'));
+            const permit_fire          = (await uploadField('permit_fire', 'permits'));
+
+            const img_1 = combinedPhotos[0] || null;
+            const img_2 = combinedPhotos[1] || null;
+            const img_3 = combinedPhotos[2] || null;
+
+            await pool.query(
+                `UPDATE boarding_houses 
+                 SET name = ?, location = ?, barangay = ?, map_link = ?, price = ?, phone_contact = ?, description = ?,
+                     amenities_free = ?, amenities_paid = ?, house_status = 'pending', admin_comments = NULL,
+                     ${house_img ? 'img = ?, ' : ''}
+                     ${img_1 ? 'img_1 = ?, ' : ''}
+                     ${img_2 ? 'img_2 = ?, ' : ''}
+                     ${img_3 ? 'img_3 = ?, ' : ''}
+                     ${permit_business_form ? 'permit_business_form = ?, ' : ''}
+                     ${permit_cedula ? 'permit_cedula = ?, ' : ''}
+                     ${permit_dti ? 'permit_dti = ?, ' : ''}
+                     ${permit_barangay ? 'permit_barangay = ?, ' : ''}
+                     ${permit_building ? 'permit_building = ?, ' : ''}
+                     ${permit_zoning ? 'permit_zoning = ?, ' : ''}
+                     ${permit_sanitary ? 'permit_sanitary = ?, ' : ''}
+                     ${permit_fire ? 'permit_fire = ?, ' : ''}
+                     latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
+                 WHERE id = ? AND owner_id = ?`,
+                [
+                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, contact_number, description || '',
+                    sanitizedFree, sanitizedPaid,
+                    ...(house_img ? [house_img] : []),
+                    ...(img_1 ? [img_1] : []),
+                    ...(img_2 ? [img_2] : []),
+                    ...(img_3 ? [img_3] : []),
+                    ...(permit_business_form ? [permit_business_form] : []),
+                    ...(permit_cedula ? [permit_cedula] : []),
+                    ...(permit_dti ? [permit_dti] : []),
+                    ...(permit_barangay ? [permit_barangay] : []),
+                    ...(permit_building ? [permit_building] : []),
+                    ...(permit_zoning ? [permit_zoning] : []),
+                    ...(permit_sanitary ? [permit_sanitary] : []),
+                    ...(permit_fire ? [permit_fire] : []),
+                    latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
+                    parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || null,
+                    existingId, ownerId
+                ]
+            );
+
+            // Sync photos
+            if (combinedPhotos.length > 0) {
+                await pool.query('DELETE FROM house_photos WHERE house_id = ?', [existingId]);
+                for (let i = 0; i < combinedPhotos.length; i++) {
+                    await pool.query(
+                        'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                        [existingId, combinedPhotos[i], i]
+                    );
+                }
+            }
+
+            return res.json({
+                success: true,
+                message: 'Accreditation application submitted successfully!',
+                houseId: existingId
+            });
+        }
+
         const house_img        = await uploadField('house_img', 'house_images');
         const permit_business_form = await uploadField('permit_business_form', 'permits');
         const permit_cedula        = await uploadField('permit_cedula', 'permits');
