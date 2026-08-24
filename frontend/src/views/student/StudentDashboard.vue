@@ -9,8 +9,18 @@ import { formatAddress } from '../../utils/formatAddress.js';
 
 const router = useRouter();
 const route = useRoute();
-const houses = ref([]);
-const isLoading = ref(true);
+// Instant initialization from persistent localStorage cache for 0ms offline rendering
+const initialCachedHouses = (() => {
+  try {
+    const raw = localStorage.getItem('cspc_cached_student_houses');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+})();
+
+const houses = ref(initialCachedHouses);
+const isLoading = ref(initialCachedHouses.length === 0);
 const searchInput = ref('');
 const minPrice = ref('');
 const maxPrice = ref('');
@@ -23,8 +33,6 @@ const isOfflineFlag = ref(false);
 const token = localStorage.getItem('cspc_token');
 const userRaw = localStorage.getItem('cspc_user');
 const currentUser = userRaw ? JSON.parse(userRaw) : null;
-// A user is a guest only if they have no token — role check removed since
-// the student dashboard is already behind the student auth guard in the router
 const isGuest = computed(() => route.query.guest === 'true' || !token);
 const displayName = computed(() => isGuest.value ? 'Guest' : (currentUser?.name || 'Guest'));
 
@@ -35,14 +43,24 @@ const API = getApiBaseUrl();
 
 const fetchHouses = async () => {
   try {
-    isLoading.value = true;
+    if (houses.value.length === 0) {
+      isLoading.value = true;
+    }
     isOfflineFlag.value = false;
-    // Always attempt the fetch — if offline, the SW will serve from cache automatically.
-    // Only show the offline banner if both network and cache fail (no response at all).
     const res = await axios.get('/api/student/houses');
-    houses.value = res.data.houses || [];
+    if (res.data && Array.isArray(res.data.houses)) {
+      houses.value = res.data.houses;
+      localStorage.setItem('cspc_cached_student_houses', JSON.stringify(res.data.houses));
+    }
   } catch (e) {
-    console.error('Failed to load houses', e);
+    console.error('Failed to load houses from network:', e);
+    try {
+      const cached = localStorage.getItem('cspc_cached_student_houses');
+      if (cached) {
+        houses.value = JSON.parse(cached);
+      }
+    } catch (err) {}
+    
     if (houses.value.length === 0) {
       isOfflineFlag.value = true;
     }
@@ -273,7 +291,7 @@ onMounted(fetchHouses);
           </div>
 
           <!-- Subtle Offline Notice (When displaying cached houses) -->
-          <div v-if="(isOffline || isOfflineFlag) && houses.length > 0" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
+          <div v-if="isOffline || isOfflineFlag" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
             <span class="flex items-center gap-2">
               <i class="fa-solid fa-wifi text-amber-500"></i>
               Offline Mode • Showing cached boarding house listings
@@ -282,16 +300,16 @@ onMounted(fetchHouses);
           </div>
 
           <!-- Offline Empty State (Only if NO cached houses exist) -->
-          <div v-else-if="(isOffline || isOfflineFlag) && houses.length === 0" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
+          <div v-if="!isLoading && houses.length === 0" class="py-24 text-center bg-white rounded-[2rem] border-2 border-dashed border-amber-200 shadow-sm">
             <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
             </svg>
-            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">No Internet Connection</p>
+            <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-1">No Boarding Houses Found</p>
             <p class="text-slate-400 font-bold text-[10px]">No offline cached data available yet. Please connect to the internet.</p>
           </div>
 
           <!-- DYNAMIC ACCREDITED HOUSES GRID -->
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div v-if="!isLoading && houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div
               v-for="house in filteredHouses"
               :key="house.id"

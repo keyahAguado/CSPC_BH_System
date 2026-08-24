@@ -5,9 +5,22 @@ import Header from '../components/partials/Header.vue';
 
 import { getImageUrl } from '../config/api';
 import { formatAddress } from '../utils/formatAddress.js';
+import { useOfflineStatus } from '../utils/offlineHelper.js';
 
-const houses = ref([]);
-const isLoading = ref(true);
+const { isOffline } = useOfflineStatus();
+
+// Instant initialization from persistent localStorage cache for 0ms offline rendering
+const initialCachedHouses = (() => {
+  try {
+    const raw = localStorage.getItem('cspc_cached_accredited_houses');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+})();
+
+const houses = ref(initialCachedHouses);
+const isLoading = ref(initialCachedHouses.length === 0);
 const showModal = ref(false);
 
 const toggleModal = () => {
@@ -16,13 +29,22 @@ const toggleModal = () => {
 
 const fetchHouses = async () => {
   try {
-    isLoading.value = true;
+    if (houses.value.length === 0) {
+      isLoading.value = true;
+    }
     const response = await axios.get('/api/boarding-houses/accredited');
-    if (response.data.success) {
-      houses.value = response.data.data || [];
+    if (response.data && response.data.success && Array.isArray(response.data.data)) {
+      houses.value = response.data.data;
+      localStorage.setItem('cspc_cached_accredited_houses', JSON.stringify(response.data.data));
     }
   } catch (error) {
-    console.error('Failed to fetch houses:', error);
+    console.error('Failed to fetch houses from network:', error);
+    try {
+      const cached = localStorage.getItem('cspc_cached_accredited_houses');
+      if (cached) {
+        houses.value = JSON.parse(cached);
+      }
+    } catch (err) {}
   } finally {
     isLoading.value = false;
   }
@@ -111,13 +133,22 @@ onMounted(() => {
         <h2 class="text-[10px] font-black text-blue-600 text-center mb-2 tracking-[0.4em] uppercase">Boarding Houses</h2>
         <h3 class="text-2xl font-black text-black text-center mb-12 tracking-tight uppercase">Current Offers</h3>
         
+        <!-- Subtle Offline Notice (When displaying cached houses) -->
+        <div v-if="isOffline" class="mb-6 p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-amber-800 text-[11px] font-bold flex items-center justify-between shadow-xs">
+          <span class="flex items-center gap-2">
+            <i class="fa-solid fa-wifi text-amber-500"></i>
+            Offline Mode • Showing cached boarding house listings
+          </span>
+          <span class="text-[9px] bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">Cached</span>
+        </div>
+
         <!-- Loading State Indicator -->
         <div v-if="isLoading" class="py-12 flex flex-col items-center justify-center gap-2">
           <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
           <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading Boarding Houses...</p>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-else-if="houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div v-for="house in houses" :key="house.id" 
                class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group">
             

@@ -278,18 +278,48 @@ const submitReview = async () => {
 
 const fetchData = async () => {
   let mapApiKey = '';
+  // Try initializing from persistent cache first
   try {
-    isLoading.value = true;
+    const rawCached = localStorage.getItem(`cspc_cached_house_${houseId}`);
+    if (rawCached) {
+      const parsed = JSON.parse(rawCached);
+      house.value = parsed.house || {};
+      reviews.value = parsed.reviews || [];
+      avgRating.value = parsed.avgRating || 0;
+      housePhotos.value = parsed.photos || [];
+      mapApiKey = parsed.googleMapsApiKey || '';
+      isLoading.value = false;
+    }
+  } catch (e) {}
+
+  try {
+    if (!house.value || !house.value.id) {
+      isLoading.value = true;
+    }
     const res = await axios.get(`/api/student/house/${houseId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
-    house.value = res.data.house || {};
-    reviews.value = res.data.reviews || [];
-    avgRating.value = res.data.avgRating || 0;
-    housePhotos.value = res.data.photos || [];
-    mapApiKey = res.data.googleMapsApiKey;
+    if (res.data && res.data.house) {
+      house.value = res.data.house || {};
+      reviews.value = res.data.reviews || [];
+      avgRating.value = res.data.avgRating || 0;
+      housePhotos.value = res.data.photos || [];
+      mapApiKey = res.data.googleMapsApiKey;
+      localStorage.setItem(`cspc_cached_house_${houseId}`, JSON.stringify(res.data));
+    }
   } catch (e) {
-    console.error('Failed to load house data', e);
+    console.error('Failed to load house data from network', e);
+    try {
+      const cached = localStorage.getItem(`cspc_cached_house_${houseId}`);
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        house.value = cachedData.house || {};
+        reviews.value = cachedData.reviews || [];
+        avgRating.value = cachedData.avgRating || 0;
+        housePhotos.value = cachedData.photos || [];
+        mapApiKey = cachedData.googleMapsApiKey || '';
+      }
+    } catch (err) {}
   } finally {
     isLoading.value = false;
     await nextTick();
