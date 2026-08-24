@@ -56,13 +56,31 @@ function getReportDate() {
 }
 
 function openPrintWindow(html, title, landscape = false) {
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Pop-up blocked. Please allow pop-ups for this site, then try again.');
-    return;
+  // Remove any pre-existing print iframe
+  const existingFrame = document.getElementById('cspc-print-iframe');
+  if (existingFrame) {
+    try { existingFrame.remove(); } catch(e) {}
   }
+
+  // Create an invisible iframe attached to current document
+  const iframe = document.createElement('iframe');
+  iframe.id = 'cspc-print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0px';
+  iframe.style.height = '0px';
+  iframe.style.border = '0px';
+  iframe.style.visibility = 'hidden';
+
+  document.body.appendChild(iframe);
+
   const pageCSS = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 1.5cm; }`;
-  win.document.write(`<!DOCTYPE html>
+  const frameWin = iframe.contentWindow || iframe.contentDocument;
+  const doc = frameWin.document || frameWin;
+
+  doc.open();
+  doc.write(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -73,30 +91,23 @@ function openPrintWindow(html, title, landscape = false) {
   <div style="max-width:${landscape ? '100%' : '800px'};margin:0 auto;padding:20px;">
     ${html}
   </div>
-  <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() { 
-        window.focus();
-        window.print();
-      }, 400);
-    });
-
-    function safeClose() {
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.focus();
-        }
-      } catch (e) {}
-      setTimeout(function() {
-        try { window.close(); } catch (e) {}
-      }, 300);
-    }
-
-    window.addEventListener('afterprint', safeClose);
-  <\/script>
 </body>
 </html>`);
-  win.document.close();
+  doc.close();
+
+  // Trigger print cleanly inside the iframe
+  setTimeout(() => {
+    try {
+      frameWin.focus();
+      frameWin.print();
+    } catch (e) {
+      console.error('Print execution failed:', e);
+    } finally {
+      setTimeout(() => {
+        try { iframe.remove(); } catch (err) {}
+      }, 1000);
+    }
+  }, 300);
 }
 
 /** MASTERLIST REPORT */
