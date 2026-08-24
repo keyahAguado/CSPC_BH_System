@@ -137,7 +137,9 @@ onMounted(() => {
         <div v-if="isOffline" class="mb-6 p-4 bg-amber-50 border border-amber-300/80 rounded-2xl text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-full bg-amber-100/90 flex items-center justify-center text-amber-600 shrink-0">
-              <i class="fa-solid fa-wifi-slash text-sm"></i>
+              <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
+              </svg>
             </div>
             <div>
               <p class="text-xs font-black uppercase tracking-wide text-amber-950">You are currently offline • Displaying saved boarding houses</p>

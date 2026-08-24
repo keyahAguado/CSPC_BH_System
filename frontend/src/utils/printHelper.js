@@ -76,13 +76,23 @@ function openPrintWindow(html, title, landscape = false) {
   <script>
     window.addEventListener('load', function() {
       setTimeout(function() { 
+        window.focus();
         window.print();
-        setTimeout(function() { window.close(); }, 500);
-      }, 600);
+      }, 400);
     });
-    window.onafterprint = function() {
-      window.close();
-    };
+
+    function safeClose() {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.focus();
+        }
+      } catch (e) {}
+      setTimeout(function() {
+        try { window.close(); } catch (e) {}
+      }, 300);
+    }
+
+    window.addEventListener('afterprint', safeClose);
   <\/script>
 </body>
 </html>`);
