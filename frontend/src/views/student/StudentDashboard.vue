@@ -48,16 +48,20 @@ const fetchHouses = async () => {
     }
     isOfflineFlag.value = false;
     const res = await axios.get('/api/student/houses');
-    if (res.data && Array.isArray(res.data.houses)) {
-      houses.value = res.data.houses;
-      localStorage.setItem('cspc_cached_student_houses', JSON.stringify(res.data.houses));
+    const fetched = res.data?.houses || res.data?.data || (Array.isArray(res.data) ? res.data : null);
+    if (fetched && Array.isArray(fetched) && fetched.length > 0) {
+      houses.value = fetched;
+      localStorage.setItem('cspc_cached_student_houses', JSON.stringify(fetched));
     }
   } catch (e) {
     console.error('Failed to load houses from network:', e);
     try {
       const cached = localStorage.getItem('cspc_cached_student_houses');
       if (cached) {
-        houses.value = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          houses.value = parsed;
+        }
       }
     } catch (err) {}
     
@@ -72,12 +76,18 @@ const fetchHouses = async () => {
 const filteredHouses = computed(() => {
   return houses.value.filter(h => {
     const name = (h.name || '').toLowerCase();
-    const matchSearch = !searchInput.value || name.includes(searchInput.value.toLowerCase());
-    const price = parseFloat(String(h.price).replace(/,/g, '')) || 0;
+    const address = (h.address || '').toLowerCase();
+    const ownerName = (h.owner_name || '').toLowerCase();
+    const query = (searchInput.value || '').toLowerCase().trim();
+    const matchSearch = !query || name.includes(query) || address.includes(query) || ownerName.includes(query);
+
+    const rawPrice = (h.price !== null && h.price !== undefined) ? String(h.price).replace(/,/g, '') : '0';
+    const price = parseFloat(rawPrice) || 0;
     const min = parseFloat(minPrice.value) || 0;
     const max = parseFloat(maxPrice.value) || Infinity;
     const matchPrice = price >= min && price <= max;
-    const rating = Math.round(h.avg_rating || 0);
+
+    const rating = Math.round(parseFloat(h.avg_rating) || 0);
     const matchRating = selectedRatings.value.length === 0 || selectedRatings.value.includes(rating);
     return matchSearch && matchPrice && matchRating;
   });
