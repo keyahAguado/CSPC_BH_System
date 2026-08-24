@@ -22,7 +22,8 @@ const errorMsg = ref('');
 const validationErrors = ref([]); 
 
 const isRejected = ref(currentUser.value.houseStatus === 'rejected');
-const adminComments = ref(currentUser.value.admin_comments || '');
+const rawAdminComments = currentUser.value.admin_comments || '';
+const adminComments = ref(rawAdminComments.trim().toLowerCase() === 'accredited' ? '' : rawAdminComments);
 
 // Form Fields
 const houseId = ref(null); // Dynamic assignment

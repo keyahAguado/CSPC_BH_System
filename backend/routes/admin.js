@@ -493,7 +493,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
              SET house_status = 'accredited', compliance_status = 'active', 
                  document_update_pending = 0, is_resubmission = 0, admin_comments = ? 
              WHERE id = ?`,
-            [admin_comments || 'Accredited', houseId]
+            [admin_comments && admin_comments.trim() !== 'Accredited' ? admin_comments.trim() : null, houseId]
         );
 
         await connection.query('UPDATE users SET status = ? WHERE id = ?', ['active', owner_id]);

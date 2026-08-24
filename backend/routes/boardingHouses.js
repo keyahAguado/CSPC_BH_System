@@ -438,7 +438,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             await pool.query(
                 `UPDATE boarding_houses 
                  SET name = ?, img = ?, img_1 = ?, img_2 = ?, img_3 = ?, location = ?, barangay = ?, map_link = ?, price = ?, phone_contact = ?, description = ?,
-                     amenities_free = ?, amenities_paid = ?, house_status = 'pending',
+                     amenities_free = ?, amenities_paid = ?, house_status = 'pending', admin_comments = NULL,
                      permit_business_form = ?, permit_cedula = ?, permit_dti = ?, permit_barangay = ?,
                      permit_building = ?, permit_zoning = ?, permit_sanitary = ?, permit_fire = ?,
                      expiry_permit_business_form = ?, expiry_permit_cedula = ?, expiry_permit_dti = ?, expiry_permit_barangay = ?,
