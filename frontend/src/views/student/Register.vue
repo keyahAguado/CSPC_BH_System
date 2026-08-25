@@ -22,6 +22,14 @@ const handleRegister = async () => {
     errorMessage.value = 'Please fill in all mandatory fields.';
     return;
   }
+
+  const cleanEmail = email.value.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    errorMessage.value = 'Please enter a valid email address (e.g. name@gmail.com).';
+    return;
+  }
+
   errorMessage.value = '';
   successMessage.value = '';
   isLoading.value = true;
@@ -31,7 +39,7 @@ const handleRegister = async () => {
       name: name.value,
       phone: phone.value,
       address: address.value,
-      email: email.value,
+      email: cleanEmail,
       password: password.value
     });
 

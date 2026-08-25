@@ -219,7 +219,7 @@ onMounted(() => {
             <div class="rounded-xl overflow-hidden mb-4 h-[220px] relative">
               <img :src="getImageUrl(house.img)" :alt="house.name"
                    class="w-full h-full object-cover grayscale-[10%] hover:grayscale-0 transition duration-500"
-                   @error="e => e.target.src = '/img/cspc_bg.webp'">
+                   @error="e => e.target.src = '/img/cspc_bg.webp'" />
               
               <!-- EXPIRED OVERLAY -->
               <div v-if="house.compliance === 'expired'" class="absolute inset-0 bg-red-600/60 backdrop-blur-sm flex items-center justify-center p-6 text-center">

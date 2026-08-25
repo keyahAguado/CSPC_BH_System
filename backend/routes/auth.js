@@ -77,10 +77,16 @@ async function buildUserPayload(user) {
 //    and as fallback for any user with a local password.
 // =========================================================================
 router.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
 
     if (!email || !password) {
         return res.status(400).json({ success: false, message: 'Email and password are required.' });
+    }
+
+    email = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address (e.g. name@domain.com).' });
     }
 
     try {
@@ -211,10 +217,16 @@ router.get('/google/callback',
 //     Used by owners registering with email + password (Register.vue)
 // =========================================================================
 router.post('/register/owner', async (req, res) => {
-    const { name, phone, address, email, password } = req.body;
+    let { name, phone, address, email, password } = req.body;
 
     if (!name || !phone || !address || !email || !password) {
         return res.status(400).json({ success: false, message: 'All mandatory fields are required.' });
+    }
+
+    email = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address (e.g. name@domain.com).' });
     }
 
     try {

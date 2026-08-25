@@ -1,10 +1,13 @@
 <script setup>
+import { ref } from 'vue';
 import Header from '../../components/partials/Header.vue';
+import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
 import { getApiBaseUrl } from '../../config/api';
 import { useRoute } from 'vue-router';
 
 const API = getApiBaseUrl();
 const route = useRoute();
+const showPrivacyModal = ref(false);
 
 // Preserve any error messages passed back from the OAuth callback
 const errorMap = {
@@ -23,10 +26,10 @@ const handleGoogleLogin = () => {
 </script>
 
 <template>
-  <div class="bg-slate-50 min-h-screen font-sans">
-    <Header />
+  <div class="bg-slate-50 min-h-screen font-sans flex flex-col justify-between">
+    <Header @openPrivacyModal="showPrivacyModal = true" />
 
-    <main class="min-h-[85vh] flex items-center justify-center p-6 bg-slate-50">
+    <main class="flex-1 flex items-center justify-center p-6 bg-slate-50">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-center border border-slate-100">
 
         <!-- Branding -->
@@ -95,8 +98,20 @@ const handleGoogleLogin = () => {
           </router-link>
         </div>
 
-        <p class="mt-8 text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">CSPC Boarding House System</p>
+        <div class="mt-8 pt-6 border-t border-slate-100 flex flex-col items-center gap-3">
+          <button
+            @click="showPrivacyModal = true"
+            class="inline-flex items-center gap-2 text-[10px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-4 py-2 rounded-full transition-colors uppercase tracking-wider focus:outline-none"
+          >
+            <i class="fa-solid fa-shield-halved text-amber-600"></i>
+            <span>Data Privacy Policy (RA 10173)</span>
+          </button>
+          <p class="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">CSPC Boarding House System</p>
+        </div>
       </div>
     </main>
+
+    <!-- Privacy Policy Modal Component -->
+    <PrivacyPolicyModal :isOpen="showPrivacyModal" @close="showPrivacyModal = false" />
   </div>
 </template>

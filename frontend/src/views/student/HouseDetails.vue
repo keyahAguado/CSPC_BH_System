@@ -1,3 +1,4 @@
+<script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -584,7 +585,7 @@ onMounted(fetchData);
                  @load="isPhotoLoading = false"
                  @error="isPhotoLoading = false"
                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                 alt="Property Gallery Photo">
+                 alt="Property Gallery Photo" />
             <div v-else class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No property photos available</div>
 
             <!-- Overlay Click to Expand -->
@@ -732,7 +733,7 @@ onMounted(fetchData);
                 v-if="review.profile_pic"
                 :src="getImageUrl(review.profile_pic)"
                 class="w-12 h-12 rounded-2xl object-cover shadow-sm border border-slate-100"
-              >
+              />
               <div
                 v-else
                 class="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 font-black text-sm"

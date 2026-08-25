@@ -27,6 +27,16 @@ const alertRef = ref(null);
           <a href="/#features" class="hover:text-white transition">Features</a>
           <a href="/#offers" class="hover:text-white transition">Offers</a>
         </div>
+
+        <!-- Data Privacy Badge button -->
+        <button 
+          @click="$emit('openPrivacyModal')" 
+          class="hidden sm:flex items-center gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-300/40 text-[10px] font-extrabold px-3 py-1.5 rounded-full uppercase tracking-wider transition active:scale-95 focus:outline-none"
+          title="Republic Act 10173 Data Privacy Policy"
+        >
+          <i class="fa-solid fa-shield-halved text-amber-400"></i>
+          <span>Data Privacy</span>
+        </button>
         
         <!-- Mobile & Desktop LOGIN Pill Button (Matching Mobile PWA Image) -->
         <a 

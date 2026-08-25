@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import Header from '../components/partials/Header.vue';
+import PrivacyPolicyModal from '../components/partials/PrivacyPolicyModal.vue';
 
 import { getImageUrl } from '../config/api';
 import { formatAddress } from '../utils/formatAddress.js';
@@ -22,6 +23,7 @@ const initialCachedHouses = (() => {
 const houses = ref(initialCachedHouses);
 const isLoading = ref(initialCachedHouses.length === 0);
 const showModal = ref(false);
+const showPrivacyModal = ref(false);
 
 const toggleModal = () => {
   showModal.value = !showModal.value;
@@ -57,7 +59,7 @@ onMounted(() => {
 
 <template>
   <div class="bg-white min-h-screen font-sans text-slate-800">
-    <Header />
+    <Header @openPrivacyModal="showPrivacyModal = true" />
 
     <!-- MODAL -->
     <div v-if="showModal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -106,48 +108,57 @@ onMounted(() => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
           <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
             <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">SASO-Accredited Listings Only</h3>
-            <p class="text-sm text-gray-600 leading-relaxed font-medium">All boarding houses are verified and approved by the Student Affairs and Services Office (SASO) to ensure safety, compliance, and quality standards.</p>
+            <p class="text-slate-600 text-sm leading-relaxed">
+              All boarding houses are verified and approved by the Student Affairs and Services Office (SASO) to ensure safety, compliance, and quality standards.
+            </p>
           </div>
-         
+
           <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
             <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">Advanced Search & Filters</h3>
-            <p class="text-sm text-gray-600 leading-relaxed font-medium">Enables quick and efficient searching of boarding houses near CSPC campus to match students' and parents' specific needs.</p>
+            <p class="text-slate-600 text-sm leading-relaxed">
+              Enables quick and efficient searching of boarding houses near CSPC campus to match students' and parents' specific needs.
+            </p>
           </div>
 
           <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
             <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">Real Photos & Details</h3>
-            <p class="text-sm text-gray-600 leading-relaxed font-medium">Actual photos of rooms and facilities plus full details: monthly rates, house rules, exact location, and owner contact information.</p>
+            <p class="text-slate-600 text-sm leading-relaxed">
+              Actual photos of rooms and facilities plus full details: monthly rates, house rules, exact location, and owner contact information.
+            </p>
           </div>
 
           <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
             <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">User Friendly & Responsive</h3>
-            <p class="text-sm text-gray-600 leading-relaxed font-medium">Accessible on desktop and mobile devices, with an intuitive interface designed for students and parents to use easily anytime, anywhere.</p>
+            <p class="text-slate-600 text-sm leading-relaxed">
+              Accessible on desktop and mobile devices, with an intuitive interface designed for students and parents to use easily anytime, anywhere.
+            </p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 3. OFFERS SECTION -->
-    <section id="offers" class="py-20 bg-white px-10">
-      <div class="max-w-5xl mx-auto">
-        <h2 class="text-[10px] font-black text-blue-600 text-center mb-2 tracking-[0.4em] uppercase">Boarding Houses</h2>
-        <h3 class="text-2xl font-black text-black text-center mb-12 tracking-tight uppercase">Current Offers</h3>
-        
-        <!-- Subtle Offline Notice (When displaying cached houses) -->
-        <div v-if="isOffline" class="mb-6 p-4 bg-amber-50 border border-amber-300/80 rounded-2xl text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <!-- MAIN PUBLIC DIRECTORY VIEW -->
+    <section class="py-12 bg-white text-center">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="flex flex-col items-center mb-10">
+          <span class="text-blue-600 text-[10px] font-black uppercase tracking-[0.2em] mb-2 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100">Official Portal</span>
+          <h1 class="text-3xl md:text-4xl font-black text-slate-900 uppercase tracking-tight">Accredited Boarding Houses</h1>
+          <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">CSPC SASO Verified Student Accommodations</p>
+        </div>
+
+        <!-- Subtle Offline Notice (ONLY when physically offline) -->
+        <div v-if="isOffline" class="mb-8 max-w-3xl mx-auto p-4 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 border border-amber-400/40 backdrop-blur-md rounded-2xl text-amber-900 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left animate-fade-in">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-amber-100/90 flex items-center justify-center text-amber-600 shrink-0">
-              <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
-              </svg>
+            <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-md shadow-amber-200">
+              <i class="fa-solid fa-wifi-slash animate-pulse"></i>
             </div>
             <div>
-              <p class="text-xs font-black uppercase tracking-wide text-amber-950">You are currently offline • Displaying saved boarding houses</p>
-              <p class="text-[11px] font-semibold text-amber-800">Please check your internet connection to view real-time availability and updates.</p>
+              <p class="text-xs font-black uppercase tracking-wide text-amber-950">You are currently offline • Displaying saved listings</p>
+              <p class="text-[11px] font-medium text-amber-800">Reconnect to active internet to view real-time room availability and updates.</p>
             </div>
           </div>
-          <span class="self-start sm:self-auto text-[9px] bg-amber-200/80 text-amber-950 px-2.5 py-1 rounded-full font-black uppercase tracking-wider shrink-0">
-            Offline Saved Copy
+          <span class="self-start sm:self-auto text-[9px] bg-amber-600 text-white px-3 py-1.5 rounded-full font-black uppercase tracking-widest shrink-0 shadow-sm">
+            Offline Cache
           </span>
         </div>
 
@@ -157,7 +168,7 @@ onMounted(() => {
           <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading Boarding Houses...</p>
         </div>
 
-        <div v-else-if="houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-if="houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div v-for="house in houses" :key="house.id" 
                class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group">
             
@@ -184,17 +195,61 @@ onMounted(() => {
               </button>
             </div>
           </div>
+        </div>
 
-          <div v-if="houses.length === 0" class="col-span-full py-20 text-center flex flex-col items-center justify-center">
-            <div class="text-slate-300 mb-4">
-              <i class="fa-solid fa-house-circle-exclamation text-5xl"></i>
-            </div>
-            <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">No accredited boarding houses found yet.</p>
+        <!-- ONLINE Empty State (When 0 accredited houses exist in database) -->
+        <div v-else-if="!isLoading && !isOffline && houses.length === 0" class="col-span-full py-16 text-center flex flex-col items-center justify-center bg-slate-50/50 rounded-3xl border border-slate-100 p-8 max-w-xl mx-auto">
+          <div class="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#2a528a] mb-4 shadow-sm">
+            <i class="fa-solid fa-building-circle-check text-2xl"></i>
           </div>
+          <h3 class="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">No Accredited Boarding Houses Available Yet</h3>
+          <p class="text-slate-400 font-medium text-xs max-w-md leading-relaxed">
+            SASO Administrators are currently inspecting and reviewing pending landlord accreditation applications. Please check back soon!
+          </p>
+        </div>
+
+        <!-- OFFLINE Empty State -->
+        <div v-else-if="!isLoading && isOffline && houses.length === 0" class="col-span-full py-16 text-center flex flex-col items-center justify-center bg-amber-50/50 rounded-3xl border border-amber-100 p-8 max-w-xl mx-auto">
+          <div class="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-4 shadow-sm">
+            <i class="fa-solid fa-wifi-slash text-2xl"></i>
+          </div>
+          <h3 class="text-amber-950 font-black uppercase tracking-widest text-xs mb-1">No Saved Boarding Houses Offline</h3>
+          <p class="text-amber-800 font-medium text-xs max-w-md leading-relaxed">
+            Please connect to an active internet connection to load and save available boarding houses.
+          </p>
         </div>
       </div>
     </section>
 
+    <!-- FOOTER WITH HIGH-VISIBILITY DATA PRIVACY ACT COMPLIANCE BADGE -->
+    <footer class="bg-slate-900 text-white py-10 px-6 border-t border-slate-800 shrink-0">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="text-center md:text-left">
+          <p class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">CSPC Boarding House Selection System</p>
+          <p class="text-[11px] text-slate-400">Official Student Affairs and Services Office (SASO) Accommodation Portal</p>
+        </div>
 
+        <!-- High-Visibility Prominent Data Privacy Badge Button -->
+        <button 
+          @click="showPrivacyModal = true" 
+          class="group bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-amber-500/20 hover:from-amber-500/30 hover:to-amber-500/30 border border-amber-400/50 text-amber-300 px-5 py-2.5 rounded-full flex items-center gap-2.5 transition-all duration-300 shadow-md hover:shadow-amber-500/10 active:scale-95 focus:outline-none"
+        >
+          <span class="w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-xs font-black group-hover:scale-110 transition">
+            <i class="fa-solid fa-shield-halved"></i>
+          </span>
+          <div class="text-left leading-tight">
+            <p class="text-[10px] font-black uppercase tracking-widest text-amber-300">Data Privacy Policy</p>
+            <p class="text-[9px] font-semibold text-amber-200/80">RA 10173 Compliant Disclosure</p>
+          </div>
+        </button>
+      </div>
+
+      <div class="max-w-7xl mx-auto mt-8 pt-6 border-t border-slate-800/80 text-center text-[10px] text-slate-400 font-medium">
+        <p>© 2026 CSPC Boarding House Selection & Management System. All rights reserved.</p>
+      </div>
+    </footer>
+
+    <!-- Privacy Policy Modal Component -->
+    <PrivacyPolicyModal :isOpen="showPrivacyModal" @close="showPrivacyModal = false" />
   </div>
 </template>
