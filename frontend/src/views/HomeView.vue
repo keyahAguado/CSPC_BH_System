@@ -137,8 +137,8 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- MAIN PUBLIC DIRECTORY VIEW -->
-    <section class="py-12 bg-white text-center">
+    <!-- MAIN PUBLIC DIRECTORY VIEW (OFFERS SECTION) -->
+    <section id="offers" class="py-12 bg-white text-center scroll-mt-16">
       <div class="max-w-7xl mx-auto px-6">
         <div class="flex flex-col items-center mb-10">
           <span class="text-blue-600 text-[10px] font-black uppercase tracking-[0.2em] mb-2 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100">Official Portal</span>
