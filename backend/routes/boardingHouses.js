@@ -498,7 +498,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, contact_number, description || '',
+                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description || '',
                     sanitizedFree, sanitizedPaid,
                     permit_business_form, permit_cedula, permit_dti, permit_barangay,
                     permit_building, permit_zoning, permit_sanitary, permit_fire,
@@ -510,13 +510,17 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 ]
             );
 
-            // Sync all photos into house_photos table
-            await pool.query('DELETE FROM house_photos WHERE house_id = ?', [house_id]);
-            for (let i = 0; i < combinedPhotos.length; i++) {
-                await pool.query(
-                    'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
-                    [house_id, combinedPhotos[i], i]
-                );
+            // Sync all photos into house_photos table (Safeguarded if table missing)
+            try {
+                await pool.query('DELETE FROM house_photos WHERE house_id = ?', [house_id]);
+                for (let i = 0; i < combinedPhotos.length; i++) {
+                    await pool.query(
+                        'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                        [house_id, combinedPhotos[i], i]
+                    );
+                }
+            } catch (e) {
+                console.warn('[HOUSE_PHOTOS] Skipped optional house_photos sync:', e.message);
             }
 
             return res.json({
@@ -570,7 +574,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, contact_number, description || '',
+                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description || '',
                     sanitizedFree, sanitizedPaid,
                     ...(house_img ? [house_img] : []),
                     ...(img_1 ? [img_1] : []),
@@ -635,7 +639,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 ownerId, house_name, house_img, img_1, img_2, img_3,
-                location, req.body.barangay || null, map_link, parseFloat(price) || 0, contact_number, description,
+                location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description,
                 sanitizedFree, sanitizedPaid, 'pending',
                 permit_business_form, permit_cedula, permit_dti, permit_barangay,
                 permit_building, permit_zoning, permit_sanitary, permit_fire,
