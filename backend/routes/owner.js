@@ -244,13 +244,17 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
             ]
         );
 
-        // Replace house_photos for this house
-        await connection.query('DELETE FROM house_photos WHERE house_id = ?', [req.params.id]);
-        for (let i = 0; i < allPhotos.length; i++) {
-            await connection.query(
-                'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
-                [req.params.id, allPhotos[i], i]
-            );
+        // Replace house_photos for this house (Safeguarded if table does not exist)
+        try {
+            await connection.query('DELETE FROM house_photos WHERE house_id = ?', [req.params.id]);
+            for (let i = 0; i < allPhotos.length; i++) {
+                await connection.query(
+                    'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
+                    [req.params.id, allPhotos[i], i]
+                );
+            }
+        } catch (photoErr) {
+            console.warn('[HOUSE_PHOTOS] Skipped optional house_photos table query:', photoErr.message);
         }
 
         // Preserve individual room prices set by the owner
@@ -261,7 +265,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
     } catch (err) {
         await connection.rollback();
         console.error('Update details error:', err.message);
-        res.status(500).json({ success: false, message: 'Database failed to save updates.' });
+        res.status(500).json({ success: false, message: err.message || 'Database failed to save updates.' });
     } finally {
         connection.release();
     }
