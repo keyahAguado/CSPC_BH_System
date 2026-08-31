@@ -71,7 +71,7 @@ async function checkExpiringDocumentsForOwner(userId) {
             const [customDocs] = await pool.query(
                 `SELECT hd.expiry_date, c.label 
                  FROM house_documents hd 
-                 JOIN criteria c ON hd.criteria_id = c.id 
+                 JOIN checklist_criteria c ON hd.criteria_id = c.id 
                  WHERE hd.house_id = ? AND hd.expiry_date IS NOT NULL`,
                 [house.id]
             );

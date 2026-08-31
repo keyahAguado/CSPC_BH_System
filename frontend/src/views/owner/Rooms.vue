@@ -15,6 +15,7 @@ const maleRooms = ref([]);
 const newRoomNumber = ref('');
 const newGenderType = ref('female');
 const newCapacity = ref('');
+const newPrice = ref('');
 
 // Form states for editing room
 const showEditModal = ref(false);
@@ -22,6 +23,7 @@ const editingRoomId = ref(null);
 const editRoomNumber = ref('');
 const editGenderType = ref('female');
 const editCapacity = ref('');
+const editPrice = ref('');
 
 // Delete confirmation modal states
 const showDeleteConfirmModal = ref(false);
@@ -69,6 +71,7 @@ const toggleAddModal = () => {
     newRoomNumber.value = '';
     newGenderType.value = 'female';
     newCapacity.value = '';
+    newPrice.value = '';
   }
 };
 
@@ -83,7 +86,8 @@ const handleSaveRoom = async () => {
     const response = await axios.post(`/api/owner/rooms/add/${house.value.id}`, {
       room_number: newRoomNumber.value,
       gender_type: newGenderType.value,
-      capacity: newCapacity.value
+      capacity: newCapacity.value,
+      price: newPrice.value
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -107,6 +111,7 @@ const openEditModal = (room) => {
   editRoomNumber.value = room.room_number;
   editGenderType.value = room.gender_type;
   editCapacity.value = room.capacity;
+  editPrice.value = room.price || '';
   showEditModal.value = true;
 };
 
@@ -126,7 +131,8 @@ const handleUpdateRoom = async () => {
     const response = await axios.put(`/api/owner/rooms/edit/${editingRoomId.value}`, {
       room_number: editRoomNumber.value,
       gender_type: editGenderType.value,
-      capacity: editCapacity.value
+      capacity: editCapacity.value,
+      price: editPrice.value
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -292,6 +298,7 @@ onMounted(() => {
                 <thead>
                   <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
+                    <th class="px-8 py-5 text-center">Monthly Rent</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
                     <th class="px-8 py-5 text-center">Current Status</th>
                     <th class="px-8 py-5 text-center">Actions</th>
@@ -305,6 +312,7 @@ onMounted(() => {
                   </tr>
                   <tr v-for="room in femaleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors group">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
+                    <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
@@ -385,6 +393,7 @@ onMounted(() => {
                 <thead>
                   <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
+                    <th class="px-8 py-5 text-center">Monthly Rent</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
                     <th class="px-8 py-5 text-center">Current Status</th>
                     <th class="px-8 py-5 text-center">Actions</th>
@@ -398,6 +407,7 @@ onMounted(() => {
                   </tr>
                   <tr v-for="room in maleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
+                    <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
@@ -469,6 +479,10 @@ onMounted(() => {
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
             <input v-model="newCapacity" type="number" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
+            <input v-model="newPrice" type="number" step="any" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+          </div>
           <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
             {{ isSubmitting ? 'Saving Room...' : 'Save Room' }}
           </button>
@@ -501,6 +515,10 @@ onMounted(() => {
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
             <input v-model="editCapacity" type="number" min="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
+            <input v-model="editPrice" type="number" step="any" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
             {{ isSubmitting ? 'Updating Room...' : 'Update Room' }}

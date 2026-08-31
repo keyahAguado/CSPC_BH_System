@@ -29,6 +29,8 @@ services:
       dockerfile: Dockerfile
     container_name: cspc_backend_api
     restart: always
+    env_file:
+      - ./backend/.env
     ports:
       - "3000:3000"
     environment:
@@ -38,7 +40,11 @@ services:
       - DB_NAME=cspc_boarding_db
       - DB_PORT=3306
       - PORT=3000
+      - FRONTEND_URL=http://localhost
       - JWT_SECRET=cspc_secret_key_2026
+      - STORAGE_PROVIDER=local
+    volumes:
+      - media_uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -52,8 +58,11 @@ services:
     restart: always
     ports:
       - "80:80"
+    volumes:
+      - media_uploads:/usr/share/nginx/html/uploads:ro
     depends_on:
       - backend
 
 volumes:
   db_data:
+  media_uploads:

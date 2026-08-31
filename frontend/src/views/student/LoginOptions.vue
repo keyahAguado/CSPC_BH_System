@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import Header from '../../components/partials/Header.vue';
 import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
 import { getApiBaseUrl } from '../../config/api';
@@ -8,6 +8,13 @@ import { useRoute } from 'vue-router';
 const API = getApiBaseUrl();
 const route = useRoute();
 const showPrivacyModal = ref(false);
+const pendingLogin = ref(false);
+
+onMounted(() => {
+  if (!localStorage.getItem('cspc_privacy_accepted')) {
+    showPrivacyModal.value = true;
+  }
+});
 
 // Preserve any error messages passed back from the OAuth callback
 const errorMap = {
@@ -19,9 +26,25 @@ const errorMap = {
 };
 const errorMessage = errorMap[route.query.error] || null;
 
-const handleGoogleLogin = () => {
+const proceedGoogleLogin = () => {
   const currentOrigin = window.location.origin;
   window.location.href = `${API}/api/auth/google?origin=${encodeURIComponent(currentOrigin)}`;
+};
+
+const handleGoogleLogin = () => {
+  if (!localStorage.getItem('cspc_privacy_accepted')) {
+    pendingLogin.value = true;
+    showPrivacyModal.value = true;
+    return;
+  }
+  proceedGoogleLogin();
+};
+
+const handlePrivacyAccepted = () => {
+  if (pendingLogin.value) {
+    pendingLogin.value = false;
+    proceedGoogleLogin();
+  }
 };
 </script>
 
@@ -112,6 +135,6 @@ const handleGoogleLogin = () => {
     </main>
 
     <!-- Privacy Policy Modal Component -->
-    <PrivacyPolicyModal :isOpen="showPrivacyModal" @close="showPrivacyModal = false" />
+    <PrivacyPolicyModal :isOpen="showPrivacyModal" @close="showPrivacyModal = false" @accept="handlePrivacyAccepted" />
   </div>
 </template>

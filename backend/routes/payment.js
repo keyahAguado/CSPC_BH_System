@@ -45,6 +45,10 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         // Convert the upfront cost to centavos
         const amountInCentavos = Math.round(initialPayment * 100);
 
+        // Determine frontend origin dynamically to prevent redirect errors to wrong port
+        const reqOrigin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+        const frontendUrl = process.env.FRONTEND_URL || reqOrigin || 'http://localhost';
+
         // Call PayMongo Checkout Session API
         const paymongoResponse = await axios.post(
             'https://api.paymongo.com/v2/checkout_sessions',
@@ -60,8 +64,8 @@ router.post('/checkout', authenticateToken, async (req, res) => {
                             }
                         ],
                         payment_method_types: ['gcash', 'card', 'qrph'],
-                        success_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/student/bookings?payment_success=true&bookingId=${bookingId}`,
-                        cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/student/bookings`,
+                        success_url: `${frontendUrl}/student/bookings?payment_success=true&bookingId=${bookingId}`,
+                        cancel_url: `${frontendUrl}/student/bookings`,
                         description: `Upfront Payment for Reservation at ${b.house_name}`,
                         send_email_receipt: true,
                         metadata: {

@@ -9,6 +9,57 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_cspc_token_key';
 
 // =========================================================================
+// 0. ULTRA-STRICT EMAIL VALIDATOR HELPER
+// =========================================================================
+function validateStrictEmail(emailStr) {
+    if (!emailStr || typeof emailStr !== 'string') {
+        return { valid: false, message: 'Email address is required.' };
+    }
+
+    const clean = emailStr.trim().toLowerCase();
+
+    // Strict domain regexes enforcing exact domain spelling and structure
+    const strictGmailPattern = /^[a-zA-Z0-9._%+-]{3,64}@gmail\.com$/;
+    const strictYahooPattern = /^[a-zA-Z0-9._%+-]{3,64}@yahoo\.com(\.ph)?$/;
+    const strictCspcPattern  = /^[a-zA-Z0-9._%+-]{3,64}@(my\.)?cspc\.edu\.ph$/;
+
+    const isValidGmail = strictGmailPattern.test(clean);
+    const isValidYahoo = strictYahooPattern.test(clean);
+    const isValidCspc  = strictCspcPattern.test(clean);
+
+    if (isValidGmail || isValidYahoo || isValidCspc) {
+        const username = clean.split('@')[0];
+        if (clean !== 'admin@cspc.edu.ph' && ['gmail', 'email', 'test', 'user', 'owner', 'student'].includes(username)) {
+            return { valid: false, message: 'Please enter your actual email username (e.g. juan.delacruz@gmail.com).' };
+        }
+        return { valid: true, email: clean };
+    }
+
+    // Detailed error feedback when strict regex fails
+    if (!clean.includes('@')) {
+        return { valid: false, message: 'Missing "@" in email address. Example: username@gmail.com' };
+    }
+
+    const parts = clean.split('@');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        return { valid: false, message: 'Please enter a valid email address format (username@gmail.com).' };
+    }
+
+    const username = parts[0];
+    const domain = parts[1];
+
+    if (username.length < 3) {
+        return { valid: false, message: 'Email username before @ must be at least 3 characters long.' };
+    }
+
+    if (domain !== 'gmail.com') {
+        return { valid: false, message: 'Registration email domain must be valid (correct spelling and placement).' };
+    }
+
+    return { valid: false, message: 'Invalid email address format. Please enter a valid email (e.g. username@gmail.com).' };
+}
+
+// =========================================================================
 // 1. JWT AUTHENTICATION MIDDLEWARE (exported for use in other routes)
 // =========================================================================
 export const authenticateToken = (req, res, next) => {
@@ -18,7 +69,7 @@ export const authenticateToken = (req, res, next) => {
 
     jwt.verify(token, JWT_SECRET, async (err, decoded) => {
         if (err) return res.status(403).json({ success: false, message: 'Expired Token.' });
-        
+
         try {
             if (!decoded || !decoded.id) {
                 return res.status(403).json({ success: false, message: 'Invalid Token Payload.' });
@@ -83,11 +134,11 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Email and password are required.' });
     }
 
-    email = String(email).trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        return res.status(400).json({ success: false, message: 'Please provide a valid email address (e.g. name@domain.com).' });
+    const check = validateStrictEmail(email);
+    if (!check.valid) {
+        return res.status(400).json({ success: false, message: check.message });
     }
+    email = check.email;
 
     try {
         const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
@@ -144,7 +195,7 @@ router.post('/login', async (req, res) => {
 // 4. GOOGLE OAUTH INITIATION
 // =========================================================================
 router.get('/google', (req, res, next) => {
-    const rawOrigin = req.query.origin || req.headers.referer || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const rawOrigin = req.query.origin || req.headers.referer || process.env.FRONTEND_URL || 'http://localhost';
     const cleanOrigin = rawOrigin.replace(/\/+$/, '');
 
     passport.authenticate('google', {
@@ -162,7 +213,7 @@ router.get('/google/callback',
     (req, res, next) => {
         const targetOrigin = req.query.state
             ? decodeURIComponent(req.query.state)
-            : (process.env.FRONTEND_URL || 'http://localhost:5173');
+            : (process.env.FRONTEND_URL || 'http://localhost');
 
         passport.authenticate('google', {
             session: false,
@@ -172,7 +223,7 @@ router.get('/google/callback',
     async (req, res) => {
         const targetOrigin = req.query.state
             ? decodeURIComponent(req.query.state)
-            : (process.env.FRONTEND_URL || 'http://localhost:5173');
+            : (process.env.FRONTEND_URL || 'http://localhost');
 
         try {
             const user = req.user;
@@ -223,11 +274,11 @@ router.post('/register/owner', async (req, res) => {
         return res.status(400).json({ success: false, message: 'All mandatory fields are required.' });
     }
 
-    email = String(email).trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        return res.status(400).json({ success: false, message: 'Please provide a valid email address (e.g. name@domain.com).' });
+    const check = validateStrictEmail(email);
+    if (!check.valid) {
+        return res.status(400).json({ success: false, message: check.message });
     }
+    email = check.email;
 
     try {
         // Guard: check if email already registered

@@ -24,9 +24,43 @@ const handleRegister = async () => {
   }
 
   const cleanEmail = email.value.trim().toLowerCase();
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(cleanEmail)) {
-    errorMessage.value = 'Please enter a valid email address (e.g. name@gmail.com).';
+
+  // Strict domain regexes enforcing exact domain spelling and structure
+  const strictGmailPattern = /^[a-zA-Z0-9._%+-]{3,64}@gmail\.com$/;
+  const strictYahooPattern = /^[a-zA-Z0-9._%+-]{3,64}@yahoo\.com(\.ph)?$/;
+  const strictCspcPattern  = /^[a-zA-Z0-9._%+-]{3,64}@(my\.)?cspc\.edu\.ph$/;
+
+  const isValidGmail = strictGmailPattern.test(cleanEmail);
+  const isValidYahoo = strictYahooPattern.test(cleanEmail);
+  const isValidCspc  = strictCspcPattern.test(cleanEmail);
+
+  if (!isValidGmail && !isValidYahoo && !isValidCspc) {
+    if (!cleanEmail.includes('@')) {
+      errorMessage.value = 'Missing "@" in email address. Example: username@gmail.com';
+      return;
+    }
+
+    const parts = cleanEmail.split('@');
+    const username = parts[0] || '';
+    const domain = parts[1] || '';
+
+    if (username.length < 3) {
+      errorMessage.value = 'Email username before @ must be at least 3 characters long.';
+      return;
+    }
+
+    if (domain !== 'gmail.com') {
+      errorMessage.value = 'Registration email domain must be typed strictly as @gmail.com (correct spelling and placement).';
+      return;
+    }
+
+    errorMessage.value = 'Please enter a valid email ending strictly with @gmail.com (e.g. username@gmail.com).';
+    return;
+  }
+
+  const username = cleanEmail.split('@')[0];
+  if (['gmail', 'email', 'test', 'admin', 'user', 'owner', 'student'].includes(username)) {
+    errorMessage.value = 'Please enter your actual email username (e.g. juan.delacruz@gmail.com).';
     return;
   }
 
@@ -75,7 +109,7 @@ const handleRegister = async () => {
         </h1>
 
         <!-- Local Alerts -->
-        <div v-if="errorMessage" class="bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4 border border-red-100 text-left">
+        <div v-if="errorMessage" class="animate-shake bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4 border border-red-100 text-left">
           {{ errorMessage }}
         </div>
         <div v-if="successMessage" class="bg-green-50 text-green-600 text-xs p-3 rounded-xl mb-4 border border-green-100 text-left">
@@ -128,5 +162,16 @@ const handleRegister = async () => {
     </main>
   </div>
 </template>
+
+<style scoped>
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+</style>
 
 

@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
-import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
+import { upload, saveUploadedFile } from '../config/upload.js';
 
 const router = express.Router();
 
@@ -22,7 +22,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 });
 
 // 3. [POST] - Update Student Profile
-router.post('/update-profile', authenticateToken, memoryUpload.single('profile_pic'), async (req, res) => {
+router.post('/update-profile', authenticateToken, upload.single('profile_pic'), async (req, res) => {
     try {
         const userId = req.user.id;
         const {
@@ -32,8 +32,7 @@ router.post('/update-profile', authenticateToken, memoryUpload.single('profile_p
 
         let profilePicUrl = req.body.existing_profile_pic || null;
         if (req.file) {
-            const result = await uploadBufferToCloudinary(req.file.buffer, 'profile_pics');
-            profilePicUrl = result.url;
+            profilePicUrl = await saveUploadedFile(req.file.buffer, req.file.originalname, 'profile_pics');
         }
 
         await pool.query(
@@ -73,13 +72,35 @@ router.get('/houses', async (req, res) => {
             SELECT bh.*,
                    (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
                    (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
-                   (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count
+                   (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
+                   (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
+                   (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
             FROM boarding_houses bh
             WHERE bh.house_status = 'accredited'
             ORDER BY bh.created_at DESC
         `);
 
-        res.json({ success: true, houses });
+        const formatted = houses.map(h => {
+            const prices = [];
+            if (h.price !== null && h.price !== undefined && parseFloat(h.price) > 0) {
+                prices.push(parseFloat(h.price));
+            }
+            if (h.min_price !== null && h.min_price !== undefined && parseFloat(h.min_price) > 0) {
+                prices.push(parseFloat(h.min_price));
+            }
+            if (h.max_price !== null && h.max_price !== undefined && parseFloat(h.max_price) > 0) {
+                prices.push(parseFloat(h.max_price));
+            }
+            let min = 0, max = 0, price_range = '₱0';
+            if (prices.length > 0) {
+                min = Math.min(...prices);
+                max = Math.max(...prices);
+                price_range = min !== max ? `₱${Number(min).toLocaleString()} - ₱${Number(max).toLocaleString()}` : `₱${Number(min).toLocaleString()}`;
+            }
+            return { ...h, min_price: min, max_price: max, price_range };
+        });
+
+        res.json({ success: true, houses: formatted });
     } catch (err) {
         console.error('Fetch student houses failed:', err.message);
         res.status(500).json({ success: false, message: 'Failed to retrieve boarding house directory.' });
@@ -92,7 +113,9 @@ router.get('/house/:id', async (req, res) => {
         const houseId = req.params.id;
 
         const [houseRows] = await pool.query(`
-            SELECT bh.*, u.name as owner_name, u.email as owner_email
+            SELECT bh.*, u.name as owner_name, u.email as owner_email,
+                   (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
+                   (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
             FROM boarding_houses bh
             JOIN users u ON bh.owner_id = u.id
             WHERE bh.id = ? AND bh.house_status = 'accredited'
@@ -101,6 +124,25 @@ router.get('/house/:id', async (req, res) => {
         if (houseRows.length === 0) {
             return res.status(404).json({ success: false, message: 'Accredited boarding house not found.' });
         }
+
+        const hRaw = houseRows[0];
+        const prices = [];
+        if (hRaw.price !== null && hRaw.price !== undefined && parseFloat(hRaw.price) > 0) {
+            prices.push(parseFloat(hRaw.price));
+        }
+        if (hRaw.min_price !== null && hRaw.min_price !== undefined && parseFloat(hRaw.min_price) > 0) {
+            prices.push(parseFloat(hRaw.min_price));
+        }
+        if (hRaw.max_price !== null && hRaw.max_price !== undefined && parseFloat(hRaw.max_price) > 0) {
+            prices.push(parseFloat(hRaw.max_price));
+        }
+        let min = 0, max = 0, price_range = '₱0';
+        if (prices.length > 0) {
+            min = Math.min(...prices);
+            max = Math.max(...prices);
+            price_range = min !== max ? `₱${Number(min).toLocaleString()} - ₱${Number(max).toLocaleString()}` : `₱${Number(min).toLocaleString()}`;
+        }
+        const house = { ...hRaw, min_price: min, max_price: max, price_range };
 
         const [reviews] = await pool.query(`
             SELECT r.*, u.name as student_name, u.profile_pic
@@ -131,7 +173,7 @@ router.get('/house/:id', async (req, res) => {
 
         res.json({
             success: true,
-            house: houseRows[0],
+            house: house,
             reviews,
             avgRating,
             rooms,

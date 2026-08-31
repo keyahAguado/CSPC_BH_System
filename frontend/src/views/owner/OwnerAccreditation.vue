@@ -5,6 +5,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import axios from 'axios';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { getImageUrl } from '../../config/api.js';
+import NABUA_BARANGAYS from '../../constants/barangays.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -51,12 +52,7 @@ const mainHouseImgPreview = ref('');
 const selectedPhotos = ref([]); 
 const maxPhotosLimit = 10;
 
-const barangaysList = ref([
-  'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
-  'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
-  'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
-  'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
-]);
+const barangaysList = ref(NABUA_BARANGAYS);
 
 const criteria = ref([
   { id: 1, label: 'Business Permit Application Form', permit_key: 'permit_business_form' },
@@ -672,9 +668,9 @@ const validateForm = () => {
   if (!contactNumber.value.trim()) {
     errors.push('Contact Phone Number is required (Step 3).');
   } else {
-    const phoneRegex = /^(09|\+639)\d{9}$|^[0-9]{7,11}$/;
+    const phoneRegex = /^[\d\s\/,\-\+\(\)]{7,100}$/;
     if (!phoneRegex.test(contactNumber.value.trim())) {
-      errors.push('Contact Number must be a valid phone number (e.g., 09123456789).');
+      errors.push('Contact Number must be a valid phone number or list of numbers (e.g., 09123456789 / 09987654321).');
     }
   }
 
@@ -1044,7 +1040,10 @@ const submitApplication = async () => {
 
             <div>
               <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Contact Number</label>
-              <input type="text" v-model="contactNumber" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="e.g. 09123456789" />
+              <input type="text" v-model="contactNumber" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="e.g. 09123456789 / 09987654321" />
+              <p class="text-[10px] text-slate-400 font-bold mt-1.5 ml-1">
+                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
+              </p>
             </div>
 
             <div>

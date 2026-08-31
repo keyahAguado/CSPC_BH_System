@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 
+const router = useRouter();
 const user = ref({});
 const isLoading = ref(true);
 const isSaving = ref(false);
@@ -100,10 +102,14 @@ const saveProfile = async () => {
       }
     });
     
-    successMsg.value = 'Profile updated successfully!';
+    successMsg.value = 'Profile updated successfully! Redirecting to Student Dashboard...';
     if (alertRef.value) {
-      alertRef.value.showSystemAlert('Profile updated successfully!', 'success');
+      alertRef.value.showSystemAlert('Profile updated successfully! Redirecting to Student Dashboard...', 'success');
     }
+
+    setTimeout(() => {
+      router.push('/student/dashboard');
+    }, 1200);
   } catch (e) {
     errorMsg.value = e.response?.data?.message || 'Failed to save profile. Please try again.';
     if (alertRef.value) {

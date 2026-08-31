@@ -8,9 +8,15 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'accept']);
 
 const closeModal = () => {
+  emit('close');
+};
+
+const handleAgree = () => {
+  localStorage.setItem('cspc_privacy_accepted', 'true');
+  emit('accept');
   emit('close');
 };
 </script>
@@ -112,8 +118,8 @@ const closeModal = () => {
       <!-- Modal Footer -->
       <div class="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
         <button 
-          @click="closeModal" 
-          class="bg-[#2a528a] hover:bg-slate-900 text-white font-black text-xs py-3 px-8 rounded-xl uppercase tracking-widest shadow-md transition-all active:scale-95"
+          @click="handleAgree" 
+          class="bg-[#2a528a] hover:bg-slate-900 text-white font-black text-xs py-3 px-8 rounded-xl uppercase tracking-widest shadow-md transition-all active:scale-95 cursor-pointer"
         >
           I Understand & Agree
         </button>

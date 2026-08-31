@@ -3,9 +3,12 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { getApiBaseUrl } from '../../config/api';
+import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
 
 const router = useRouter();
 const route  = useRoute();
+const showPrivacyModal = ref(false);
+const pendingAction    = ref(null);
 
 // ── Form state ──
 const email           = ref('');
@@ -35,6 +38,9 @@ onMounted(() => {
   if (route.query.error) {
     errorMsg.value = oauthErrors[route.query.error] || 'An error occurred. Please try again.';
   }
+  if (!localStorage.getItem('cspc_privacy_accepted')) {
+    showPrivacyModal.value = true;
+  }
 });
 
 // ── Redirect helper (shared with AuthSuccess logic) ──
@@ -63,6 +69,48 @@ const handleLogin = async () => {
     errorMsg.value = 'Please enter your email address and password.';
     return;
   }
+
+  const cleanEmail = email.value.trim().toLowerCase();
+
+  // Strict domain regexes enforcing exact domain spelling and structure
+  const strictGmailPattern = /^[a-zA-Z0-9._%+-]{3,64}@gmail\.com$/;
+  const strictYahooPattern = /^[a-zA-Z0-9._%+-]{3,64}@yahoo\.com(\.ph)?$/;
+  const strictCspcPattern  = /^[a-zA-Z0-9._%+-]{3,64}@(my\.)?cspc\.edu\.ph$/;
+
+  const isValidGmail = strictGmailPattern.test(cleanEmail);
+  const isValidYahoo = strictYahooPattern.test(cleanEmail);
+  const isValidCspc  = strictCspcPattern.test(cleanEmail);
+
+  if (!isValidGmail && !isValidYahoo && !isValidCspc) {
+    if (!cleanEmail.includes('@')) {
+      errorMsg.value = 'Missing "@" in email address. Example: username@gmail.com';
+      return;
+    }
+
+    const parts = cleanEmail.split('@');
+    const username = parts[0] || '';
+    const domain = parts[1] || '';
+
+    if (username.length < 3) {
+      errorMsg.value = 'Email username before @ must be at least 3 characters long.';
+      return;
+    }
+
+    if (domain !== 'gmail.com') {
+      errorMsg.value = 'Email domain must be typed strictly as @gmail.com (correct spelling and placement).';
+      return;
+    }
+
+    errorMsg.value = 'Please enter a valid email ending strictly with @gmail.com (e.g. username@gmail.com).';
+    return;
+  }
+
+  const username = cleanEmail.split('@')[0];
+  if (cleanEmail !== 'admin@cspc.edu.ph' && ['gmail', 'email', 'test', 'user', 'owner', 'student'].includes(username)) {
+    errorMsg.value = 'Please enter your actual email username (e.g. juan.delacruz@gmail.com).';
+    return;
+  }
+
   errorMsg.value   = '';
   successMsg.value = '';
   isLoading.value  = true;
@@ -87,7 +135,7 @@ const handleLogin = async () => {
 };
 
 // ── Google OAuth ──
-const handleGoogleLogin = () => {
+const proceedGoogleLogin = () => {
   if (isGoogleLoading.value) return;
   errorMsg.value        = '';
   isGoogleLoading.value = true;
@@ -95,6 +143,25 @@ const handleGoogleLogin = () => {
   const origin = window.location.origin;
   const base   = getApiBaseUrl();
   window.location.href = `${base}/api/auth/google?origin=${encodeURIComponent(origin)}`;
+};
+
+const handleGoogleLogin = () => {
+  if (!localStorage.getItem('cspc_privacy_accepted')) {
+    pendingAction.value = 'google';
+    showPrivacyModal.value = true;
+    return;
+  }
+  proceedGoogleLogin();
+};
+
+const handlePrivacyAccepted = () => {
+  if (pendingAction.value === 'google') {
+    pendingAction.value = null;
+    proceedGoogleLogin();
+  } else if (pendingAction.value === 'submit') {
+    pendingAction.value = null;
+    handleLogin();
+  }
 };
 
 const handleOwnerRegister = () => handleGoogleLogin();
@@ -211,7 +278,7 @@ const handleOwnerRegister = () => handleGoogleLogin();
 
         <!-- System Error / Success Alerts -->
         <transition name="fade">
-          <div v-if="errorMsg" class="flex items-start gap-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs p-4 rounded-2xl mb-6 border border-red-100 dark:border-red-900/50 shadow-sm">
+          <div :key="errorShakeKey" v-if="errorMsg" class="animate-shake flex items-start gap-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs p-4 rounded-2xl mb-6 border border-red-100 dark:border-red-900/50 shadow-sm">
             <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
             </svg>
@@ -352,25 +419,39 @@ const handleOwnerRegister = () => handleGoogleLogin();
         <!-- ═══════════════════════════════════════════════
              3. STREAMLINED BOTTOM FOOTER LINKS
         ═══════════════════════════════════════════════ -->
-        <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700/80 flex items-center justify-between text-xs font-bold">
-          <router-link
-            to="/register"
-            class="text-[#1e4a8d] dark:text-blue-400 hover:underline inline-flex items-center gap-1"
-          >
-            <span>Register as Owner</span>
-            <span>→</span>
-          </router-link>
+        <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700/80 flex flex-col items-center gap-4">
+          <div class="w-full flex items-center justify-between text-xs font-bold">
+            <router-link
+              to="/register"
+              class="text-[#1e4a8d] dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+            >
+              <span>Register as Owner</span>
+              <span>→</span>
+            </router-link>
 
-          <router-link
-            to="/student/dashboard?guest=true"
-            class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+            <router-link
+              to="/student/dashboard?guest=true"
+              class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+            >
+              Browse as Guest
+            </router-link>
+          </div>
+
+          <button
+            type="button"
+            @click="showPrivacyModal = true"
+            class="inline-flex items-center gap-2 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:text-amber-900 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 border border-amber-200/80 dark:border-amber-700/50 px-4 py-2 rounded-full transition-colors uppercase tracking-wider focus:outline-none cursor-pointer"
           >
-            Browse as Guest
-          </router-link>
+            <i class="fa-solid fa-shield-halved text-amber-600 dark:text-amber-400"></i>
+            <span>Data Privacy Policy (RA 10173)</span>
+          </button>
         </div>
 
       </div>
     </div>
+
+    <!-- Data Privacy Consent Modal -->
+    <PrivacyPolicyModal :isOpen="showPrivacyModal" @close="showPrivacyModal = false" @accept="handlePrivacyAccepted" />
   </div>
 </template>
 
@@ -383,6 +464,15 @@ const handleOwnerRegister = () => handleGoogleLogin();
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
 }
 </style>
 

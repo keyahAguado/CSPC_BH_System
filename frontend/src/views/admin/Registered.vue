@@ -17,13 +17,11 @@ const alertRef = ref(null);
 const token = localStorage.getItem('cspc_token');
 
 // Barangay filter & search state
+import NABUA_BARANGAYS from '../../constants/barangays.js';
+
+const barangays = NABUA_BARANGAYS;
 const selectedBarangay = ref('');
 const searchQuery = ref('');
-
-const barangays = [
-  'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
-  'San Miguel', 'San Nicolas', 'San Roque'
-];
 
 // Client-side filtered list: applies both barangay filter and local search securely
 const filteredHouses = computed(() => {

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import NABUA_BARANGAYS from '../../constants/barangays.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -22,12 +23,7 @@ const advanceMonths = ref(1);
 const depositMonths = ref(1);
 const depositType = ref('refundable');
 
-const barangaysList = ref([
-  'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
-  'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
-  'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
-  'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
-]);
+const barangaysList = ref(NABUA_BARANGAYS);
 
 // Amenities configurations 
 const freeAmenities = ref(['Wi-Fi', '24/7 Water', 'CCTV', 'Electric Fan', 'Caretaker', 'Study Area', 'Visitor Area', 'Fire Exit']);
@@ -774,7 +770,10 @@ onMounted(() => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                 Contact Number
               </label>
-              <input type="text" v-model="contactNumber" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <input type="text" v-model="contactNumber" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <p class="text-[10px] text-slate-400 font-bold mt-1.5 ml-0.5">
+                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
+              </p>
             </div>
 
             <!-- High-Precision 3-Way Location Registration -->

@@ -2,12 +2,12 @@ import express from 'express';
 import multer from 'multer';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
-import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
+import { upload, saveUploadedFile } from '../config/upload.js';
 
 const router = express.Router();
 
-// Multer using memory storage — files buffered in RAM, then streamed to Cloudinary
-const uploadAccreditationFiles = memoryUpload.fields([
+// Multer using memory storage for buffering file uploads
+const uploadAccreditationFiles = upload.fields([
     { name: 'permit_business_form', maxCount: 1 },
     { name: 'permit_cedula', maxCount: 1 },
     { name: 'permit_dti', maxCount: 1 },
@@ -20,21 +20,57 @@ const uploadAccreditationFiles = memoryUpload.fields([
     { name: 'house_photos', maxCount: 10 }
 ]);
 
-// Helper: upload a single named field buffer to Cloudinary, return URL or fallback
+// Helper: upload a single named field buffer, return URL/path or fallback
 const uploadField = async (files, fieldName, folder) => {
     if (files && files[fieldName] && files[fieldName][0]) {
-        const result = await uploadBufferToCloudinary(files[fieldName][0].buffer, folder);
-        return result.url;
+        const f = files[fieldName][0];
+        return await saveUploadedFile(f.buffer, f.originalname, folder);
     }
     return null;
+};
+
+// Helper to calculate price_range for a house object
+const attachPriceRange = (house, minVal, maxVal) => {
+    const prices = [];
+    if (house.price !== null && house.price !== undefined && parseFloat(house.price) > 0) {
+        prices.push(parseFloat(house.price));
+    }
+    if (minVal !== null && minVal !== undefined && parseFloat(minVal) > 0) {
+        prices.push(parseFloat(minVal));
+    }
+    if (maxVal !== null && maxVal !== undefined && parseFloat(maxVal) > 0) {
+        prices.push(parseFloat(maxVal));
+    }
+
+    if (prices.length === 0) {
+        return { ...house, min_price: 0, max_price: 0, price_range: '₱0' };
+    }
+
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    let displayPrice = `₱${Number(min).toLocaleString()}`;
+    if (min !== max) {
+        displayPrice = `₱${Number(min).toLocaleString()} - ₱${Number(max).toLocaleString()}`;
+    }
+    return { ...house, min_price: min, max_price: max, price_range: displayPrice };
 };
 
 // 2. [GET] - Retrieve all accredited boarding houses (Public)
 router.get('/accredited', async (req, res) => {
     try {
-        const [rows] = await pool.query("SELECT * FROM boarding_houses WHERE house_status = 'accredited'");
-        res.json({ success: true, count: rows.length, data: rows });
+        const [rows] = await pool.query(`
+            SELECT bh.*, 
+                   MIN(r.price) AS min_price, 
+                   MAX(r.price) AS max_price 
+            FROM boarding_houses bh
+            LEFT JOIN rooms r ON bh.id = r.house_id
+            WHERE bh.house_status = 'accredited'
+            GROUP BY bh.id
+        `);
+        const formatted = rows.map(h => attachPriceRange(h, h.min_price, h.max_price));
+        res.json({ success: true, count: formatted.length, data: formatted });
     } catch (err) {
+        console.error('Fetch Accredited Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to retrieve listings.' });
     }
 });
@@ -43,12 +79,21 @@ router.get('/accredited', async (req, res) => {
 router.get('/details/:id', authenticateToken, async (req, res) => {
     try {
         const houseId = req.params.id;
-        const [rows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ?', [houseId]);
+        const [rows] = await pool.query(`
+            SELECT bh.*, 
+                   MIN(r.price) AS min_price, 
+                   MAX(r.price) AS max_price 
+            FROM boarding_houses bh
+            LEFT JOIN rooms r ON bh.id = r.house_id
+            WHERE bh.id = ?
+            GROUP BY bh.id
+        `, [houseId]);
 
         if (rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Property not found.' });
         }
-        res.json({ success: true, data: rows[0] });
+        const formatted = attachPriceRange(rows[0], rows[0].min_price, rows[0].max_price);
+        res.json({ success: true, data: formatted });
     } catch (err) {
         console.error('Fetch Details Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to fetch details.' });
@@ -58,11 +103,20 @@ router.get('/details/:id', authenticateToken, async (req, res) => {
 // 4. [GET] - Get the logged-in owner's property using JWT (Dynamic pending review sync)
 router.get('/my-property', authenticateToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM boarding_houses WHERE owner_id = ?', [req.user.id]);
+        const [rows] = await pool.query(`
+            SELECT bh.*, 
+                   MIN(r.price) AS min_price, 
+                   MAX(r.price) AS max_price 
+            FROM boarding_houses bh
+            LEFT JOIN rooms r ON bh.id = r.house_id
+            WHERE bh.owner_id = ?
+            GROUP BY bh.id
+        `, [req.user.id]);
         if (rows.length === 0) {
             return res.json({ success: true, hasProperty: false });
         }
-        res.json({ success: true, hasProperty: true, data: rows[0] });
+        const formatted = attachPriceRange(rows[0], rows[0].min_price, rows[0].max_price);
+        res.json({ success: true, hasProperty: true, data: formatted });
     } catch (err) {
         console.error('Fetch My Property Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to fetch property details.' });
@@ -192,7 +246,7 @@ router.get('/documents', authenticateToken, async (req, res) => {
 });
 
 // 6. [POST] - Update a single legal document dynamically (Standard or Custom)
-router.post('/documents/update/:id', authenticateToken, memoryUpload.single('permit_file'), async (req, res) => {
+router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -205,9 +259,8 @@ router.post('/documents/update/:id', authenticateToken, memoryUpload.single('per
             return res.status(400).json({ success: false, message: 'Please select a file.' });
         }
 
-        // Upload to Cloudinary
-        const uploadResult = await uploadBufferToCloudinary(req.file.buffer, 'permits');
-        const fileUrl = uploadResult.url;
+        // Save file via unified storage provider
+        const fileUrl = await saveUploadedFile(req.file.buffer, req.file.originalname, 'permits');
         let reqLabel = '';
 
         // Safe Date Parsing: Converts empty strings to NULL to prevent MySQL Strict Mode errors
@@ -369,14 +422,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             return new Date(timestamp);
         };
 
-        // Upload a field buffer to Cloudinary; returns the URL or null if no new file
+        // Upload a field buffer via unified storage provider; returns the URL/path or null if no new file
         const uploadField = async (fieldName, folder) => {
             if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
                 try {
-                    const result = await uploadBufferToCloudinary(req.files[fieldName][0].buffer, folder);
-                    return result.url;
+                    const f = req.files[fieldName][0];
+                    return await saveUploadedFile(f.buffer, f.originalname, folder);
                 } catch (uploadErr) {
-                    console.error(`[CLOUDINARY UPLOAD ERROR] Field "${fieldName}":`, uploadErr.message);
+                    console.error(`[UPLOAD ERROR] Field "${fieldName}":`, uploadErr.message);
                     throw new Error(`File upload failed for ${fieldName}: ${uploadErr.message}`);
                 }
             }
@@ -385,12 +438,11 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
 
         const getExpiry = (fieldName) => req.body[`expiry_permit_${fieldName}`] || null;
 
-        // Upload all house photos to Cloudinary concurrently in parallel
+        // Upload all house photos via unified storage provider concurrently in parallel
         let uploadedPhotoUrls = [];
         if (req.files && req.files['house_photos'] && req.files['house_photos'].length > 0) {
-            const photoPromises = req.files['house_photos'].map(f => uploadBufferToCloudinary(f.buffer, 'house_photos'));
-            const uploadResults = await Promise.all(photoPromises);
-            uploadedPhotoUrls = uploadResults.map(res => res.url);
+            const photoPromises = req.files['house_photos'].map(f => saveUploadedFile(f.buffer, f.originalname, 'house_photos'));
+            uploadedPhotoUrls = await Promise.all(photoPromises);
         }
         const parsedExistingPhotos = existing_photos ? JSON.parse(existing_photos) : [];
         const combinedPhotos = [...parsedExistingPhotos, ...uploadedPhotoUrls];

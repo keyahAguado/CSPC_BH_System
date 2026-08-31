@@ -10,6 +10,7 @@ const router = useRouter();
 const houseId = route.params.id;
 
 const house = ref({});
+const rooms = ref([]);
 const reviews = ref([]);
 const housePhotos = ref([]); // gallery photos from house_photos table
 const avgRating = ref(0);
@@ -20,6 +21,7 @@ const token = localStorage.getItem('cspc_token');
 const isGuest = !token;
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
+import { formatPriceRange } from '../../utils/formatPrice.js';
 
 const API = getApiBaseUrl();
 
@@ -289,6 +291,7 @@ const fetchData = async () => {
     if (rawCached) {
       const parsed = JSON.parse(rawCached);
       house.value = parsed.house || {};
+      rooms.value = parsed.rooms || [];
       reviews.value = parsed.reviews || [];
       avgRating.value = parsed.avgRating || 0;
       housePhotos.value = parsed.photos || [];
@@ -306,6 +309,7 @@ const fetchData = async () => {
     });
     if (res.data && res.data.house) {
       house.value = res.data.house || {};
+      rooms.value = res.data.rooms || [];
       reviews.value = res.data.reviews || [];
       avgRating.value = res.data.avgRating || 0;
       housePhotos.value = res.data.photos || [];
@@ -319,6 +323,7 @@ const fetchData = async () => {
       if (cached) {
         const cachedData = JSON.parse(cached);
         house.value = cachedData.house || {};
+        rooms.value = cachedData.rooms || [];
         reviews.value = cachedData.reviews || [];
         avgRating.value = cachedData.avgRating || 0;
         housePhotos.value = cachedData.photos || [];
@@ -441,6 +446,11 @@ onMounted(fetchData);
             {{ house.name }}
           </h1>
           <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-md shadow-emerald-100/50">
+              <i class="fa-solid fa-tag text-[10px]"></i>
+              <span class="font-black text-[10px] uppercase tracking-widest leading-none">{{ formatPriceRange(house) }} / month</span>
+            </div>
+
             <div class="flex items-center gap-2 bg-white text-slate-600 px-4 py-2 rounded-full border border-slate-200/80 shadow-sm">
               <i class="fa-solid fa-location-dot text-blue-500 text-[11px]"></i>
               <span class="font-bold text-[10px] uppercase tracking-widest leading-none">{{ formatAddress(house) || 'Location Pending' }}</span>

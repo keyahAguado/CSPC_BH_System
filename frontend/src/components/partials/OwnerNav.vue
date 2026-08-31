@@ -83,10 +83,10 @@ onUnmounted(() => {
 
   <!-- ===================== DESKTOP NAV (hidden on mobile) ===================== -->
   <nav class="hidden md:flex bg-[#1e4a8d] px-4 sm:px-6 md:px-10 py-4 flex-wrap sm:flex-nowrap justify-between items-center text-white shadow-md sticky top-0 z-50 gap-3 border-b border-blue-900/40">
-    <div class="flex items-center gap-2.5 min-w-0">
-      <img src="/img/CSPC_logo.png" alt="Logo" class="w-8 h-8 sm:w-9 sm:h-9 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0" />
+    <router-link to="/" class="flex items-center gap-2.5 min-w-0 hover:opacity-90 transition group">
+      <img src="/img/CSPC_logo.png" alt="Logo" class="w-8 h-8 sm:w-9 sm:h-9 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0 group-hover:scale-105 transition" />
       <span class="font-bold text-xs sm:text-[13px] tracking-tight uppercase truncate">CSPC'S BOARDING HOUSE SELECTION</span>
-    </div>
+    </router-link>
     <div class="flex gap-4 sm:gap-6 md:gap-10 text-xs sm:text-[13px] font-semibold items-center w-full sm:w-auto py-1 sm:py-0">
       <router-link to="/owner/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Home</router-link>
       <router-link to="/owner/bookings" class="hover:text-blue-200 transition whitespace-nowrap">Bookings</router-link>

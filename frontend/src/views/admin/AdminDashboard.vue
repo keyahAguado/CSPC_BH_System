@@ -185,7 +185,7 @@ onMounted(() => {
         <!-- Summary Stats Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <!-- Accredited Houses -->
-          <div class="bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md group">
+          <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
             <div class="w-9 h-9 sm:w-11 sm:h-11 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-2.5 sm:mb-4 transition group-hover:bg-[#2a528a] group-hover:text-white shadow-sm flex-shrink-0">
               <i class="fa-solid fa-house-circle-check text-base sm:text-lg"></i>
             </div>
@@ -196,10 +196,10 @@ onMounted(() => {
                 <span class="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-tight">Active Units</span>
               </div>
             </div>
-          </div>
+          </router-link>
 
           <!-- Student Residents -->
-          <div class="bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md group">
+          <router-link to="/admin/emergency-monitoring" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
             <div class="w-9 h-9 sm:w-11 sm:h-11 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 mb-2.5 sm:mb-4 transition group-hover:bg-emerald-600 group-hover:text-white shadow-sm flex-shrink-0">
               <i class="fa-solid fa-users text-base sm:text-lg"></i>
             </div>
@@ -207,13 +207,13 @@ onMounted(() => {
               <p class="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1 truncate">Student Residents</p>
               <div class="flex items-baseline flex-wrap gap-1 sm:gap-2">
                 <p class="text-2xl sm:text-3xl font-black text-slate-900 leading-none">{{ stats.totalStudents || 0 }}</p>
-                <span class="text-[8px] sm:text-[9px] font-black text-emerald-500 uppercase tracking-tight">Registered</span>
+                <span class="text-[8px] sm:text-[9px] font-black text-emerald-500 uppercase tracking-tight">Active Residents</span>
               </div>
             </div>
-          </div>
+          </router-link>
 
           <!-- Occupancy Rate -->
-          <div class="bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md group">
+          <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
             <div class="w-9 h-9 sm:w-11 sm:h-11 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 mb-2.5 sm:mb-4 transition group-hover:bg-purple-600 group-hover:text-white shadow-sm flex-shrink-0">
               <i class="fa-solid fa-chart-pie text-base sm:text-lg"></i>
             </div>
@@ -224,10 +224,10 @@ onMounted(() => {
                 <span class="text-[8px] sm:text-[9px] font-black text-purple-500 uppercase tracking-tight">Current Load</span>
               </div>
             </div>
-          </div>
+          </router-link>
 
           <!-- Pending Applications -->
-          <div class="bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md group">
+          <router-link to="/admin/pending-applications" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
             <div class="w-9 h-9 sm:w-11 sm:h-11 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 mb-2.5 sm:mb-4 transition group-hover:bg-amber-500 group-hover:text-white shadow-sm flex-shrink-0">
               <i class="fa-solid fa-hourglass-half text-base sm:text-lg"></i>
             </div>
@@ -238,11 +238,11 @@ onMounted(() => {
                 <span class="text-[8px] sm:text-[9px] font-black text-amber-500 uppercase tracking-tight">In Queue</span>
               </div>
             </div>
-          </div>
+          </router-link>
         </div>
 
         <!-- Top Rated Highlight Card -->
-        <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 transition hover:shadow-md group">
+        <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 transition hover:shadow-md hover:scale-[1.01] group">
           <div class="flex items-center gap-5">
             <div class="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-colors flex-shrink-0">
               <i class="fa-solid fa-star text-xl"></i>
@@ -263,7 +263,7 @@ onMounted(() => {
             </div>
             <span class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Student Verified Rating</span>
           </div>
-        </div>
+        </router-link>
 
         <!-- Main Chart Section -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -305,7 +305,7 @@ onMounted(() => {
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <!-- Accredited Masterlist -->
-            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col">
+            <router-link to="/admin/reports/masterlist" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
               <div class="flex justify-between items-start mb-4">
                 <div class="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 group-hover:bg-[#2a528a] group-hover:text-white transition-colors">
                   <i class="fa-solid fa-file-contract text-lg"></i>
@@ -314,13 +314,13 @@ onMounted(() => {
               </div>
               <h3 class="text-base font-black text-slate-800 uppercase mb-2">Accredited Masterlist</h3>
               <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Generate an official list of all boarding houses currently accredited by SASO.</p>
-              <router-link to="/admin/reports/masterlist" class="text-blue-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:gap-3 transition-all">
+              <div class="text-blue-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
                 Generate Report <i class="fa-solid fa-arrow-right"></i>
-              </router-link>
-            </div>
+              </div>
+            </router-link>
 
             <!-- Emergency Student Registry -->
-            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col">
+            <router-link to="/admin/emergency-monitoring" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
               <div class="flex justify-between items-start mb-4">
                 <div class="w-11 h-11 bg-red-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors">
                   <i class="fa-solid fa-house-medical text-lg"></i>
@@ -329,13 +329,13 @@ onMounted(() => {
               </div>
               <h3 class="text-base font-black text-slate-800 uppercase mb-2">Emergency Student Registry</h3>
               <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Export student residency lists filtered by geographic risk areas (Monitoring Page).</p>
-              <router-link to="/admin/emergency-monitoring" class="text-red-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:gap-3 transition-all">
+              <div class="text-red-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
                 Open Monitoring <i class="fa-solid fa-arrow-right"></i>
-              </router-link>
-            </div>
+              </div>
+            </router-link>
 
             <!-- Accreditation & Expiry -->
-            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col">
+            <router-link to="/admin/reports/compliance" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
               <div class="flex justify-between items-start mb-4">
                 <div class="w-11 h-11 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-colors">
                   <i class="fa-solid fa-file-invoice text-lg"></i>
@@ -344,10 +344,10 @@ onMounted(() => {
               </div>
               <h3 class="text-base font-black text-slate-800 uppercase mb-2">Accreditation & Expiry</h3>
               <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Monitor legal document statuses and expiry dates for compliance reports.</p>
-              <router-link to="/admin/reports/compliance" class="text-orange-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 hover:gap-3 transition-all">
+              <div class="text-orange-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
                 Generate Report <i class="fa-solid fa-arrow-right"></i>
-              </router-link>
-            </div>
+              </div>
+            </router-link>
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@ import StudentNav from '../../components/partials/StudentNav.vue';
 
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 import { formatAddress } from '../../utils/formatAddress.js';
+import { formatPriceRange } from '../../utils/formatPrice.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -375,7 +376,7 @@ onMounted(fetchHouses);
               <!-- Action Terms Footer Block -->
               <div class="mt-auto bg-slate-50 border border-slate-100/80 rounded-2xl p-5 flex justify-between items-center">
                 <div class="text-left">
-                  <p class="font-black text-2xl text-slate-900 leading-none">₱{{ Number(house.price).toLocaleString() }}</p>
+                  <p class="font-black text-2xl text-slate-900 leading-none">{{ formatPriceRange(house) }}</p>
                   <p class="text-[8px] text-slate-400 font-black uppercase tracking-widest mt-1.5 leading-none">per month</p>
                   <p class="text-[9px] text-slate-500 font-bold mt-2 flex items-center gap-1">
                     <i class="fa-solid fa-door-open text-blue-500 text-[8px]"></i> Rooms: {{ house.room_count || 0 }}

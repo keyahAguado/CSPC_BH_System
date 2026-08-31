@@ -115,10 +115,20 @@ const fetchData = async () => {
   }
 };
 
-const femaleRooms = computed(() => rooms.value.filter(r => r.gender_type === 'female'));
-const maleRooms = computed(() => rooms.value.filter(r => r.gender_type === 'male'));
+const femaleRooms = computed(() => rooms.value.filter(r => (r.gender_type || '').trim().toLowerCase() === 'female'));
+const maleRooms = computed(() => rooms.value.filter(r => (r.gender_type || '').trim().toLowerCase() === 'male'));
+const mixedRooms = computed(() => rooms.value.filter(r => {
+  const g = (r.gender_type || '').trim().toLowerCase();
+  return g !== 'female' && g !== 'male';
+}));
 
-const monthlyRent = computed(() => parseFloat(house.value.price) || 0);
+const selectedRoom = computed(() => rooms.value.find(r => String(r.id) === String(form.value.roomId)));
+const monthlyRent = computed(() => {
+  if (selectedRoom.value && parseFloat(selectedRoom.value.price) > 0) {
+    return parseFloat(selectedRoom.value.price);
+  }
+  return parseFloat(house.value.price) || 0;
+});
 const advanceMonths = computed(() => parseInt(house.value.advance_months) || 0);
 const depositMonths = computed(() => parseInt(house.value.deposit_months) || 0);
 
@@ -276,12 +286,15 @@ onMounted(fetchData);
                       class="w-5 h-5 flex-shrink-0 accent-blue-600"
                     >
                     <div class="flex items-center gap-2 w-full justify-between pr-1 text-slate-800">
-                      <span class="text-base font-semibold min-w-[4.5rem]">Room {{ room.room_number }}</span>
+                      <div class="flex flex-col text-left">
+                        <span class="text-base font-semibold">Room {{ room.room_number }}</span>
+                        <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
+                      </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[10px] px-2.5 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap">
-                        Available {{ room.capacity - room.occupant_count }}/{{ room.capacity }}
+                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ room.capacity - room.occupant_count }} Vacant)
                       </span>
                       <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[10px] px-2.5 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap">
-                        Occupied {{ room.capacity }}/{{ room.capacity }}
+                        Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
                       </span>
                     </div>
                   </label>
@@ -312,12 +325,15 @@ onMounted(fetchData);
                       class="w-5 h-5 flex-shrink-0 accent-blue-600"
                     >
                     <div class="flex items-center gap-2 w-full justify-between pr-1 text-slate-800">
-                      <span class="text-base font-semibold min-w-[4.5rem]">Room {{ room.room_number }}</span>
+                      <div class="flex flex-col text-left">
+                        <span class="text-base font-semibold">Room {{ room.room_number }}</span>
+                        <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
+                      </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[10px] px-2.5 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap">
-                        Available {{ room.capacity - room.occupant_count }}/{{ room.capacity }}
+                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ room.capacity - room.occupant_count }} Vacant)
                       </span>
                       <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[10px] px-2.5 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap">
-                        Occupied {{ room.capacity }}/{{ room.capacity }}
+                        Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
                       </span>
                     </div>
                   </label>

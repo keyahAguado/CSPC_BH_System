@@ -35,7 +35,7 @@ CREATE TABLE `boarding_houses` (
   `map_link` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `price` decimal(10,2) DEFAULT NULL,
   `rooms` int DEFAULT NULL,
-  `phone_contact` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `phone_contact` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `amenities_free` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,
   `amenities_paid` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,

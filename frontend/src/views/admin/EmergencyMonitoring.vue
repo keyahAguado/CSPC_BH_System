@@ -12,17 +12,9 @@ const isLoading = ref(true);
 
 const token = localStorage.getItem('cspc_token');
 
-// Official barangays of Nabua, Camarines Sur
-const barangays = [
-  'San Antonio',
-  'San Esteban',
-  'San Isidro',
-  'San Juan',
-  'San Luis',
-  'San Miguel',
-  'San Nicolas',
-  'San Roque'
-];
+import NABUA_BARANGAYS from '../../constants/barangays.js';
+
+const barangays = NABUA_BARANGAYS;
 
 const fetchRegistry = async () => {
   try {

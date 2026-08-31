@@ -1,7 +1,8 @@
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
-import { memoryUpload, uploadBufferToCloudinary } from '../config/cloudinary.js';
+import { upload, saveUploadedFile } from '../config/upload.js';
+import NABUA_BARANGAYS from '../config/barangays.js';
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ const verifyOwner = (req, res, next) => {
 
 // Multer using memory storage for all owner file uploads
 // uploadOwnerMedia uses .any() to accept img + up to 10 dynamic new_photo_N fields
-const uploadOwnerMedia = memoryUpload.any();
+const uploadOwnerMedia = upload.any();
 
 // Self-healing database sanitizer: Guarantees clean, single-serialized JSON strings
 const sanitizeJSONInput = (val) => {
@@ -85,8 +86,7 @@ const updateProfileHandler = async (req, res) => {
         let profilePicUrl = existing.length > 0 ? existing[0].profile_pic : null;
 
         if (req.file) {
-            const result = await uploadBufferToCloudinary(req.file.buffer, 'profile_pics');
-            profilePicUrl = result.url;
+            profilePicUrl = await saveUploadedFile(req.file.buffer, req.file.originalname, 'profile_pics');
         }
 
         await pool.query(
@@ -102,8 +102,8 @@ const updateProfileHandler = async (req, res) => {
 };
 
 // Map both endpoints to the same handler to prevent frontend routing breaks
-router.post('/profile', authenticateToken, memoryUpload.single('profile_pic'), updateProfileHandler);
-router.post('/update-profile', authenticateToken, memoryUpload.single('profile_pic'), updateProfileHandler);
+router.post('/profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
+router.post('/update-profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
 
 // =========================================================================
 // OWNER DASHBOARD & STATISTICS ENDPOINT
@@ -196,9 +196,8 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
         if (req.files && Array.isArray(req.files)) {
             const photoFiles = req.files.filter(f => f.fieldname !== 'img');
             if (photoFiles.length > 0) {
-                const uploadPromises = photoFiles.map(f => uploadBufferToCloudinary(f.buffer, 'house_images'));
-                const results = await Promise.all(uploadPromises);
-                newPhotoUrls = results.map(r => r.url);
+                const uploadPromises = photoFiles.map(f => saveUploadedFile(f.buffer, f.originalname, 'house_images'));
+                newPhotoUrls = await Promise.all(uploadPromises);
             }
         }
 
@@ -210,8 +209,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
         if (req.files && Array.isArray(req.files)) {
             const imgFile = req.files.find(f => f.fieldname === 'img');
             if (imgFile) {
-                const result = await uploadBufferToCloudinary(imgFile.buffer, 'house_images');
-                featuredImg = result.url;
+                featuredImg = await saveUploadedFile(imgFile.buffer, imgFile.originalname, 'house_images');
             }
         }
 
@@ -221,8 +219,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
         const extractBarangay = (loc, barInput) => {
             if (barInput && barInput.trim()) return barInput.trim();
             if (!loc) return null;
-            const known = ['San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis', 'San Miguel', 'San Nicolas', 'San Roque'];
-            return known.find(b => loc.toLowerCase().includes(b.toLowerCase())) || null;
+            return NABUA_BARANGAYS.find(b => loc.toLowerCase().includes(b.toLowerCase())) || null;
         };
         const computedBarangay = extractBarangay(location, req.body.barangay);
 
@@ -256,9 +253,8 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
             );
         }
 
-        // Keep room prices in sync
-        await connection.query('UPDATE rooms SET price = ? WHERE house_id = ?',
-            [parseFloat(price) || 0, req.params.id]);
+        // Preserve individual room prices set by the owner
+        // (Do not overwrite rooms.price with house base price)
 
         await connection.commit();
         res.json({ success: true, message: 'Property details updated successfully.' });
@@ -304,7 +300,7 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 // F. POST - Add a new room
 router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, res) => {
     try {
-        const { room_number, gender_type, capacity } = req.body;
+        const { room_number, gender_type, capacity, price } = req.body;
 
         const [houseRows] = await pool.query(
             'SELECT price FROM boarding_houses WHERE id = ? AND owner_id = ?',
@@ -316,10 +312,11 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, r
         }
 
         const basePrice = houseRows[0].price || 0;
+        const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : basePrice;
 
         await pool.query(
             "INSERT INTO rooms (house_id, room_number, gender_type, capacity, price, status) VALUES (?, ?, ?, ?, ?, 'available')",
-            [req.params.houseId, room_number, gender_type || 'female', parseInt(capacity) || 1, basePrice]
+            [req.params.houseId, room_number, gender_type || 'female', parseInt(capacity) || 1, roomPrice]
         );
 
         res.json({ success: true, message: 'Room created successfully.' });
@@ -331,11 +328,11 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, r
 // F1. PUT - Edit an existing room
 router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
     try {
-        const { room_number, gender_type, capacity } = req.body;
+        const { room_number, gender_type, capacity, price } = req.body;
 
         // Verify room belongs to owner's house
         const [roomRows] = await pool.query(
-            `SELECT r.id, r.house_id 
+            `SELECT r.id, r.house_id, r.price 
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
              WHERE r.id = ? AND bh.owner_id = ?`,
@@ -346,9 +343,11 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
+        const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : roomRows[0].price;
+
         await pool.query(
-            `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ? WHERE id = ?`,
-            [room_number, gender_type || 'female', parseInt(capacity) || 1, req.params.roomId]
+            `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ?, price = ? WHERE id = ?`,
+            [room_number, gender_type || 'female', parseInt(capacity) || 1, roomPrice, req.params.roomId]
         );
 
         res.json({ success: true, message: 'Room details updated successfully.' });

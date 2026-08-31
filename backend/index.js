@@ -11,6 +11,7 @@ import pool from './config/db.js'; // Database connection pool (resolves nativel
 import './config/passport.js';
 import cron from 'node-cron';
 import { runComplianceCheck } from './config/complianceManager.js';
+import { getUploadsDir } from './config/upload.js';
 
 
 // ===================================================`======================
@@ -44,7 +45,8 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-// Serve the physical public uploads folder statically so browsers can load images safely
+// Serve physical uploads folder statically so browsers load images safely
+app.use('/uploads', express.static(getUploadsDir()));
 app.use('/uploads', express.static(path.resolve('public/uploads')));
 
 // =========================================================================
@@ -218,12 +220,8 @@ cron.schedule('*/14 * * * *', () => {
 });
 
 // ─── AUTO-CREATE UPLOADS DIRECTORY ON STARTUP ───
-// Ensures the public/uploads folder is always present on cloud servers
-const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('📁 Successfully created missing uploads directory:', uploadsDir);
-}
+const activeUploadsDir = getUploadsDir();
+console.log('📁 Active local uploads directory resolved:', activeUploadsDir);
 // ────────────────────────────────────────────────
 
 
