@@ -31,8 +31,11 @@ const showLightbox = ref(false);
 const lightboxPhoto = ref('');
 const isPhotoLoading = ref(true);
 
-watch(currentPhotoIndex, () => {
+watch(currentPhotoIndex, (newIdx) => {
   isPhotoLoading.value = true;
+  if (photos.value && photos.value[newIdx]) {
+    lightboxPhoto.value = photos.value[newIdx];
+  }
 });
 
 const openLightbox = (url) => {
@@ -580,7 +583,7 @@ onMounted(fetchData);
         
         <!-- Main Featured Image Stage -->
         <div class="relative group">
-          <div class="rounded-[2.5rem] overflow-hidden aspect-[16/9] w-full border border-slate-200/80 shadow-xl bg-slate-900 relative flex items-center justify-center cursor-pointer"
+          <div class="rounded-2xl sm:rounded-[2.5rem] overflow-hidden aspect-[4/3] sm:aspect-[16/9] w-full border border-slate-200/80 shadow-xl bg-slate-900 relative flex items-center justify-center cursor-pointer"
                @click="currentPhoto && openLightbox(currentPhoto)">
             
             <!-- Skeleton Loader while image decodes/loads -->
@@ -599,8 +602,8 @@ onMounted(fetchData);
             <div v-else class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No property photos available</div>
 
             <!-- Overlay Click to Expand -->
-            <div v-if="currentPhoto && !isPhotoLoading" class="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-6">
-              <span class="text-white text-[10px] font-black uppercase tracking-widest bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 flex items-center gap-2">
+            <div v-if="currentPhoto && !isPhotoLoading" class="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-4 sm:p-6">
+              <span class="text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest bg-black/50 backdrop-blur-md px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border border-white/20 flex items-center gap-2">
                 <i class="fa-solid fa-expand"></i> Click for Fullscreen Preview
               </span>
             </div>
@@ -608,20 +611,20 @@ onMounted(fetchData);
 
           <!-- Left/Right Nav Buttons -->
           <button v-if="photos.length > 1" @click.stop="prevPhoto" 
-                  class="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-12 h-12 rounded-full shadow-lg backdrop-blur-md flex items-center justify-center text-xl font-black transition active:scale-95 cursor-pointer z-10">
+                  class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-8 h-8 sm:w-11 sm:h-11 rounded-full shadow-md backdrop-blur-md flex items-center justify-center text-sm sm:text-lg font-black transition active:scale-95 cursor-pointer z-10">
             ‹
           </button>
           <button v-if="photos.length > 1" @click.stop="nextPhoto" 
-                  class="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-12 h-12 rounded-full shadow-lg backdrop-blur-md flex items-center justify-center text-xl font-black transition active:scale-95 cursor-pointer z-10">
+                  class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-8 h-8 sm:w-11 sm:h-11 rounded-full shadow-md backdrop-blur-md flex items-center justify-center text-sm sm:text-lg font-black transition active:scale-95 cursor-pointer z-10">
             ›
           </button>
         </div>
         
         <!-- Interactive Thumbnails Strip -->
-        <div v-if="photos.length > 1" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 mt-6">
+        <div v-if="photos.length > 1" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2.5 sm:gap-3 mt-4 sm:mt-6">
           <div v-for="(photo, i) in photos" :key="i"
                @click="currentPhotoIndex = i"
-               class="aspect-square rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 relative group bg-slate-100"
+               class="aspect-square rounded-xl sm:rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 relative group bg-slate-100"
                :class="i === currentPhotoIndex ? 'border-blue-600 scale-105 shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'">
             <img :src="photo" 
                  loading="lazy"
@@ -633,10 +636,14 @@ onMounted(fetchData);
       </div>
 
       <!-- Lightbox Fullscreen Preview Modal -->
-      <div v-if="showLightbox" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[200] flex items-center justify-center p-4" @click="showLightbox = false">
+      <div v-if="showLightbox" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[200] flex items-center justify-center p-3 sm:p-4" @click="showLightbox = false">
         <div class="relative max-w-5xl w-full max-h-[90vh] flex items-center justify-center" @click.stop>
-          <button @click="showLightbox = false" class="absolute -top-12 right-0 text-white hover:text-red-400 text-3xl font-bold cursor-pointer transition">&times;</button>
-          <img :src="lightboxPhoto" class="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/10" alt="Full Preview" />
+          <button @click="showLightbox = false" class="absolute -top-10 sm:-top-12 right-1 sm:right-0 text-white hover:text-red-400 text-2xl sm:text-3xl font-bold cursor-pointer transition z-20">&times;</button>
+          <img :src="lightboxPhoto || currentPhoto" class="max-w-full max-h-[85vh] object-contain rounded-xl sm:rounded-2xl shadow-2xl border border-white/10" alt="Full Preview" />
+          
+          <!-- Modal Navigation Arrows -->
+          <button v-if="photos.length > 1" @click.stop="prevPhoto" class="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-lg font-black backdrop-blur-md border border-white/20 transition cursor-pointer z-20">‹</button>
+          <button v-if="photos.length > 1" @click.stop="nextPhoto" class="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-lg font-black backdrop-blur-md border border-white/20 transition cursor-pointer z-20">›</button>
         </div>
       </div>
 
