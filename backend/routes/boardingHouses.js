@@ -498,7 +498,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description || '',
+                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
                     sanitizedFree, sanitizedPaid,
                     permit_business_form, permit_cedula, permit_dti, permit_barangay,
                     permit_building, permit_zoning, permit_sanitary, permit_fire,
@@ -574,7 +574,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description || '',
+                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
                     sanitizedFree, sanitizedPaid,
                     ...(house_img ? [house_img] : []),
                     ...(img_1 ? [img_1] : []),
@@ -639,7 +639,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 ownerId, house_name, house_img, img_1, img_2, img_3,
-                location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description,
+                location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description,
                 sanitizedFree, sanitizedPaid, 'pending',
                 permit_business_form, permit_cedula, permit_dti, permit_barangay,
                 permit_building, permit_zoning, permit_sanitary, permit_fire,

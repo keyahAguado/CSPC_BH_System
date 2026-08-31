@@ -236,7 +236,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
              WHERE id = ? AND owner_id = ?`,
             [
                 house_name, featuredImg, img_1, img_2, img_3, location, computedBarangay, map_link,
-                parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 25), description || '',
+                parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
                 parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || 'refundable',
                 sanitizedFree, sanitizedPaid,
