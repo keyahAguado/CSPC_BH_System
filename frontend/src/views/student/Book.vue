@@ -291,7 +291,7 @@ onMounted(fetchData);
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ room.capacity - room.occupant_count }} Vacant)
+                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
                       </span>
                       <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
                         Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
@@ -330,7 +330,7 @@ onMounted(fetchData);
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ room.capacity - room.occupant_count }} Vacant)
+                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
                       </span>
                       <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
                         Full ({{ room.capacity }}/{{ room.capacity }} Occupied)

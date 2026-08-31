@@ -269,7 +269,7 @@ onMounted(() => {
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupancy</span>
                   <span class="font-bold text-slate-600 text-sm">
                     {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ room.capacity - room.occupant_count }} Vacant)</span>
+                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
                 <div class="flex items-center justify-between">
@@ -316,7 +316,7 @@ onMounted(() => {
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
-                        {{ room.capacity - room.occupant_count }} Vacant
+                        {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">
@@ -364,7 +364,7 @@ onMounted(() => {
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupancy</span>
                   <span class="font-bold text-slate-600 text-sm">
                     {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ room.capacity - room.occupant_count }} Vacant)</span>
+                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
                 <div class="flex items-center justify-between">
@@ -411,7 +411,7 @@ onMounted(() => {
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
                       <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
-                        {{ room.capacity - room.occupant_count }} Vacant
+                        {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">

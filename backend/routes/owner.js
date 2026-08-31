@@ -347,11 +347,24 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
+        const parsedCapacity = parseInt(capacity) || 1;
         const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : roomRows[0].price;
+
+        // Guard: new capacity cannot be less than current active occupant count
+        const [occupantCount] = await pool.query(
+            `SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
+            [req.params.roomId]
+        );
+        if (parsedCapacity < occupantCount[0].count) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot set capacity to ${parsedCapacity}. This room currently has ${occupantCount[0].count} active occupant(s).`
+            });
+        }
 
         await pool.query(
             `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ?, price = ? WHERE id = ?`,
-            [room_number, gender_type || 'female', parseInt(capacity) || 1, roomPrice, req.params.roomId]
+            [room_number, gender_type || 'female', parsedCapacity, roomPrice, req.params.roomId]
         );
 
         res.json({ success: true, message: 'Room details updated successfully.' });
