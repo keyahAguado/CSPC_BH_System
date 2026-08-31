@@ -963,21 +963,22 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
                     bh.location AS house_location,
                     bh.barangay AS house_barangay,
                     bh.phone_contact AS house_owner_phone,
-                    u.name AS resident_name,
-                    u.email AS student_email,
-                    u.phone AS student_phone,
-                    u.sex,
-                    u.course,
-                    u.year_section AS year_level,
+                    COALESCE(u.name, o.name, 'N/A') AS resident_name,
+                    COALESCE(u.email, 'N/A') AS student_email,
+                    COALESCE(u.phone, o.contact_number, 'N/A') AS student_phone,
+                    COALESCE(NULLIF(TRIM(u.address), ''), NULLIF(TRIM(o.address), ''), 'N/A') AS home_address,
+                    COALESCE(u.sex, 'N/A') AS sex,
+                    COALESCE(u.course, 'N/A') AS course,
+                    COALESCE(u.year_section, 'N/A') AS year_level,
                     r.room_number,
                     o.check_in_date AS booking_date,
                     o.emergency_contact,
                     o.guardian_name,
-                    ROW_NUMBER() OVER (PARTITION BY o.student_id ORDER BY o.check_in_date DESC, o.id DESC) AS rn
+                    ROW_NUMBER() OVER (PARTITION BY COALESCE(o.student_id, o.id) ORDER BY o.check_in_date DESC, o.id DESC) AS rn
                 FROM occupants o
                 INNER JOIN rooms r ON o.room_id = r.id
                 INNER JOIN boarding_houses bh ON r.house_id = bh.id
-                INNER JOIN users u ON o.student_id = u.id
+                LEFT JOIN users u ON o.student_id = u.id
                 ${whereSql}
             ) ranked
             WHERE rn = 1

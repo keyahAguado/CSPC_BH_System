@@ -88,6 +88,7 @@ onMounted(() => {
               <td class="px-4 py-4">
                 <p class="font-black text-slate-900 uppercase tracking-tight leading-none">{{ r.resident_name }}</p>
                 <p class="text-[8px] text-slate-400 font-bold uppercase mt-1">{{ r.student_email }}</p>
+                <p v-if="r.home_address" class="text-[9px] text-blue-600 font-black uppercase mt-1">Home: {{ r.home_address }}</p>
               </td>
               <td class="px-4 py-4">
                 <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest" :class="r.sex === 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100'">

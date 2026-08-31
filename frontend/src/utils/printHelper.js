@@ -239,7 +239,11 @@ export function printEmergencyRegistry(residents, targetArea, reportDate) {
         const group = grouped[houseName];
         const rows = group.list.map(r => `
           <tr>
-            <td><div class="bold upper">${r.resident_name || ''}</div><div class="small">${r.student_email || ''} | ${r.student_phone || 'N/A'}</div></td>
+            <td>
+              <div class="bold upper">${r.resident_name || ''}</div>
+              <div class="small">${r.student_email || ''} | ${r.student_phone || 'N/A'}</div>
+              ${r.home_address ? `<div class="small bold" style="color:#2563eb;margin-top:2px;">Home Address: ${r.home_address}</div>` : ''}
+            </td>
             <td class="text-center"><span class="badge ${r.sex === 'Male' ? 'badge-blue' : 'badge-pink'}">${r.sex || 'N/A'}</span></td>
             <td><div class="bold upper">${r.course || 'N/A'}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
             <td><div class="bold">Room #${r.room_number || 'N/A'}</div></td>

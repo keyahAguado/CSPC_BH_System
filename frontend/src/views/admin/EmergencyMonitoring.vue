@@ -255,6 +255,7 @@ onMounted(() => {
                     <td class="px-6 py-5">
                       <div class="font-bold text-slate-800 uppercase tracking-tight text-sm">{{ r.resident_name }}</div>
                       <div class="text-[10px] font-medium text-slate-400">{{ r.student_email }}</div>
+                      <div class="text-[10px] font-bold text-blue-600 uppercase mt-0.5"><i class="fa-solid fa-house-user mr-1 text-[9px]"></i>Home: {{ r.home_address || 'N/A' }}</div>
                     </td>
                     <td class="px-6 py-5 text-center">
                       <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest" :class="r.sex === 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100'">
@@ -330,6 +331,7 @@ onMounted(() => {
                   <div class="text-right truncate">
                     <p class="font-black text-slate-900 uppercase text-[12px] truncate">{{ r.resident_name }}</p>
                     <p class="text-[10px] text-slate-400 truncate">{{ r.student_email }}</p>
+                    <p class="text-[10px] font-bold text-blue-600 uppercase truncate mt-0.5">Home: {{ r.home_address || 'N/A' }}</p>
                   </div>
                 </div>
                 <div class="px-4 py-3 flex justify-between items-center gap-2">
