@@ -46,16 +46,35 @@ const fetchMyProperty = async () => {
         }
 
         // Calculate how many permits out of the 8 are actually uploaded
-        const permitsKeys = [
-          'permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay',
-          'permit_building', 'permit_zoning', 'permit_sanitary', 'permit_fire'
-        ];
-        
-        let count = 0;
-        permitsKeys.forEach(key => {
-          if (house[key]) count++;
-        });
-        submittedCount.value = count;
+        try {
+          const docRes = await axios.get(`/api/boarding-houses/documents/${house.id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (docRes.data && docRes.data.success && Array.isArray(docRes.data.criteria)) {
+            const uploadedDocs = docRes.data.criteria.filter(c => Boolean(c.current_file));
+            submittedCount.value = uploadedDocs.length;
+          } else {
+            const permitsKeys = [
+              'permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay',
+              'permit_building', 'permit_zoning', 'permit_sanitary', 'permit_fire'
+            ];
+            let count = 0;
+            permitsKeys.forEach(key => {
+              if (house[key]) count++;
+            });
+            submittedCount.value = count;
+          }
+        } catch (docErr) {
+          const permitsKeys = [
+            'permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay',
+            'permit_building', 'permit_zoning', 'permit_sanitary', 'permit_fire'
+          ];
+          let count = 0;
+          permitsKeys.forEach(key => {
+            if (house[key]) count++;
+          });
+          submittedCount.value = count;
+        }
 
       } else {
         // If they have no property registered at all, reset status and send to accreditation form

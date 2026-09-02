@@ -25,8 +25,11 @@ const isInstitutionalEmail = computed(() => {
   return clean.endsWith('@my.cspc.edu.ph') || clean.endsWith('@cspc.edu.ph');
 });
 
-// ── OAuth error messages passed back from backend redirect ──
+// ── OAuth & Route Error messages passed back from backend or navigation guards ──
 const oauthErrors = {
+  session_required:    'Please log in to access this page.',
+  session_expired:     'Your session has expired. Please log in again.',
+  unauthorized:        'Access denied. You do not have permission to view that page.',
   unauthorized_domain: 'That Google account isn\'t authorised. Use your CSPC or personal Gmail.',
   suspended:           'Your account has been suspended. Please contact SASO.',
   server_error:        'Something went wrong. Please try again.',
@@ -142,7 +145,7 @@ const proceedGoogleLogin = () => {
 
   const origin = window.location.origin;
   const base   = getApiBaseUrl();
-  window.location.href = `${base}/api/auth/google?origin=${encodeURIComponent(origin)}`;
+  window.location.replace(`${base}/api/auth/google?origin=${encodeURIComponent(origin)}`);
 };
 
 const handleGoogleLogin = () => {

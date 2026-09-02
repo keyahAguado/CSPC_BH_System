@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { getImageUrl } from '../../config/api';
@@ -105,11 +105,21 @@ const removeHouse = (houseId) => {
   );
 };
 
+const preventBackNavigation = () => {
+  window.history.pushState(null, null, window.location.href);
+};
+
 onMounted(() => {
+  window.history.pushState(null, null, window.location.href);
+  window.addEventListener('popstate', preventBackNavigation);
   if (savedUser) {
     user.value = JSON.parse(savedUser).name;
   }
   fetchDashboardData();
+});
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', preventBackNavigation);
 });
 </script>
 

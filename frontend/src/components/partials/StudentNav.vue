@@ -30,11 +30,14 @@ const fetchUnreadCount = async () => {
 };
 
 const handleLogout = () => {
+  localStorage.removeItem('cspc_token');
+  localStorage.removeItem('user_role');
+  localStorage.removeItem('cspc_user');
   localStorage.clear();
   sessionStorage.clear();
   showConfirmModal.value = false;
   sidebarOpen.value = false;
-  window.location.replace('/login-options');
+  router.replace('/login');
 };
 
 const triggerLogoutConfirm = () => {
@@ -89,9 +92,20 @@ onUnmounted(() => {
 
     <!-- ===================== DESKTOP NAV (hidden on mobile) ===================== -->
   <nav class="hidden md:flex bg-[#1e4a8d] px-4 sm:px-6 md:px-10 py-4 flex-wrap sm:flex-nowrap justify-between items-center text-white shadow-md sticky top-0 z-50 gap-3 border-b border-blue-900/40">
-    <router-link to="/" class="flex items-center gap-2.5 min-w-0 hover:opacity-90 transition group">
-      <img src="/img/CSPC_logo.png" alt="Logo" class="w-8 h-8 sm:w-9 sm:h-9 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0 group-hover:scale-105 transition" />
-      <span class="font-bold text-xs sm:text-[13px] tracking-tight uppercase truncate">CSPC'S BOARDING HOUSE SELECTION</span>
+    <router-link to="/" class="flex items-center gap-3 group focus:outline-none">
+      <!-- CSPC Logo Image -->
+      <img 
+        src="/img/CSPC_logo.png" 
+        alt="CSPC Logo" 
+        class="w-10 h-10 object-contain transition-transform group-hover:scale-105"
+      />
+      <!-- Vertical Divider Line -->
+      <div class="h-8 w-[1px] bg-slate-200/40"></div>
+      <!-- Brand Identity Text -->
+      <div class="text-left">
+        <span class="block text-xs font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
+        <span class="block text-[8px] text-blue-200/80 font-bold uppercase tracking-wider mt-1">College of Computer Studies</span>
+      </div>
     </router-link>
     <div class="flex gap-4 sm:gap-6 md:gap-10 text-xs sm:text-[13px] font-semibold items-center w-full sm:w-auto py-1 sm:py-0">
       <router-link to="/student/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Home</router-link>
@@ -124,11 +138,15 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <!-- Logo -->
-      <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-8 h-8 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0" />
-
-      <!-- Title -->
-      <span class="font-bold text-white text-xs tracking-tight uppercase leading-tight">CSPC'S BOARDING HOUSE SELECTION</span>
+      <!-- Logo & Title -->
+      <router-link to="/" class="flex items-center gap-2.5 group focus:outline-none">
+        <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-8 h-8 object-contain transition-transform group-hover:scale-105 flex-shrink-0" />
+        <div class="h-6 w-[1px] bg-slate-200/40"></div>
+        <div class="text-left">
+          <span class="block text-[11px] font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
+          <span class="block text-[7.5px] text-blue-200/80 font-bold uppercase tracking-wider mt-0.5">College of Computer Studies</span>
+        </div>
+      </router-link>
     </div>
   </header>
 

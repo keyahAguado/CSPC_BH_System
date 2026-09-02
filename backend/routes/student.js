@@ -68,17 +68,49 @@ router.post('/update-profile', authenticateToken, upload.single('profile_pic'), 
 // 4. [GET] - Retrieve all accredited boarding houses for student browsing
 router.get('/houses', async (req, res) => {
     try {
-        const [houses] = await pool.query(`
-            SELECT bh.*,
-                   (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
-                   (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
-                   (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
-                   (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
-                   (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
-            FROM boarding_houses bh
-            WHERE bh.house_status = 'accredited'
-            ORDER BY bh.created_at DESC
-        `);
+        const searchQuery = (req.query.query || req.query.search || req.query.q || '').trim();
+        const terms = searchQuery.split(/\s+/).map(t => t.trim()).filter(t => t.length > 0);
+
+        let houses;
+        if (terms.length === 0) {
+            [houses] = await pool.query(`
+                SELECT bh.*,
+                       (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
+                       (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
+                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
+                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
+                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
+                FROM boarding_houses bh
+                WHERE bh.house_status = 'accredited'
+                ORDER BY bh.created_at DESC
+            `);
+        } else {
+            let scoreClauses = [];
+            let whereClauses = [];
+            let params = [];
+
+            terms.forEach(term => {
+                scoreClauses.push(`(IF(bh.name LIKE ?, 3, 0) + IF(bh.location LIKE ?, 2, 0) + IF(COALESCE(bh.barangay, '') LIKE ?, 1, 0))`);
+                whereClauses.push(`(bh.name LIKE ? OR bh.location LIKE ? OR bh.barangay LIKE ?)`);
+                const wildterm = `%${term}%`;
+                params.push(wildterm, wildterm, wildterm);
+            });
+
+            const queryParams = [...params, ...params];
+            const sql = `
+                SELECT bh.*,
+                       (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
+                       (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
+                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
+                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
+                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price,
+                       (${scoreClauses.join(' + ')}) AS relevance
+                FROM boarding_houses bh
+                WHERE bh.house_status = 'accredited' AND (${whereClauses.join(' OR ')})
+                ORDER BY relevance DESC, bh.created_at DESC
+            `;
+            [houses] = await pool.query(sql, queryParams);
+        }
 
         const formatted = houses.map(h => {
             const prices = [];

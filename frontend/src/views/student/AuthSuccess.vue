@@ -15,6 +15,7 @@ onMounted(() => {
 
       // 1. Save standard session variables
       localStorage.setItem('cspc_token', token);
+      localStorage.setItem('user_role', user.role || '');
       localStorage.setItem('cspc_user', JSON.stringify(user));
 
       // Determine target path
@@ -39,15 +40,15 @@ onMounted(() => {
         }
       }
 
-      // Hard redirect ensures PWA / iOS WebApp initializes clean session state without manual refresh
-      window.location.href = targetPath;
+      // Use router.replace() to overwrite Google OAuth history entries
+      router.replace(targetPath);
 
     } catch (err) {
       console.error('Failed to parse Google user payload:', err);
-      window.location.href = '/login?error=invalid_payload';
+      router.replace('/login?error=invalid_payload');
     }
   } else {
-    window.location.href = '/login?error=no_token';
+    router.replace('/login?error=no_token');
   }
 });
 </script>

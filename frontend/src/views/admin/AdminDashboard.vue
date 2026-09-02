@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
 import Chart from 'chart.js/auto';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
@@ -153,8 +153,18 @@ const renderCharts = () => {
   }
 };
 
+const preventBackNavigation = () => {
+  window.history.pushState(null, null, window.location.href);
+};
+
 onMounted(() => {
+  window.history.pushState(null, null, window.location.href);
+  window.addEventListener('popstate', preventBackNavigation);
   fetchDashboardStats();
+});
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', preventBackNavigation);
 });
 </script>
 

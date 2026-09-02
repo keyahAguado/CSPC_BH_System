@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
@@ -75,12 +75,18 @@ const fetchHouses = async () => {
 };
 
 const filteredHouses = computed(() => {
-  return houses.value.filter(h => {
+  const query = (searchInput.value || '').toLowerCase().trim();
+  const terms = query.split(/\s+/).filter(t => t.length > 0);
+
+  const filtered = houses.value.filter(h => {
     const name = (h.name || '').toLowerCase();
-    const address = (h.address || '').toLowerCase();
+    const address = (h.address || h.location || '').toLowerCase();
+    const barangay = (h.barangay || '').toLowerCase();
     const ownerName = (h.owner_name || '').toLowerCase();
-    const query = (searchInput.value || '').toLowerCase().trim();
-    const matchSearch = !query || name.includes(query) || address.includes(query) || ownerName.includes(query);
+
+    const matchSearch = terms.length === 0 || terms.some(t => 
+      name.includes(t) || address.includes(t) || barangay.includes(t) || ownerName.includes(t)
+    );
 
     const rawPrice = (h.price !== null && h.price !== undefined) ? String(h.price).replace(/,/g, '') : '0';
     const price = parseFloat(rawPrice) || 0;
@@ -92,6 +98,28 @@ const filteredHouses = computed(() => {
     const matchRating = selectedRatings.value.length === 0 || selectedRatings.value.includes(rating);
     return matchSearch && matchPrice && matchRating;
   });
+
+  if (terms.length > 0) {
+    return [...filtered].sort((a, b) => {
+      const getScore = (h) => {
+        const name = (h.name || '').toLowerCase();
+        const address = (h.address || h.location || '').toLowerCase();
+        const barangay = (h.barangay || '').toLowerCase();
+        const ownerName = (h.owner_name || '').toLowerCase();
+        return terms.reduce((acc, t) => {
+          let score = 0;
+          if (name.includes(t)) score += 3;
+          if (address.includes(t)) score += 2;
+          if (barangay.includes(t)) score += 1;
+          if (ownerName.includes(t)) score += 1;
+          return acc + score;
+        }, 0);
+      };
+      return getScore(b) - getScore(a);
+    });
+  }
+
+  return filtered;
 });
 
 const toggleRating = (num) => {
@@ -112,7 +140,19 @@ const handleDetails = (houseId) => {
   router.push(`/student/house/${houseId}`);
 };
 
-onMounted(fetchHouses);
+const preventBackNavigation = () => {
+  window.history.pushState(null, null, window.location.href);
+};
+
+onMounted(() => {
+  window.history.pushState(null, null, window.location.href);
+  window.addEventListener('popstate', preventBackNavigation);
+  fetchHouses();
+});
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', preventBackNavigation);
+});
 </script>
 
 <template>

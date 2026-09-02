@@ -822,13 +822,13 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
              JOIN users u ON b.student_id = u.id
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
-             WHERE b.id = ?`,
-            [bookingId]
+             WHERE b.id = ? AND bh.owner_id = ?`,
+            [bookingId, req.user.id]
         );
 
         if (bookingRows.length === 0) {
             await connection.rollback();
-            return res.status(404).json({ success: false, message: 'Reservation request record not found.' });
+            return res.status(404).json({ success: false, message: 'Reservation request record not found or access denied.' });
         }
 
         const b = bookingRows[0];
@@ -897,9 +897,16 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
 // M. POST - Reject Student Reservation Booking Request
 router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, res) => {
     try {
-        const [bookingRows] = await pool.query('SELECT student_id, id FROM bookings WHERE id = ?', [req.params.id]);
+        const [bookingRows] = await pool.query(
+            `SELECT b.student_id, b.id 
+             FROM bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN boarding_houses bh ON r.house_id = bh.id
+             WHERE b.id = ? AND bh.owner_id = ?`,
+            [req.params.id, req.user.id]
+        );
         if (bookingRows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Record not found.' });
+            return res.status(404).json({ success: false, message: 'Record not found or access denied.' });
         }
 
         await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ?", [req.params.id]);
@@ -922,9 +929,16 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
     try {
         await connection.beginTransaction();
 
-        const [booking] = await connection.query('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+        const [booking] = await connection.query(
+            `SELECT b.* 
+             FROM bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN boarding_houses bh ON r.house_id = bh.id
+             WHERE b.id = ? AND bh.owner_id = ?`,
+            [bookingId, req.user.id]
+        );
         if (booking.length === 0) {
-            return res.status(404).json({ success: false, message: 'Booking not found.' });
+            return res.status(404).json({ success: false, message: 'Booking not found or access denied.' });
         }
 
         const b = booking[0];
@@ -966,9 +980,16 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
 // O. POST - Reject Stay Extension
 router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, async (req, res) => {
     try {
-        const [booking] = await pool.query('SELECT student_id FROM bookings WHERE id = ?', [req.params.id]);
+        const [booking] = await pool.query(
+            `SELECT b.student_id 
+             FROM bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN boarding_houses bh ON r.house_id = bh.id
+             WHERE b.id = ? AND bh.owner_id = ?`,
+            [req.params.id, req.user.id]
+        );
         if (booking.length === 0) {
-            return res.status(404).json({ success: false, message: 'Record not found.' });
+            return res.status(404).json({ success: false, message: 'Record not found or access denied.' });
         }
 
         await pool.query(
@@ -996,19 +1017,28 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req,
         const { status } = req.body;
         const targetStatus = status || 'paid';
 
-        // 1. Update the booking's payment status in bookings table
+        // 1. Pre-verify ownership of booking before mutating
+        const [bookingRows] = await connection.query(
+            `SELECT b.student_id, b.room_id 
+             FROM bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN boarding_houses bh ON r.house_id = bh.id
+             WHERE b.id = ? AND bh.owner_id = ?`,
+            [req.params.id, req.user.id]
+        );
+
+        if (bookingRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Booking not found or access denied.' });
+        }
+
+        // 2. Update the booking's payment status in bookings table
         await connection.query(
             'UPDATE bookings SET payment_status = ? WHERE id = ?',
             [targetStatus, req.params.id]
         );
 
-        // 2. Fetch booking details to identify student_id and room_id
-        const [bookingRows] = await connection.query(
-            'SELECT student_id, room_id FROM bookings WHERE id = ?',
-            [req.params.id]
-        );
-
-        if (bookingRows.length > 0 && bookingRows[0].student_id) {
+        if (bookingRows[0].student_id) {
             const { student_id, room_id } = bookingRows[0];
             const occupantStatus = targetStatus.toLowerCase() === 'paid' ? 'Paid' : 'Not Paid';
 

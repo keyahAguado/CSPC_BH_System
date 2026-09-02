@@ -54,33 +54,33 @@ const routes = [
         path: '/',
         name: 'Home',
         component: HomeView,
-        meta: { title: 'Home' }
+        meta: { public: true, title: 'Home' }
     },
     {
         path: '/login',
         alias: ['/login-options', '/users/login', '/users/login-options'],
         name: 'Login',
         component: Login,
-        meta: { title: 'Sign In' }
+        meta: { public: true, title: 'Sign In' }
     },
     {
         path: '/register',
         alias: '/users/register',
         name: 'Register',
         component: Register,
-        meta: { title: 'Landlord Registration' }
+        meta: { public: true, title: 'Landlord Registration' }
     },
     {
         path: '/register/owner-details',
         name: 'OwnerDetailsRegister',
         component: OwnerDetailsRegister,
-        meta: { title: 'Landlord Onboarding' }
+        meta: { public: true, title: 'Landlord Onboarding' }
     },
     {
         path: '/auth-success',
         name: 'AuthSuccess',
         component: AuthSuccess,
-        meta: { title: 'Authenticating' }
+        meta: { public: true, title: 'Authenticating' }
     },
 
     // Student Protected Routes 
@@ -89,41 +89,41 @@ const routes = [
         alias: '/users/student/dashboard',
         name: 'StudentDashboard',
         component: StudentDashboard,
-        meta: { title: 'Student Portal' }
+        meta: { role: 'student', title: 'Student Portal' }
     },
     {
         path: '/student/profile',
         alias: '/users/student/profile',
         name: 'StudentProfile',
         component: StudentProfile,
-        meta: { title: 'Student Profile' }
+        meta: { role: 'student', title: 'Student Profile' }
     },
     {
         path: '/student/house/:id',
         alias: '/users/student/house/:id',
         name: 'StudentHouseDetails',
         component: StudentHouseDetails,
-        meta: { title: 'Property Details' }
+        meta: { role: 'student', title: 'Property Details' }
     },
     {
         path: '/student/notifications',
         name: 'StudentNotifications',
         component: Notifications,
-        meta: { title: 'Student Notifications' }
+        meta: { role: 'student', title: 'Student Notifications' }
     },
     {
         path: '/student/bookings',
         alias: '/users/student/bookings',
         name: 'StudentBookings',
         component: StudentBookings,
-        meta: { title: 'My Reservations' }
+        meta: { role: 'student', title: 'My Reservations' }
     },
     {
         path: '/student/book/:id',
         alias: '/users/student/book/:id',
         name: 'StudentBook',
         component: StudentBook,
-        meta: { title: 'Reserve Room' }
+        meta: { role: 'student', title: 'Reserve Room' }
     },
 
     // Owner Protected Routes 
@@ -132,21 +132,21 @@ const routes = [
         alias: '/users/owner/dashboard',
         name: 'OwnerDashboard',
         component: OwnerDashboard,
-        meta: { title: 'Landlord Dashboard' }
+        meta: { role: 'owner', title: 'Landlord Dashboard' }
     },
     {
         path: '/owner/accreditation',
         alias: '/users/owner/accreditation',
         name: 'OwnerAccreditation',
         component: OwnerAccreditation,
-        meta: { title: 'Property Accreditation Application' }
+        meta: { role: 'owner', title: 'Property Accreditation Application' }
     },
     {
         path: '/owner/pending-review',
         alias: '/users/owner/pending-review',
         name: 'OwnerPendingReview',
         component: OwnerPendingReview,
-        meta: { title: 'Accreditation Review Status' }
+        meta: { role: 'owner', title: 'Accreditation Review Status' }
     },
     {
         path: '/owner/documents/:id?',
@@ -157,28 +157,28 @@ const routes = [
         ],
         name: 'OwnerDocuments',
         component: OwnerDocuments,
-        meta: { title: 'Legal Documents Management' }
+        meta: { role: 'owner', title: 'Legal Documents Management' }
     },
     {
         path: '/owner/bookings',
         alias: '/users/owner/bookings',
         name: 'OwnerBookings',
         component: OwnerBookings,
-        meta: { title: 'Reservation Requests' }
+        meta: { role: 'owner', title: 'Reservation Requests' }
     },
     {
         path: '/owner/edit/:id',
         alias: '/users/owner/edit/:id',
         name: 'OwnerEdit',
         component: OwnerEdit,
-        meta: { title: 'Edit Boarding House' }
+        meta: { role: 'owner', title: 'Edit Boarding House' }
     },
     {
         path: '/owner/rooms/:id',
         alias: '/users/owner/rooms/:id',
         name: 'OwnerRooms',
         component: OwnerRooms,
-        meta: { title: 'Manage Rooms & Pricing' }
+        meta: { role: 'owner', title: 'Manage Rooms & Pricing' }
     },
     {
         path: '/owner/rooms/details/:id',
@@ -189,21 +189,21 @@ const routes = [
         ],
         name: 'OwnerViewDetails',
         component: OwnerViewDetails,
-        meta: { title: 'Room Details' }
+        meta: { role: 'owner', title: 'Room Details' }
     },
     {
         path: '/owner/notifications',
         alias: '/users/owner/notifications',
         name: 'OwnerNotifications',
         component: Notifications,
-        meta: { title: 'Landlord Notifications' }
+        meta: { role: 'owner', title: 'Landlord Notifications' }
     },
     {
         path: '/owner/profile',
         alias: '/users/owner/profile',
         name: 'OwnerProfile',
         component: OwnerProfile,
-        meta: { title: 'Landlord Profile' }
+        meta: { role: 'owner', title: 'Landlord Profile' }
     },
 
     // Admin Protected Routes
@@ -211,13 +211,13 @@ const routes = [
         path: '/admin/dashboard',
         name: 'AdminDashboard',
         component: AdminDashboard,
-        meta: { title: 'Admin Dashboard' }
+        meta: { role: 'admin', title: 'Admin Dashboard' }
     },
     {
         path: '/admin/pending-applications',
         name: 'AdminPendingApplications',
         component: AdminPendingApplications,
-        meta: { title: 'Accreditation Applications' }
+        meta: { role: 'admin', title: 'Accreditation Applications' }
     },
     {
         path: '/admin/new-application',
@@ -227,31 +227,31 @@ const routes = [
         path: '/admin/emergency-monitoring',
         name: 'AdminEmergencyMonitoring',
         component: AdminEmergencyMonitoring,
-        meta: { title: 'Emergency Monitoring Registry' }
+        meta: { role: 'admin', title: 'Emergency Monitoring Registry' }
     },
     {
         path: '/admin/notifications',
         name: 'AdminNotifications',
         component: Notifications,
-        meta: { title: 'Admin Notifications' }
+        meta: { role: 'admin', title: 'Admin Notifications' }
     },
     {
         path: '/admin/registered',
         name: 'AdminRegistered',
         component: AdminRegistered,
-        meta: { title: 'Accredited Boarding Houses' }
+        meta: { role: 'admin', title: 'Accredited Boarding Houses' }
     },
     {
         path: '/admin/archived',
         name: 'AdminArchived',
         component: AdminArchived,
-        meta: { title: 'Archived Properties' }
+        meta: { role: 'admin', title: 'Archived Properties' }
     },
     {
         path: '/admin/users',
         name: 'AdminUsers',
         component: AdminUsers,
-        meta: { title: 'User Account Management' }
+        meta: { role: 'admin', title: 'User Account Management' }
     },
 
     // Dynamic Printable Reports Routes
@@ -259,25 +259,25 @@ const routes = [
         path: '/admin/reports/masterlist',
         name: 'ReportMasterlist',
         component: ReportMasterlist,
-        meta: { title: 'Masterlist Audit Report' }
+        meta: { role: 'admin', title: 'Masterlist Audit Report' }
     },
     {
         path: '/admin/reports/compliance',
         name: 'ReportCompliance',
         component: ReportCompliance,
-        meta: { title: 'Accreditation Compliance Audit' }
+        meta: { role: 'admin', title: 'Accreditation Compliance Audit' }
     },
     {
         path: '/admin/reports/emergency-registry',
         name: 'ReportEmergency',
         component: ReportEmergency,
-        meta: { title: 'Emergency Residency Audit' }
+        meta: { role: 'admin', title: 'Emergency Residency Audit' }
     },
     {
         path: '/admin/reports/transactions',
         name: 'ReportTransactions',
         component: ReportTransactions,
-        meta: { title: 'Reservation Transactions Audit' }
+        meta: { role: 'admin', title: 'Reservation Transactions Audit' }
     }
 ];
 
@@ -292,7 +292,7 @@ router.afterEach((to) => {
     document.title = to.meta && to.meta.title ? `${to.meta.title} | ${baseTitle}` : baseTitle;
 });
 
-// ─── Global Navigation Guard ───────────────────────────────────────
+// ─── Global Navigation Guard (ST-02 Compliance) ─────────────────────
 router.beforeEach((to, from, next) => {
     let user = null;
 
@@ -307,41 +307,60 @@ router.beforeEach((to, from, next) => {
     }
 
     const token = localStorage.getItem('cspc_token');
-    const isLoggedIn = !!(token && user);
+    const isPublic = !!(to.meta && to.meta.public);
+    const isGuestStudentView = (to.name === 'StudentDashboard' || to.name === 'StudentHouseDetails');
 
-    // ─── OWNER ONBOARDING: always allow (no token yet at this point) ───
-    if (to.name === 'OwnerDetailsRegister') {
-        return next();
+    // ─── 0. REDIRECT ALREADY AUTHENTICATED USERS FROM AUTH/GUEST PAGES ─
+    const authGuestPages = ['/login', '/login-options', '/register', '/register/owner-details'];
+    if (token && user && authGuestPages.includes(to.path)) {
+        if (user.role === 'admin') {
+            return next('/admin/dashboard');
+        } else if (user.role === 'owner') {
+            const houseStatus = user.houseStatus || user.house_status || 'none';
+            if (houseStatus === 'accredited') return next('/owner/dashboard');
+            else if (houseStatus === 'pending' || houseStatus === 'rejected') return next('/owner/pending-review');
+            else return next('/owner/accreditation');
+        } else if (user.role === 'student') {
+            return next('/student/dashboard');
+        }
     }
-    // ─── ADMIN ROUTES: block completely if not logged in as admin ───
-    if (to.path.startsWith('/admin/')) {
-        if (!isLoggedIn || user.role !== 'admin') {
-            return next('/login-options');
-        }
-        return next();
-    }
 
-    // ─── STUDENT ROUTES: block completely if not logged in as student ───
-    if (to.path.startsWith('/student/') || to.path.startsWith('/users/student/')) {
-
-        const isGuestAllowed = to.name === 'StudentDashboard' || to.name === 'StudentHouseDetails';
-
-        if (isGuestAllowed) {
-            return next();
-        }
-
-        if (!isLoggedIn || user.role !== 'student') {
-            return next('/login-options');
-        }
+    // ─── 1. PUBLIC ROUTES ─────────────────────────────────────────────
+    if (isPublic) {
         return next();
     }
 
-    // ─── OWNER ROUTES ───────────────────────────────────────────────────
+    // ─── 2. GUEST ACCESS FOR STUDENT DASHBOARD / DETAILS ──────────────
+    if (isGuestStudentView && !token) {
+        return next();
+    }
+
+    // ─── 3. MISSING AUTH TOKEN GUARD ──────────────────────────────────
+    if (!token || !user) {
+        return next('/login?error=session_required');
+    }
+
+    // ─── 4. ROLE COMPLIANCE GUARD ─────────────────────────────────────
+    const requiredRole = to.meta && to.meta.role;
+
+    if (requiredRole && user.role !== requiredRole) {
+        return next('/login?error=unauthorized');
+    }
+
+    if (to.path.startsWith('/admin/') && user.role !== 'admin') {
+        return next('/login?error=unauthorized');
+    }
+
+    if ((to.path.startsWith('/owner/') || to.path.startsWith('/users/owner/')) && user.role !== 'owner') {
+        return next('/login?error=unauthorized');
+    }
+
+    if ((to.path.startsWith('/student/') || to.path.startsWith('/users/student/')) && user.role !== 'student' && !isGuestStudentView) {
+        return next('/login?error=unauthorized');
+    }
+
+    // ─── 5. OWNER ACCREDITATION LIFECYCLE GUARDS ──────────────────────
     if (to.path.startsWith('/owner/') || to.path.startsWith('/users/owner/')) {
-        if (!isLoggedIn || user.role !== 'owner') {
-            return next('/login-options');
-        }
-
         const houseStatus = user.houseStatus || user.house_status || 'none';
 
         if (to.name === 'OwnerAccreditation') {

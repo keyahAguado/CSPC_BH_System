@@ -14,7 +14,7 @@ import { runComplianceCheck } from './config/complianceManager.js';
 import { getUploadsDir } from './config/upload.js';
 
 
-// ===================================================`======================
+// =========================================================================
 // SECTION 2: ROUTER HANDLERS IMPORTS
 // =========================================================================
 import authRouter from './routes/auth.js';                    // Consolidated Authentication (JWT Login, Google SSO)
@@ -29,7 +29,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // =========================================================================
-// SECTION 3: GLOBAL MIDDLEWARES & STATIC ASSETS
+// SECTION 3: GLOBAL SECURITY HARDENING & MIDDLEWARES
 // =========================================================================
 app.use(cors());
 app.use(express.json());

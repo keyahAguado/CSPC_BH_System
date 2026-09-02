@@ -5,40 +5,53 @@
 
 <script setup>
 import { onMounted, onUnmounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 
-const validateSecuritySession = () => {
+const router = useRouter();
+const route = useRoute();
+
+const PUBLIC_PATHS = [
+  '/',
+  '/login',
+  '/login-options',
+  '/register',
+  '/register/owner-details',
+  '/auth-success'
+];
+
+const verifySessionOrEvict = () => {
   const token = localStorage.getItem('cspc_token');
-  const rawUser = localStorage.getItem('cspc_user');
-  let user = null;
-  try {
-    if (rawUser && rawUser !== 'undefined') user = JSON.parse(rawUser);
-  } catch (e) {}
+  const isPublic = (route.meta && route.meta.public) || PUBLIC_PATHS.includes(route.path) || route.path === '/student/dashboard' || route.path.startsWith('/student/house/');
 
-  const path = window.location.pathname;
-  const isProtectedAdmin = path.startsWith('/admin');
-  const isProtectedOwner = path.startsWith('/owner');
-  const isProtectedStudent = path.startsWith('/student') && path !== '/student/dashboard' && !path.startsWith('/student/house/');
-
-  if ((isProtectedAdmin || isProtectedOwner || isProtectedStudent) && (!token || !user || !user.role)) {
-    console.warn('[SECURITY GUARD] Unauthorized session cache restoration detected. Redirecting to login.');
+  // If the token is missing and we are on a protected route, evict immediately
+  if (!token && !isPublic && route.path !== '/login' && route.path !== '/') {
+    console.warn('[SECURITY GUARD] Unauthorized session cache restoration detected. Evicting to login.');
     localStorage.clear();
     sessionStorage.clear();
-    window.location.replace('/login-options');
+    window.location.href = '/login?error=session_expired';
   }
 };
 
 const handlePageShow = (event) => {
-  // If page was restored from BFCache (back-forward cache) or swipe gesture
-  if (event.persisted) {
-    validateSecuritySession();
+  // Modern, non-deprecated Back-Forward Cache (BFCache) detection
+  const navigationEntries = performance.getEntriesByType && performance.getEntriesByType('navigation');
+  const isBackForwardType = navigationEntries && navigationEntries.length > 0 && navigationEntries[0].type === 'back_forward';
+  
+  const isBFCacheLoad = event.persisted || isBackForwardType;
+
+  if (isBFCacheLoad) {
+    verifySessionOrEvict();
   }
 };
 
 onMounted(() => {
-  validateSecuritySession();
+  // 1. Run session verification on initial component mount
+  verifySessionOrEvict();
+
+  // 2. Event listeners for cache eviction and popstate/focus
   window.addEventListener('pageshow', handlePageShow);
-  window.addEventListener('popstate', validateSecuritySession);
-  window.addEventListener('focus', validateSecuritySession);
+  window.addEventListener('popstate', verifySessionOrEvict);
+  window.addEventListener('focus', verifySessionOrEvict);
 
   // Dynamically inject the FontAwesome stylesheet on runtime
   if (!document.getElementById('font-awesome-cdn')) {
@@ -54,7 +67,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('pageshow', handlePageShow);
-  window.removeEventListener('popstate', validateSecuritySession);
-  window.removeEventListener('focus', validateSecuritySession);
+  window.removeEventListener('popstate', verifySessionOrEvict);
+  window.removeEventListener('focus', verifySessionOrEvict);
 });
 </script>

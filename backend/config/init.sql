@@ -394,7 +394,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (18,'admin@cspc.edu.ph','$2b$10$cpDttrjeTdo0iTVyB4DQbOwrvFlpOy6lzwXajdxhBE7xdLVmaKMI.',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
+INSERT INTO `users` VALUES (18,'admin@cspc.edu.ph','$2b$10$n2j1SKagRGi5sqQxMuQ8oOViizimxAPrsrh/utbITrEq/E5ymLIiq',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 --

@@ -55,25 +55,61 @@ const attachPriceRange = (house, minVal, maxVal) => {
     return { ...house, min_price: min, max_price: max, price_range: displayPrice };
 };
 
-// 2. [GET] - Retrieve all accredited boarding houses (Public)
-router.get('/accredited', async (req, res) => {
+// 2. [GET] - Retrieve all accredited boarding houses (Public search & directory)
+const handleAccreditedFetch = async (req, res) => {
     try {
-        const [rows] = await pool.query(`
-            SELECT bh.*, 
-                   MIN(r.price) AS min_price, 
-                   MAX(r.price) AS max_price 
-            FROM boarding_houses bh
-            LEFT JOIN rooms r ON bh.id = r.house_id
-            WHERE bh.house_status = 'accredited'
-            GROUP BY bh.id
-        `);
+        const searchQuery = (req.query.query || req.query.search || req.query.q || '').trim();
+        const terms = searchQuery.split(/\s+/).map(t => t.trim()).filter(t => t.length > 0);
+
+        let rows;
+        if (terms.length === 0) {
+            [rows] = await pool.query(`
+                SELECT bh.*, 
+                       MIN(r.price) AS min_price, 
+                       MAX(r.price) AS max_price 
+                FROM boarding_houses bh
+                LEFT JOIN rooms r ON bh.id = r.house_id
+                WHERE bh.house_status = 'accredited'
+                GROUP BY bh.id
+                ORDER BY bh.created_at DESC
+            `);
+        } else {
+            let scoreClauses = [];
+            let whereClauses = [];
+            let params = [];
+
+            terms.forEach(term => {
+                scoreClauses.push(`(IF(bh.name LIKE ?, 3, 0) + IF(bh.location LIKE ?, 2, 0) + IF(COALESCE(bh.barangay, '') LIKE ?, 1, 0))`);
+                whereClauses.push(`(bh.name LIKE ? OR bh.location LIKE ? OR bh.barangay LIKE ?)`);
+                const wildterm = `%${term}%`;
+                params.push(wildterm, wildterm, wildterm);
+            });
+
+            const queryParams = [...params, ...params];
+            const sql = `
+                SELECT bh.*, 
+                       MIN(r.price) AS min_price, 
+                       MAX(r.price) AS max_price,
+                       (${scoreClauses.join(' + ')}) AS relevance 
+                FROM boarding_houses bh
+                LEFT JOIN rooms r ON bh.id = r.house_id
+                WHERE bh.house_status = 'accredited' AND (${whereClauses.join(' OR ')})
+                GROUP BY bh.id
+                ORDER BY relevance DESC, bh.created_at DESC
+            `;
+            [rows] = await pool.query(sql, queryParams);
+        }
+
         const formatted = rows.map(h => attachPriceRange(h, h.min_price, h.max_price));
         res.json({ success: true, count: formatted.length, data: formatted });
     } catch (err) {
         console.error('Fetch Accredited Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to retrieve listings.' });
     }
-});
+};
+
+router.get('/accredited', handleAccreditedFetch);
+router.get('/search', handleAccreditedFetch);
 
 // 3. [GET] - Retrieve specific boarding house details
 router.get('/details/:id', authenticateToken, async (req, res) => {
