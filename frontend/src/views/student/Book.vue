@@ -19,7 +19,7 @@ const showConfirmModal = ref(false);   // Pre-submission review modal
 const showSuccessModal = ref(false);   // Post-submission result modal
 const alertRef = ref(null);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 const isGuest = !token;
 import { getApiBaseUrl } from '../../config/api';
 
@@ -28,7 +28,7 @@ const API = getApiBaseUrl();
 // Self-healing local storage parser (Guarantees zero start-up crashes)
 let currentUserObj = {};
 try {
-  const userRaw = localStorage.getItem('cspc_user');
+  const userRaw = sessionStorage.getItem('cspc_user');
   if (userRaw && userRaw !== 'undefined') {
     currentUserObj = JSON.parse(userRaw);
   }

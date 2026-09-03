@@ -297,16 +297,16 @@ router.beforeEach((to, from, next) => {
     let user = null;
 
     try {
-        const rawUser = localStorage.getItem('cspc_user');
+        const rawUser = sessionStorage.getItem('cspc_user');
         if (rawUser && rawUser !== 'undefined') {
             user = JSON.parse(rawUser);
         }
     } catch (e) {
         console.error("[ROUTER GUARD] Corrupted local storage user data detected:", e);
-        localStorage.removeItem('cspc_user');
+        sessionStorage.removeItem('cspc_user');
     }
 
-    const token = localStorage.getItem('cspc_token');
+    const token = sessionStorage.getItem('cspc_token');
     const isPublic = !!(to.meta && to.meta.public);
     const isGuestStudentView = (to.name === 'StudentDashboard' || to.name === 'StudentHouseDetails');
 

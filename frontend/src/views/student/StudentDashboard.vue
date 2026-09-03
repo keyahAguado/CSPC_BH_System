@@ -31,8 +31,8 @@ const showLoginModal = ref(false);
 const { isOffline } = useOfflineStatus();
 const isOfflineFlag = ref(false);
 
-const token = localStorage.getItem('cspc_token');
-const userRaw = localStorage.getItem('cspc_user');
+const token = sessionStorage.getItem('cspc_token');
+const userRaw = sessionStorage.getItem('cspc_user');
 const currentUser = userRaw ? JSON.parse(userRaw) : null;
 const isGuest = computed(() => route.query.guest === 'true' || !token);
 const displayName = computed(() => isGuest.value ? 'Guest' : (currentUser?.name || 'Guest'));

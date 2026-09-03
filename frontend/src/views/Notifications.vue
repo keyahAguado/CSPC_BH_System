@@ -10,8 +10,8 @@ import { useOfflineStatus } from '../utils/offlineHelper.js';
 const router = useRouter();
 const notifications = ref([]);
 const isLoading = ref(true);
-const token = localStorage.getItem('cspc_token');
-const user = JSON.parse(localStorage.getItem('cspc_user') || '{}');
+const token = sessionStorage.getItem('cspc_token');
+const user = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
 const API = import.meta.env.VITE_API_URL;
 
 const { isOffline } = useOfflineStatus();

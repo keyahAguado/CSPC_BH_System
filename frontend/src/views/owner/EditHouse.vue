@@ -50,7 +50,7 @@ const isGpsLoading = ref(false);
 const showFullscreenMap = ref(false);
 
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 import { getImageUrl } from '../../config/api';
 
 // Google Maps Refs

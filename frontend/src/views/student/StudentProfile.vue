@@ -13,7 +13,7 @@ const successMsg = ref('');
 const errorMsg = ref('');
 const alertRef = ref(null);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 
 const API = getApiBaseUrl();
@@ -40,7 +40,7 @@ const profilePicPreview = ref('');
 
 const fetchProfile = async () => {
   // 1. Instantly read verified Google session from localStorage as a solid fallback
-  const savedUser = JSON.parse(localStorage.getItem('cspc_user') || '{}');
+  const savedUser = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
   
   // 2. Pre-fill UI states immediately so there is never a blank screen
   user.value = savedUser;

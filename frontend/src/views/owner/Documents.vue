@@ -23,7 +23,7 @@ const adminComments = ref('');
 const isLoading = ref(true);
 const isUpdating = ref({});
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 const showSystemAlert = (message, type = 'error') => {
   if (alertRef.value) {
@@ -155,11 +155,11 @@ const saveDocumentUpdate = async (p) => {
       
       // ─── LOCAL SESSION SYNCHRONIZER ───
       // If the owner resubmits documents while rejected, sync state to pending instantly
-      const currentUser = JSON.parse(localStorage.getItem('cspc_user') || '{}');
+      const currentUser = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
       if (currentUser.houseStatus === 'rejected' || currentUser.house_status === 'rejected') {
         currentUser.houseStatus = 'pending';
         currentUser.house_status = 'pending';
-        localStorage.setItem('cspc_user', JSON.stringify(currentUser));
+        sessionStorage.setItem('cspc_user', JSON.stringify(currentUser));
       }
       
       // Fetch fresh records to reflect changes immediately

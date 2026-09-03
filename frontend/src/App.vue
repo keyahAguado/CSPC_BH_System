@@ -20,7 +20,7 @@ const PUBLIC_PATHS = [
 ];
 
 const verifySessionOrEvict = () => {
-  const token = localStorage.getItem('cspc_token');
+  const token = sessionStorage.getItem('cspc_token');
   const isPublic = (route.meta && route.meta.public) || PUBLIC_PATHS.includes(route.path) || route.path === '/student/dashboard' || route.path.startsWith('/student/house/');
 
   // If the token is missing and we are on a protected route, evict immediately

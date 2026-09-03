@@ -9,11 +9,11 @@ import NABUA_BARANGAYS from '../../constants/barangays.js';
 
 const router = useRouter();
 const route = useRoute();
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
 const alertRef = ref(null);
 
-const currentUser = ref(JSON.parse(localStorage.getItem('cspc_user') || '{}'));
+const currentUser = ref(JSON.parse(sessionStorage.getItem('cspc_user') || '{}'));
 const activeStep = ref(1);
 
 const isLoading = ref(true);
@@ -771,7 +771,7 @@ const submitApplication = async () => {
         alertRef.value.showSystemAlert('Onboarding application submitted! Awaiting SASO approval.', 'success');
       }
       const updatedUser = { ...currentUser.value, houseStatus: 'pending', houseId: response.data.houseId };
-      localStorage.setItem('cspc_user', JSON.stringify(updatedUser));
+      sessionStorage.setItem('cspc_user', JSON.stringify(updatedUser));
       setTimeout(() => {
         router.push('/owner/pending-review');
       }, 1500);

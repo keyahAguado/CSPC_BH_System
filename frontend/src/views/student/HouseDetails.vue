@@ -17,7 +17,7 @@ const avgRating = ref(0);
 const isLoading = ref(true);
 const showLoginModal = ref(false);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 const isGuest = !token;
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';

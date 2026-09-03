@@ -46,7 +46,7 @@ const confirmMessage = ref('');
 const confirmAction = ref(null);
 
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
 
 // Form state for manual occupant

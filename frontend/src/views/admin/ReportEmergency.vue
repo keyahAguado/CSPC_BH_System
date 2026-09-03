@@ -10,7 +10,7 @@ const reportDate = ref('');
 const targetArea = ref('Unified Registry');
 const isLoading = ref(true);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 const fetchReport = async () => {
   try {

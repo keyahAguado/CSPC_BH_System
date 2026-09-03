@@ -10,7 +10,7 @@ const selectedBarangay = ref('');
 const selectedHouse = ref('');
 const isLoading = ref(true);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 import NABUA_BARANGAYS from '../../constants/barangays.js';
 

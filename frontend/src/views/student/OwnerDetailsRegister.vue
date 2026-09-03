@@ -55,8 +55,8 @@ const handleSubmit = async () => {
     if (response.data.success) {
       const { token, user } = response.data;
 
-      localStorage.setItem('cspc_token', token);
-      localStorage.setItem('cspc_user', JSON.stringify(user));
+      sessionStorage.setItem('cspc_token', token);
+      sessionStorage.setItem('cspc_user', JSON.stringify(user));
 
       successMessage.value = 'Registration submitted! Redirecting...';
 

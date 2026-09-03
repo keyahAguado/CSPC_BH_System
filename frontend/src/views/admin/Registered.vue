@@ -14,7 +14,7 @@ const dynamicDocs = ref([]);
 
 const isLoading = ref(true);
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 // Barangay filter & search state
 import NABUA_BARANGAYS from '../../constants/barangays.js';

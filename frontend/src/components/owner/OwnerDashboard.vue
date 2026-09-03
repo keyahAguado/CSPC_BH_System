@@ -16,8 +16,8 @@ const isLoading = ref(true);
 const alerts = ref([]);
 
 // Retrieve stateless JWT token and user info
-const token = localStorage.getItem('cspc_token');
-const savedUser = localStorage.getItem('cspc_user');
+const token = sessionStorage.getItem('cspc_token');
+const savedUser = sessionStorage.getItem('cspc_user');
 
 // Show notification system alert
 const showSystemAlert = (message, type = 'error') => {
@@ -123,8 +123,8 @@ const removeHouse = (houseId) => {
 
 // Handle logout
 const handleLogout = () => {
-  localStorage.removeItem('cspc_token');
-  localStorage.removeItem('cspc_user');
+  sessionStorage.removeItem('cspc_token');
+  sessionStorage.removeItem('cspc_user');
   window.location.href = '/';
 };
 

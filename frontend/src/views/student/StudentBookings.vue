@@ -11,7 +11,7 @@ const alerts = ref([]);
 
 const { isOffline } = useOfflineStatus();
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 import { getApiBaseUrl } from '../../config/api';
 
 const API = getApiBaseUrl();
@@ -76,7 +76,7 @@ const execCancelReservation = async () => {
 // Safely parse current user session
 let currentUserObj = {};
 try {
-  const userRaw = localStorage.getItem('cspc_user');
+  const userRaw = sessionStorage.getItem('cspc_user');
   if (userRaw && userRaw !== 'undefined') {
     currentUserObj = JSON.parse(userRaw);
   }

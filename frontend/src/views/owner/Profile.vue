@@ -34,7 +34,7 @@ const showConfirmPassword = ref(false);
 const isUpdatingPassword = ref(false);
 
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 import { getImageUrl } from '../../config/api';
 
 const showSystemAlert = (message, type = 'error') => {
@@ -153,7 +153,7 @@ const handleSaveProfile = async () => {
       showSystemAlert('Profile changes saved successfully!', 'success');
       
       // Update local storage so headers update immediately
-      const rawUser = localStorage.getItem('cspc_user');
+      const rawUser = sessionStorage.getItem('cspc_user');
       if (rawUser && rawUser !== 'undefined') {
         try {
           const userObj = JSON.parse(rawUser);
@@ -161,7 +161,7 @@ const handleSaveProfile = async () => {
           if (response.data.profile_pic) {
             userObj.profile_pic = response.data.profile_pic;
           }
-          localStorage.setItem('cspc_user', JSON.stringify(userObj));
+          sessionStorage.setItem('cspc_user', JSON.stringify(userObj));
         } catch (parseError) {
           console.warn("[PROFILE] Ignored corrupted localStorage user string:", parseError);
         }

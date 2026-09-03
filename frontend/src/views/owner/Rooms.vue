@@ -34,7 +34,7 @@ const isLoading = ref(true);
 const isSubmitting = ref(false);
 const showAddModal = ref(false);
 const alertRef = ref(null);
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 const showSystemAlert = (message, type = 'error') => {
   if (alertRef.value) {

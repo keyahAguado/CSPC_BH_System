@@ -38,8 +38,8 @@ axios.interceptors.response.use(
     const status = error?.response?.status;
     const msg = error?.response?.data?.message || '';
     if ((status === 401 || status === 403) && msg.toLowerCase().includes('token')) {
-      localStorage.removeItem('cspc_token');
-      localStorage.removeItem('cspc_user');
+      sessionStorage.removeItem('cspc_token');
+      sessionStorage.removeItem('cspc_user');
       router.push('/login');
     }
     return Promise.reject(error);

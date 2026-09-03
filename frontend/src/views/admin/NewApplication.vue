@@ -12,7 +12,7 @@ const checklistResults = ref([]);
 const isLoading = ref(true);
 const alertRef = ref(null);
 import { getImageUrl } from '../../config/api';
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 // Modals toggles
 const showDocModal = ref(false);

@@ -4,11 +4,11 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 
 const router = useRouter();
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
 
 // Reactive states
-const currentUser = ref(JSON.parse(localStorage.getItem('cspc_user') || '{}'));
+const currentUser = ref(JSON.parse(sessionStorage.getItem('cspc_user') || '{}'));
 const houseName = ref('Your Boarding House');
 const houseId = ref(null);
 const submittedCount = ref(0);
@@ -33,7 +33,7 @@ const fetchMyProperty = async () => {
         // Updates localStorage dynamically to prevent routing desyncs
         if (currentUser.value.houseStatus !== freshStatus) {
           currentUser.value.houseStatus = freshStatus;
-          localStorage.setItem('cspc_user', JSON.stringify(currentUser.value));
+          sessionStorage.setItem('cspc_user', JSON.stringify(currentUser.value));
         }
 
         // Dynamically redirect owner to the correct view if status is no longer pending
@@ -79,7 +79,7 @@ const fetchMyProperty = async () => {
       } else {
         // If they have no property registered at all, reset status and send to accreditation form
         currentUser.value.houseStatus = 'none';
-        localStorage.setItem('cspc_user', JSON.stringify(currentUser.value));
+        sessionStorage.setItem('cspc_user', JSON.stringify(currentUser.value));
         router.push('/owner/accreditation');
       }
     }
@@ -91,8 +91,8 @@ const fetchMyProperty = async () => {
 };
 
 const handleLogout = () => {
-  localStorage.removeItem('cspc_token');
-  localStorage.removeItem('cspc_user');
+  sessionStorage.removeItem('cspc_token');
+  sessionStorage.removeItem('cspc_user');
   router.push('/login-options');
 };
 
@@ -146,7 +146,7 @@ onMounted(fetchMyProperty);
           </div>
           <div>
             <h3 class="font-bold text-slate-900">Initial Validation</h3>
-            <p class="text-sm text-slate-500">The Admin is currently cross-referencing your documents with LGU records.</p>
+            <p class="text-sm text-slate-500">The Admin is currently checking your documents.</p>
           </div>
         </div>
 

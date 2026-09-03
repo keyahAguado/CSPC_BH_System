@@ -9,7 +9,7 @@ const route = useRoute();
 const unreadNotifCount = ref(0);
 const alertRef = ref(null);
 const showConfirmModal = ref(false); // Controls the minimalist logout overlay modal
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 // Mobile sidebar state
 const sidebarOpen = ref(false);
@@ -29,9 +29,9 @@ const fetchUnreadCount = async () => {
 };
 
 const handleLogout = () => {
-  localStorage.removeItem('cspc_token');
-  localStorage.removeItem('user_role');
-  localStorage.removeItem('cspc_user');
+  sessionStorage.removeItem('cspc_token');
+  sessionStorage.removeItem('user_role');
+  sessionStorage.removeItem('cspc_user');
   localStorage.clear();
   sessionStorage.clear();
   showConfirmModal.value = false;

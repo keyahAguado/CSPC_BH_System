@@ -1,12 +1,29 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import pool from '../config/db.js';
 import passport from 'passport';
 import '../config/passport.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_cspc_token_key';
+
+// ── One-time OAuth exchange codes ──────────────────────────────────────
+// Keeps the real JWT out of the redirect URL (browser history, server logs,
+// Referer headers). Each code is single-use and expires after 60 seconds.
+const OAUTH_EXCHANGE_TTL_MS = 60 * 1000;
+const oauthExchangeCodes = new Map();
+
+function issueExchangeCode(token, userParam) {
+    const code = crypto.randomBytes(32).toString('hex');
+    oauthExchangeCodes.set(code, {
+        token,
+        userParam,
+        expiresAt: Date.now() + OAUTH_EXCHANGE_TTL_MS,
+    });
+    return code;
+}
 
 // =========================================================================
 // 0. ULTRA-STRICT EMAIL VALIDATOR HELPER
@@ -259,7 +276,8 @@ router.get('/google/callback',
             );
 
             const userParam = encodeURIComponent(JSON.stringify(payload));
-            return res.redirect(`${targetOrigin}/auth-success?token=${token}&user=${userParam}`);
+            const code = issueExchangeCode(token, userParam);
+            return res.redirect(`${targetOrigin}/auth-success?code=${code}`);
 
         } catch (err) {
             console.error('OAuth Callback Error:', err.message);
@@ -267,6 +285,32 @@ router.get('/google/callback',
         }
     }
 );
+
+// =========================================================================
+// 4.5 OAUTH CODE EXCHANGE POST /api/auth/exchange
+//     Swaps the one-time code from the OAuth redirect for the real JWT.
+//     Keeps the token out of the URL (history/logs/Referer).
+// =========================================================================
+router.post('/exchange', (req, res) => {
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+        return res.status(400).json({ success: false, message: 'Missing exchange code.' });
+    }
+
+    const entry = oauthExchangeCodes.get(code);
+    oauthExchangeCodes.delete(code); // single-use regardless of outcome
+
+    if (!entry || entry.expiresAt < Date.now()) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired code.' });
+    }
+
+    return res.json({
+        success: true,
+        token: entry.token,
+        user: JSON.parse(decodeURIComponent(entry.userParam)),
+    });
+});
 
 // =========================================================================
 // 5.5 TRADITIONAL OWNER REGISTRATION POST /api/auth/register/owner

@@ -7,7 +7,7 @@ const transactions = ref([]);
 const reportDate = ref('');
 const isLoading = ref(true);
 
-const token = localStorage.getItem('cspc_token');
+const token = sessionStorage.getItem('cspc_token');
 
 const fetchReport = async () => {
   try {

@@ -15,8 +15,8 @@ const stats = ref({
 const isLoading = ref(true);
 const alerts = ref([]);
 
-const token = localStorage.getItem('cspc_token');
-const savedUser = localStorage.getItem('cspc_user');
+const token = sessionStorage.getItem('cspc_token');
+const savedUser = sessionStorage.getItem('cspc_user');
 
 const showSystemAlert = (message, type = 'error') => {
   const id = 'alert-' + Date.now();

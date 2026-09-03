@@ -125,8 +125,8 @@ const handleLogin = async () => {
     });
 
     if (data.success) {
-      localStorage.setItem('cspc_token', data.token);
-      localStorage.setItem('cspc_user', JSON.stringify(data.user));
+      sessionStorage.setItem('cspc_token', data.token);
+      sessionStorage.setItem('cspc_user', JSON.stringify(data.user));
       successMsg.value = 'Welcome back! Redirecting...';
       setTimeout(() => redirectByRole(data.user), 800);
     }
