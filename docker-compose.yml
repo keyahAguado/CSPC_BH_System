@@ -7,17 +7,17 @@ services:
     container_name: cspc_mysql_db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: cspc_boarding_db
       MYSQL_USER: cspc_user
-      MYSQL_PASSWORD: cspc_password
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
       - ./backend/config/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -36,12 +36,12 @@ services:
     environment:
       - DB_HOST=db
       - DB_USER=cspc_user
-      - DB_PASSWORD=cspc_password
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=cspc_boarding_db
       - DB_PORT=3306
       - PORT=3000
-      - FRONTEND_URL=http://localhost
-      - JWT_SECRET=cspc_secret_key_2026
+      - FRONTEND_URL=${FRONTEND_URL}
+      - JWT_SECRET=${JWT_SECRET}
       - STORAGE_PROVIDER=local
     volumes:
       - media_uploads:/app/uploads
@@ -58,10 +58,19 @@ services:
     restart: always
     ports:
       - "80:80"
-    volumes:
-      - media_uploads:/usr/share/nginx/html/uploads:ro
     depends_on:
       - backend
+      - media_storage
+
+  # --- 4. Dedicated Nginx Media Storage Service (ICTU Compliant) ---
+  media_storage:
+    image: nginx:alpine
+    container_name: cspc_media_storage
+    restart: always
+    ports:
+      - "8080:80"
+    volumes:
+      - media_uploads:/usr/share/nginx/html/uploads:ro
 
 volumes:
   db_data:

@@ -79,4 +79,55 @@ export async function saveUploadedFile(buffer, originalname = 'file.jpg', folder
     return `/uploads/${filename}`;
 }
 
+/**
+ * Sweeps the local uploads directory for orphaned files — ones no longer
+ * referenced by any DB record (e.g. left behind after a photo/permit/profile
+ * pic is replaced, since replacements only overwrite the DB pointer, not the
+ * old file on disk). No-op when STORAGE_PROVIDER is not 'local'.
+ * A 24h grace period protects files that were just written but whose DB
+ * row hasn't committed yet.
+ * @param {import('mysql2/promise').Pool} pool
+ */
+export async function cleanupOrphanedUploads(pool) {
+    const provider = (process.env.STORAGE_PROVIDER || 'local').toLowerCase().trim();
+    if (provider !== 'local') return { skipped: true };
+
+    const dir = getUploadsDir();
+    const files = await fs.promises.readdir(dir).catch(() => []);
+    if (files.length === 0) return { deleted: 0, scanned: 0 };
+
+    const [rows] = await pool.query(`
+        SELECT img AS path FROM boarding_houses WHERE img IS NOT NULL
+        UNION SELECT permit_business_form FROM boarding_houses WHERE permit_business_form IS NOT NULL
+        UNION SELECT permit_cedula FROM boarding_houses WHERE permit_cedula IS NOT NULL
+        UNION SELECT permit_dti FROM boarding_houses WHERE permit_dti IS NOT NULL
+        UNION SELECT permit_barangay FROM boarding_houses WHERE permit_barangay IS NOT NULL
+        UNION SELECT permit_building FROM boarding_houses WHERE permit_building IS NOT NULL
+        UNION SELECT permit_zoning FROM boarding_houses WHERE permit_zoning IS NOT NULL
+        UNION SELECT permit_sanitary FROM boarding_houses WHERE permit_sanitary IS NOT NULL
+        UNION SELECT permit_fire FROM boarding_houses WHERE permit_fire IS NOT NULL
+        UNION SELECT profile_pic FROM users WHERE profile_pic IS NOT NULL
+        UNION SELECT photo_url FROM house_photos WHERE photo_url IS NOT NULL
+    `);
+
+    const referenced = new Set(rows.map(r => path.basename(String(r.path))));
+    const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
+    let deleted = 0;
+
+    for (const filename of files) {
+        if (referenced.has(filename)) continue;
+        const filePath = path.join(dir, filename);
+        try {
+            const stat = await fs.promises.stat(filePath);
+            if (Date.now() - stat.mtimeMs < GRACE_PERIOD_MS) continue;
+            await fs.promises.unlink(filePath);
+            deleted++;
+        } catch (e) {
+            // Ignore individual file errors (already removed, permission issue, etc.)
+        }
+    }
+
+    return { deleted, scanned: files.length };
+}
+
 export default upload;

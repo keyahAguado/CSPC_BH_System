@@ -14,6 +14,9 @@ export const getApiBaseUrl = () => {
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isNgrok = hostname.includes('ngrok');
     const isVercel = hostname.includes('vercel.app');
+    // Private IPv4 ranges only (192.168.x.x, 10.x.x.x, 172.16-31.x.x) — actual LAN/mobile dev-testing,
+    // not just "any hostname that isn't localhost" (that used to also catch real public domains).
+    const isPrivateLanIp = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
 
     // On Vercel production, use relative paths so requests go through the Vercel proxy
     // and stay same-origin — required for the service worker to intercept and cache them
@@ -27,9 +30,16 @@ export const getApiBaseUrl = () => {
     }
 
     // When accessing over LAN IP on mobile/other device (e.g. 192.168.x.x), target laptop's IP on port 3000
-    if (!isLocalhost && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+    if (isPrivateLanIp && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
       const protocol = window.location.protocol;
       return `${protocol}//${hostname}:3000`;
+    }
+
+    // Any other real domain (self-hosted Docker Compose deployment without an
+    // explicit absolute VITE_API_URL override: stay same-origin so requests route through the Nginx
+    // /api/ reverse proxy instead of assuming a directly-reachable backend port on that domain.
+    if (!isLocalhost && !envUrl) {
+      return '';
     }
   }
 

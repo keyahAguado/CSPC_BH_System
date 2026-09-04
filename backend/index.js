@@ -11,7 +11,7 @@ import pool from './config/db.js'; // Database connection pool (resolves nativel
 import './config/passport.js';
 import cron from 'node-cron';
 import { runComplianceCheck } from './config/complianceManager.js';
-import { getUploadsDir } from './config/upload.js';
+import { getUploadsDir, cleanupOrphanedUploads } from './config/upload.js';
 
 
 // =========================================================================
@@ -195,6 +195,21 @@ cron.schedule('0 0 * * *', async () => {
         await runComplianceCheck();
     } catch (err) {
         console.error('[CRON EXECUTION ERROR] Compliance checking failed:', err);
+    }
+});
+
+// ===================================================
+// ORPHANED UPLOAD CLEANUP (DAILY)
+// Removes local files left behind when a photo/permit/profile pic is
+// replaced (the DB pointer is overwritten but the old file isn't deleted).
+// ===================================================
+cron.schedule('30 0 * * *', async () => {
+    console.log('[CRON EXECUTION] Running orphaned upload cleanup...');
+    try {
+        const result = await cleanupOrphanedUploads(pool);
+        console.log('[CRON EXECUTION] Upload cleanup result:', result);
+    } catch (err) {
+        console.error('[CRON EXECUTION ERROR] Upload cleanup failed:', err);
     }
 });
 

@@ -3,12 +3,14 @@ node_modules/
 **/node_modules/
 
 # Secrets
-.env
-.env.production
 **/.env
 **/.env.production
 frontend/.env
-backend/.env
+
+
+!/.env
+!/backend/.env
+!/frontend/.env.production
 
 # Compiled outputs
 dist/
