@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import Chart from 'chart.js/auto';
@@ -35,6 +35,17 @@ const token = sessionStorage.getItem('cspc_token');
 
 // Course breakdown report + admin course management
 const courseBreakdown = ref([]);
+const showAllCourses = ref(false);
+const COURSE_PREVIEW_COUNT = 6;
+
+// Already ordered resident_count DESC by the backend query.
+const coursesWithResidents = computed(() => courseBreakdown.value.filter(c => c.resident_count > 0));
+const displayedCourses = computed(() =>
+  showAllCourses.value ? coursesWithResidents.value : coursesWithResidents.value.slice(0, COURSE_PREVIEW_COUNT)
+);
+const maxCourseResidentCount = computed(() =>
+  Math.max(...coursesWithResidents.value.map(c => c.resident_count), 1)
+);
 const showCourseModal = ref(false);
 const courseList = ref([]);
 const isLoadingCourses = ref(false);
@@ -339,7 +350,7 @@ onUnmounted(() => {
     <main class="flex-1 max-w-6xl mx-auto w-full py-8 px-4 sm:px-6 text-left">
       <!-- Dashboard Header -->
       <div class="text-center mb-6">
-        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Hello, {{ adminName }}!</p>
+        <p class="text-base font-black text-slate-500 uppercase tracking-widest mb-1.5">Hello, {{ adminName }}!</p>
         <h1 class="text-2xl font-black text-slate-800 uppercase tracking-tight">
           Boarding House Dashboard
         </h1>
@@ -482,23 +493,29 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div v-if="courseBreakdown.filter(c => c.resident_count > 0).length === 0" class="py-10 flex items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">
+          <div v-if="coursesWithResidents.length === 0" class="py-10 flex items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">
             No active residents matched to a course yet
           </div>
           <template v-else>
-            <div class="space-y-2.5">
-              <button v-for="c in courseBreakdown.filter(c => c.resident_count > 0)" :key="c.course_code"
+            <div class="space-y-2.5" :class="{ 'max-h-80 overflow-y-auto pr-1': showAllCourses }">
+              <button v-for="c in displayedCourses" :key="c.course_code"
                 @click="router.push({ path: '/admin/emergency-monitoring', query: { course: c.course_code } })"
                 class="w-full flex items-center gap-3 group cursor-pointer text-left"
                 :title="`View ${c.resident_count} active resident${c.resident_count === 1 ? '' : 's'} in ${c.course_code}`">
                 <span class="text-[10px] font-black text-slate-500 uppercase w-16 shrink-0 group-hover:text-slate-900 transition">{{ c.course_code }}</span>
                 <div class="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
                   <div class="h-full rounded-full transition-opacity group-hover:opacity-75" :class="deptColor(c.department).bar"
-                    :style="{ width: (c.resident_count / Math.max(...courseBreakdown.map(x => x.resident_count), 1) * 100) + '%' }"></div>
+                    :style="{ width: (c.resident_count / maxCourseResidentCount * 100) + '%' }"></div>
                 </div>
                 <span class="text-xs font-black text-slate-800 w-6 text-right shrink-0">{{ c.resident_count }}</span>
               </button>
             </div>
+
+            <button v-if="coursesWithResidents.length > COURSE_PREVIEW_COUNT" @click="showAllCourses = !showAllCourses"
+              class="w-full mt-3 text-center text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-purple-600 transition cursor-pointer">
+              {{ showAllCourses ? 'Show Less' : `Show All ${coursesWithResidents.length} Courses` }}
+              <i class="fa-solid ml-1" :class="showAllCourses ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
 
             <!-- Department color legend -->
             <div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-5 pt-4 border-t border-slate-100">

@@ -4,6 +4,7 @@ import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
+import { matchesSearch } from '../../utils/search.js';
 
 const users = ref([]);
 const isLoading = ref(true);
@@ -161,9 +162,7 @@ const openEditModal = (user) => {
 // Client-Side Live Filters
 const filteredUsers = computed(() => {
   return users.value.filter(u => {
-    const matchQuery = 
-      u.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.value.toLowerCase());
+    const matchQuery = matchesSearch(searchQuery.value, [u.name, u.email]);
     
     const matchRole = filterRole.value === 'all' || u.role === filterRole.value;
     const matchStatus = filterStatus.value === 'all' || u.status === filterStatus.value;

@@ -8,6 +8,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
+import { matchesSearch } from '../../utils/search.js';
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
@@ -36,15 +37,11 @@ const filteredHouses = computed(() => {
     });
   }
 
-  // 2. Search Query Filter
-  const q = searchQuery.value.trim().toLowerCase();
-  if (q) {
+  // 2. Search Query Filter — flexible multi-word match (e.g. "boarding house
+  // Hernandez" still matches "Hernandez Boardinghouse")
+  if (searchQuery.value.trim()) {
     result = result.filter(h =>
-      (h.name || '').toLowerCase().includes(q) ||
-      (h.owner_name || '').toLowerCase().includes(q) ||
-      (h.owner_email || '').toLowerCase().includes(q) ||
-      (h.location || '').toLowerCase().includes(q) ||
-      (h.barangay || '').toLowerCase().includes(q)
+      matchesSearch(searchQuery.value, [h.name, h.owner_name, h.owner_email, h.location, h.barangay])
     );
   }
 

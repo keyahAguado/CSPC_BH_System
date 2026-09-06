@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { matchesSearch } from '../../utils/search.js';
 
 const route = useRoute();
 
@@ -70,18 +71,15 @@ const fetchBookings = async () => {
 };
 
 const filteredBookings = computed(() => {
-  const query = searchQuery.value.toUpperCase();
-  if (!query) return bookings.value;
+  if (!searchQuery.value.trim()) return bookings.value;
 
-  return bookings.value.filter(b => {
-    return (
-      (b.student_name && b.student_name.toUpperCase().includes(query)) ||
-      (b.room_number && b.room_number.toString().includes(query)) ||
-      (b.id && `REF-${b.id.toString().padStart(4, '0')}`.toUpperCase().includes(query)) ||
-      (b.address && b.address.toUpperCase().includes(query)) ||
-      (b.contact_number && b.contact_number.includes(query))
-    );
-  });
+  return bookings.value.filter(b => matchesSearch(searchQuery.value, [
+    b.student_name,
+    b.room_number != null ? b.room_number.toString() : '',
+    b.id != null ? `REF-${b.id.toString().padStart(4, '0')}` : '',
+    b.address,
+    b.contact_number
+  ]));
 });
 
 const groupedHouses = computed(() => {
