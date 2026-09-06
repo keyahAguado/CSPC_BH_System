@@ -475,6 +475,17 @@ INSERT INTO `courses` (`course_code`, `course_name`, `department`) VALUES
 INSERT INTO `courses` (`course_code`, `course_name`, `is_active`) VALUES
 ('BHS', 'Unconfirmed Program - Pending Verification', 0);
 
+-- Real referential integrity: the database itself now refuses any users.course
+-- value that isn't a real course_code — whether from a bug, a bypassed dropdown,
+-- or a direct edit. ON UPDATE CASCADE means renaming a course in Admin > Manage
+-- Courses automatically updates every student who has it. ON DELETE RESTRICT
+-- backs up the existing application-level check that blocks deleting a course
+-- still in use.
+ALTER TABLE `users`
+  ADD CONSTRAINT `fk_users_course`
+  FOREIGN KEY (`course`) REFERENCES `courses` (`course_code`)
+  ON UPDATE CASCADE ON DELETE RESTRICT;
+
 /*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

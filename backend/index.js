@@ -32,7 +32,14 @@ const PORT = process.env.PORT || 3000;
 // SECTION 3: GLOBAL SECURITY HARDENING & MIDDLEWARES
 // =========================================================================
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        // Stores a raw, unparsed copy of every request body so webhook signature
+        // verification (e.g. PayMongo) can hash the exact bytes that were signed,
+        // instead of a re-serialized (and potentially byte-different) reconstruction.
+        req.rawBody = buf.toString();
+    }
+}));
 app.use(passport.initialize());
 
 // Disable HTTP caching for all API routes so responses always return 200 (never 304).
@@ -238,14 +245,6 @@ cron.schedule('*/14 * * * *', () => {
 const activeUploadsDir = getUploadsDir();
 console.log('📁 Active local uploads directory resolved:', activeUploadsDir);
 // ────────────────────────────────────────────────
-
-
-app.use(express.json({
-    verify: (req, res, buf) => {
-        // Stores a raw, unparsed string copy of the payload for webhook signature verifications
-        req.rawBody = buf.toString();
-    }
-}));
 
 app.listen(PORT, () => {
     console.log(`🚀 Backend Server running on http://localhost:${PORT}`);
