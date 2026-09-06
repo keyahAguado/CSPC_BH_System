@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const router = useRouter();
 const user = ref({});
@@ -37,6 +38,66 @@ const form = ref({
 
 const profilePicFile = ref(null);
 const profilePicPreview = ref('');
+const courseOptions = ref([]);
+
+// ── Date of Birth bounds & auto-calculated age ──────────────────────────
+// College students realistically fall between ~15 and ~65 years old;
+// this blocks impossible entries like a DOB in the last few years.
+const MIN_STUDENT_AGE = 15;
+const MAX_STUDENT_AGE = 65;
+
+const todayISO = () => new Date().toISOString().split('T')[0];
+const yearsAgoISO = (years) => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().split('T')[0];
+};
+
+const maxDobDate = yearsAgoISO(MIN_STUDENT_AGE);
+const minDobDate = yearsAgoISO(MAX_STUDENT_AGE);
+
+const computeAgeFromDob = (dobStr) => {
+  const dob = new Date(dobStr);
+  if (isNaN(dob.getTime())) return '';
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hasHadBirthdayThisYear) age--;
+  return age;
+};
+
+// Auto-fills age when the student actively changes DOB (not on initial
+// profile load, so an existing saved age is never silently overwritten).
+// The field stays editable — the student can still correct it manually.
+const onDobChange = () => {
+  if (form.value.dob) form.value.age = computeAgeFromDob(form.value.dob);
+};
+
+const sanitizePhoneInput = (fieldKey) => {
+  form.value[fieldKey] = normalizePhPhone(form.value[fieldKey]);
+};
+
+const fetchCourses = async () => {
+  try {
+    const res = await axios.get(`${API}/api/student/courses`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    courseOptions.value = res.data.courses || [];
+  } catch (e) {
+    console.warn('Failed to load course list:', e.message);
+  }
+};
+
+// Keeps a previously-saved free-text course value visible in the dropdown even
+// if it doesn't match any seeded course code, so switching to the dropdown never
+// makes an existing student's saved value appear to vanish.
+const legacyCourseValue = computed(() => {
+  if (!form.value.course) return null;
+  const matches = courseOptions.value.some(c => c.course_code === form.value.course);
+  return matches ? null : form.value.course;
+});
 
 const fetchProfile = async () => {
   // 1. Instantly read verified Google session from localStorage as a solid fallback
@@ -64,8 +125,8 @@ const fetchProfile = async () => {
       dob: u.dob ? new Date(u.dob).toISOString().split('T')[0] : '',
       age: u.age || '',
       address: u.address || '',
-      phone: u.phone || '',
-      emergency_contact: u.emergency_contact || '',
+      phone: normalizePhPhone(u.phone),
+      emergency_contact: normalizePhPhone(u.emergency_contact),
       guardian_name: u.guardian_name || '',
       existing_profile_pic: u.profile_pic || ''
     };
@@ -85,7 +146,32 @@ const handleFileChange = (e) => {
   }
 };
 
+const validateForm = () => {
+  if (form.value.dob) {
+    if (form.value.dob > maxDobDate) {
+      return `Date of birth is invalid — you must be at least ${MIN_STUDENT_AGE} years old.`;
+    }
+    if (form.value.dob < minDobDate) {
+      return 'Date of birth is invalid — please check the year entered.';
+    }
+  }
+  if (form.value.phone && !isValidPhPhone(form.value.phone)) {
+    return 'Contact number must be a valid PH mobile number (11 digits, starting with 09).';
+  }
+  if (form.value.emergency_contact && !isValidPhPhone(form.value.emergency_contact)) {
+    return 'Emergency contact number must be a valid PH mobile number (11 digits, starting with 09).';
+  }
+  return null;
+};
+
 const saveProfile = async () => {
+  const validationError = validateForm();
+  if (validationError) {
+    errorMsg.value = validationError;
+    if (alertRef.value) alertRef.value.showSystemAlert(validationError, 'error');
+    return;
+  }
+
   isSaving.value = true;
   successMsg.value = '';
   errorMsg.value = '';
@@ -123,7 +209,10 @@ const saveProfile = async () => {
 
 const userInitial = () => (user.value.name || 'S').charAt(0).toUpperCase();
 
-onMounted(fetchProfile);
+onMounted(() => {
+  fetchProfile();
+  fetchCourses();
+});
 </script>
 
 <template>
@@ -226,8 +315,14 @@ onMounted(fetchProfile);
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Course</label>
-                  <input type="text" v-model="form.course" placeholder="e.g. BSIT"
-                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" required />
+                  <select v-model="form.course"
+                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm appearance-none" required>
+                    <option value="" disabled>Select Course</option>
+                    <option v-if="legacyCourseValue" :value="legacyCourseValue">{{ legacyCourseValue }} (previously saved)</option>
+                    <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">
+                      {{ c.course_code }} — {{ c.course_name }}
+                    </option>
+                  </select>
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Year &amp; Section</label>
@@ -246,13 +341,14 @@ onMounted(fetchProfile);
               <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="col-span-1 md:col-span-2">
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Date of Birth</label>
-                  <input type="date" v-model="form.dob"
+                  <input type="date" v-model="form.dob" @change="onDobChange" :min="minDobDate" :max="maxDobDate"
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" required />
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Age</label>
                   <input type="number" v-model="form.age"
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" required />
+                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Auto-filled from your date of birth — you may correct it if needed.</p>
                 </div>
                 <div class="col-span-1 md:col-span-3">
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Email Address</label>
@@ -261,9 +357,10 @@ onMounted(fetchProfile);
                   <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Tied to your CSPC Google Account.</p>
                 </div>
                 <div class="col-span-1 md:col-span-3">
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Residential Address</label>
-                  <input type="text" v-model="form.address" required
+                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Permanent Home Address</label>
+                  <input type="text" v-model="form.address" placeholder="e.g. Zone 4, Barangay San Isidro, Nabua, Camarines Sur" required
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" />
+                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Your permanent or family residence, distinct from your current boarding house accommodation.</p>
                 </div>
               </div>
             </div>
@@ -277,13 +374,17 @@ onMounted(fetchProfile);
               <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Your Contact Number</label>
-                  <input type="text" v-model="form.phone" required
+                  <input type="text" v-model="form.phone" @input="sanitizePhoneInput('phone')"
+                    inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX" required
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" />
+                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">PH mobile format, e.g. 0912 345 6789.</p>
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Emergency Contact #</label>
-                  <input type="text" v-model="form.emergency_contact" required
+                  <input type="text" v-model="form.emergency_contact" @input="sanitizePhoneInput('emergency_contact')"
+                    inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX" required
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" />
+                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">PH mobile format, e.g. 0912 345 6789.</p>
                 </div>
                 <div class="col-span-1 md:col-span-2">
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Guardian Full Name</label>

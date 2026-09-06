@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import Header from '../../components/partials/Header.vue';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const route  = useRoute();
 const router = useRouter();
@@ -33,9 +34,17 @@ onMounted(() => {
   }
 });
 
+const sanitizePhoneInput = () => {
+  phone.value = normalizePhPhone(phone.value);
+};
+
 const handleSubmit = async () => {
   if (!phone.value.trim() || !address.value.trim()) {
     errorMessage.value = 'Please fill in both your phone number and residential address.';
+    return;
+  }
+  if (!isValidPhPhone(phone.value.trim())) {
+    errorMessage.value = 'Phone number must be a valid PH mobile number (11 digits, starting with 09).';
     return;
   }
 
@@ -141,8 +150,11 @@ const handleSubmit = async () => {
             </label>
             <input
               v-model="phone"
-              type="tel"
-              placeholder="e.g. 0912 345 6789"
+              @input="sanitizePhoneInput"
+              type="text"
+              inputmode="numeric"
+              maxlength="11"
+              placeholder="09XXXXXXXXX"
               class="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:border-blue-500 outline-none font-medium"
               required
             />

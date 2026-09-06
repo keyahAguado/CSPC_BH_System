@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 // State Variables
 const user = ref({
@@ -95,7 +96,7 @@ const fetchProfile = async (retries = 2) => {
       
       // Map database payload values onto inputs
       nameInput.value = data.name || '';
-      phoneInput.value = data.phone || '';
+      phoneInput.value = normalizePhPhone(data.phone);
       addressInput.value = data.address || '';
       if (data.profile_pic) {
         filePreview.value = getImageUrl(data.profile_pic);
@@ -130,7 +131,15 @@ const handleFileChange = async (e) => {
   }
 };
 
+const sanitizePhoneInput = () => {
+  phoneInput.value = normalizePhPhone(phoneInput.value);
+};
+
 const handleSaveProfile = async () => {
+  if (!isValidPhPhone(phoneInput.value)) {
+    showSystemAlert('Contact number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
+    return;
+  }
   try {
     isSaving.value = true;
     const fd = new FormData();
@@ -280,7 +289,7 @@ onMounted(() => {
 
                 <div>
                   <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Contact Phone Number</label>
-                  <input v-model="phoneInput" type="text" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
+                  <input v-model="phoneInput" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
                 </div>
 
                 <div>

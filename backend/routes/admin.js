@@ -214,6 +214,133 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
     }
 });
 
+// =========================================================================
+// 1.5 COURSE MANAGEMENT & REPORTING
+// =========================================================================
+
+// GET - List all courses (active + inactive) for the admin management view
+router.get('/courses', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const [courses] = await pool.query('SELECT * FROM courses ORDER BY course_name ASC');
+        res.json({ success: true, courses });
+    } catch (err) {
+        console.error('[COURSES] Fetch failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to load courses.' });
+    }
+});
+
+// Valid departments — matches the college color-coding on the admin dashboard.
+const VALID_DEPARTMENTS = ['CAS', 'CCS', 'CEA', 'CHS', 'CTHBM', 'CTDE'];
+
+// POST - Add a new course
+router.post('/courses/add', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const { course_code, course_name, department } = req.body;
+        if (!course_code || !course_name) {
+            return res.status(400).json({ success: false, message: 'Course code and name are required.' });
+        }
+        if (department && !VALID_DEPARTMENTS.includes(department)) {
+            return res.status(400).json({ success: false, message: 'Invalid department.' });
+        }
+        await pool.query(
+            'INSERT INTO courses (course_code, course_name, department) VALUES (?, ?, ?)',
+            [course_code.trim(), course_name.trim(), department || null]
+        );
+        res.json({ success: true, message: 'Course added successfully.' });
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ success: false, message: 'A course with that code already exists.' });
+        }
+        console.error('[COURSES] Add failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to add course.' });
+    }
+});
+
+// POST - Edit an existing course
+router.post('/courses/update/:id', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const { course_code, course_name, department } = req.body;
+        if (!course_code || !course_name) {
+            return res.status(400).json({ success: false, message: 'Course code and name are required.' });
+        }
+        if (department && !VALID_DEPARTMENTS.includes(department)) {
+            return res.status(400).json({ success: false, message: 'Invalid department.' });
+        }
+        await pool.query(
+            'UPDATE courses SET course_code = ?, course_name = ?, department = ? WHERE id = ?',
+            [course_code.trim(), course_name.trim(), department || null, req.params.id]
+        );
+        res.json({ success: true, message: 'Course updated successfully.' });
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ success: false, message: 'A course with that code already exists.' });
+        }
+        console.error('[COURSES] Update failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to update course.' });
+    }
+});
+
+// POST - Toggle a course active/inactive (soft delete — keeps historical student records intact)
+router.post('/courses/toggle/:id', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        await pool.query(
+            'UPDATE courses SET is_active = NOT is_active WHERE id = ?',
+            [req.params.id]
+        );
+        res.json({ success: true, message: 'Course status updated.' });
+    } catch (err) {
+        console.error('[COURSES] Toggle failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to update course status.' });
+    }
+});
+
+// DELETE - Permanently remove a course. Refuses if any student record still
+// references it (via users.course, a plain string, not a real FK) so deleting
+// never silently orphans a real student's course selection.
+router.post('/courses/delete/:id', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const [[course]] = await pool.query('SELECT course_code FROM courses WHERE id = ?', [req.params.id]);
+        if (!course) {
+            return res.status(404).json({ success: false, message: 'Course not found.' });
+        }
+
+        const [[{ count }]] = await pool.query(
+            'SELECT COUNT(*) AS count FROM users WHERE course = ?',
+            [course.course_code]
+        );
+        if (count > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete — ${count} student${count === 1 ? '' : 's'} still ${count === 1 ? 'has' : 'have'} this course selected. Deactivate it instead, or reassign those students first.`
+            });
+        }
+
+        await pool.query('DELETE FROM courses WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: 'Course deleted successfully.' });
+    } catch (err) {
+        console.error('[COURSES] Delete failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to delete course.' });
+    }
+});
+
+// GET - Active residents grouped by course, for the admin breakdown report
+router.get('/reports/courses', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const [breakdown] = await pool.query(`
+            SELECT c.course_code, c.course_name, c.department, COUNT(DISTINCT o.student_id) AS resident_count
+            FROM courses c
+            LEFT JOIN users u ON u.course = c.course_code
+            LEFT JOIN occupants o ON o.student_id = u.id
+                AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+            GROUP BY c.id, c.course_code, c.course_name, c.department
+            ORDER BY resident_count DESC, c.course_name ASC
+        `);
+        res.json({ success: true, breakdown });
+    } catch (err) {
+        console.error('[COURSES REPORT] Fetch failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to load course breakdown report.' });
+    }
+});
 
 // 2. GET - Retrieve Pending Applications, Checklist criteria & results
 router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, res) => {
@@ -928,7 +1055,7 @@ router.get('/reports/compliance', authenticateToken, verifyAdmin, async (req, re
 router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         await autoBackfillBarangays();
-        const { barangay, house_id } = req.query;
+        const { barangay, house_id, course } = req.query;
 
         let whereClauses = [
             "o.is_non_cspc = 0",
@@ -948,6 +1075,11 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
         if (house_id && house_id.trim() !== '' && house_id.toLowerCase() !== 'all') {
             whereClauses.push('bh.id = ?');
             queryParams.push(house_id.trim());
+        }
+
+        if (course && course.trim() !== '' && course.toLowerCase() !== 'all') {
+            whereClauses.push('u.course = ?');
+            queryParams.push(course.trim());
         }
 
         const whereSql = `WHERE ${whereClauses.join(' AND ')}`;

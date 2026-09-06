@@ -801,6 +801,44 @@ onMounted(async () => {
           <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Description</h3>
           <p class="text-sm font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">{{ activeHouse.description || 'No description provided.' }}</p>
         </div>
+
+        <!-- Student Reviews & Ratings -->
+        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Student Reviews &amp; Ratings</h3>
+            <div v-if="activeHouse.avg_rating" class="flex items-center gap-1.5 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20 shrink-0">
+              <i class="fa-solid fa-star text-yellow-500 text-[10px]"></i>
+              <span class="text-[10px] font-black text-yellow-700">{{ Number(activeHouse.avg_rating).toFixed(1) }} average ({{ activeHouse.review_count || 0 }} {{ (activeHouse.review_count || 0) === 1 ? 'review' : 'reviews' }})</span>
+            </div>
+          </div>
+
+          <div v-if="isLoadingReviews" class="py-8 flex justify-center">
+            <div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+          <div v-else-if="reviews.length === 0" class="py-8 text-center">
+            <p class="text-slate-400 italic text-xs font-black uppercase tracking-widest">No reviews submitted yet — rating shown on the dashboard is not yet backed by any review.</p>
+          </div>
+          <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
+            <div v-for="r in reviews" :key="r.id" class="bg-white rounded-2xl p-4 border border-slate-100 flex gap-3">
+              <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
+                <img v-if="r.profile_pic" :src="getImageUrl(r.profile_pic)" class="w-full h-full object-cover" />
+                <i v-else class="fa-solid fa-user text-xs"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <span class="font-black text-slate-800 text-xs uppercase tracking-tight">{{ r.student_name }}</span>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex gap-0.5">
+                      <i v-for="star in 5" :key="star" class="fa-solid fa-star text-[10px]" :class="star <= r.rating ? 'text-yellow-400' : 'text-slate-200'"></i>
+                    </div>
+                    <span class="text-[9px] font-bold text-slate-400">{{ formatDate(r.created_at) }}</span>
+                  </div>
+                </div>
+                <p class="text-xs text-slate-600 font-medium mt-1.5 leading-relaxed">{{ r.comment || 'No written comment.' }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

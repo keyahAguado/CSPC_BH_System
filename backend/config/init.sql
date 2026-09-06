@@ -413,6 +413,68 @@ CREATE TABLE `house_photos` (
   CONSTRAINT `house_photos_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Table structure for table `courses`
+-- Reference list backing the student profile course dropdown and admin
+-- course-breakdown reporting. `users.course` stays a plain string (unchanged)
+-- storing the matching course_code, so all existing reads of u.course keep
+-- working without modification.
+--
+
+DROP TABLE IF EXISTS `courses`;
+CREATE TABLE `courses` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `course_code` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `course_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `department` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `course_code` (`course_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Sourced from CSPC's official "Programs Offered" list (Nabua + Buhi campuses,
+-- currently-offered undergraduate programs only — "Soon to Offer" and Graduate
+-- School programs excluded since no current boarder could legitimately have them).
+-- department = CAS/CCS/CEA/CHS/CTHBM/CTDE, drives the color-coded course report.
+INSERT INTO `courses` (`course_code`, `course_name`, `department`) VALUES
+('BSN', 'BS Nursing', 'CHS'),
+('BSM', 'BS Midwifery', 'CHS'),
+('BSIT', 'BS Information Technology', 'CCS'),
+('BSIS', 'BS Information Systems', 'CCS'),
+('BSCS', 'BS Computer Science', 'CCS'),
+('BLIS', 'Bachelor of Library and Information Science', 'CCS'),
+('BSECE', 'BS Electronics Engineering', 'CEA'),
+('BSCE', 'BS Civil Engineering', 'CEA'),
+('BSEE', 'BS Electrical Engineering', 'CEA'),
+('BSME', 'BS Mechanical Engineering', 'CEA'),
+('BSARCH', 'BS Architecture', 'CEA'),
+('BSCPE', 'BS Computer Engineering', 'CEA'),
+('BSHM', 'BS Hospitality Management', 'CTHBM'),
+('BSOA', 'BS Office Administration', 'CTHBM'),
+('BSEntrep', 'BS Entrepreneurship', 'CTHBM'),
+('BSTM', 'BS Tourism Management', 'CTHBM'),
+('BSBA-FM', 'BS Business Administration, Major in Financial Management', 'CTHBM'),
+('BSMATH', 'BS Mathematics', 'CAS'),
+('BSAM', 'BS Applied Mathematics', 'CAS'),
+('BSDevCom', 'BS Development Communication', 'CAS'),
+('ABELS', 'AB in English Language', 'CAS'),
+('BPublicAd', 'Bachelor of Public Administration', 'CAS'),
+('BHumServ', 'Bachelor in Human Services', 'CHS'),
+('BSNEd', 'Bachelor of Special Needs Education', 'CTDE'),
+('BPEd', 'Bachelor of Physical Education', 'CTDE'),
+('BCAEd', 'Bachelor of Culture and Arts Education', 'CTDE'),
+('BTVTEd', 'Bachelor in Technical Vocational Teacher Education', 'CTDE'),
+('BECEd', 'Bachelor of Early Childhood Education', 'CTDE');
+
+-- Placeholder for an existing student record whose stored course text ("BHS")
+-- doesn't match any known CSPC program. Kept inactive so it never appears in
+-- the student dropdown, but still lets that student's record match a course
+-- row for reporting, and stays editable via Admin > Manage Courses once
+-- confirmed. Department left NULL since it's genuinely unknown.
+INSERT INTO `courses` (`course_code`, `course_name`, `is_active`) VALUES
+('BHS', 'Unconfirmed Program - Pending Verification', 0);
+
 /*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

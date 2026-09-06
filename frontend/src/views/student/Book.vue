@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -83,8 +84,8 @@ const fetchData = async () => {
     // 1. Initial pre-fill from cached local session
     form.value.resident_name = currentUser.name || '';
     form.value.age = currentUser.age || '';
-    form.value.contact_number = currentUser.phone || '';
-    form.value.emergency_contact = currentUser.emergency_contact || '';
+    form.value.contact_number = normalizePhPhone(currentUser.phone);
+    form.value.emergency_contact = normalizePhPhone(currentUser.emergency_contact);
     form.value.guardian_name = currentUser.guardian_name || '';
     form.value.address = currentUser.address || '';
 
@@ -98,8 +99,8 @@ const fetchData = async () => {
           const u = profileRes.data.user;
           if (u.name) form.value.resident_name = u.name;
           if (u.age) form.value.age = u.age;
-          if (u.phone) form.value.contact_number = u.phone;
-          if (u.emergency_contact) form.value.emergency_contact = u.emergency_contact;
+          if (u.phone) form.value.contact_number = normalizePhPhone(u.phone);
+          if (u.emergency_contact) form.value.emergency_contact = normalizePhPhone(u.emergency_contact);
           if (u.guardian_name) form.value.guardian_name = u.guardian_name;
           if (u.address) form.value.address = u.address;
         }
@@ -163,10 +164,24 @@ const depositNote = computed(() => {
 const formatMoney = (val) =>
   Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const sanitizePhoneInput = (fieldKey) => {
+  form.value[fieldKey] = normalizePhPhone(form.value[fieldKey]);
+};
+
 // Step 1: Form submit opens the review/confirmation modal — nothing is sent yet
 const openConfirmModal = () => {
   if (isGuest) {
     errorMsg.value = 'You must be logged in to book.';
+    return;
+  }
+  if (!isValidPhPhone(form.value.contact_number)) {
+    errorMsg.value = 'Contact number must be a valid PH mobile number (11 digits, starting with 09).';
+    if (alertRef.value) alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    return;
+  }
+  if (form.value.emergency_contact && !isValidPhPhone(form.value.emergency_contact)) {
+    errorMsg.value = 'Emergency contact number must be a valid PH mobile number (11 digits, starting with 09).';
+    if (alertRef.value) alertRef.value.showSystemAlert(errorMsg.value, 'error');
     return;
   }
   showConfirmModal.value = true;
@@ -366,12 +381,14 @@ onMounted(fetchData);
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Contact Number</label>
-                <input type="text" v-model="form.contact_number" placeholder="09xxxxxxxxx" required
+                <input type="text" v-model="form.contact_number" @input="sanitizePhoneInput('contact_number')"
+                  inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Emergency Contact</label>
-                <input type="text" v-model="form.emergency_contact" placeholder="09xxxxxxxxx"
+                <input type="text" v-model="form.emergency_contact" @input="sanitizePhoneInput('emergency_contact')"
+                  inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx"
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
               <div>

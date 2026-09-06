@@ -5,6 +5,19 @@ import { upload, saveUploadedFile } from '../config/upload.js';
 
 const router = express.Router();
 
+// [GET] - Active course list for the profile dropdown
+router.get('/courses', authenticateToken, async (req, res) => {
+    try {
+        const [courses] = await pool.query(
+            'SELECT course_code, course_name FROM courses WHERE is_active = 1 ORDER BY course_name ASC'
+        );
+        res.json({ success: true, courses });
+    } catch (err) {
+        console.error('Fetch student courses failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to load course list.' });
+    }
+});
+
 router.get('/profile', authenticateToken, async (req, res) => {
     try {
         if (!req.user || !req.user.id) {

@@ -5,6 +5,7 @@ import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { getImageUrl } from '../../config/api.js';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 // --- Accordion toggle state for mobile ---
 const expandedOccupants = ref(new Set());
@@ -167,9 +168,21 @@ const handleCheckoutOccupant = async (occupantId) => {
   }
 };
 
+const sanitizePhoneInput = (fieldKey) => {
+  newOccupant.value[fieldKey] = normalizePhPhone(newOccupant.value[fieldKey]);
+};
+
 const handleAddNonCspc = async () => {
   if (!newOccupant.value.name) {
     showSystemAlert('Full name is required.', 'error');
+    return;
+  }
+  if (newOccupant.value.contact_number && !isValidPhPhone(newOccupant.value.contact_number)) {
+    showSystemAlert('Contact number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
+    return;
+  }
+  if (newOccupant.value.emergency_contact && !isValidPhPhone(newOccupant.value.emergency_contact)) {
+    showSystemAlert('Emergency contact number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
     return;
   }
 
@@ -593,7 +606,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Contact Number</label>
-            <input v-model="newOccupant.contact_number" type="text" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newOccupant.contact_number" @input="sanitizePhoneInput('contact_number')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Check-in Date</label>
@@ -605,7 +618,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Emergency Contact</label>
-            <input v-model="newOccupant.emergency_contact" type="text" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newOccupant.emergency_contact" @input="sanitizePhoneInput('emergency_contact')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Guardian Name</label>

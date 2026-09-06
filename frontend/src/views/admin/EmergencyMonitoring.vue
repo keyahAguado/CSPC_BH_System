@@ -1,16 +1,32 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printEmergencyRegistry } from '../../utils/printHelper.js';
+
+const route = useRoute();
 
 const residents = ref([]);
 const boardingHouses = ref([]);
 const selectedBarangay = ref('');
 const selectedHouse = ref('');
+const selectedCourse = ref(route.query.course || '');
+const courseOptions = ref([]);
 const isLoading = ref(true);
 
 const token = sessionStorage.getItem('cspc_token');
+
+const fetchCourseOptions = async () => {
+  try {
+    const res = await axios.get('/api/admin/courses', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    courseOptions.value = (res.data.courses || []).filter(c => c.is_active);
+  } catch (e) {
+    console.warn('Failed to load course list for filter:', e.message);
+  }
+};
 
 import NABUA_BARANGAYS from '../../constants/barangays.js';
 
@@ -22,12 +38,16 @@ const fetchRegistry = async () => {
     const params = new URLSearchParams();
     const barangayStr = String(selectedBarangay.value || '').trim();
     const houseStr = String(selectedHouse.value || '').trim();
+    const courseStr = String(selectedCourse.value || '').trim();
 
     if (barangayStr && barangayStr.toLowerCase() !== 'all') {
       params.append('barangay', barangayStr);
     }
     if (houseStr && houseStr.toLowerCase() !== 'all') {
       params.append('house_id', houseStr);
+    }
+    if (courseStr && courseStr.toLowerCase() !== 'all') {
+      params.append('course', courseStr);
     }
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
@@ -90,11 +110,19 @@ const groupedResidents = computed(() => {
 
 const onBarangayChange = () => {
   selectedHouse.value = '';
+  selectedCourse.value = '';
   fetchRegistry();
 };
 
 const onHouseChange = () => {
   selectedBarangay.value = '';
+  selectedCourse.value = '';
+  fetchRegistry();
+};
+
+const onCourseChange = () => {
+  selectedBarangay.value = '';
+  selectedHouse.value = '';
   fetchRegistry();
 };
 
@@ -118,6 +146,7 @@ const printLabel = computed(() => {
 
 onMounted(() => {
   fetchRegistry();
+  fetchCourseOptions();
 });
 </script>
 
@@ -150,6 +179,15 @@ onMounted(() => {
             <select v-model="selectedHouse" @change="onHouseChange" class="bg-transparent border-none w-full text-[12px] font-bold text-slate-600 outline-none pr-2 cursor-pointer">
               <option value="">All Boarding Houses</option>
               <option v-for="h in boardingHouses" :key="h.id" :value="h.id">{{ h.name }}</option>
+            </select>
+          </div>
+
+          <!-- Course Filter -->
+          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
+            <div class="pl-3 text-slate-400"><i class="fa-solid fa-graduation-cap text-xs"></i></div>
+            <select v-model="selectedCourse" @change="onCourseChange" class="bg-transparent border-none w-full text-[12px] font-bold text-slate-600 outline-none pr-2 cursor-pointer">
+              <option value="">All Courses</option>
+              <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">{{ c.course_code }}</option>
             </select>
           </div>
 
@@ -214,13 +252,13 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 text-[12px]">
                 <!-- No results at all -->
-                <tr v-if="residents.length === 0 && !selectedBarangay && !selectedHouse">
+                <tr v-if="residents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse">
                   <td colspan="6" class="px-6 py-20 text-center">
                     <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active residents registered across all boarding houses.</p>
                   </td>
                 </tr>
                 <!-- Filter applied but no matches -->
-                <tr v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse)">
+                <tr v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse || selectedCourse)">
                   <td colspan="6" class="px-6 py-16 text-center">
                     <p class="text-slate-700 font-black uppercase tracking-widest text-[11px] mb-2">No Active Residents on Record</p>
                     <p class="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Selected area has no registered residents at this time.</p>
@@ -291,11 +329,11 @@ onMounted(() => {
         <!-- ================= MOBILE PORTRAIT CARD VIEW ================= -->
         <div class="block md:hidden space-y-6">
           <!-- No results at all -->
-          <div v-if="residents.length === 0 && !selectedBarangay && !selectedHouse" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
+          <div v-if="residents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
             <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active residents registered across all boarding houses.</p>
           </div>
           <!-- Filter applied but no matches -->
-          <div v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse)" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
+          <div v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse || selectedCourse)" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
             <p class="text-slate-700 font-black uppercase tracking-widest text-[11px] mb-2">No Active Residents on Record</p>
             <p class="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Selected area has no registered residents at this time.</p>
           </div>

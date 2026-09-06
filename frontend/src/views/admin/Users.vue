@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const users = ref([]);
 const isLoading = ref(true);
@@ -83,7 +84,15 @@ const fetchUsers = async () => {
   }
 };
 
+const sanitizePhoneInput = () => {
+  editForm.value.phone = normalizePhPhone(editForm.value.phone);
+};
+
 const handleUpdateProfile = async () => {
+  if (editForm.value.phone && !isValidPhPhone(editForm.value.phone)) {
+    showSystemAlert('Phone number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
+    return;
+  }
   try {
     const response = await axios.post(
       `/api/admin/users/update/${editForm.value.id}`,
@@ -142,7 +151,7 @@ const openEditModal = (user) => {
     id: user.id,
     name: user.name,
     email: user.email,
-    phone: user.phone || '',
+    phone: normalizePhPhone(user.phone),
     role: user.role, // Tracks if student or owner for conditional styling
     password: ''
   };
@@ -193,8 +202,9 @@ onMounted(() => {
             <span class="text-xl font-black text-slate-900">{{ users.length }}</span>
           </div>
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-blue-500 text-[9px] font-black uppercase tracking-widest block">Students</span>
+            <span class="text-blue-500 text-[9px] font-black uppercase tracking-widest block">Registered Students</span>
             <span class="text-xl font-black text-blue-600">{{ totalStudents }}</span>
+            <span class="text-slate-400 text-[8px] font-bold block mt-0.5">All accounts, incl. non-boarders</span>
           </div>
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
             <span class="text-purple-500 text-[9px] font-black uppercase tracking-widest block">Owners</span>
@@ -449,7 +459,7 @@ onMounted(() => {
           </div>
           <div class="space-y-1.5">
             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phone Number</label>
-            <input v-model="editForm.phone" type="text" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
+            <input v-model="editForm.phone" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
           </div>
 
           <!-- OPTIONAL PASSWORD MODIFICATION (EXCLUSIVELY DISPLAYED FOR MANUAL LOCAL ACCOUNTS / OWNERS) -->
