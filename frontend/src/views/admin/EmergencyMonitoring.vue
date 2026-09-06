@@ -126,21 +126,44 @@ const onCourseChange = () => {
   fetchRegistry();
 };
 
-const handleExport = () => {
+// On-screen label — course shown as its short code, matching how courses
+// appear everywhere else in the live app (dashboard bars, filter dropdown).
+const activeFilterLabel = computed(() => {
   const selectedHouseObj = boardingHouses.value.find(h => String(h.id) === String(selectedHouse.value));
-  const area = selectedHouseObj
-    ? selectedHouseObj.name
-    : (selectedBarangay.value ? `Barangay ${selectedBarangay.value}` : 'Unified Registry');
+  if (selectedHouseObj) return selectedHouseObj.name;
+  if (selectedBarangay.value) return `Barangay ${selectedBarangay.value}`;
+  if (selectedCourse.value) return selectedCourse.value;
+  return 'Unified Registry';
+});
+
+// Printed/exported report label — spells out the full course name alongside
+// the code, since the document is meant to be read/archived on its own.
+const reportFilterLabel = computed(() => {
+  const selectedHouseObj = boardingHouses.value.find(h => String(h.id) === String(selectedHouse.value));
+  if (selectedHouseObj) return selectedHouseObj.name;
+  if (selectedBarangay.value) return `Barangay ${selectedBarangay.value}`;
+  if (selectedCourse.value) {
+    const c = courseOptions.value.find(c => c.course_code === selectedCourse.value);
+    return c ? `${c.course_code} — ${c.course_name}` : selectedCourse.value;
+  }
+  return 'Unified Registry';
+});
+
+// Code -> full name lookup so the printed report can spell out each
+// resident's course in full, not just the bare code.
+const courseNameMap = computed(() =>
+  Object.fromEntries(courseOptions.value.map(c => [c.course_code, c.course_name]))
+);
+
+const handleExport = () => {
   const date = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
-  printEmergencyRegistry(residents.value, area, date);
+  printEmergencyRegistry(residents.value, reportFilterLabel.value, date, courseNameMap.value);
 };
 
 const printLabel = computed(() => {
-  if (selectedHouse.value) {
-    const h = boardingHouses.value.find(h => String(h.id) === String(selectedHouse.value));
-    return h ? `Print — ${h.name}` : 'Print Report';
+  if (selectedHouse.value || selectedBarangay.value || selectedCourse.value) {
+    return `Print — ${activeFilterLabel.value}`;
   }
-  if (selectedBarangay.value) return `Print — Brgy. ${selectedBarangay.value}`;
   return 'Print Full Registry';
 });
 
@@ -217,8 +240,8 @@ onMounted(() => {
             <div class="text-xl md:text-2xl font-black text-slate-800">{{ residents.length }}</div>
           </div>
           <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Active Zone</div>
-            <div class="text-xs md:text-sm font-black text-blue-600 uppercase">{{ selectedBarangay || 'Unified Registry' }}</div>
+            <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Active Filter</div>
+            <div class="text-xs md:text-sm font-black text-blue-600 uppercase truncate" :title="activeFilterLabel">{{ activeFilterLabel }}</div>
           </div>
           <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Safety Status</div>

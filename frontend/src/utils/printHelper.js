@@ -216,7 +216,17 @@ export function printCompliance(houses, reportDate) {
 }
 
 /** EMERGENCY REGISTRY REPORT */
-export function printEmergencyRegistry(residents, targetArea, reportDate) {
+export function printEmergencyRegistry(residents, targetArea, reportDate, courseNameMap = {}) {
+  // Spells out each resident's course in full for the printed document
+  // (e.g. "BSIT — BS Information Technology"), falling back to the bare
+  // code if it's not in the lookup (e.g. legacy/unmapped free-text values).
+  const formatCourse = (rawCourse) => {
+    const code = (rawCourse || '').trim();
+    if (!code) return 'N/A';
+    const fullName = courseNameMap[code];
+    return fullName ? `${code} — ${fullName}` : code;
+  };
+
   // Group residents by boarding house name
   const grouped = {};
   (residents || []).forEach(r => {
@@ -245,7 +255,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate) {
               ${r.home_address ? `<div class="small bold" style="color:#2563eb;margin-top:2px;">Home Address: ${r.home_address}</div>` : ''}
             </td>
             <td class="text-center"><span class="badge ${r.sex === 'Male' ? 'badge-blue' : 'badge-pink'}">${r.sex || 'N/A'}</span></td>
-            <td><div class="bold upper">${r.course || 'N/A'}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
+            <td><div class="bold upper">${formatCourse(r.course)}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
             <td><div class="bold">Room #${r.room_number || 'N/A'}</div></td>
             <td class="bold">${r.guardian_name || 'N/A'}</td>
             <td class="text-right bold" style="color:#dc2626">${r.emergency_contact || 'N/A'}</td>
@@ -282,7 +292,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate) {
     </div>
     <div class="title-section">
       <h2>Emergency Student Residency Registry</h2>
-      <div class="subtitle">Summary of Lists per Boarding House | Zone: ${targetArea || 'Unified Registry'}</div>
+      <div class="subtitle">Summary of Lists per Boarding House | Scope: ${targetArea || 'Unified Registry'}</div>
     </div>
     ${houseTablesHtml}
     <div class="signatories">

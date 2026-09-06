@@ -11,6 +11,18 @@ const targetArea = ref('Unified Registry');
 const isLoading = ref(true);
 
 const token = sessionStorage.getItem('cspc_token');
+const courseNameMap = ref({});
+
+const fetchCourseNameMap = async () => {
+  try {
+    const res = await axios.get('/api/admin/courses', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    courseNameMap.value = Object.fromEntries((res.data.courses || []).map(c => [c.course_code, c.course_name]));
+  } catch (e) {
+    console.warn('Failed to load course names for report:', e.message);
+  }
+};
 
 const fetchReport = async () => {
   try {
@@ -35,11 +47,12 @@ const fetchReport = async () => {
 };
 
 const handlePrint = () => {
-  printEmergencyRegistry(residents.value, targetArea.value, reportDate.value);
+  printEmergencyRegistry(residents.value, targetArea.value, reportDate.value, courseNameMap.value);
 };
 
 onMounted(() => {
   fetchReport();
+  fetchCourseNameMap();
 });
 </script>
 
