@@ -229,10 +229,13 @@ router.post('/webhook', async (req, res) => {
         }
 
         // Process completed checkout session event
+        // NOTE: PayMongo's real event name is "checkout_session.payment.paid",
+        // not Stripe's "checkout.session.completed" — confirmed directly against
+        // the event subscribed to on the PayMongo dashboard's webhook config.
         const event = JSON.parse(payload);
         const eventType = event.data.attributes.type;
 
-        if (eventType === 'checkout.session.completed') {
+        if (eventType === 'checkout_session.payment.paid') {
             const session = event.data.attributes.data;
             const bookingId = session.attributes.metadata?.bookingId;
 
@@ -306,6 +309,8 @@ router.post('/webhook', async (req, res) => {
                     connection.release();
                 }
             }
+        } else {
+            console.log(`[WEBHOOK] Ignored unhandled event type: ${eventType}`);
         }
 
         res.status(200).send('Webhook processed successfully.');
