@@ -187,9 +187,31 @@ watch(selectedBarangay, () => {
 });
 
 
-const handleArchiveHouse = async (houseId) => {
+// Manual archive: distinct from the system's own auto-archive-on-expired-permits.
+// A reason is captured so the owner sees WHY (e.g. "requested — at full capacity")
+// instead of the generic expired-permits messaging.
+const showArchiveModal = ref(false);
+const archiveTargetHouse = ref(null);
+const archiveReasonInput = ref('');
+
+const openArchiveModal = (house) => {
+  archiveTargetHouse.value = house;
+  archiveReasonInput.value = '';
+  showArchiveModal.value = true;
+};
+
+const closeArchiveModal = () => {
+  showArchiveModal.value = false;
+  archiveTargetHouse.value = null;
+  archiveReasonInput.value = '';
+};
+
+const execArchive = async () => {
+  if (!archiveTargetHouse.value) return;
+  const houseId = archiveTargetHouse.value.id;
+  showArchiveModal.value = false;
   try {
-    const response = await axios.post(`/api/admin/archive/${houseId}`, {}, {
+    const response = await axios.post(`/api/admin/archive/${houseId}`, { reason: archiveReasonInput.value }, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (response.data.success) {
@@ -199,6 +221,9 @@ const handleArchiveHouse = async (houseId) => {
   } catch (error) {
     console.error('Archive failed:', error);
     showSystemAlert(error.response?.data?.message || 'Failed to archive property.', 'error');
+  } finally {
+    archiveTargetHouse.value = null;
+    archiveReasonInput.value = '';
   }
 };
 
@@ -531,7 +556,7 @@ onMounted(async () => {
             </div>
 
             <div class="pt-2 border-t border-slate-100 flex justify-end">
-              <button @click="triggerConfirm('Confirm Archive?', `Are you sure you want to archive ${house.name}? This property will be moved to the archive list and hidden from students.`, () => handleArchiveHouse(house.id))"
+              <button @click="openArchiveModal(house)"
                       class="w-full bg-red-500 hover:bg-red-600 text-white rounded-xl py-2.5 font-black text-[10px] uppercase tracking-widest transition shadow-sm active:scale-95 cursor-pointer text-center">
                 Archive Property
               </button>
@@ -598,7 +623,7 @@ onMounted(async () => {
                     </button>
                   </td>
                   <td class="py-6 px-4">
-                    <button @click="triggerConfirm('Confirm Archive?', `Are you sure you want to archive ${house.name}? This property will be moved to the archive list and hidden from students.`, () => handleArchiveHouse(house.id))"
+                    <button @click="openArchiveModal(house)"
                             class="bg-red-500 hover:bg-red-600 text-white rounded-xl px-4 py-2 font-black text-[10px] uppercase tracking-widest transition shadow-md active:scale-95 cursor-pointer">
                       Archive
                     </button>
@@ -1018,6 +1043,22 @@ onMounted(async () => {
         <div class="flex gap-3">
           <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition">Confirm</button>
           <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Archive Modal (captures WHY, so the owner sees the real reason instead of generic "permits expired") -->
+    <div v-if="showArchiveModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
+        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Archive Property?</h3>
+        <p class="text-slate-500 text-xs font-medium mb-4 leading-relaxed">
+          "{{ archiveTargetHouse?.name }}" will be moved to the archive list and hidden from students. This is separate from the system's automatic archiving for expired permits — the owner will see this reason instead.
+        </p>
+        <textarea v-model="archiveReasonInput" rows="3" placeholder="Reason (optional) — e.g. Owner requested, currently at full capacity"
+                  class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl text-xs font-semibold text-slate-700 outline-none transition mb-6 text-left"></textarea>
+        <div class="flex gap-3">
+          <button @click="execArchive" class="flex-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition">Confirm Archive</button>
+          <button @click="closeArchiveModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition">Cancel</button>
         </div>
       </div>
     </div>

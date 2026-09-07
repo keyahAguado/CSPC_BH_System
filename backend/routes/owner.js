@@ -3,6 +3,7 @@ import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 import NABUA_BARANGAYS from '../config/barangays.js';
+import { getComplianceStatus, getSupplementaryStatus } from '../config/complianceHelper.js';
 
 const router = express.Router();
 
@@ -122,6 +123,21 @@ router.get('/dashboard', authenticateToken, verifyOwner, async (req, res) => {
 
         if (houseRows.length === 0) {
             return res.json({ success: true, hasProperty: false, houses: [], stats: { totalListings: 0, pendingBookings: 0 } });
+        }
+
+        // Display status is computed live from the actual expiry dates rather than
+        // trusting compliance_status/supplementary_status as stored — those columns
+        // only update when the compliance sweep (daily cron, or immediately after a
+        // document save) runs, so they can go stale between sweeps. Actual archiving
+        // still only happens via that sweep — this only affects what the owner sees
+        // here. Archived houses are left as-is: their stored status is the reason
+        // they were archived, and shouldn't shift just because dates were edited
+        // afterward while awaiting admin re-review.
+        for (const h of houseRows) {
+            if (h.house_status !== 'archived') {
+                h.compliance = getComplianceStatus(h);
+                h.supplementary_status = getSupplementaryStatus(h);
+            }
         }
 
         const totalListings = houseRows.length;

@@ -353,7 +353,17 @@ onMounted(() => {
 
               <div v-else-if="getNotifType(notif.message) === 'expiry'" class="bg-[#fffbeb] border-l-[6px] border-[#f59e0b] p-7 rounded-r-3xl mb-8">
                 <p class="text-[#92400e] font-black text-[12px] uppercase tracking-widest mb-2">Action Required:</p>
-                <p class="text-slate-600 text-[14px] leading-relaxed italic">"Please navigate to your Legal Documents page to upload the corresponding files or updated permits. Failure to comply will keep your listing from being accredited or visible to students."</p>
+                <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">
+                  <template v-if="notif.message.toLowerCase().includes('supplementary')">
+                    "Please navigate to your Legal Documents page to upload a renewed copy. Your listing remains active and bookable in the meantime — this is a reminder, not a suspension."
+                  </template>
+                  <template v-else>
+                    "Please navigate to your Legal Documents page to upload the corresponding files or updated permits. Failure to renew before the expiry date will automatically hide your listing from students."
+                  </template>
+                </p>
+                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#f59e0b] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  Update Documents <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                </router-link>
               </div>
 
              <div v-else-if="getNotifType(notif.message) === 'rejected'" class="bg-[#fff1f2] border-l-[6px] border-[#e11d48] p-7 rounded-r-3xl mb-8">
@@ -362,6 +372,14 @@ onMounted(() => {
                 <!-- SYSTEM FALLBACK RESOLVES OWNER BOARDING HOUSE DYNAMICALLY -->
                 <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#e11d48] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
                   Review & Resubmit <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                </router-link>
+              </div>
+
+              <div v-else-if="getNotifType(notif.message) === 'issue' && user.role === 'owner'" class="bg-slate-50 border-l-[6px] border-slate-500 p-7 rounded-r-3xl mb-8">
+                <p class="text-slate-700 font-black text-[12px] uppercase tracking-widest mb-2">Listing Archived:</p>
+                <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">"Your listing is currently hidden from students. If this was due to expired required permits, renew and resubmit them below. If SASO archived it manually, contact the office to discuss reactivation."</p>
+                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-slate-600 text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  View Documents <i class="fa-solid fa-arrow-right text-[10px]"></i>
                 </router-link>
               </div>
 

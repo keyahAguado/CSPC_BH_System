@@ -58,6 +58,7 @@ CREATE TABLE `boarding_houses` (
   `expiry_permit_sanitary` date DEFAULT NULL,
   `expiry_permit_fire` date DEFAULT NULL,
   `compliance_status` enum('active','warning','expired') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'active',
+  `supplementary_status` enum('active','warning','expired') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'active',
   `admin_comments` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `document_update_pending` tinyint(1) DEFAULT '0',
   `is_resubmission` tinyint(1) DEFAULT '0',

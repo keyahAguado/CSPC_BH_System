@@ -3,6 +3,7 @@ import multer from 'multer';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
+import { evaluateHouseCompliance } from '../config/complianceManager.js';
 
 const router = express.Router();
 
@@ -412,6 +413,18 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
         console.log(`[DOC UPDATE] Admin alerts dispatched to ${admins.length} administrators.`);
 
         await connection.commit();
+
+        // Evaluate the new expiry date immediately instead of waiting for the next
+        // scheduled sweep — otherwise an owner who just uploaded a near-expiry
+        // document sees "Expiring Soon" on this page but gets no notification
+        // until the next midnight cron run. Awaited (not fire-and-forget) so the
+        // notification is guaranteed to exist by the time this response returns.
+        try {
+            await evaluateHouseCompliance(houseId);
+        } catch (evalErr) {
+            console.error('[DOC UPDATE] Immediate compliance evaluation failed:', evalErr.message);
+        }
+
         res.json({ success: true, message: 'Document submitted for re-validation.' });
     } catch (err) {
         await connection.rollback();
@@ -557,6 +570,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 }
             } catch (e) {
                 console.warn('[HOUSE_PHOTOS] Skipped optional house_photos sync:', e.message);
+            }
+
+            // Evaluate the newly-saved expiry dates immediately rather than waiting
+            // for the next scheduled sweep.
+            try {
+                await evaluateHouseCompliance(house_id);
+            } catch (evalErr) {
+                console.error('[ACCREDITATION] Immediate compliance evaluation failed:', evalErr.message);
             }
 
             return res.json({

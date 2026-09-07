@@ -348,7 +348,13 @@ onMounted(() => {
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-500 font-bold">{{ index + 1 }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 font-semibold">{{ app.owner_name }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-600">{{ app.owner_email }}</td>
-                    <td class="py-6 px-6 border-r border-slate-200 font-black text-slate-900">{{ app.name }}</td>
+                    <td class="py-6 px-6 border-r border-slate-200 font-black text-slate-900">
+                      {{ app.name }}
+                      <span v-if="app.house_status !== 'pending' && app.document_update_pending"
+                            class="block mt-1 text-[9px] font-black uppercase tracking-widest text-amber-600">
+                        <i class="fa-solid fa-rotate"></i> Document Recheck — Already {{ app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1) }}
+                      </span>
+                    </td>
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-400 font-bold">
                       {{ app.created_at ? new Date(app.created_at).toLocaleDateString() : 'N/A' }}
                     </td>
@@ -404,6 +410,10 @@ onMounted(() => {
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Boarding House</span>
                   <span class="font-black text-slate-900 text-base">{{ app.name }}</span>
+                  <span v-if="app.house_status !== 'pending' && app.document_update_pending"
+                        class="mt-1 text-[9px] font-black uppercase tracking-widest text-amber-600">
+                    <i class="fa-solid fa-rotate"></i> Document Recheck — Already {{ app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1) }}
+                  </span>
                 </div>
               </div>
 

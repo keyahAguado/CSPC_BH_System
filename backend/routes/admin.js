@@ -14,8 +14,8 @@ const verifyAdmin = (req, res, next) => {
 // Helper for standard column select (including standard permits to prevent missing attributes)
 const EXPLICIT_BH_COLUMNS = `
     bh.id AS id, bh.owner_id, bh.name, bh.img, bh.img_1, bh.img_2, bh.img_3,
-    bh.location, bh.barangay, bh.map_link, bh.price, bh.phone_contact, bh.description, 
-    bh.amenities_free, bh.amenities_paid, bh.house_status, bh.compliance_status,
+    bh.location, bh.barangay, bh.map_link, bh.price, bh.phone_contact, bh.description,
+    bh.amenities_free, bh.amenities_paid, bh.house_status, bh.compliance_status, bh.supplementary_status,
     bh.permit_business_form, bh.permit_cedula, bh.permit_dti, bh.permit_barangay,
     bh.permit_building, bh.permit_zoning, bh.permit_sanitary, bh.permit_fire,
     bh.expiry_permit_business_form, bh.expiry_permit_cedula, bh.expiry_permit_dti, 
@@ -460,8 +460,13 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
 });
 
 // 4. POST - Archive a boarding house (Marks status as 'archived') — Alerts Owner only
+// Manual archive (owner request e.g. at full capacity, admin discretion, etc.) is
+// intentionally kept separate from auto-archiving due to expired required documents:
+// it must NOT touch compliance_status, otherwise the owner dashboard can't tell the
+// two apart and always shows "PERMITS EXPIRED" even when that's not why it's archived.
 router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => {
     const houseId = req.params.id;
+    const { reason } = req.body;
     const connection = await pool.getConnection();
 
     try {
@@ -474,16 +479,16 @@ router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => 
         }
         const ownerId = house[0].owner_id;
 
-        // 1. Update Boarding House status
+        // 1. Update Boarding House status (compliance_status is left untouched)
         await connection.query(
-            "UPDATE boarding_houses SET house_status = 'archived', compliance_status = 'expired' WHERE id = ?",
-            [houseId]
+            "UPDATE boarding_houses SET house_status = 'archived', admin_comments = ? WHERE id = ?",
+            [reason && reason.trim() ? reason.trim() : null, houseId]
         );
 
         // 2. Insert Alert notification for the Owner ONLY
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [ownerId, `WARNING: Your boarding house "${house[0].name}" has been ARCHIVED by the SASO Administrator. Your listing is now hidden from students.`]
+            [ownerId, `WARNING: Your boarding house "${house[0].name}" has been ARCHIVED by the SASO Administrator.${reason && reason.trim() ? ` Reason: ${reason.trim()}` : ''} Your listing is now hidden from students.`]
         );
 
         await connection.commit();
@@ -646,7 +651,13 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
     }
 });
 
-// 10. POST - Reject Accreditation Application — Alerts Owner only
+// 10. POST - Reject Accreditation Application (or a document-update review) — Alerts Owner only
+// A brand-new application (house_status='pending') that gets rejected becomes 'rejected'
+// and unlisted, as before. But rejecting a document RE-CHECK on a house that's already
+// accredited or archived must NOT strip that existing status — the house stays exactly
+// as it was (still bookable if accredited), only the flagged document goes back to the
+// owner for correction. Otherwise a single bad renewal doc would fully un-list a live,
+// operating boarding house.
 router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
     const houseId = req.params.id;
     const { admin_comments } = req.body;
@@ -659,22 +670,41 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
+        const [house] = await connection.query('SELECT owner_id, name, house_status FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
             return res.status(404).json({ success: false, message: 'Record not found.' });
         }
         const owner_id = house[0].owner_id;
+        const isNewApplication = house[0].house_status === 'pending';
 
-        await connection.query(
-            `UPDATE boarding_houses 
-             SET house_status = 'rejected', is_resubmission = 1, document_update_pending = 0, admin_comments = ? 
-             WHERE id = ?`,
-            [admin_comments, houseId]
-        );
+        if (isNewApplication) {
+            await connection.query(
+                `UPDATE boarding_houses
+                 SET house_status = 'rejected', is_resubmission = 1, document_update_pending = 0, admin_comments = ?
+                 WHERE id = ?`,
+                [admin_comments, houseId]
+            );
+            await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+                [owner_id, `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`]);
+        } else {
+            // Document-update review on an already-accredited/archived house: preserve house_status.
+            await connection.query(
+                `UPDATE boarding_houses
+                 SET document_update_pending = 0, admin_comments = ?
+                 WHERE id = ?`,
+                [admin_comments, houseId]
+            );
 
-        // Notify owner only
-        await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [owner_id, `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`]);
+            // The "unaffected" claim is only true if the house was already accredited —
+            // if it's archived (e.g. a different required document also expired), telling
+            // the owner nothing changed is simply false, since it's already hidden.
+            const statusNote = house[0].house_status === 'accredited'
+                ? 'Your listing remains active and bookable — please correct and re-upload the document.'
+                : `Your listing is currently ${house[0].house_status} (unrelated to this specific document) — please correct and re-upload the document.`;
+
+            await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+                [owner_id, `ALERT: Your resubmitted document for "${house[0].name}" was not approved by SASO. Reason: ${admin_comments}. ${statusNote}`]);
+        }
 
         await connection.commit();
         res.json({ success: true });

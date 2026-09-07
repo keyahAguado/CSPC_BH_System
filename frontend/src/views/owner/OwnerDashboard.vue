@@ -181,14 +181,25 @@ onUnmounted(() => {
                    class="w-full h-full object-cover grayscale-[10%] hover:grayscale-0 transition duration-500"
                    @error="e => e.target.src = '/img/cspc_bg.webp'" />
               
-              <!-- EXPIRED OVERLAY -->
-              <div v-if="house.compliance === 'expired'" class="absolute inset-0 bg-red-600/60 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+              <!-- ARCHIVED: EXPIRED PERMITS (automatic, triggered by the system) -->
+              <div v-if="house.house_status === 'archived' && house.compliance === 'expired'" class="absolute inset-0 bg-red-600/60 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div>
                   <i class="fa-solid fa-ban text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: PERMITS EXPIRED</p>
+                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
+                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Renew &amp; resubmit your documents to be reviewed for reinstatement.</p>
                 </div>
               </div>
-              
+
+              <!-- ARCHIVED: BY ADMIN (manual — e.g. owner requested, at capacity, non-compliance unrelated to doc expiry) -->
+              <div v-else-if="house.house_status === 'archived'" class="absolute inset-0 bg-slate-700/70 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+                <div>
+                  <i class="fa-solid fa-box-archive text-white text-3xl mb-2"></i>
+                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: ARCHIVED BY SASO ADMIN</p>
+                  <p v-if="house.admin_comments" class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">"{{ house.admin_comments }}"</p>
+                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Contact SASO if you'd like this listing reactivated.</p>
+                </div>
+              </div>
+
               <!-- REJECTED OVERLAY -->
               <div v-else-if="house.house_status === 'rejected'" class="absolute inset-0 bg-red-500/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div class="flex flex-col items-center">
@@ -208,8 +219,11 @@ onUnmounted(() => {
                 <div v-else-if="house.house_status === 'rejected'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Rejected
                 </div>
-                <div v-else-if="house.compliance === 'expired'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
-                  Suspended
+                <div v-else-if="house.house_status === 'archived' && house.compliance === 'expired'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                  Suspended: Permits Expired
+                </div>
+                <div v-else-if="house.house_status === 'archived'" class="bg-slate-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                  Archived by Admin
                 </div>
                 <div v-else-if="house.compliance === 'warning'" class="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Warning: Renew Permits
@@ -221,10 +235,23 @@ onUnmounted(() => {
             </div>
 
             <!-- Warning Box -->
-            <div v-if="house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
+            <div v-if="house.house_status !== 'archived' && house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
               <div class="flex items-center gap-2">
                 <i class="fa-solid fa-clock text-orange-600 text-[10px]"></i>
                 <p class="text-[9px] font-black text-orange-700 uppercase tracking-widest">Action Required: Permits expiring soon!</p>
+              </div>
+            </div>
+
+            <!-- Supplementary Doc Notice (informational only — listing stays active & bookable) -->
+            <div v-if="house.house_status !== 'archived' && house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
+                 class="bg-slate-50 border-l-4 border-slate-400 p-3 mb-4 rounded-r-lg">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-circle-info text-slate-500 text-[10px]"></i>
+                <p class="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                  {{ house.supplementary_status === 'expired'
+                    ? 'Not urgent: a supplementary document has expired. Your listing stays visible and bookable — renew it when convenient.'
+                    : 'Heads up: a supplementary document expires soon. No action needed yet — this will not affect your listing.' }}
+                </p>
               </div>
             </div>
 
