@@ -29,6 +29,7 @@ const isInstitutionalEmail = computed(() => {
 const oauthErrors = {
   session_required:    'Please log in to access this page.',
   session_expired:     'Your session has expired. Please log in again.',
+  idle_timeout:        'You were logged out after 30 minutes of inactivity. Please log in again.',
   unauthorized:        'Access denied. You do not have permission to view that page.',
   unauthorized_domain: 'That Google account isn\'t authorised. Use your CSPC or personal Gmail.',
   suspended:           'Your account has been suspended. Please contact SASO.',

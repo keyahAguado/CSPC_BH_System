@@ -23,6 +23,7 @@ const errorMap = {
   server_error: 'Something went wrong on our end. Please try again.',
   invalid_payload: 'Authentication payload was invalid. Please try again.',
   no_token: 'No session token received. Please try again.',
+  idle_timeout: 'You were logged out after 30 minutes of inactivity. Please log in again.',
 };
 const errorMessage = errorMap[route.query.error] || null;
 
