@@ -40,6 +40,11 @@ const selectedBarangay = ref('');
 const latitude = ref('');
 const longitude = ref('');
 const description = ref('');
+// True whenever the address text has been typed/edited but not yet confirmed
+// via a dropdown selection, GPS fix, or pin drag/click — meaning
+// latitude/longitude still reflect the OLD (or no) location while the
+// visible address text shows something else.
+const pinNeedsConfirmation = ref(false);
 
 // File Input Tracking
 const permitFiles = ref({});
@@ -377,7 +382,8 @@ const extractCoords = async (url) => {
 const updateCoords = (lat, lng) => {
   latitude.value = lat.toFixed(8);
   longitude.value = lng.toFixed(8);
-  
+  pinNeedsConfirmation.value = false;
+
   const pos = { lat, lng };
 
   if (mapInstance && markerInstance) {
@@ -582,13 +588,20 @@ const initGoogleMap = async () => {
 
       wrapper.appendChild(autocompleteEl);
 
+      // Typing changes the visible text without moving the pin — flag it as
+      // unconfirmed until the owner actually picks a suggestion (or uses
+      // GPS/drags the pin, which clear the flag in updateCoords).
+      autocompleteEl.addEventListener('input', () => {
+        pinNeedsConfirmation.value = true;
+      });
+
       autocompleteEl.addEventListener('gmp-select', async (event) => {
         const prediction = event.placePrediction;
         if (!prediction) return;
-        
+
         const place = prediction.toPlace();
         await place.fetchFields({ fields: ['location', 'formattedAddress'] });
-        
+
         if (place.location) {
           const lat = place.location.lat();
           const lng = place.location.lng();
@@ -685,6 +698,8 @@ const validateForm = () => {
 
   if (!latitude.value || !longitude.value || parseFloat(latitude.value) === 0 || parseFloat(longitude.value) === 0) {
     errors.push('Precise map pin coordinates are required. Please adjust or drag the pin on the map (Step 3).');
+  } else if (pinNeedsConfirmation.value) {
+    errors.push('The address text was changed but the map pin was not updated. Please select a suggestion from the dropdown, use GPS, or drag the pin to confirm the new location (Step 3).');
   }
 
   // 3. Featured Image (Step 2)
@@ -1145,6 +1160,13 @@ const submitApplication = async () => {
                         <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin
                       </span>
                     </div>
+                  </div>
+
+                  <div v-if="pinNeedsConfirmation" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
+                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                      Address text changed but the map pin hasn't moved yet. Select a suggestion from the dropdown, use GPS, or drag the pin — this is required before submitting.
+                    </p>
                   </div>
                 </div>
 

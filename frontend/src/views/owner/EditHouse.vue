@@ -19,6 +19,11 @@ const mapLink = ref('');
 const description = ref('');
 const latitude = ref('');
 const longitude = ref('');
+// True whenever the address text has been typed/edited but not yet confirmed
+// via a dropdown selection, GPS fix, or pin drag — meaning latitude/longitude
+// still reflect the OLD location while the visible address text shows a new
+// one. Without this, saving here would silently keep the stale pin.
+const pinNeedsConfirmation = ref(false);
 const advanceMonths = ref(1);
 const depositMonths = ref(1);
 const depositType = ref('refundable');
@@ -205,13 +210,20 @@ const initGoogleMap = async () => {
 
       wrapper.appendChild(autocompleteEl);
 
+      // Typing changes the visible text without moving the pin — flag it as
+      // unconfirmed until the owner actually picks a suggestion (or uses
+      // GPS/drags the pin, which clear the flag in updateCoords).
+      autocompleteEl.addEventListener('input', () => {
+        pinNeedsConfirmation.value = true;
+      });
+
       autocompleteEl.addEventListener('gmp-select', async (event) => {
         const prediction = event.placePrediction;
         if (!prediction) return;
-        
+
         const place = prediction.toPlace();
         await place.fetchFields({ fields: ['location', 'formattedAddress'] });
-        
+
         if (place.location) {
           const lat = place.location.lat();
           const lng = place.location.lng();
@@ -228,7 +240,8 @@ const initGoogleMap = async () => {
 const updateCoords = (lat, lng) => {
   latitude.value = lat.toFixed(8);
   longitude.value = lng.toFixed(8);
-  
+  pinNeedsConfirmation.value = false;
+
   const openInMapsBtn = document.getElementById('openInMapsBtn');
   if (openInMapsBtn) {
     openInMapsBtn.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
@@ -532,6 +545,10 @@ const loadHouseDetails = async () => {
 };
 
 const handleSubmit = async () => {
+  if (pinNeedsConfirmation.value) {
+    showSystemAlert('You edited the address but haven\'t confirmed a new location — pick a suggestion from the dropdown, use GPS, or drag the pin before saving.', 'warning');
+    return;
+  }
   try {
     isSubmitting.value = true;
     const formData = new FormData();
@@ -577,7 +594,11 @@ const handleSubmit = async () => {
     });
 
     if (response.data.success) {
-      showSystemAlert('Boarding house updated successfully!', 'success');
+      if (!latitude.value || !longitude.value) {
+        showSystemAlert('Saved, but no GPS pin is set — this listing will be hidden from the public Map View until you add one.', 'warning');
+      } else {
+        showSystemAlert('Boarding house updated successfully!', 'success');
+      }
       setTimeout(() => {
         router.push('/owner/dashboard');
       }, 1500);
@@ -826,6 +847,19 @@ onMounted(() => {
                         <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin
                       </span>
                     </div>
+                  </div>
+
+                  <div v-if="!latitude || !longitude" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
+                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                      No GPS pin set yet. Without a location, this listing won't appear on the public Map View and students can't get walking directions from CSPC. Use "Use GPS" or "Large Map" above to set it.
+                    </p>
+                  </div>
+                  <div v-else-if="pinNeedsConfirmation" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
+                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                      Address text changed but the map pin hasn't moved yet. Select a suggestion from the dropdown, use "Use GPS", or drag the pin — otherwise the old location will be kept when you save.
+                    </p>
                   </div>
                 </div>
 

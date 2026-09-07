@@ -31,6 +31,27 @@ const PORT = process.env.PORT || 3000;
 // =========================================================================
 // SECTION 3: GLOBAL SECURITY HARDENING & MIDDLEWARES
 // =========================================================================
+// Trust the platform's reverse proxy (Render) so req.secure and
+// x-forwarded-proto reflect the client's actual connection, not the
+// internal HTTP hop between the proxy and this process.
+app.set('trust proxy', 1);
+
+// HTTPS enforcement: redirect any plain-HTTP request to HTTPS and tell
+// browsers to remember that via HSTS. Self-detecting rather than relying
+// on NODE_ENV: local dev requests never carry x-forwarded-proto (no proxy
+// in front of them), so this is a no-op on localhost and only activates
+// once a reverse proxy (Render) is actually forwarding the header.
+app.use((req, res, next) => {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    if (!forwardedProto) return next(); // no proxy in front of us — local dev
+
+    if (req.secure || forwardedProto === 'https') {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+        return next();
+    }
+    res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+});
+
 app.use(cors());
 app.use(express.json({
     verify: (req, res, buf) => {

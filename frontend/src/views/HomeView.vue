@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import Header from '../components/partials/Header.vue';
 import PrivacyPolicyModal from '../components/partials/PrivacyPolicyModal.vue';
 
@@ -9,6 +10,12 @@ import { formatAddress } from '../utils/formatAddress.js';
 import { useOfflineStatus } from '../utils/offlineHelper.js';
 
 const { isOffline } = useOfflineStatus();
+
+const cspcGate = { lat: 13.4059565, lng: 123.3753135 };
+const showMapView = ref(false);
+const mapContainer = ref(null);
+let mapInstance = null;
+let mapMarkers = [];
 
 // Instant initialization from persistent localStorage cache for 0ms offline rendering
 const initialCachedHouses = (() => {
@@ -51,6 +58,97 @@ const fetchHouses = async () => {
     isLoading.value = false;
   }
 };
+
+const plotMarkers = (googleInstance) => {
+  mapMarkers.forEach(m => { m.map = null; });
+  mapMarkers = [];
+
+  const bounds = new googleInstance.maps.LatLngBounds();
+  bounds.extend(cspcGate);
+
+  const cspcMarker = new googleInstance.maps.marker.AdvancedMarkerElement({
+    map: mapInstance,
+    position: cspcGate,
+    title: 'CSPC Main Campus',
+  });
+  mapMarkers.push(cspcMarker);
+
+  houses.value.forEach(house => {
+    const lat = parseFloat(house.latitude);
+    const lng = parseFloat(house.longitude);
+    if (!lat || !lng) return;
+    const position = { lat, lng };
+    bounds.extend(position);
+
+    const marker = new googleInstance.maps.marker.AdvancedMarkerElement({
+      map: mapInstance,
+      position,
+      title: house.name,
+    });
+
+    const infoWindow = new googleInstance.maps.InfoWindow({
+      content: `
+        <div style="font-family: sans-serif; padding: 4px; max-width: 200px;">
+          <strong style="display:block; margin-bottom:4px; font-size: 13px;">${house.name}</strong>
+          <span style="font-size: 11px; color: #64748b;">${formatAddress(house)}</span><br/>
+          <a href="/student/house/${house.id}" style="font-size: 11px; color: #2a528a; font-weight: bold;">View Details →</a>
+        </div>
+      `
+    });
+    marker.addListener('click', () => infoWindow.open({ anchor: marker, map: mapInstance }));
+    mapMarkers.push(marker);
+  });
+
+  if (!bounds.isEmpty()) {
+    mapInstance.fitBounds(bounds, 60);
+  }
+};
+
+const initMap = async () => {
+  await nextTick();
+  if (!mapContainer.value || mapInstance) return;
+
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  if (!apiKey) {
+    console.error('[Maps] No Google Maps API key available.');
+    return;
+  }
+
+  try {
+    setOptions({ key: apiKey, v: 'weekly' });
+    await importLibrary('maps');
+    await importLibrary('marker');
+  } catch (loaderErr) {
+    console.warn('[Maps] Loader note:', loaderErr.message);
+  }
+
+  const googleInstance = window.google;
+  if (!googleInstance) {
+    console.error('[Maps] window.google unavailable after loading.');
+    return;
+  }
+
+  const { Map } = await googleInstance.maps.importLibrary('maps');
+  mapInstance = new Map(mapContainer.value, {
+    center: cspcGate,
+    zoom: 14,
+    mapId: 'CSPC_BOARDING_HOUSE_MAP',
+  });
+
+  plotMarkers(googleInstance);
+};
+
+const toggleMapView = () => {
+  showMapView.value = !showMapView.value;
+};
+
+watch(showMapView, (val) => {
+  if (val) initMap();
+});
+
+watch(houses, () => {
+  if (mapInstance && window.google) plotMarkers(window.google);
+});
 
 onMounted(() => {
   fetchHouses();
@@ -143,7 +241,29 @@ onMounted(() => {
         <div class="flex flex-col items-center mb-10">
           <span class="text-blue-600 text-[10px] font-black uppercase tracking-[0.2em] mb-2 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100">Official Portal</span>
           <h1 class="text-3xl md:text-4xl font-black text-slate-900 uppercase tracking-tight">Accredited Boarding Houses</h1>
-          <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">CSPC SASO Verified Student Accommodations</p>
+          <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2 mb-6">CSPC SASO Verified Student Accommodations</p>
+
+          <!-- LIST / MAP TOGGLE -->
+          <div class="inline-flex bg-slate-100 p-1 rounded-2xl border border-slate-200/60 shadow-inner">
+            <button @click="showMapView = false"
+                    class="px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    :class="!showMapView ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'">
+              <i class="fa-solid fa-list mr-1.5"></i> List View
+            </button>
+            <button @click="toggleMapView"
+                    class="px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    :class="showMapView ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'">
+              <i class="fa-solid fa-map-location-dot mr-1.5"></i> Map View
+            </button>
+          </div>
+        </div>
+
+        <!-- AGGREGATE MAP VIEW -->
+        <div v-if="showMapView" class="mb-10">
+          <div ref="mapContainer" class="w-full h-[420px] sm:h-[480px] rounded-3xl border border-slate-200/80 shadow-md bg-slate-50"></div>
+          <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-3">
+            <i class="fa-solid fa-circle-info mr-1"></i> Click a pin to preview a listing near CSPC campus.
+          </p>
         </div>
 
         <!-- Subtle Offline Notice (ONLY when physically offline) -->
@@ -168,7 +288,7 @@ onMounted(() => {
           <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading Boarding Houses...</p>
         </div>
 
-        <div v-if="houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-if="!showMapView && houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div v-for="house in houses" :key="house.id" 
                class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group">
             
