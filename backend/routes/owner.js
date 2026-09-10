@@ -877,10 +877,10 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
 
             await connection.query(
                 `INSERT INTO occupants (
-                    room_id, student_id, reference_no, name, age, address, 
-                    contact_number, emergency_contact, guardian_name, check_in_date, 
-                    months, amount, payment_status, is_non_cspc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Not Paid', 0)`,
+                    room_id, student_id, reference_no, name, age, address,
+                    contact_number, emergency_contact, guardian_name, check_in_date,
+                    months, amount, payment_status, payment_method, is_non_cspc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Not Paid', 'cash', 0)`,
                 [
                     b.room_id, b.student_id, refNo, b.student_name, b.age, b.address,
                     b.phone, b.emergency_contact, b.guardian_name, checkIn,

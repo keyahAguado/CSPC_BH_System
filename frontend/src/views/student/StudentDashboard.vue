@@ -203,7 +203,7 @@ onUnmounted(() => {
 
             <!-- Star Rating Filter -->
             <div class="mb-6">
-              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Accreditation Score</h3>
+              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Ratings</h3>
               <div class="space-y-2.5">
                 <label
                   v-for="num in [5,4,3,2,1]"
@@ -229,7 +229,7 @@ onUnmounted(() => {
 
             <!-- Price Range Filter -->
             <div>
-              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Price Threshold</h3>
+              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Price Range </h3>
               <div class="flex items-center gap-1.5">
                 <div class="relative flex-1">
                   <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>
@@ -308,9 +308,9 @@ onUnmounted(() => {
                 </label>
               </div>
 
-              <!-- Price Threshold -->
+              <!-- Max Budget -->
               <hr class="border-slate-100 mb-3">
-              <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Price Threshold</p>
+              <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Max Budget</p>
               <div class="flex items-center gap-1.5">
                 <div class="relative flex-1">
                   <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>

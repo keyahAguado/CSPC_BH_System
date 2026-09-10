@@ -15,6 +15,15 @@ const selectedCourse = ref(route.query.course || '');
 const courseOptions = ref([]);
 const isLoading = ref(true);
 
+const genderCounts = computed(() => {
+  return residents.value.reduce((acc, r) => {
+    const sex = (r.sex || '').trim().toLowerCase();
+    if (sex === 'male') acc.male++;
+    else if (sex === 'female') acc.female++;
+    return acc;
+  }, { male: 0, female: 0 });
+});
+
 const token = sessionStorage.getItem('cspc_token');
 
 const fetchCourseOptions = async () => {
@@ -77,6 +86,7 @@ const groupedResidents = computed(() => {
     groups[bh.id] = {
       house_id: bh.id,
       house_name: bh.name,
+      house_status: 'accredited', // this seed list is always accredited-only (see backend query)
       house_location: bh.location || '',
       house_barangay: bh.barangay || '',
       house_owner_phone: '',
@@ -93,10 +103,13 @@ const groupedResidents = computed(() => {
       }
       groups[key].residents.push(r);
     } else {
-      // Fallback for edge case where house isn't in the list
+      // Covers residents of a house that's since been archived — the seeded
+      // list above only includes currently-accredited houses, so an archived
+      // house's residents land here instead of being silently dropped.
       groups[key] = {
         house_id: r.house_id,
         house_name: r.house_name || 'Unassigned',
+        house_status: r.house_status || 'archived',
         house_location: r.house_location || '',
         house_barangay: r.house_barangay || '',
         house_owner_phone: r.house_owner_phone || '',
@@ -238,6 +251,14 @@ onMounted(() => {
           <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Total Residents</div>
             <div class="text-xl md:text-2xl font-black text-slate-800">{{ residents.length }}</div>
+            <div class="flex items-center gap-2.5 mt-1">
+              <span class="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-blue-600">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>{{ genderCounts.male }}
+              </span>
+              <span class="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-pink-600">
+                <span class="w-2 h-2 rounded-full bg-pink-500"></span>{{ genderCounts.female }}
+              </span>
+            </div>
           </div>
           <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Active Filter</div>
@@ -297,7 +318,12 @@ onMounted(() => {
                             <i class="fa-solid fa-house-chimney"></i>
                           </div>
                           <div>
-                            <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest leading-none mb-1">{{ group.house_name }}</h3>
+                            <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest leading-none mb-1 flex items-center gap-2">
+                              {{ group.house_name }}
+                              <span v-if="group.house_status !== 'accredited'" class="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest" title="This property is no longer accredited, but its residents are still tracked here for safety.">
+                                Archived Property
+                              </span>
+                            </h3>
                             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                               <i class="fa-solid fa-location-dot text-blue-500 mr-1"></i>
                               {{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}
@@ -319,7 +345,12 @@ onMounted(() => {
                       <div class="text-[10px] font-bold text-blue-600 uppercase mt-0.5"><i class="fa-solid fa-house-user mr-1 text-[9px]"></i>Home: {{ r.home_address || 'N/A' }}</div>
                     </td>
                     <td class="px-6 py-5 text-center">
-                      <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest" :class="r.sex === 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100'">
+                      <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest"
+                            :class="{
+                              'bg-blue-50 text-blue-600 border-blue-100': (r.sex || '').trim().toLowerCase() === 'male',
+                              'bg-pink-50 text-pink-600 border-pink-100': (r.sex || '').trim().toLowerCase() === 'female',
+                              'bg-slate-50 text-slate-400 border-slate-200': !['male', 'female'].includes((r.sex || '').trim().toLowerCase())
+                            }">
                         {{ r.sex || 'N/A' }}
                       </span>
                     </td>
@@ -368,7 +399,12 @@ onMounted(() => {
                   <i class="fa-solid fa-house-chimney"></i>
                 </div>
                 <div>
-                  <h3 class="text-xs font-black text-slate-900 uppercase tracking-wide leading-none mb-0.5">{{ group.house_name }}</h3>
+                  <h3 class="text-xs font-black text-slate-900 uppercase tracking-wide leading-none mb-1 flex items-center gap-1.5 flex-wrap">
+                    {{ group.house_name }}
+                    <span v-if="group.house_status !== 'accredited'" class="bg-amber-100 text-amber-700 text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                      Archived
+                    </span>
+                  </h3>
                   <p class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
                     {{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}
                   </p>
@@ -382,7 +418,12 @@ onMounted(() => {
             <div v-for="r in group.residents" :key="r.id" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
               <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <span>Student Identity</span>
-                <span class="px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-widest" :class="r.sex === 'Male' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-pink-50 text-pink-600 border-pink-100'">
+                <span class="px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-widest"
+                      :class="{
+                        'bg-blue-50 text-blue-600 border-blue-100': (r.sex || '').trim().toLowerCase() === 'male',
+                        'bg-pink-50 text-pink-600 border-pink-100': (r.sex || '').trim().toLowerCase() === 'female',
+                        'bg-slate-50 text-slate-400 border-slate-200': !['male', 'female'].includes((r.sex || '').trim().toLowerCase())
+                      }">
                   {{ r.sex || 'N/A' }}
                 </span>
               </div>

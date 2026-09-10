@@ -294,6 +294,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
             [studentId]
         );
         if (activeOccupancy.length > 0) {
+            await connection.rollback();
             return res.status(403).json({
                 success: false,
                 message: 'Booking blocked. You are currently checked-in as an active resident of a boarding house. You must check out before making a new reservation.'
@@ -306,6 +307,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
             [studentId]
         );
         if (confirmedBookings.length > 0) {
+            await connection.rollback();
             return res.status(403).json({
                 success: false,
                 message: 'Booking blocked. You already have a confirmed stay. Please complete or cancel your active stay before booking another property.'
@@ -318,6 +320,7 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
             [roomId, houseId]
         );
         if (roomRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Selected room not found.' });
         }
 
@@ -472,6 +475,22 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
 
         if (booking.length === 0) {
             return res.status(404).json({ success: false, message: 'Reservation not found.' });
+        }
+
+        const b = booking[0];
+
+        // A confirmed CASH booking, or a confirmed+paid PayMongo booking, already has a
+        // real occupant record — cancelling the booking without evicting that occupant
+        // would leave the two tables disagreeing. Self-cancel is only safe while nothing
+        // has actually been occupied yet: still pending, or approved-but-unpaid PayMongo.
+        const canSelfCancel = b.status === 'pending'
+            || (b.status === 'confirmed' && b.payment_method === 'paymongo' && b.payment_status !== 'paid');
+
+        if (!canSelfCancel) {
+            return res.status(400).json({
+                success: false,
+                message: 'This reservation is already active. Please contact the property owner to check out.'
+            });
         }
 
         await pool.query(

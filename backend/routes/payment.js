@@ -144,10 +144,10 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
         // 3. Create the occupant record (Officially occupying the room now that payment has cleared)
         await connection.query(
             `INSERT INTO occupants (
-                room_id, student_id, reference_no, name, age, address, 
-                contact_number, emergency_contact, guardian_name, check_in_date, 
-                months, amount, payment_status, is_non_cspc
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Paid', 0)`,
+                room_id, student_id, reference_no, name, age, address,
+                contact_number, emergency_contact, guardian_name, check_in_date,
+                months, amount, payment_status, payment_method, is_non_cspc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Paid', 'paymongo', 0)`,
             [
                 fb.room_id, fb.student_id, refNo, fb.student_name, fb.age, fb.address,
                 fb.phone, fb.emergency_contact, fb.guardian_name, checkIn,
@@ -277,10 +277,10 @@ router.post('/webhook', async (req, res) => {
                         // 3. Create the occupant record (Officially occupying the room now)
                         await connection.query(
                             `INSERT INTO occupants (
-                                room_id, student_id, reference_no, name, age, address, 
-                                contact_number, emergency_contact, guardian_name, check_in_date, 
-                                months, amount, payment_status, is_non_cspc
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Paid', 0)`,
+                                room_id, student_id, reference_no, name, age, address,
+                                contact_number, emergency_contact, guardian_name, check_in_date,
+                                months, amount, payment_status, payment_method, is_non_cspc
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Paid', 'paymongo', 0)`,
                             [
                                 fb.room_id, fb.student_id, refNo, fb.student_name, fb.age, fb.address,
                                 fb.phone, fb.emergency_contact, fb.guardian_name, checkIn,

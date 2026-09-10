@@ -71,6 +71,7 @@ onMounted(() => {
               <th class="px-6 py-4">Student Resident</th>
               <th class="px-6 py-4">Boarding House</th>
               <th class="px-6 py-4">Status</th>
+              <th class="px-6 py-4">Paid Via</th>
               <th class="px-6 py-4 text-right">Rent/Mo</th>
             </tr>
           </thead>
@@ -84,10 +85,15 @@ onMounted(() => {
                   {{ t.status }}
                 </span>
               </td>
+              <td class="px-6 py-4">
+                <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-widest" :class="t.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-slate-50 text-slate-500 border-slate-200'">
+                  {{ t.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
+                </span>
+              </td>
               <td class="px-6 py-4 text-right font-black text-slate-900 tracking-tight">₱{{ parseFloat(t.room_price || 0).toLocaleString() }}</td>
             </tr>
             <tr class="bg-slate-50/50 font-black text-slate-900 border-t-2 border-slate-200">
-              <td colspan="4" class="px-6 py-6 text-right uppercase tracking-[0.2em] text-[10px] text-slate-400">Monthly Value Capacity</td>
+              <td colspan="5" class="px-6 py-6 text-right uppercase tracking-[0.2em] text-[10px] text-slate-400">Monthly Value Capacity</td>
               <td class="px-6 py-6 text-right text-lg tracking-tighter">₱{{ totalValue.toLocaleString() }}</td>
             </tr>
           </tbody>

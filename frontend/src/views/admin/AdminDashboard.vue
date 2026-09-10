@@ -38,6 +38,17 @@ const courseBreakdown = ref([]);
 const showAllCourses = ref(false);
 const COURSE_PREVIEW_COUNT = 6;
 
+// Institution-wide male/female totals for the residency chart's legend
+// (SDG 5 — Gender Equality reporting).
+const genderTotals = computed(() => {
+  const houses = stats.value.houses || [];
+  return houses.reduce((acc, h) => {
+    acc.male += parseInt(h.male_count) || 0;
+    acc.female += parseInt(h.female_count) || 0;
+    return acc;
+  }, { male: 0, female: 0 });
+});
+
 // Already ordered resident_count DESC by the backend query.
 const coursesWithResidents = computed(() => courseBreakdown.value.filter(c => c.resident_count > 0));
 const displayedCourses = computed(() =>
@@ -241,37 +252,59 @@ const renderCharts = () => {
   const rawHouses = stats.value.houses || [];
   const rawTrends = stats.value.trends || [];
 
-  // A. Student Residency Bar Chart (Only render if houses data is on record)
+  // A. Student Residency Bar Chart — stacked by sex (SDG 5 / Gender Equality
+  // reporting), so each house's bar shows its actual male/female composition
+  // rather than one undifferentiated total.
   if (residencyCanvas.value && rawHouses.length > 0) {
     const barLabels = rawHouses.map(h => h.name.toUpperCase());
-    const barData = rawHouses.map(h => h.student_count);
+    const maleData = rawHouses.map(h => parseInt(h.male_count) || 0);
+    const femaleData = rawHouses.map(h => parseInt(h.female_count) || 0);
 
     barLabels.reverse();
-    barData.reverse();
+    maleData.reverse();
+    femaleData.reverse();
 
     if (residencyChart) residencyChart.destroy();
 
     residencyChart = new Chart(residencyCanvas.value.getContext('2d'), {
       type: 'bar',
+      plugins: [ChartDataLabels],
       data: {
         labels: barLabels,
-        datasets: [{
-          label: 'Students',
-          data: barData,
-          backgroundColor: '#2a528a',
-          borderRadius: 6,
-          barThickness: 14
-        }]
+        datasets: [
+          {
+            label: 'Male',
+            data: maleData,
+            backgroundColor: '#3b82f6',
+            borderRadius: 6,
+            barThickness: 14,
+            stack: 'residents'
+          },
+          {
+            label: 'Female',
+            data: femaleData,
+            backgroundColor: '#ec4899',
+            borderRadius: 6,
+            barThickness: 14,
+            stack: 'residents'
+          }
+        ]
       },
       options: {
         indexAxis: 'y',
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false }
+          legend: { display: false },
+          datalabels: {
+            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
+            color: '#fff',
+            font: { family: 'Outfit', weight: 'black', size: 9 },
+            formatter: (value) => value
+          }
         },
         scales: {
-          x: { beginAtZero: true, grid: { color: '#f8fafc' }, ticks: { font: { family: 'Outfit', weight: 'bold', size: 10 } } },
-          y: { grid: { display: false }, ticks: { font: { family: 'Outfit', weight: 'black', size: 9 }, color: '#475569' } }
+          x: { stacked: true, beginAtZero: true, grid: { color: '#f8fafc' }, ticks: { font: { family: 'Outfit', weight: 'bold', size: 10 }, precision: 0 } },
+          y: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Outfit', weight: 'black', size: 9 }, color: '#475569' } }
         }
       }
     });
@@ -352,7 +385,7 @@ onUnmounted(() => {
       <div class="text-center mb-6">
         <p class="text-base font-black text-slate-500 uppercase tracking-widest mb-1.5">Hello, {{ adminName }}!</p>
         <h1 class="text-2xl font-black text-slate-800 uppercase tracking-tight">
-          Boarding House Dashboard
+          Home
         </h1>
         <div class="w-12 h-1 bg-[#1d70f5] mx-auto rounded-full mt-1.5"></div>
       </div>
@@ -454,9 +487,21 @@ onUnmounted(() => {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <!-- Student Residency Bar Chart -->
           <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-1 h-5 bg-[#2a528a] rounded-full"></div>
-              <h2 class="text-xs font-black tracking-wider uppercase text-slate-800">Student Residency Overview</h2>
+            <div class="flex items-start justify-between gap-3 mb-4 flex-wrap">
+              <div class="flex items-center gap-3">
+                <div class="w-1 h-5 bg-[#2a528a] rounded-full"></div>
+                <div>
+                  <h2 class="text-xs font-black tracking-wider uppercase text-slate-800">Student Residency Overview</h2>
+                </div>
+              </div>
+              <div v-if="stats.houses && stats.houses.length > 0" class="flex items-center gap-3 shrink-0">
+                <span class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                  <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>Boys: {{ genderTotals.male }}
+                </span>
+                <span class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                  <span class="w-2.5 h-2.5 rounded-full bg-pink-500"></span>Girls: {{ genderTotals.female }}
+                </span>
+              </div>
             </div>
             <div class="w-full relative" style="height: 260px;">
               <div v-if="!stats.houses || stats.houses.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">

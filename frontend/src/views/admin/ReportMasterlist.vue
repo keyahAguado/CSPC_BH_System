@@ -103,6 +103,10 @@ onMounted(() => {
                 <td class="px-4 py-4 text-center">
                   <p class="font-black text-[#2a528a]">{{ h.current_occupants || 0 }}</p>
                   <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">Students</p>
+                  <div class="flex gap-1.5 justify-center mt-1">
+                    <span class="text-blue-500 font-black text-[9px]">{{ h.male_count || 0 }}B</span>
+                    <span class="text-pink-500 font-black text-[9px]">{{ h.female_count || 0 }}G</span>
+                  </div>
                 </td>
                 <td class="px-4 py-4 text-center">
                   <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase tracking-widest border border-emerald-100">
@@ -159,7 +163,13 @@ onMounted(() => {
 
               <div class="px-4 py-2.5 flex justify-between items-center">
                 <span class="font-bold text-slate-400 text-[10px] uppercase tracking-wider">Occupants</span>
-                <span class="font-black text-[#2a528a]">{{ h.current_occupants || 0 }} Students</span>
+                <div class="text-right">
+                  <span class="font-black text-[#2a528a]">{{ h.current_occupants || 0 }} Students</span>
+                  <div class="flex gap-2 justify-end mt-0.5">
+                    <span class="text-blue-500 font-black text-[10px]">{{ h.male_count || 0 }} Boys</span>
+                    <span class="text-pink-500 font-black text-[10px]">{{ h.female_count || 0 }} Girls</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

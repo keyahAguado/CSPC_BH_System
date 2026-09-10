@@ -143,16 +143,22 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             mostRated = bestReviewed.name;
         }
 
-        // Student Residency Overview Chart — counts unique active CSPC students per accredited house
+        // Student Residency Overview Chart — counts unique active CSPC students per
+        // accredited house, split by sex (SDG 5 / Gender Equality reporting) so the
+        // dashboard shows the actual male/female composition, not just a raw total.
         let housesData = [];
         try {
             const [rows] = await pool.query(`
-                SELECT bh.id, bh.name, COUNT(DISTINCT o.student_id) AS student_count
+                SELECT bh.id, bh.name,
+                       COUNT(DISTINCT o.student_id) AS student_count,
+                       COUNT(DISTINCT CASE WHEN LOWER(u.sex) = 'male' THEN o.student_id END) AS male_count,
+                       COUNT(DISTINCT CASE WHEN LOWER(u.sex) = 'female' THEN o.student_id END) AS female_count
                 FROM boarding_houses bh
                 LEFT JOIN rooms r ON bh.id = r.house_id
-                LEFT JOIN occupants o ON r.id = o.room_id 
+                LEFT JOIN occupants o ON r.id = o.room_id
                     AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
                     AND o.is_non_cspc = 0
+                LEFT JOIN users u ON o.student_id = u.id
                 WHERE bh.house_status = 'accredited'
                 GROUP BY bh.id, bh.name
                 ORDER BY student_count DESC, bh.name ASC
@@ -1028,7 +1034,27 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                       AND o.is_non_cspc = 0
                       AND o.student_id IS NOT NULL
                       AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
-                ) AS current_occupants
+                ) AS current_occupants,
+                (
+                    SELECT COUNT(DISTINCT o.student_id)
+                    FROM occupants o
+                    INNER JOIN rooms ro ON o.room_id = ro.id
+                    INNER JOIN users su ON o.student_id = su.id
+                    WHERE ro.house_id = bh.id
+                      AND o.is_non_cspc = 0
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND LOWER(su.sex) = 'male'
+                ) AS male_count,
+                (
+                    SELECT COUNT(DISTINCT o.student_id)
+                    FROM occupants o
+                    INNER JOIN rooms ro ON o.room_id = ro.id
+                    INNER JOIN users su ON o.student_id = su.id
+                    WHERE ro.house_id = bh.id
+                      AND o.is_non_cspc = 0
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND LOWER(su.sex) = 'female'
+                ) AS female_count
             FROM boarding_houses bh
             LEFT JOIN users u ON bh.owner_id = u.id
             LEFT JOIN rooms r ON bh.id = r.house_id
@@ -1092,7 +1118,12 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
             "o.student_id IS NOT NULL",
             // Strictly active only — checked out today or earlier are excluded
             "(o.check_out_date IS NULL OR o.check_out_date > CURDATE())",
-            "bh.house_status = 'accredited'"
+            // Includes archived houses: a property losing accreditation doesn't evict
+            // its residents, and this registry exists for physical safety tracking —
+            // a student shouldn't vanish from disaster response just because the
+            // property's paperwork status changed. Excludes pending/rejected, which
+            // never have real occupants since booking requires an accredited listing.
+            "bh.house_status IN ('accredited', 'archived')"
         ];
         let queryParams = [];
 
@@ -1122,6 +1153,7 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
                     o.id,
                     bh.id AS house_id,
                     bh.name AS house_name,
+                    bh.house_status,
                     bh.location AS house_location,
                     bh.barangay AS house_barangay,
                     bh.phone_contact AS house_owner_phone,
@@ -1178,6 +1210,7 @@ router.get('/reports/transactions', authenticateToken, verifyAdmin, async (req, 
                 bh.name AS house_name,
                 b.status,
                 b.payment_status,
+                b.payment_method,
                 b.monthly_rent AS room_price,
                 b.check_in_date,
                 b.booking_date,

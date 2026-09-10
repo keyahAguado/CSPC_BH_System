@@ -1014,6 +1014,14 @@ onMounted(async () => {
               <span class="text-slate-800">{{ occ.age ? `${occ.age} yrs old` : '—' }} • {{ occ.contact_number || 'No contact' }}</span>
             </div>
             <div class="py-3.5 flex justify-between items-center">
+              <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Paid Via</span>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
+                    :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-600'">
+                <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                {{ occ.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
+              </span>
+            </div>
+            <div class="py-3.5 flex justify-between items-center">
               <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Check-in Date</span>
               <span>{{ occ.check_in_date ? new Date(occ.check_in_date).toLocaleDateString() : '—' }}</span>
             </div>

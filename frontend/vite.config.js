@@ -87,8 +87,8 @@ export default defineConfig({
         ]
       },
       manifest: {
-        name: 'CSPC Boarding House System',
-        short_name: 'CSPC Board',
+        name: 'CSPC BH Finder',
+        short_name: 'CSPC BH Finder',
         description: 'PWA-Integrated Boarding House Selection & Transaction Management for CSPC',
         theme_color: '#2563eb',
         background_color: '#f8fafc',

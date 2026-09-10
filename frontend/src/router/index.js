@@ -32,7 +32,6 @@ import AdminPendingApplications from '../views/admin/PendingApplications.vue';
 import AdminEmergencyMonitoring from '../views/admin/EmergencyMonitoring.vue';
 import ReportMasterlist from '../views/admin/ReportMasterlist.vue';
 import ReportCompliance from '../views/admin/ReportCompliance.vue';
-import ReportEmergency from '../views/admin/ReportEmergency.vue';
 import ReportTransactions from '../views/admin/ReportTransactions.vue';
 import AdminRegistered from '../views/admin/Registered.vue';
 import AdminArchived from '../views/admin/Archived.vue';
@@ -116,7 +115,7 @@ const routes = [
         alias: '/users/student/bookings',
         name: 'StudentBookings',
         component: StudentBookings,
-        meta: { role: 'student', title: 'My Reservations' }
+        meta: { role: 'student', title: 'My Bookings' }
     },
     {
         path: '/student/book/:id',
@@ -211,7 +210,7 @@ const routes = [
         path: '/admin/dashboard',
         name: 'AdminDashboard',
         component: AdminDashboard,
-        meta: { role: 'admin', title: 'Admin Dashboard' }
+        meta: { role: 'admin', title: 'Admin Home' }
     },
     {
         path: '/admin/pending-applications',
@@ -266,12 +265,6 @@ const routes = [
         name: 'ReportCompliance',
         component: ReportCompliance,
         meta: { role: 'admin', title: 'Accreditation Compliance Audit' }
-    },
-    {
-        path: '/admin/reports/emergency-registry',
-        name: 'ReportEmergency',
-        component: ReportEmergency,
-        meta: { role: 'admin', title: 'Emergency Residency Audit' }
     },
     {
         path: '/admin/reports/transactions',

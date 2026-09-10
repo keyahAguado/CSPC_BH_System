@@ -340,8 +340,10 @@ onMounted(() => {
                     ₱{{ Number(pb.amount).toLocaleString() }}
                   </td>
                   <td class="px-5 py-4 text-center">
-                    <span class="bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest border border-blue-100">
-                      {{ pb.payment_method }}
+                    <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest border"
+                          :class="pb.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                      <i class="fa-solid" :class="pb.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                      {{ pb.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
                     </span>
                   </td>
                   <td class="px-5 py-4">
@@ -437,7 +439,7 @@ onMounted(() => {
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Duration</span>
-                    <span class="font-bold text-sm text-slate-700 uppercase">{{ occ.months }} Months</span>
+                    <span class="font-bold text-sm text-slate-700 uppercase">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rent</span>
@@ -451,6 +453,14 @@ onMounted(() => {
                         {{ occ.payment_status === 'Paid' ? 'Undo' : 'Mark Paid' }}
                       </button>
                     </div>
+                  </div>
+                  <div class="flex items-center justify-between py-2.5">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Paid Via</span>
+                    <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest"
+                          :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
+                      <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                      {{ occ.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
+                    </span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Type</span>
@@ -489,13 +499,14 @@ onMounted(() => {
                   <th class="px-3 py-4 text-center whitespace-nowrap">Total Rent</th>
                   <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in Ledger</th>
                   <th class="px-3 py-4 text-center">Payment</th>
+                  <th class="px-3 py-4 text-center whitespace-nowrap">Paid Via</th>
                   <th class="px-3 py-4 text-center">Type</th>
                   <th class="px-3 py-4 text-center">Action</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="occupants.length === 0">
-                  <td colspan="15" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                  <td colspan="16" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
                     No boarders in this room yet.
                   </td>
                 </tr>
@@ -511,7 +522,7 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.contact_number || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.emergency_contact || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.guardian_name || '—' }}</td>
-                  <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap uppercase">{{ occ.months }} Months</td>
+                  <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap uppercase">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}
                     <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>
@@ -550,6 +561,14 @@ onMounted(() => {
                         Mark Paid
                       </button>
                     </div>
+                  </td>
+                  <td class="px-3 py-4 text-center">
+                    <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                          :title="occ.payment_method === 'paymongo' ? 'Paid Online via GCash or Card' : 'Paid in Cash'"
+                          :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
+                      <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                      {{ occ.payment_method === 'paymongo' ? 'Online' : 'Cash' }}
+                    </span>
                   </td>
                   <td class="px-3 py-4 text-center">
                     <span v-if="occ.is_non_cspc" class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Non-CSPC</span>

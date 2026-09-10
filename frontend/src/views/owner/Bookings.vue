@@ -141,7 +141,7 @@ const handleReject = (booking) => {
 const handleApproveExtension = (booking) => {
   triggerConfirmModal(
     'Approve Stay Extension?',
-    `Approve extension request for +${booking.extension_months} Months?`,
+    `Approve extension request for +${booking.extension_months} Month${booking.extension_months > 1 ? 's' : ''}?`,
     'success',
     async () => {
       try {
@@ -198,6 +198,18 @@ const handleMarkPaid = async (booking) => {
 
 const handlePrint = () => {
   window.print();
+};
+
+// Plain-language payment method label — assume the owner isn't a technical person
+const paymentMethodLabel = (method) => {
+  return method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash';
+};
+
+// A confirmed PayMongo booking only becomes an actual resident once the
+// student finishes paying — until then it's a reserved slot, not an
+// occupied room. Distinct from cash, where approval itself seats them.
+const isAwaitingOnlinePayment = (booking) => {
+  return booking.status === 'confirmed' && booking.payment_method === 'paymongo' && booking.payment_status !== 'paid';
 };
 
 onMounted(() => {
@@ -345,7 +357,7 @@ onMounted(() => {
                         </div>
                       </div>
                       <span class="bg-blue-600/10 text-blue-700 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-                        {{ getHouseBookings(hName).length }} Total Bookings
+                        {{ getHouseBookings(hName).length }} Total Booking{{ getHouseBookings(hName).length > 1 ? 's' : '' }}
                       </span>
                     </div>
                   </td>
@@ -353,8 +365,13 @@ onMounted(() => {
 
                 <!-- Bookings Loop -->
                 <tr v-for="booking in getHouseBookings(hName)" :key="booking.id" class="hover:bg-slate-50/20 transition-colors">
-                  <td class="px-4 py-8 font-mono text-[10px]">
-                    REF-{{ booking.id.toString().padStart(4, '0') }}
+                  <td class="px-4 py-8 font-mono text-[10px] leading-relaxed">
+                    REF-{{ booking.id.toString().padStart(4, '0') }}<br />
+                    <span class="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest"
+                          :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
+                      <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                      {{ paymentMethodLabel(booking.payment_method) }}
+                    </span>
                   </td>
                   <td class="px-4 py-8 leading-relaxed font-bold text-slate-900">
                     {{ booking.student_name }}
@@ -382,7 +399,7 @@ onMounted(() => {
                   <td class="px-3 py-8 leading-tight font-bold text-slate-800">
                     {{ booking.guardian_name || 'N/A' }}
                   </td>
-                  <td class="px-1 py-8 text-center font-bold text-blue-600">{{ booking.months }} Months</td>
+                  <td class="px-1 py-8 text-center font-bold text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</td>
                   <td class="px-2 py-8 text-center font-semibold text-slate-500">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}</td>
                   <td class="px-2 py-8 text-center font-black text-slate-900">₱{{ Number(booking.amount).toLocaleString() }}</td>
                   <td class="px-2 py-8 text-center bg-emerald-50/30">
@@ -399,7 +416,7 @@ onMounted(() => {
                   <td class="px-2 py-8 text-center action-col no-print">
                     <!-- Extension actions -->
                     <div v-if="booking.is_extension_requested" class="bg-amber-50 border border-amber-200 p-2 rounded-xl mb-2">
-                      <p class="text-[9px] font-black text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Months</p>
+                      <p class="text-[9px] font-black text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
                       <div class="flex gap-2">
                         <button type="button" @click="handleApproveExtension(booking)" class="flex-1 bg-amber-500 text-white px-3 py-1.5 rounded-lg font-black text-[8px] hover:bg-black transition shadow-sm uppercase tracking-widest">
                           Approve
@@ -418,6 +435,14 @@ onMounted(() => {
                       <button @click="handleReject(booking)" class="w-full bg-red-500 text-white px-3 py-1.5 rounded-lg font-black text-[9px] hover:bg-red-700 transition shadow-sm uppercase tracking-widest focus:outline-none">
                         Reject
                       </button>
+                    </div>
+                    <div v-else-if="isAwaitingOnlinePayment(booking)" class="flex flex-col gap-1.5 max-w-[160px] mx-auto">
+                      <span class="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest">
+                        Reserved — Awaiting Payment
+                      </span>
+                      <p class="text-[9px] font-semibold text-slate-400 leading-snug">
+                        Won't count as occupied until the student pays online.
+                      </p>
                     </div>
                     <div v-else-if="booking.status === 'confirmed'" class="flex flex-col gap-2">
                       <span class="bg-green-100 text-green-700 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest">Approved</span>
@@ -455,7 +480,7 @@ onMounted(() => {
                 <span class="m-house-name">{{ hName }}</span>
                 <span class="m-house-loc">{{ getHouseBookings(hName)[0]?.house_location }}</span>
               </div>
-              <span class="m-house-count">{{ getHouseBookings(hName).length }} Bookings</span>
+              <span class="m-house-count">{{ getHouseBookings(hName).length }} Booking{{ getHouseBookings(hName).length > 1 ? 's' : '' }}</span>
             </div>
 
             <!-- Mobile Booking Cards -->
@@ -464,6 +489,16 @@ onMounted(() => {
               <div class="m-row">
                 <span class="m-lbl">Ref No.</span>
                 <span class="m-val">{{ booking.id }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Payment Method</span>
+                <span class="m-val">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest"
+                        :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
+                    <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                    {{ paymentMethodLabel(booking.payment_method) }}
+                  </span>
+                </span>
               </div>
               <div class="m-row">
                 <span class="m-lbl">Student Name</span>
@@ -538,7 +573,7 @@ onMounted(() => {
                 <div class="m-actions">
                   <!-- Extension request -->
                   <div v-if="booking.is_extension_requested" class="m-ext-box">
-                    <p class="m-ext-title">Extension: +{{ booking.extension_months }} Months</p>
+                    <p class="m-ext-title">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
                     <div class="m-btn-row">
                       <button @click="handleApproveExtension(booking)" class="m-btn m-btn-amber">Approve</button>
                       <button @click="handleRejectExtension(booking)" class="m-btn m-btn-red-ol">Reject</button>
@@ -548,6 +583,11 @@ onMounted(() => {
                   <div v-if="booking.status === 'pending'" class="m-btn-row">
                     <button @click="handleApprove(booking)" class="m-btn m-btn-green">Approve</button>
                     <button @click="handleReject(booking)" class="m-btn m-btn-red">Reject</button>
+                  </div>
+                  <!-- Approved, awaiting online payment -->
+                  <div v-else-if="isAwaitingOnlinePayment(booking)" class="m-pending-box">
+                    <span class="m-pill m-pill-pending">Reserved — Awaiting Payment</span>
+                    <p class="m-pending-note">Won't count as occupied until the student pays online.</p>
                   </div>
                   <!-- Confirmed -->
                   <div v-else-if="booking.status === 'confirmed'" class="m-btn-row">
@@ -776,7 +816,13 @@ onMounted(() => {
   }
   .m-pill-paid     { background: #16a34a; color: #fff; }
   .m-pill-approved { background: #dcfce7; color: #15803d; }
+  .m-pill-pending  { background: #fef3c7; color: #b45309; }
   .m-pill-default  { color: #94a3b8; }
+
+  .m-pending-box { display: flex; flex-direction: column; gap: 5px; }
+  .m-pending-note {
+    font-size: 9px; font-weight: 600; color: #94a3b8; line-height: 1.5;
+  }
 
   /* Extension box */
   .m-ext-box {

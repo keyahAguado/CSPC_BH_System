@@ -277,6 +277,7 @@ CREATE TABLE `occupants` (
   `months` int DEFAULT '1',
   `amount` decimal(10,2) DEFAULT NULL,
   `payment_status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'Not Paid',
+  `payment_method` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'cash',
   `is_non_cspc` tinyint(1) DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

@@ -102,7 +102,7 @@ onUnmounted(() => {
       </div>
     </router-link>
     <div class="flex gap-4 sm:gap-6 md:gap-10 text-xs sm:text-[13px] font-semibold items-center w-full sm:w-auto py-1 sm:py-0">
-      <router-link to="/admin/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Dashboard</router-link>
+      <router-link to="/admin/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Home</router-link>
       <router-link to="/admin/pending-applications" class="hover:text-blue-200 transition whitespace-nowrap">New Applications</router-link>
       <router-link to="/admin/registered" class="hover:text-blue-200 transition whitespace-nowrap">Registered</router-link>
       <router-link to="/admin/archived" class="hover:text-blue-200 transition whitespace-nowrap">Archived</router-link>
@@ -186,7 +186,7 @@ onUnmounted(() => {
           ]"
         >
           <i class="fa-solid fa-gauge w-5 text-center text-base"></i>
-          <span>Dashboard</span>
+          <span>Home</span>
         </button>
 
         <button

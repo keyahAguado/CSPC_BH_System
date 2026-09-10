@@ -31,6 +31,7 @@ const BASE_STYLES = `
   .badge-blue { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
   .badge-amber { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
   .badge-pink { background: #fdf2f8; color: #db2777; border: 1px solid #fbcfe8; }
+  .badge-gray { background: #f8fafc; color: #94a3b8; border: 1px solid #e2e8f0; }
   .bold { font-weight: 700; }
   .upper { text-transform: uppercase; }
   .small { font-size: 7.5pt; color: #64748b; }
@@ -123,7 +124,13 @@ export function printMasterlist(houses, reportDate) {
         <div class="small">${h.total_rooms || 0} Total</div>
       </td>
       <td class="text-center bold">${h.total_capacity || 0} Pax</td>
-      <td class="text-center"><div class="bold" style="color:#1e4a8d">${h.current_occupants || 0}</div><div class="small">Students</div></td>
+      <td class="text-center">
+        <div class="bold" style="color:#1e4a8d">${h.current_occupants || 0}</div><div class="small">Students</div>
+        <div class="small" style="margin-top:2px">
+          <span style="color:#2563eb;font-weight:900">${h.male_count || 0}B</span>&nbsp;
+          <span style="color:#db2777;font-weight:900">${h.female_count || 0}G</span>
+        </div>
+      </td>
       <td class="text-center"><span class="badge badge-green">${h.house_status || ''}</span></td>
     </tr>`).join('');
 
@@ -235,6 +242,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
       grouped[houseKey] = {
         location: r.house_location || '',
         phone: r.house_owner_phone || '',
+        status: r.house_status || 'accredited',
         list: []
       };
     }
@@ -242,6 +250,10 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
   });
 
   const houseKeys = Object.keys(grouped);
+
+  const normSex = (s) => (s || '').trim().toLowerCase();
+  const totalMale = (residents || []).filter(r => normSex(r.sex) === 'male').length;
+  const totalFemale = (residents || []).filter(r => normSex(r.sex) === 'female').length;
 
   const houseTablesHtml = houseKeys.length === 0
     ? '<table><tbody><tr><td class="text-center small">No residency records found.</td></tr></tbody></table>'
@@ -254,7 +266,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
               <div class="small">${r.student_email || ''} | ${r.student_phone || 'N/A'}</div>
               ${r.home_address ? `<div class="small bold" style="color:#2563eb;margin-top:2px;">Home Address: ${r.home_address}</div>` : ''}
             </td>
-            <td class="text-center"><span class="badge ${r.sex === 'Male' ? 'badge-blue' : 'badge-pink'}">${r.sex || 'N/A'}</span></td>
+            <td class="text-center"><span class="badge ${normSex(r.sex) === 'male' ? 'badge-blue' : normSex(r.sex) === 'female' ? 'badge-pink' : 'badge-gray'}">${r.sex || 'N/A'}</span></td>
             <td><div class="bold upper">${formatCourse(r.course)}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
             <td><div class="bold">Room #${r.room_number || 'N/A'}</div></td>
             <td class="bold">${r.guardian_name || 'N/A'}</td>
@@ -265,6 +277,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
           <div style="margin-top: 24px; margin-bottom: 8px; padding: 10px 14px; background-color: #f1f5f9; border-left: 5px solid #1e4a8d; border-radius: 6px;">
             <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
               ${houseName} <span style="font-size: 10px; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
+              ${group.status !== 'accredited' ? '<span class="badge badge-amber" style="margin-left:8px">Archived Property</span>' : ''}
             </div>
             <div style="font-size: 10px; color: #475569; margin-top: 4px; font-weight: 600;">
               ${group.location}${group.phone ? ` &nbsp;&bull;&nbsp; Owner Contact: ${group.phone}` : ''}
@@ -293,6 +306,11 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
     <div class="title-section">
       <h2>Emergency Student Residency Registry</h2>
       <div class="subtitle">Summary of Lists per Boarding House | Scope: ${targetArea || 'Unified Registry'}</div>
+      <div class="subtitle" style="margin-top:6px">
+        Total Residents: ${(residents || []).length} &nbsp;&bull;&nbsp;
+        <span style="color:#2563eb;font-weight:900">Boys: ${totalMale}</span> &nbsp;&bull;&nbsp;
+        <span style="color:#db2777;font-weight:900">Girls: ${totalFemale}</span>
+      </div>
     </div>
     ${houseTablesHtml}
     <div class="signatories">
@@ -313,6 +331,7 @@ export function printTransactions(transactions, reportDate) {
       <td>${t.house_name || ''}</td>
       <td class="text-center"><span class="badge ${t.status === 'confirmed' ? 'badge-green' : 'badge-blue'}">${t.status || ''}</span></td>
       <td class="text-center"><span class="badge ${t.payment_status === 'paid' ? 'badge-green' : 'badge-amber'}">${t.payment_status || ''}</span></td>
+      <td class="text-center">${t.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash'}</td>
       <td class="text-right bold">&#8369;${parseFloat(t.room_price || 0).toLocaleString()}</td>
     </tr>`).join('');
 
@@ -333,12 +352,12 @@ export function printTransactions(transactions, reportDate) {
     <table>
       <thead><tr>
         <th>Res ID</th><th>Student Resident</th><th>Boarding House</th>
-        <th class="text-center">Status</th><th class="text-center">Payment</th><th class="text-right">Rent/Mo</th>
+        <th class="text-center">Status</th><th class="text-center">Payment</th><th class="text-center">Paid Via</th><th class="text-right">Rent/Mo</th>
       </tr></thead>
       <tbody>
-        ${rows || '<tr><td colspan="6" class="text-center small">No transaction records found.</td></tr>'}
+        ${rows || '<tr><td colspan="7" class="text-center small">No transaction records found.</td></tr>'}
         <tr class="total-row">
-          <td colspan="5" class="text-right small">Monthly Value Capacity</td>
+          <td colspan="6" class="text-right small">Monthly Value Capacity</td>
           <td class="text-right">&#8369;${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
         </tr>
       </tbody>
