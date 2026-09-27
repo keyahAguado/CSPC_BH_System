@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../utils/placesAutocomplete.js';
 import Header from '../components/partials/Header.vue';
 import PrivacyPolicyModal from '../components/partials/PrivacyPolicyModal.vue';
 
@@ -115,9 +115,7 @@ const initMap = async () => {
   }
 
   try {
-    setOptions({ key: apiKey, v: 'weekly' });
-    await importLibrary('maps');
-    await importLibrary('marker');
+    await ensureMapsLoaded();
   } catch (loaderErr) {
     console.warn('[Maps] Loader note:', loaderErr.message);
   }
@@ -128,7 +126,7 @@ const initMap = async () => {
     return;
   }
 
-  const { Map } = await googleInstance.maps.importLibrary('maps');
+  const Map = googleInstance.maps.Map;
   mapInstance = new Map(mapContainer.value, {
     center: cspcGate,
     zoom: 14,

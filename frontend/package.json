@@ -13,7 +13,10 @@
     "axios": "^1.16.1",
     "chart.js": "^4.5.1",
     "chartjs-plugin-datalabels": "^2.2.0",
+    "datatables.net": "^3.1.2",
+    "datatables.net-dt": "^3.1.2",
     "heic2any": "^0.0.4",
+    "simple-datatables": "^10.3.0",
     "vue": "^3.5.34",
     "vue-router": "^4.6.4"
   },

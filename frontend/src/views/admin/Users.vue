@@ -267,8 +267,8 @@ onMounted(() => {
             <div v-for="user in filteredUsers" :key="user.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
               <div class="flex items-center gap-3 border-b border-slate-200/60 pb-3">
                 <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
-                  <img v-if="user.profile_pic" :src="getImageUrl(user.profile_pic)" class="w-full h-full object-cover" />
-                  <i v-else class="fa-solid fa-user-shield text-[16px]"></i>
+                  <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`"
+                       class="w-full h-full object-cover" :alt="user.name" />
                 </div>
                 <div class="overflow-hidden flex-1">
                   <div class="font-black text-slate-900 uppercase tracking-tight text-sm truncate">{{ user.name }}</div>
@@ -361,8 +361,8 @@ onMounted(() => {
                   <td class="py-6 px-8 text-left border-r border-slate-100">
                     <div class="flex items-center gap-5">
                       <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
-                        <img v-if="user.profile_pic" :src="getImageUrl(user.profile_pic)" class="w-full h-full object-cover" />
-                        <i v-else class="fa-solid fa-user-shield text-[18px]"></i>
+                        <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`"
+                             class="w-full h-full object-cover" :alt="user.name" />
                       </div>
                       <div>
                         <div class="font-black text-slate-900 uppercase tracking-tight text-base leading-tight">{{ user.name }}</div>

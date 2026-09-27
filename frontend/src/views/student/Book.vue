@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const route = useRoute();
@@ -18,7 +19,14 @@ const successMsg = ref('');
 const errorMsg = ref('');
 const showConfirmModal = ref(false);   // Pre-submission review modal
 const showSuccessModal = ref(false);   // Post-submission result modal
+const showDpaModal = ref(false);       // Data Privacy Act consent modal
 const alertRef = ref(null);
+
+const handleDpaAccepted = () => {
+  showDpaModal.value = false;
+  if (currentUser) currentUser.dpa_accepted = 1;
+  showConfirmModal.value = true;
+};
 
 const token = sessionStorage.getItem('cspc_token');
 const isGuest = !token;
@@ -44,6 +52,7 @@ const form = ref({
   check_in_date: '',
   months: '',
   resident_name: '',
+  gender: '',
   age: '',
   contact_number: '',
   emergency_contact: '',
@@ -68,6 +77,8 @@ const handleCheckInDateChange = () => {
   }
 };
 
+const isAutoFilledFromProfile = ref(false);
+
 const fetchData = async () => {
   if (!navigator.onLine) {
     errorMsg.value = 'You are currently offline. Please connect to the internet to make a booking.';
@@ -82,7 +93,11 @@ const fetchData = async () => {
     rooms.value = res.data.rooms || [];
 
     // 1. Initial pre-fill from cached local session
+    if (currentUser.phone || currentUser.emergency_contact || currentUser.guardian_name || currentUser.address || currentUser.age || currentUser.sex || currentUser.gender) {
+      isAutoFilledFromProfile.value = true;
+    }
     form.value.resident_name = currentUser.name || '';
+    form.value.gender = (currentUser.sex || currentUser.gender || '').toLowerCase();
     form.value.age = currentUser.age || '';
     form.value.contact_number = normalizePhPhone(currentUser.phone);
     form.value.emergency_contact = normalizePhPhone(currentUser.emergency_contact);
@@ -97,7 +112,11 @@ const fetchData = async () => {
         });
         if (profileRes.data.success && profileRes.data.user) {
           const u = profileRes.data.user;
+          if (u.phone || u.emergency_contact || u.guardian_name || u.address || u.age || u.sex || u.gender) {
+            isAutoFilledFromProfile.value = true;
+          }
           if (u.name) form.value.resident_name = u.name;
+          if (u.sex || u.gender) form.value.gender = (u.sex || u.gender || '').toLowerCase();
           if (u.age) form.value.age = u.age;
           if (u.phone) form.value.contact_number = normalizePhPhone(u.phone);
           if (u.emergency_contact) form.value.emergency_contact = normalizePhPhone(u.emergency_contact);
@@ -133,10 +152,7 @@ const monthlyRent = computed(() => {
 const advanceMonths = computed(() => parseInt(house.value.advance_months) || 0);
 const depositMonths = computed(() => parseInt(house.value.deposit_months) || 0);
 
-const depositFixedAmount = computed(() => {
-  const parsed = parseFloat(house.value.deposit_fixed_amount);
-  return isNaN(parsed) ? 0 : parsed;
-});
+const depositFixedAmount = computed(() => 0);
 
 const depositType = computed(() => house.value.deposit_type || 'refundable');
 
@@ -164,6 +180,15 @@ const depositNote = computed(() => {
 const formatMoney = (val) =>
   Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const formatRoomNumber = (val) => {
+  if (!val) return '';
+  const trimmed = String(val).trim();
+  if (/^(room|bed|unit|cottage|house)\b/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `Room ${trimmed}`;
+};
+
 const sanitizePhoneInput = (fieldKey) => {
   form.value[fieldKey] = normalizePhPhone(form.value[fieldKey]);
 };
@@ -182,6 +207,10 @@ const openConfirmModal = () => {
   if (form.value.emergency_contact && !isValidPhPhone(form.value.emergency_contact)) {
     errorMsg.value = 'Emergency contact number must be a valid PH mobile number (11 digits, starting with 09).';
     if (alertRef.value) alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    return;
+  }
+  if (currentUser && !currentUser.dpa_accepted) {
+    showDpaModal.value = true;
     return;
   }
   showConfirmModal.value = true;
@@ -216,7 +245,19 @@ const handleSuccessModalClose = () => {
 };
 
 
-onMounted(fetchData);
+import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+
+const initAddressAutocomplete = (el) => {
+  if (el) {
+    setupAddressAutocomplete(el, (selectedAddress) => {
+      form.value.address = selectedAddress;
+    });
+  }
+};
+
+onMounted(async () => {
+  await fetchData();
+});
 </script>
 
 <template>
@@ -302,7 +343,7 @@ onMounted(fetchData);
                     >
                     <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full justify-between pr-1 text-slate-800">
                       <div class="flex flex-col text-left">
-                        <span class="text-sm sm:text-base font-semibold leading-tight">Room {{ room.room_number }}</span>
+                        <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
@@ -341,7 +382,7 @@ onMounted(fetchData);
                     >
                     <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full justify-between pr-1 text-slate-800">
                       <div class="flex flex-col text-left">
-                        <span class="text-sm sm:text-base font-semibold leading-tight">Room {{ room.room_number }}</span>
+                        <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
                       <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
@@ -364,15 +405,27 @@ onMounted(fetchData);
                 <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-100">3</div>
                 <h2 class="text-sm font-black uppercase tracking-widest text-slate-900">Personal Details</h2>
               </div>
-              <div class="inline-flex items-center gap-1.5 text-[9px] font-black text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/60 uppercase tracking-widest self-start sm:self-auto">
+              <div v-if="isAutoFilledFromProfile" class="inline-flex items-center gap-1.5 text-[9px] font-black text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/60 uppercase tracking-widest self-start sm:self-auto">
                 <i class="fa-solid fa-circle-check text-emerald-500"></i> Auto-Filled from Profile
+              </div>
+              <div v-else class="inline-flex items-center gap-1.5 text-[9px] font-black text-blue-700 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-200/60 uppercase tracking-widest self-start sm:self-auto">
+                <i class="fa-solid fa-cloud-arrow-up text-blue-500"></i> Auto-Saves to Profile on Submit
               </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="md:col-span-2">
+              <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Resident Full Name</label>
                 <input type="text" v-model="form.resident_name" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+              </div>
+              <div>
+                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Gender Specification</label>
+                <select v-model="form.gender" required
+                  class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+                  <option value="" disabled>Select Gender</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                </select>
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Age</label>
@@ -398,7 +451,7 @@ onMounted(fetchData);
               </div>
               <div class="md:col-span-2">
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Home Address</label>
-                <input type="text" v-model="form.address" placeholder="Barangay, Municipality, Province"
+                <input type="text" :ref="initAddressAutocomplete" v-model="form.address" placeholder="Barangay, Municipality, Province"
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
             </div>
@@ -538,7 +591,7 @@ onMounted(fetchData);
     <!-- PRE-SUBMISSION REVIEW MODAL: Confirm before sending       -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+      <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
         <!-- Header -->
         <div class="bg-slate-900 px-8 py-6 flex items-center gap-4">
           <div class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
@@ -551,8 +604,8 @@ onMounted(fetchData);
         </div>
 
         <!-- Body: Summary of what's about to be submitted -->
-        <div class="p-8 space-y-4 max-h-[60vh] overflow-y-auto">
-          <div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        <div class="p-8 space-y-4 max-h-[65vh] overflow-y-auto">
+          <div class="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">House</p>
               <p class="font-bold text-slate-800">{{ house.name }}</p>
@@ -568,20 +621,34 @@ onMounted(fetchData);
               <p class="font-bold text-slate-800">{{ form.resident_name || '—' }}</p>
             </div>
             <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Gender</p>
+              <p class="font-bold text-slate-800 capitalize">{{ form.gender || '—' }}</p>
+            </div>
+            <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Age</p>
               <p class="font-bold text-slate-800">{{ form.age || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Contact</p>
+              <p class="font-bold text-slate-800">{{ form.contact_number || '—' }}</p>
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Check-In Date</p>
               <p class="font-bold text-slate-800">{{ form.check_in_date || '—' }}</p>
             </div>
             <div>
-              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Duration</p>
-              <p class="font-bold text-slate-800">{{ form.months || '—' }} Month(s)</p>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Est. Check-Out Date</p>
+              <p class="font-bold text-blue-600">
+                {{ form.check_in_date && form.months ? (() => {
+                    const d = new Date(form.check_in_date);
+                    d.setMonth(d.getMonth() + parseInt(form.months || 0));
+                    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  })() : '—' }}
+              </p>
             </div>
             <div>
-              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Contact</p>
-              <p class="font-bold text-slate-800">{{ form.contact_number || '—' }}</p>
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Duration</p>
+              <p class="font-bold text-slate-800">{{ form.months || '—' }} Month{{ parseInt(form.months) > 1 ? 's' : '' }}</p>
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p>
@@ -716,5 +783,13 @@ onMounted(fetchData);
         </div>
       </div>
     </div>
+
+    <!-- Data Privacy Act (DPA 2012) Mandatory Consent Notice Modal -->
+    <DataPrivacyModal 
+      :show="showDpaModal" 
+      title="Student Reservation Data Privacy Notice"
+      subtitle="Republic Act No. 10173 (Data Privacy Act of 2012)"
+      @accepted="handleDpaAccepted" 
+    />
   </div>
 </template>

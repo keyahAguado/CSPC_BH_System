@@ -1,15 +1,29 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
+import { DataTable } from 'simple-datatables';
+import 'simple-datatables/dist/style.css';
 
 import FlashAlert from '../../components/partials/FlashAlert.vue';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { formatAddress } from '../../utils/formatAddress.js';
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
+const searchQuery = ref('');
+
+const filteredHouses = computed(() => {
+  if (!searchQuery.value) return houses.value;
+  const q = searchQuery.value.toLowerCase().trim();
+  return houses.value.filter(h =>
+    h.name?.toLowerCase().includes(q) ||
+    h.owner_name?.toLowerCase().includes(q) ||
+    h.owner_email?.toLowerCase().includes(q) ||
+    h.location?.toLowerCase().includes(q)
+  );
+});
 
 const isLoading = ref(true);
 const alertRef = ref(null);
@@ -118,6 +132,36 @@ const executeConfirm = async () => {
   }
 };
 
+let dtInstance = null;
+
+const initDataTable = () => {
+  nextTick(() => {
+    const tableEl = document.getElementById('archivedTable');
+    if (tableEl && !dtInstance) {
+      try {
+        dtInstance = new DataTable(tableEl, {
+          perPage: 10,
+          perPageSelect: [10, 25, 50, 100],
+          searchable: false,
+          labels: {
+            perPage: "entries per page",
+            noRows: "No archived boarding houses found",
+            info: "Showing {start} to {end} of {rows} entries",
+          }
+        });
+      } catch (err) {
+        console.warn('DataTable init error:', err);
+      }
+    }
+  });
+};
+
+watch(searchQuery, (val) => {
+  if (dtInstance) {
+    dtInstance.search(val);
+  }
+});
+
 const fetchArchivedHouses = async () => {
   try {
     isLoading.value = true;
@@ -133,6 +177,7 @@ const fetchArchivedHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
+      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load archived houses:', error);
@@ -140,6 +185,7 @@ const fetchArchivedHouses = async () => {
     showSystemAlert('Could not fetch archived boarding houses.', 'warning');
   } finally {
     isLoading.value = false;
+    initDataTable();
   }
 };
 
@@ -354,15 +400,7 @@ onMounted(async () => {
     isLoading.value = true;
     await fetchArchivedHouses();
 
-    setOptions({
-      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_FALLBACK_GOOGLE_KEY',
-      v: 'weekly'
-    });
-
-    await importLibrary('maps');
-    await importLibrary('marker'); 
-    await importLibrary('places');
-
+    await ensureMapsLoaded();
     googleInstance = window.google; 
   } catch (err) {
     console.error('Google Maps loader failed:', err);
@@ -391,20 +429,31 @@ onMounted(async () => {
 
       <!-- Content Container -->
       <div v-else>
+        <!-- Search Control Bar (Positioned at TOP for Mobile & Desktop) -->
+        <div class="flex justify-between items-center mb-6 gap-4">
+          <div class="relative w-full sm:w-80">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+            </span>
+            <input type="text" v-model="searchQuery" placeholder="SEARCH ARCHIVED RECORDS..."
+                class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest focus:border-[#2563eb] outline-none transition-all placeholder:text-slate-400 shadow-xs" />
+          </div>
+        </div>
+
         <!-- MOBILE VIEW CONTAINER -->
         <div class="block md:hidden bg-white rounded-[2rem] shadow-sm border border-slate-200/60 p-6 space-y-4">
           <div class="border-b border-slate-100 pb-3 text-center">
             <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Archived List Overview</h2>
           </div>
 
-          <div v-if="houses.length === 0" class="py-12 text-center">
+          <div v-if="filteredHouses.length === 0" class="py-12 text-center">
             <p class="text-slate-400 italic text-xs font-black uppercase tracking-widest">
               No archived boarding houses found.
             </p>
           </div>
 
           <div v-else class="space-y-4">
-            <div v-for="(house, index) in houses" :key="house.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
+            <div v-for="(house, index) in filteredHouses" :key="house.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
               <div class="flex justify-between items-start border-b border-slate-200/60 pb-2">
                 <div>
                   <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{{ index + 1 }}</span>
@@ -454,7 +503,7 @@ onMounted(async () => {
         <!-- DESKTOP TABLE LAYOUT -->
         <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <div class="overflow-x-auto">
-            <table class="w-full text-center border-collapse min-w-[1300px]">
+            <table class="w-full text-center border-collapse min-w-[1300px]" id="archivedTable">
               <thead>
                 <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
                   <th class="py-6 px-3 w-12 border-r border-slate-100">#</th>
@@ -470,12 +519,12 @@ onMounted(async () => {
                 </tr>
               </thead>
               <tbody class="text-[13px] font-bold text-slate-700 divide-y divide-slate-100">
-                <tr v-if="houses.length === 0">
+                <tr v-if="filteredHouses.length === 0">
                   <td colspan="10" class="py-20 text-slate-400 italic text-sm text-center font-black uppercase tracking-widest">
                     No archived boarding houses found.
                   </td>
                 </tr>
-                <tr v-for="(house, index) in houses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
+                <tr v-for="(house, index) in filteredHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
                   <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ index + 1 }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-black text-slate-900 leading-tight uppercase">{{ house.name }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-semibold">{{ house.owner_name }}</td>

@@ -68,6 +68,7 @@ CREATE TABLE `boarding_houses` (
   `longitude` decimal(11,8) DEFAULT NULL,
   `advance_months` int DEFAULT '0',
   `deposit_months` int DEFAULT '0',
+  `deposit_fixed_amount` decimal(10,2) DEFAULT '0.00',
   `deposit_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `owner_id` (`owner_id`),

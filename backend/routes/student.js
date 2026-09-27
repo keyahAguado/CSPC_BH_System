@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
+import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -207,7 +208,7 @@ router.get('/house/:id', async (req, res) => {
             SELECT r.*,
                    (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count
             FROM rooms r
-            WHERE r.house_id = ?
+            WHERE r.house_id = ? AND (r.deleted_at IS NULL OR r.deleted_at = 0)
         `, [houseId]);
 
         // Fetch all gallery photos (up to 10)
@@ -280,13 +281,23 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
     const houseId = req.params.houseId;
     const studentId = req.user.id;
     const {
-        roomId, check_in_date, months, resident_name, age,
+        roomId, check_in_date, months, resident_name, age, gender, sex,
         contact_number, emergency_contact, guardian_name, address, payment_method
     } = req.body;
+
+    const studentGender = (gender || sex || '').trim().toLowerCase();
 
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Update student sex/gender in database if provided in booking request
+        if (studentGender) {
+            await connection.query(
+                `UPDATE users SET sex = COALESCE(NULLIF(?, ''), sex) WHERE id = ?`,
+                [studentGender, studentId]
+            );
+        }
 
         // --- SYSTEM GUARD 1: Prevent students checked-in somewhere else from booking duplicates ---
         const [activeOccupancy] = await connection.query(
@@ -400,19 +411,26 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
                  age = COALESCE(?, age),
                  emergency_contact = COALESCE(NULLIF(?, ''), emergency_contact),
                  guardian_name = COALESCE(NULLIF(?, ''), guardian_name),
-                 address = COALESCE(NULLIF(?, ''), address)
+                 address = COALESCE(NULLIF(?, ''), address),
+                 sex = COALESCE(NULLIF(?, ''), sex)
              WHERE id = ?`,
-            [contact_number, parseInt(age) || null, emergency_contact, guardian_name, address, studentId]
+            [contact_number, parseInt(age) || null, emergency_contact, guardian_name, address, studentGender || null, studentId]
         );
+
+        const studentMsg = `RESERVATION SUBMITTED: Your booking request ${refNo} has been submitted! Awaiting landlord review.`;
+        const ownerMsg = `NEW BOOKING REQUEST: A new student has requested to book Room ${room.room_number} in your property "${houseRows[0].name}" (${refNo})!`;
 
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [studentId, `RESERVATION SUBMITTED: Your booking request ${refNo} has been submitted! Awaiting landlord review.`]
+            [studentId, studentMsg]
         );
+        sendNotificationEmail(studentId, `Reservation Request Submitted (${refNo})`, studentMsg);
+
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [ownerId, `NEW BOOKING REQUEST: A new student has requested to book Room ${room.room_number} in your property "${houseRows[0].name}" (${refNo})!`]
+            [ownerId, ownerMsg]
         );
+        sendNotificationEmail(ownerId, `New Booking Request for ${houseRows[0].name} (${refNo})`, ownerMsg);
 
         await connection.commit();
         res.json({ success: true, message: 'Booking request submitted successfully!', bookingId: insertResult.insertId });
@@ -444,12 +462,12 @@ router.get('/bookings', authenticateToken, async (req, res) => {
             [studentId]
         );
 
-        // Map Move-in Costs safely (No deposit_fixed_amount lookup)
+        // Map Move-in Costs — advance + deposit (month-based)
         const mappedBookings = bookings.map(b => {
             const advM = parseInt(b.advance_months || 0);
             const depM = parseInt(b.deposit_months || 0);
             const rent = parseFloat(b.monthly_rent || 0);
-            const initial_payment = (advM * rent) + (depM * rent);
+            const initial_payment = (Math.max(1, advM) * rent) + (depM * rent);
 
             return {
                 ...b,
@@ -499,11 +517,13 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
         );
 
         const refNo = `REF-${req.params.id.toString().padStart(4, '0')}`;
+        const cancelMsg = `RESERVATION CANCELLED: A student has cancelled their pending reservation request for your property "${booking[0].house_name}" (${refNo}).`;
         // Notify owner
         await pool.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [booking[0].owner_id, `RESERVATION CANCELLED: A student has cancelled their pending reservation request for your property "${booking[0].house_name}" (${refNo}).`]
+            [booking[0].owner_id, cancelMsg]
         );
+        sendNotificationEmail(booking[0].owner_id, `Reservation Cancelled (${refNo})`, cancelMsg);
 
         res.json({ success: true });
     } catch (err) {
@@ -531,11 +551,13 @@ router.post('/bookings/extend/:id', authenticateToken, async (req, res) => {
         );
 
         const refNo = `REF-${req.params.id.toString().padStart(4, '0')}`;
+        const extensionMsg = `EXTENSION REQUEST: A student has requested a stay extension of +${extension_months} months for Room ${booking[0].room_id} in your property "${booking[0].house_name}" (${refNo}).`;
         // Notify owner
         await pool.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [booking[0].owner_id, `EXTENSION REQUEST: A student has requested a stay extension of +${extension_months} months for Room ${booking[0].room_id} in your property "${booking[0].house_name}" (${refNo}).`]
+            [booking[0].owner_id, extensionMsg]
         );
+        sendNotificationEmail(booking[0].owner_id, `Stay Extension Request (${refNo})`, extensionMsg);
 
         res.json({ success: true });
     } catch (err) {

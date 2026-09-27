@@ -4,6 +4,7 @@ import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 import NABUA_BARANGAYS from '../config/barangays.js';
 import { getComplianceStatus, getSupplementaryStatus } from '../config/complianceHelper.js';
+import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -252,7 +253,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
              WHERE id = ? AND owner_id = ?`,
             [
                 house_name, featuredImg, img_1, img_2, img_3, location, computedBarangay, map_link,
-                parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
+                parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 200), description || '',
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
                 parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || 'refundable',
                 sanitizedFree, sanitizedPaid,
@@ -307,11 +308,19 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
             `SELECT r.*, 
                 (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count
              FROM rooms r
-             WHERE r.house_id = ?`,
+             WHERE r.house_id = ? AND (r.deleted_at IS NULL OR r.deleted_at = 0)`,
             [req.params.houseId]
         );
 
-        res.json({ success: true, house: houseRows[0], rooms });
+        const [archivedRooms] = await pool.query(
+            `SELECT r.*, 
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count
+             FROM rooms r
+             WHERE r.house_id = ? AND r.deleted_at IS NOT NULL AND r.deleted_at != 0`,
+            [req.params.houseId]
+        );
+
+        res.json({ success: true, house: houseRows[0], rooms, archivedRooms });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -419,11 +428,35 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (re
             });
         }
 
-        await pool.query('DELETE FROM rooms WHERE id = ?', [req.params.roomId]);
+        await pool.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
 
-        res.json({ success: true, message: 'Room deleted successfully.' });
+        res.json({ success: true, message: 'Room soft-deleted successfully.' });
     } catch (err) {
         console.error('Delete room error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// F3. POST - Restore a soft-deleted room
+router.post('/rooms/restore/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        const [roomRows] = await pool.query(
+            `SELECT r.id 
+             FROM rooms r 
+             JOIN boarding_houses bh ON r.house_id = bh.id 
+             WHERE r.id = ? AND bh.owner_id = ?`,
+            [req.params.roomId, req.user.id]
+        );
+
+        if (roomRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
+        }
+
+        await pool.query('UPDATE rooms SET deleted_at = NULL WHERE id = ?', [req.params.roomId]);
+
+        res.json({ success: true, message: 'Room restored successfully.' });
+    } catch (err) {
+        console.error('Restore room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -573,9 +606,9 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (re
             });
         }
 
-        await pool.query('DELETE FROM rooms WHERE id = ?', [req.params.roomId]);
+        await pool.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
 
-        res.json({ success: true, message: 'Room deleted successfully.' });
+        res.json({ success: true, message: 'Room soft-deleted successfully.' });
     } catch (err) {
         console.error('Delete room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
@@ -807,7 +840,7 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
             const advM = parseInt(b.advance_months || 0);
             const depM = parseInt(b.deposit_months || 0);
             const rent = parseFloat(b.monthly_rent || 0);
-            const initial_payment = (advM * rent) + (depM * rent);
+            const initial_payment = (Math.max(1, advM) * rent) + (depM * rent);
 
             return {
                 ...b,
@@ -898,6 +931,7 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [b.student_id, notificationMsg]
         );
+        sendNotificationEmail(b.student_id, 'RESERVATION APPROVED', notificationMsg);
 
         await connection.commit();
         res.json({ success: true, message: 'Reservation request successfully approved.' });
@@ -927,10 +961,12 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, 
 
         await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ?", [req.params.id]);
 
+        const rejectMsg = `RESERVATION UPDATE: Your booking request REF-${bookingRows[0].id.toString().padStart(4, '0')} was not approved by the landlord.`;
         await pool.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [bookingRows[0].student_id, `RESERVATION UPDATE: Your booking request REF-${bookingRows[0].id.toString().padStart(4, '0')} was not approved by the landlord.`]
+            [bookingRows[0].student_id, rejectMsg]
         );
+        sendNotificationEmail(bookingRows[0].student_id, 'RESERVATION UPDATE', rejectMsg);
 
         res.json({ success: true });
     } catch (err) {
@@ -978,10 +1014,12 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
             [newTotalMonths, newTotalAmount, b.student_id, b.room_id]
         );
 
+        const extApprovedMsg = `EXTENSION APPROVED: Your stay extension request of +${extraMonths} months has been approved.`;
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [b.student_id, `EXTENSION APPROVED: Your stay extension request of +${extraMonths} months has been approved.`]
+            [b.student_id, extApprovedMsg]
         );
+        sendNotificationEmail(b.student_id, 'EXTENSION APPROVED', extApprovedMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -1013,10 +1051,12 @@ router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, as
             [req.params.id]
         );
 
+        const extDeclinedMsg = 'EXTENSION UPDATE: Your stay extension request was declined by the landlord.';
         await pool.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [booking[0].student_id, 'EXTENSION UPDATE: Your stay extension request was declined by the landlord.']
+            [booking[0].student_id, extDeclinedMsg]
         );
+        sendNotificationEmail(booking[0].student_id, 'EXTENSION UPDATE', extDeclinedMsg);
 
         res.json({ success: true });
     } catch (err) {

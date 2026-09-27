@@ -26,20 +26,26 @@ passport.use(new GoogleStrategy({
             if (isStudent) {
                 // 1. Try to find by Google ID
                 let [rows] = await pool.query('SELECT * FROM users WHERE google_id = ?', [profile.id]);
-                if (rows.length > 0) return done(null, rows[0]);
+                if (rows.length > 0) {
+                    // Update profile pic if changed
+                    if (profilePic && rows[0].profile_pic !== profilePic) {
+                        await pool.query('UPDATE users SET profile_pic = ? WHERE id = ?', [profilePic, rows[0].id]);
+                    }
+                    return done(null, { ...rows[0], profile_pic: profilePic || rows[0].profile_pic });
+                }
 
                 // 2. Try to find by email (previously manual account)
                 [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
                 if (rows.length > 0) {
-                    await pool.query('UPDATE users SET google_id = ? WHERE email = ?', [profile.id, email]);
+                    await pool.query('UPDATE users SET google_id = ?, profile_pic = COALESCE(NULLIF(?, \'\'), profile_pic) WHERE email = ?', [profile.id, profilePic, email]);
                     const [updated] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
                     return done(null, updated[0]);
                 }
 
                 // 3. Auto-register new student
                 const [result] = await pool.query(
-                    'INSERT INTO users (google_id, name, email, role, status) VALUES (?, ?, ?, ?, ?)',
-                    [profile.id, name, email, 'student', 'active']
+                    'INSERT INTO users (google_id, name, email, role, status, profile_pic) VALUES (?, ?, ?, ?, ?, ?)',
+                    [profile.id, name, email, 'student', 'active', profilePic]
                 );
                 const [created] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
                 return done(null, created[0]);
@@ -49,20 +55,25 @@ passport.use(new GoogleStrategy({
             if (isAdmin) {
                 // 1. Try to find by Google ID
                 let [rows] = await pool.query('SELECT * FROM users WHERE google_id = ?', [profile.id]);
-                if (rows.length > 0) return done(null, rows[0]);
+                if (rows.length > 0) {
+                    if (profilePic && rows[0].profile_pic !== profilePic) {
+                        await pool.query('UPDATE users SET profile_pic = ? WHERE id = ?', [profilePic, rows[0].id]);
+                    }
+                    return done(null, { ...rows[0], profile_pic: profilePic || rows[0].profile_pic });
+                }
 
                 // 2. Try to find by email
                 [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
                 if (rows.length > 0) {
-                    await pool.query('UPDATE users SET google_id = ? WHERE email = ?', [profile.id, email]);
+                    await pool.query('UPDATE users SET google_id = ?, profile_pic = COALESCE(NULLIF(?, \'\'), profile_pic) WHERE email = ?', [profile.id, profilePic, email]);
                     const [updated] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
                     return done(null, updated[0]);
                 }
 
                 // 3. Auto-register new admin
                 const [result] = await pool.query(
-                    'INSERT INTO users (google_id, name, email, role, status) VALUES (?, ?, ?, ?, ?)',
-                    [profile.id, name, email, 'admin', 'active']
+                    'INSERT INTO users (google_id, name, email, role, status, profile_pic) VALUES (?, ?, ?, ?, ?, ?)',
+                    [profile.id, name, email, 'admin', 'active', profilePic]
                 );
                 const [created] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
                 return done(null, created[0]);

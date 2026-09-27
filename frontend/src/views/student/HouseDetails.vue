@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
 import StudentNav from '../../components/partials/StudentNav.vue';
 
 const route = useRoute();
@@ -346,16 +346,8 @@ const fetchData = async () => {
     }
 
     try {
-      setOptions({
-        key: apiKeyToUse,
-        v: 'weekly'
-      });
-      await importLibrary('maps');
-      await importLibrary('marker');
-      await importLibrary('places');
+      await ensureMapsLoaded();
     } catch (loaderErr) {
-      // Loader may throw "only loads once" if already initialized — this is safe to ignore
-      // as long as window.google is available afterward
       console.warn('[Maps] Loader note:', loaderErr.message);
     }
 

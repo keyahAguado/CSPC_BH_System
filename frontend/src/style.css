@@ -1,3 +1,214 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ==========================================================================
+   DataTables Custom Styling Overrides (Restores original design aesthetic)
+   ========================================================================== */
+
+/* Table Wrapper & Typography */
+.datatable-wrapper {
+  font-family: inherit;
+  margin: 0 !important;
+}
+
+.datatable-container {
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.datatable-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Headers */
+.datatable-table > thead > tr > th {
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.02em !important;
+  color: #0f172a !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding: 0.85rem 0.6rem !important;
+  vertical-align: middle !important;
+}
+
+.datatable-sorter {
+  color: inherit !important;
+  font-weight: 900 !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.02em !important;
+  padding-right: 1.1rem !important;
+}
+
+.datatable-sorter::before {
+  border-top-color: #94a3b8 !important;
+}
+.datatable-sorter::after {
+  border-bottom-color: #94a3b8 !important;
+}
+
+/* Table Cells */
+.datatable-table > tbody > tr > td {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+  padding: 0.85rem 0.6rem !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  vertical-align: middle !important;
+}
+
+/* Top & Bottom Controls Bar */
+.datatable-top,
+.datatable-bottom {
+  padding: 0.75rem 1.25rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background-color: #f8fafc !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.datatable-top {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.datatable-bottom {
+  border-top: 1px solid #f1f5f9 !important;
+}
+
+/* Dropdown Selector */
+.datatable-selector {
+  padding: 0.4rem 0.75rem !important;
+  border-radius: 0.75rem !important;
+  border: 1px solid #cbd5e1 !important;
+  background-color: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  color: #1e293b !important;
+  outline: none !important;
+  cursor: pointer !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.datatable-selector:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px #dbeafe !important;
+}
+
+/* Pagination Controls */
+.datatable-pagination list-item,
+.datatable-pagination a,
+.datatable-pagination button {
+  border-radius: 0.5rem !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  color: #1e4a8d !important;
+  padding: 0.35rem 0.75rem !important;
+  border: none !important;
+  background: transparent !important;
+  transition: all 0.2s ease !important;
+}
+
+.datatable-pagination .active a,
+.datatable-pagination .active button {
+  background-color: #1e4a8d !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 4px 0 rgba(30, 74, 141, 0.2) !important;
+}
+
+.datatable-pagination a:hover:not(.active),
+.datatable-pagination button:hover:not(.active) {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Print Media Rules */
+@media print {
+  @page {
+    size: landscape !important;
+    margin: 0.8cm !important;
+  }
+
+  html, body, #app, main, div, section, article {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .datatable-top,
+  .datatable-bottom,
+  .datatable-pagination,
+  .datatable-search,
+  .no-print,
+  .no-print-legend {
+    display: none !important;
+  }
+
+  table, .datatable-table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    display: table !important;
+  }
+
+  thead, .datatable-table thead {
+    display: table-header-group !important;
+    visibility: visible !important;
+  }
+
+  tr, .datatable-table tr {
+    display: table-row !important;
+    page-break-inside: avoid !important;
+  }
+
+  th, td, .datatable-table th, .datatable-table td {
+    border: 1px solid #94a3b8 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    display: table-cell !important;
+    visibility: visible !important;
+  }
+
+  th, .datatable-table th, a.datatable-sorter, .datatable-sorter {
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+    color: #0f172a !important;
+    text-decoration: none !important;
+    pointer-events: none !important;
+  }
+}
+
+/* ==========================================================================
+   Google Places Autocomplete Dropdown Styling (.pac-container)
+   ========================================================================== */
+.pac-container {
+  z-index: 99999 !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+  border: 1px solid #cbd5e1 !important;
+  font-family: inherit !important;
+  margin-top: 4px !important;
+}
+
+.pac-item {
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+  cursor: pointer !important;
+}
+
+.pac-item:hover, .pac-item-selected {
+  background-color: #eff6ff !important;
+}

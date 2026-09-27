@@ -2,15 +2,12 @@
 node_modules/
 **/node_modules/
 
-# Secrets
+# Secrets — never commit any .env files
 **/.env
+**/.env.local
 **/.env.production
+**/.env.*.local
 frontend/.env
-
-
-!/.env
-!/backend/.env
-!/frontend/.env.production
 
 # Compiled outputs
 dist/

@@ -2,9 +2,11 @@
 import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
+import { DataTable } from 'simple-datatables';
+import 'simple-datatables/dist/style.css';
 
 import FlashAlert from '../../components/partials/FlashAlert.vue';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
@@ -23,6 +25,50 @@ import NABUA_BARANGAYS from '../../constants/barangays.js';
 const barangays = NABUA_BARANGAYS;
 const selectedBarangay = ref('');
 const searchQuery = ref('');
+
+let dtInstance = null;
+
+const initDataTable = () => {
+  nextTick(() => {
+    const tableEl = document.getElementById('registeredTable');
+    if (tableEl && !dtInstance) {
+      try {
+        dtInstance = new DataTable(tableEl, {
+          perPage: 10,
+          perPageSelect: [10, 25, 50, 100],
+          searchable: false,
+          labels: {
+            perPage: "entries per page",
+            noRows: "No registered boarding houses found",
+            info: "Showing {start} to {end} of {rows} entries",
+          }
+        });
+      } catch (err) {
+        console.warn('DataTable init error:', err);
+      }
+    }
+  });
+};
+
+watch(searchQuery, (val) => {
+  if (dtInstance) {
+    dtInstance.search(val);
+  }
+});
+
+watch([selectedBarangay, houses], () => {
+  if (dtInstance) {
+    try {
+      dtInstance.destroy();
+    } catch (e) {
+      console.warn('Error destroying DataTables instance:', e);
+    }
+    dtInstance = null;
+  }
+  nextTick(() => {
+    initDataTable();
+  });
+}, { deep: true });
 
 // Client-side filtered list: applies both barangay filter and local search securely
 const filteredHouses = computed(() => {
@@ -171,6 +217,7 @@ const fetchRegisteredHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
+      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load registered houses:', error);
@@ -178,6 +225,7 @@ const fetchRegisteredHouses = async () => {
     showSystemAlert('Could not fetch registered boarding houses.', 'warning');
   } finally {
     isLoading.value = false;
+    initDataTable();
   }
 };
 
@@ -425,15 +473,7 @@ onMounted(async () => {
     isLoading.value = true;
     await fetchRegisteredHouses();
 
-    setOptions({
-      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_FALLBACK_GOOGLE_KEY',
-      v: 'weekly'
-    });
-
-    await importLibrary('maps');
-    await importLibrary('marker'); 
-    await importLibrary('places');
-
+    await ensureMapsLoaded();
     googleInstance = window.google; 
   } catch (err) {
     console.error('Google Maps loader failed:', err);
@@ -567,7 +607,7 @@ onMounted(async () => {
         <!-- LAPTOP / DESKTOP VIEW: Table Layout -->
         <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <div class="overflow-x-auto">
-            <table class="w-full text-center border-collapse min-w-[1300px]">
+            <table class="w-full text-center border-collapse min-w-[1300px]" id="registeredTable">
               <thead>
                 <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
                   <th class="py-6 px-3 w-12 border-r border-slate-100">#</th>

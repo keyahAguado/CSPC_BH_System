@@ -1,4 +1,5 @@
 import pool from './db.js';
+import { sendNotificationEmail } from '../utils/emailService.js';
 
 // Critical: required for the boarding house to legally operate. Expiry here
 // drives compliance_status and can auto-archive the listing.
@@ -59,24 +60,30 @@ export async function evaluateHouseCompliance(houseId) {
         if (critical.status === 'expired') {
             await pool.query("UPDATE boarding_houses SET compliance_status = ?, house_status = 'archived' WHERE id = ?", [critical.status, house.id]);
 
+            const ownerMsg = `URGENT: Your boarding house "${house.name}" has been AUTOMATICALLY ARCHIVED because the following required documents expired: ${critical.expired.join(', ')}.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
-                `URGENT: Your boarding house "${house.name}" has been AUTOMATICALLY ARCHIVED because the following required documents expired: ${critical.expired.join(', ')}.`
+                ownerMsg
             ]);
+            sendNotificationEmail(house.owner_id, 'URGENT: Boarding House Archived Due to Document Expiration', ownerMsg);
+
             const [admins] = await pool.query("SELECT id FROM users WHERE role = 'admin'");
             for (const admin of admins) {
+                const adminMsg = `SYSTEM: House "${house.name}" automatically archived due to required document expiration (${critical.expired.join(', ')}).`;
                 await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                     admin.id,
-                    `SYSTEM: House "${house.name}" automatically archived due to required document expiration (${critical.expired.join(', ')}).`
+                    adminMsg
                 ]);
             }
         } else {
             await pool.query('UPDATE boarding_houses SET compliance_status = ? WHERE id = ?', [critical.status, house.id]);
             if (critical.status === 'warning') {
+                const warnMsg = `WARNING: The following required documents for "${house.name}" are expiring soon (within 30 days): ${critical.expiringSoon.join(', ')}.`;
                 await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                     house.owner_id,
-                    `WARNING: The following required documents for "${house.name}" are expiring soon (within 30 days): ${critical.expiringSoon.join(', ')}.`
+                    warnMsg
                 ]);
+                sendNotificationEmail(house.owner_id, 'WARNING: Required Permit Expiring Soon', warnMsg);
             }
         }
     }
@@ -87,15 +94,19 @@ export async function evaluateHouseCompliance(houseId) {
         await pool.query('UPDATE boarding_houses SET supplementary_status = ? WHERE id = ?', [supplementary.status, house.id]);
 
         if (supplementary.status === 'expired') {
+            const suppExpiredMsg = `ALERT: The following supplementary documents for "${house.name}" have expired: ${supplementary.expired.join(', ')}. Your listing remains active and bookable — please upload renewed copies when convenient.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
-                `ALERT: The following supplementary documents for "${house.name}" have expired: ${supplementary.expired.join(', ')}. Your listing remains active and bookable — please upload renewed copies when convenient.`
+                suppExpiredMsg
             ]);
+            sendNotificationEmail(house.owner_id, 'ALERT: Supplementary Document Expired', suppExpiredMsg);
         } else if (supplementary.status === 'warning') {
+            const suppWarnMsg = `WARNING: The following supplementary documents for "${house.name}" are expiring soon (within 30 days): ${supplementary.expiringSoon.join(', ')}. Please upload renewed copies before they expire.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
-                `WARNING: The following supplementary documents for "${house.name}" are expiring soon (within 30 days): ${supplementary.expiringSoon.join(', ')}. Please upload renewed copies before they expire.`
+                suppWarnMsg
             ]);
+            sendNotificationEmail(house.owner_id, 'WARNING: Supplementary Document Expiring Soon', suppWarnMsg);
         }
     }
 }

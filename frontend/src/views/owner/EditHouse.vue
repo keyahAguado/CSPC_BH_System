@@ -2,7 +2,7 @@
 import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import NABUA_BARANGAYS from '../../constants/barangays.js';
 
@@ -61,6 +61,7 @@ import { getImageUrl } from '../../config/api';
 // Google Maps Refs
 const mapContainer = ref(null);
 const largeMapContainer = ref(null);
+const addressInputRef = ref(null);
 
 let googleInstance = null;
 let mapInstance = null;
@@ -146,19 +147,38 @@ const addCustomAmenity = (type) => {
   }
 };
 
+const handleOwnerPhoneKeypress = (e) => {
+  const char = String.fromCharCode(e.which || e.keyCode);
+  if (!/[\d\s\/,\-\+]/.test(char)) {
+    e.preventDefault();
+  }
+};
+
+const handleOwnerPhoneInput = (e) => {
+  contactNumber.value = e.target.value.replace(/[^\d\s\/,\-\+]/g, '');
+};
+
 // Modern Google Places Autocomplete & Advanced Marker initialization
+const NABUA_CENTER = { lat: 13.4072, lng: 123.3748 };
+const NABUA_BOUNDS = {
+  north: 13.4500,
+  south: 13.3700,
+  east: 123.4100,
+  west: 123.3300
+};
+
 const initGoogleMap = async () => {
   const mapContainerEl = mapContainer.value;
   if (!mapContainerEl) return;
 
-  const defaultLat = parseFloat(latitude.value) || 13.4079;
-  const defaultLng = parseFloat(longitude.value) || 123.3751;
+  const defaultLat = parseFloat(latitude.value) || NABUA_CENTER.lat;
+  const defaultLng = parseFloat(longitude.value) || NABUA_CENTER.lng;
   const myLatLng = { lat: defaultLat, lng: defaultLng };
 
   try {
-    const { Map } = await googleInstance.maps.importLibrary("maps");
-    const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary("marker");
-    const { PlaceAutocompleteElement } = await googleInstance.maps.importLibrary("places");
+    if (!googleInstance?.maps) return;
+    const Map = googleInstance.maps.Map;
+    const AdvancedMarkerElement = googleInstance.maps.marker?.AdvancedMarkerElement || googleInstance.maps.Marker;
 
     mapInstance = new Map(mapContainerEl, {
       zoom: 16,
@@ -166,6 +186,10 @@ const initGoogleMap = async () => {
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: true,
+      restriction: {
+        latLngBounds: NABUA_BOUNDS,
+        strictBounds: true
+      },
       mapId: 'CSPC_EDIT_MAP_SMALL'
     });
 
@@ -179,56 +203,59 @@ const initGoogleMap = async () => {
     markerInstance.addListener('gmp-dragend', () => {
       const pos = markerInstance.position;
       if (pos) {
-        updateCoords(pos.lat, pos.lng);
-        reverseGeocode(pos.lat, pos.lng);
+        const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat;
+        const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng;
+        if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+            lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+          showSystemAlert('Only locations within Nabua, Camarines Sur are allowed (Iriga and Bato are excluded).', 'warning');
+          return;
+        }
+        updateCoords(lat, lng);
+        reverseGeocode(lat, lng);
       }
     });
 
     await nextTick();
-    const wrapper = document.getElementById('autocomplete-wrapper');
-    if (wrapper) {
-      wrapper.innerHTML = '';
-      
-      const autocompleteEl = new PlaceAutocompleteElement({
-        componentRestrictions: { country: "ph" }
-      });
-      
-      autocompleteEl.placeholder = 'Type boarding house address or street name...';
-      autocompleteEl.style.width = '100%';
-      autocompleteEl.style.border = '1px solid #cbd5e1'; 
-      autocompleteEl.style.borderRadius = '0.75rem'; 
-      autocompleteEl.style.padding = '0.85rem'; 
-      autocompleteEl.style.backgroundColor = '#f8fafc';
-      autocompleteEl.style.outline = 'none';
-      autocompleteEl.style.fontSize = '0.875rem'; 
-      autocompleteEl.style.fontWeight = '600'; 
-      autocompleteEl.style.color = '#000000';
-
+    const inputEl = addressInputRef.value || document.querySelector('input[placeholder*="Type boarding house address"]');
+    if (inputEl) {
       if (locationAddress.value) {
-        autocompleteEl.value = locationAddress.value;
+        inputEl.value = locationAddress.value;
       }
 
-      wrapper.appendChild(autocompleteEl);
-
-      // Typing changes the visible text without moving the pin — flag it as
-      // unconfirmed until the owner actually picks a suggestion (or uses
-      // GPS/drags the pin, which clear the flag in updateCoords).
-      autocompleteEl.addEventListener('input', () => {
-        pinNeedsConfirmation.value = true;
+      const autocomplete = new googleInstance.maps.places.Autocomplete(inputEl, {
+        componentRestrictions: { country: 'ph' },
+        bounds: NABUA_BOUNDS,
+        fields: ['formatted_address', 'geometry', 'name']
       });
 
-      autocompleteEl.addEventListener('gmp-select', async (event) => {
-        const prediction = event.placePrediction;
-        if (!prediction) return;
+      inputEl.addEventListener('input', () => {
+        pinNeedsConfirmation.value = true;
+        locationAddress.value = inputEl.value;
+      });
 
-        const place = prediction.toPlace();
-        await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place && place.geometry && place.geometry.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          const addr = (place.formatted_address || place.name || '').toLowerCase();
 
-        if (place.location) {
-          const lat = place.location.lat();
-          const lng = place.location.lng();
+          // Reject Iriga, Bato, and points outside strict Nabua bounds
+          if (addr.includes('iriga') || addr.includes('bato') ||
+              lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+              lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+            showSystemAlert('Only locations within Nabua, Camarines Sur are allowed (Iriga and Bato are excluded).', 'warning');
+            return;
+          }
+
           updateCoords(lat, lng);
-          locationAddress.value = place.formattedAddress || '';
+          locationAddress.value = place.formatted_address || place.name || '';
+          inputEl.value = locationAddress.value;
+
+          setTimeout(() => {
+            document.querySelectorAll('.pac-container').forEach(el => el.style.display = 'none');
+            inputEl.blur();
+          }, 50);
         }
       });
     }
@@ -335,13 +362,19 @@ const detectMyLocation = () => {
         updateCoords(lat, lng);
         reverseGeocode(lat, lng);
         isGpsLoading.value = false;
+
+        // Friendly alert if current GPS position is outside Nabua area
+        if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+            lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+          showSystemAlert(`GPS detected your current location at (${lat.toFixed(5)}, ${lng.toFixed(5)}), which is outside Nabua, Camarines Sur. Please make sure your property is situated within Nabua.`, 'warning');
+        }
       },
       (err) => {
         console.error("GPS Error:", err);
-        alert("Could not detect GPS coordinates. Please check browser settings.");
+        alert("Could not detect precise GPS location. Please check browser location permissions.");
         isGpsLoading.value = false;
       },
-      { enableHighAccuracy: false, timeout: 15000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   } else {
     alert("Geolocation is not supported by your browser.");
@@ -382,6 +415,13 @@ const reverseGeocode = (lat, lng) => {
       } else {
         // Fallback: strip leading Plus Code segment
         locationAddress.value = target.formatted_address.replace(/^[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s*/, '');
+      }
+
+      // Synchronize Autocomplete input field with reverse geocoded address
+      const wrapper = document.getElementById('autocomplete-wrapper');
+      if (wrapper) {
+        const autocompleteEl = wrapper.querySelector('gmp-place-autocomplete') || wrapper.firstChild;
+        if (autocompleteEl) autocompleteEl.value = locationAddress.value;
       }
     }
   });
@@ -530,15 +570,7 @@ const loadHouseDetails = async () => {
     isLoading.value = false;
     await nextTick();
 
-    setOptions({
-      key: mapApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-      v: 'weekly'
-    });
-
-    await importLibrary('maps');
-    await importLibrary('marker');
-    await importLibrary('places');
-
+    await ensureMapsLoaded();
     googleInstance = window.google;
     await initGoogleMap();
   }
@@ -791,7 +823,7 @@ onMounted(() => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                 Contact Number
               </label>
-              <input type="text" v-model="contactNumber" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <input type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
               <p class="text-[10px] text-slate-400 font-bold mt-1.5 ml-0.5">
                 <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
               </p>
@@ -810,7 +842,14 @@ onMounted(() => {
                     <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
                     <label class="text-[10px] sm:text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
                   </div>
-                  <div id="autocomplete-wrapper" class="w-full"></div>
+                  <input 
+                    ref="addressInputRef"
+                    type="text" 
+                    v-model="locationAddress"
+                    @input="pinNeedsConfirmation = true"
+                    placeholder="Type boarding house address or street name..." 
+                    class="w-full px-4 py-3 bg-[#f8fafc] border border-[#cbd5e1] rounded-xl text-sm font-semibold text-black outline-none focus:bg-white focus:border-black transition shadow-sm"
+                  />
                 </div>
 
                 <!-- STEP B -->

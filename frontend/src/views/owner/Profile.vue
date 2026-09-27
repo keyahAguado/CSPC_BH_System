@@ -100,6 +100,10 @@ const fetchProfile = async (retries = 2) => {
       addressInput.value = data.address || '';
       if (data.profile_pic) {
         filePreview.value = getImageUrl(data.profile_pic);
+      } else {
+        // Use Google profile pic from session as fallback
+        const savedUser = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
+        if (savedUser.profile_pic) filePreview.value = savedUser.profile_pic;
       }
 
       // Explicitly reset password form to prevent credential manager autofill bleeding across accounts
@@ -221,6 +225,16 @@ const handleChangePassword = async () => {
   }
 };
 
+import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+
+const initAddressAutocomplete = (el) => {
+  if (el) {
+    setupAddressAutocomplete(el, (selectedAddress) => {
+      addressInput.value = selectedAddress;
+    });
+  }
+};
+
 onMounted(() => {
   fetchProfile();
 });
@@ -264,7 +278,8 @@ onMounted(() => {
               <!-- Profile Pic Section -->
               <div class="flex flex-col md:flex-row gap-8 items-center border-b border-slate-100 pb-10">
                 <div class="w-36 h-36 rounded-full overflow-hidden shadow-lg border-4 border-slate-50 shrink-0 bg-slate-50 relative group">
-                  <img :src="filePreview || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'" 
+                  <img :src="filePreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || nameInput || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`" 
+                       @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`"
                        class="w-full h-full object-cover" 
                        alt="Profile Picture" />
                 </div>
@@ -294,7 +309,7 @@ onMounted(() => {
 
                 <div>
                   <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Residential / Contact Address</label>
-                  <input v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
+                  <input :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
                 </div>
               </div>
 

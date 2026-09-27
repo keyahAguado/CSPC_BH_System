@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
@@ -131,6 +131,8 @@ const fetchProfile = async () => {
       existing_profile_pic: u.profile_pic || ''
     };
     if (u.profile_pic) profilePicPreview.value = getImageUrl(u.profile_pic);
+    // Fallback: use Google profile picture from session if no custom pic uploaded
+    else if (savedUser.profile_pic) profilePicPreview.value = savedUser.profile_pic;
   } catch (e) {
     console.warn('Failed to load profile from database, using active Google session:', e.message);
   } finally {
@@ -209,6 +211,16 @@ const saveProfile = async () => {
 
 const userInitial = () => (user.value.name || 'S').charAt(0).toUpperCase();
 
+import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+
+const initAddressAutocomplete = (el) => {
+  if (el) {
+    setupAddressAutocomplete(el, (selectedAddress) => {
+      form.value.address = selectedAddress;
+    });
+  }
+};
+
 onMounted(() => {
   fetchProfile();
   fetchCourses();
@@ -251,15 +263,11 @@ onMounted(() => {
             <div class="flex flex-col md:flex-row items-center md:items-start gap-8 mb-12 pb-8 border-b border-slate-100 text-center md:text-left">
               <div class="relative group cursor-pointer w-24 h-24 flex-shrink-0 rounded-full border border-blue-200 shadow-sm overflow-hidden">
                 <img
-                  v-if="profilePicPreview"
-                  :src="profilePicPreview"
+                  :src="profilePicPreview && !profilePicPreview.includes('googleusercontent') ? profilePicPreview : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
                   alt="Profile"
                   class="w-full h-full object-cover"
+                  @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
                 />
-                <div
-                  v-else
-                  class="w-full h-full bg-blue-100 flex items-center justify-center text-blue-600 font-black text-3xl"
-                >{{ userInitial() }}</div>
                 <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
@@ -305,10 +313,10 @@ onMounted(() => {
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm font-mono" required />
                 </div>
                 <div>
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Sex</label>
+                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Gender</label>
                   <select v-model="form.sex"
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm appearance-none" required>
-                    <option value="" disabled>Select Sex</option>
+                    <option value="" disabled>Select Gender</option>
                     <option value="Female">Female</option>
                     <option value="Male">Male</option>
                   </select>
@@ -348,7 +356,7 @@ onMounted(() => {
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Age</label>
                   <input type="number" v-model="form.age"
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" required />
-                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Auto-filled from your date of birth — you may correct it if needed.</p>
+                  <p class="text-[9px] text-slate-400 mt-1.5 ml-1 font-medium">Calculated automatically from Date of Birth.</p>
                 </div>
                 <div class="col-span-1 md:col-span-3">
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Email Address</label>
@@ -358,7 +366,7 @@ onMounted(() => {
                 </div>
                 <div class="col-span-1 md:col-span-3">
                   <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Permanent Home Address</label>
-                  <input type="text" v-model="form.address" placeholder="e.g. Zone 4, Barangay San Isidro, Nabua, Camarines Sur" required
+                  <input type="text" :ref="initAddressAutocomplete" v-model="form.address" placeholder="e.g. Zone 4, Barangay San Isidro, Nabua, Camarines Sur" required
                     class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" />
                   <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Your permanent or family residence, distinct from your current boarding house accommodation.</p>
                 </div>

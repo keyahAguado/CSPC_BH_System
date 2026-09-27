@@ -1,12 +1,23 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
-import { printMasterlist } from '../../utils/printHelper.js';
-import AdminNav from '../../components/partials/AdminNav.vue'; // IMPORT ADMIN NAV FOR MENU BAR
+import AdminNav from '../../components/partials/AdminNav.vue';
 
 const houses = ref([]);
 const reportDate = ref('');
+const searchQuery = ref('');
 const isLoading = ref(true);
+
+const filteredHouses = computed(() => {
+  if (!searchQuery.value) return houses.value;
+  const q = searchQuery.value.toLowerCase().trim();
+  return houses.value.filter(h =>
+    (h.name || '').toLowerCase().includes(q) ||
+    (h.owner_name || '').toLowerCase().includes(q) ||
+    (h.address || '').toLowerCase().includes(q) ||
+    (h.compliance_status || '').toLowerCase().includes(q)
+  );
+});
 
 const token = sessionStorage.getItem('cspc_token');
 
@@ -17,17 +28,18 @@ const fetchReport = async () => {
     });
     if (res.data.success) {
       houses.value = res.data.houses || [];
-      reportDate.value = res.data.reportDate || new Date().toLocaleDateString();
+      reportDate.value = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     }
   } catch (err) {
     console.error(err);
   } finally {
     isLoading.value = false;
+    reportDate.value = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   }
 };
 
 const handlePrint = () => {
-  printMasterlist(houses.value, reportDate.value);
+  window.print();
 };
 
 onMounted(() => {
@@ -62,14 +74,23 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Title Section -->
-        <div class="text-center mb-8 sm:mb-10">
-          <h2 class="text-sm sm:text-xl font-black text-[#2a528a] uppercase tracking-[0.1em] sm:tracking-[0.2em] underline underline-offset-8">Accredited Boarding Houses Masterlist</h2>
+        <!-- Title & Control Section -->
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 sm:mb-8 gap-4 no-print">
+          <h2 class="text-sm sm:text-xl font-black text-[#2a528a] uppercase tracking-[0.1em] sm:tracking-[0.2em]">Accredited Boarding Houses Masterlist</h2>
+          
+          <!-- Single Search Input -->
+          <div class="relative w-full sm:w-64">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+            </span>
+            <input type="text" v-model="searchQuery" placeholder="SEARCH MASTERLIST..."
+                class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
+          </div>
         </div>
 
         <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block overflow-hidden rounded-xl border border-slate-200 table-container mb-12">
-          <table class="w-full text-left">
+        <div class="hidden md:block print:block overflow-hidden rounded-xl border border-slate-200 table-container mb-12">
+          <table class="w-full text-left" id="masterlistTable">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr class="text-[9px] font-black text-slate-500 uppercase tracking-widest">
                 <th class="px-4 py-4">#</th>
@@ -82,7 +103,10 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody class="text-[11px] text-slate-600">
-              <tr v-for="(h, i) in houses" :key="h.id" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+              <tr v-if="filteredHouses.length === 0">
+                <td colspan="7" class="px-4 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No accredited boarding houses found</td>
+              </tr>
+              <tr v-else v-for="(h, i) in filteredHouses" :key="h.id" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
                 <td class="px-4 py-4 font-bold text-slate-400">{{ i + 1 }}</td>
                 <td class="px-4 py-4">
                   <p class="font-black text-slate-900 uppercase leading-none">{{ h.name }}</p>
@@ -118,9 +142,12 @@ onMounted(() => {
           </table>
         </div>
 
-        <!-- ================= MOBILE PORTRAIT CARD VIEW ================= -->
-        <div class="block md:hidden space-y-4 mb-8">
-          <div v-for="(h, i) in houses" :key="h.id" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
+        <div class="block md:hidden print:hidden space-y-4 mb-8">
+          <div v-if="filteredHouses.length === 0" class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-400 font-bold uppercase text-xs">
+            No accredited boarding houses found
+          </div>
+          <div v-else v-for="(h, i) in filteredHouses" :key="h.id" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div class="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
               <span class="text-xs font-black text-slate-400">#{{ i + 1 }}</span>
               <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase tracking-widest border border-emerald-100">
@@ -175,15 +202,15 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Footer / Signatories -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-20 pt-10 sm:pt-16 mt-auto">
-          <div class="text-center">
-            <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Prepared By: SASO Coordinator</p>
+        <!-- Footer / Signatories (Single Line Row Layout with Generous Spacing) -->
+        <div class="grid grid-cols-2 gap-8 mt-16 sm:mt-24 pt-10 sm:pt-12 mt-auto text-center signatories-block">
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">PREPARED BY: SASO COORDINATOR</p>
           </div>
-          <div class="text-center">
-            <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Approved By: SASO Director</p>
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">APPROVED BY: SASO DIRECTOR</p>
           </div>
         </div>
 
@@ -202,49 +229,68 @@ onMounted(() => {
 <style>
 @media print {
   @page {
-    size: A4;
-    margin: 1.5cm;
+    size: landscape !important;
+    margin: 0.8cm !important;
   }
-  html, body {
+  html, body, #app, main, div, section, article {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
     width: 100% !important;
     height: auto !important;
-    background: white !important;
     padding: 0 !important;
     margin: 0 !important;
-    font-size: 10pt;
-  }
-  #app {
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    min-height: unset !important;
-  }
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .min-h-screen {
-    min-height: unset !important;
-  }
-  .shadow-xl, .shadow-sm {
     box-shadow: none !important;
   }
-  .rounded-2xl {
+  .no-print, .block.md\:hidden, .md\:hidden {
+    display: none !important;
+  }
+  .hidden.md\:block, .md\:block, .print\:block {
+    display: block !important;
+  }
+  .shadow-xl, .shadow-sm, .shadow-lg {
+    box-shadow: none !important;
+  }
+  .rounded-2xl, .rounded-xl {
     border-radius: 0 !important;
   }
-  .table-container {
-    overflow: visible !important;
+  .border-t-8 {
+    border-top: none !important;
   }
-  table {
-    page-break-inside: auto;
+  table, .datatable-table {
+    display: table !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    background: #ffffff !important;
   }
-  tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
+  thead, .datatable-table thead {
+    display: table-header-group !important;
+    visibility: visible !important;
+  }
+  tr, .datatable-table tr {
+    display: table-row !important;
+    page-break-inside: avoid !important;
+  }
+  th, td, .datatable-table th, .datatable-table td {
+    border: 1px solid #94a3b8 !important;
+    padding: 6px 8px !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    display: table-cell !important;
+    visibility: visible !important;
+  }
+  th, .datatable-table th, a.datatable-sorter, .datatable-sorter {
+    background-color: #ffffff !important;
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+    color: #0f172a !important;
+    text-decoration: none !important;
+    pointer-events: none !important;
+  }
+  .signatories-block {
+    margin-top: 4rem !important;
+    padding-top: 2rem !important;
+    page-break-inside: avoid !important;
   }
 }
 </style>

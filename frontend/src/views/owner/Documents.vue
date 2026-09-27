@@ -43,7 +43,22 @@ const fetchDocuments = async () => {
 
      if (response.data.success) {
       house.value = response.data.house;
-      criteria.value = response.data.criteria || [];
+      const rawCriteria = response.data.criteria || [];
+      const mandatoryOrder = {
+        'permit_business_form': 1,
+        'permit_barangay': 2,
+        'permit_fire': 3,
+        'permit_sanitary': 4,
+        'permit_cedula': 5,
+        'permit_dti': 6,
+        'permit_building': 7,
+        'permit_zoning': 8
+      };
+      criteria.value = rawCriteria.sort((a, b) => {
+        const orderA = a.permit_key ? (mandatoryOrder[a.permit_key] || 90) : 99;
+        const orderB = b.permit_key ? (mandatoryOrder[b.permit_key] || 90) : 99;
+        return orderA - orderB;
+      });
       
       // Active Rejection: Still rejected, no files uploaded yet
       isRejected.value = house.value?.house_status === 'rejected';
@@ -83,6 +98,22 @@ const fetchDocuments = async () => {
 const handleFileChange = async (e, identifier) => {
   let file = e.target.files[0];
   if (!file) return;
+
+  // Image-only validation — same as OwnerAccreditation
+  const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif'];
+  const fileName = file.name.toLowerCase();
+  const isImageMime = file.type.startsWith('image/');
+  const hasImageExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+  if (!isImageMime && !hasImageExtension) {
+    showSystemAlert('Invalid file type. Only image files (PNG, JPG, JPEG, WEBP, HEIC) are allowed.', 'error');
+    e.target.value = '';
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showSystemAlert('File is too large. Maximum size is 10MB.', 'error');
+    e.target.value = '';
+    return;
+  }
 
   // Automatically transcode HEIC files to JPEG standard
   if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
@@ -287,7 +318,15 @@ onMounted(() => {
                 }}
               </div>
 
-              <h3 class="text-[13px] font-bold text-slate-800 mb-4 pr-24">{{ index + 1 }}. {{ p.label }}</h3>
+              <div class="flex items-center gap-2 mb-4 pr-24 flex-wrap">
+                <h3 class="text-[13px] font-bold text-slate-800">{{ index + 1 }}. {{ p.label }}</h3>
+                <span 
+                  class="px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider shrink-0"
+                  :class="['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'].includes(p.permit_key) ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-100 text-slate-500 border border-slate-200'"
+                >
+                  {{ ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'].includes(p.permit_key) ? 'Required' : 'Optional' }}
+                </span>
+              </div>
               
               <!-- Re-verification Pending badge indicator -->
               <div v-if="house?.document_update_pending && house?.last_updated_document == (p.permit_key || p.id)" 
@@ -321,6 +360,7 @@ onMounted(() => {
                 <div class="w-full">
                   <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">New File (Required)</label>
                   <input type="file" @change="e => handleFileChange(e, p.permit_key || p.id)" required
+                      accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
                       class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:border-r file:border-slate-200 file:text-xs file:font-bold file:bg-slate-50 file:text-slate-700 hover:file:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer" />
                 </div>
                 

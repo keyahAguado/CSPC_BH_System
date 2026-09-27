@@ -147,7 +147,22 @@ const closePreview = () => {
 
 const getFilteredCriteria = () => {
   if (!activeApp.value) return [];
-  return criteria.value.filter(c => !c.house_id || c.house_id === activeApp.value.id);
+  const list = criteria.value.filter(c => !c.house_id || c.house_id === activeApp.value.id);
+  const mandatoryOrder = {
+    'permit_business_form': 1,
+    'permit_barangay': 2,
+    'permit_fire': 3,
+    'permit_sanitary': 4,
+    'permit_cedula': 5,
+    'permit_dti': 6,
+    'permit_building': 7,
+    'permit_zoning': 8
+  };
+  return list.sort((a, b) => {
+    const orderA = a.permit_key ? (mandatoryOrder[a.permit_key] || 90) : 99;
+    const orderB = b.permit_key ? (mandatoryOrder[b.permit_key] || 90) : 99;
+    return orderA - orderB;
+  });
 };
 
 const getActiveHouseDynamicDocs = () => {
@@ -453,8 +468,36 @@ onMounted(() => {
           <button @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left">
+          <!-- Section label for required docs -->
+          <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Required Documents
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 mb-8">
+            <div v-for="p in criteria.filter(c => !c.house_id && ['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
+                 class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
+                <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
+                <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
+                </div>
+              </div>
+              <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
+                <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
+                <h3 class="font-black text-[11px] text-rose-400 uppercase tracking-widest">Missing</h3>
+              </div>
+              <div class="p-4 border-t border-slate-50 text-center">
+                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section label for optional docs -->
+          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> Optional Documents
+          </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-            <div v-for="p in criteria.filter(c => !c.house_id)" :key="p.id" class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+            <div v-for="p in criteria.filter(c => !c.house_id && !['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
+                 class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
               <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
@@ -463,10 +506,13 @@ onMounted(() => {
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
-                <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">{{ p.label }}</h3>
+                <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">Not Submitted</h3>
+              </div>
+              <div class="p-4 border-t border-slate-50 text-center">
+                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
               </div>
             </div>
-            
+
             <!-- Facade Image -->
             <div class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
               <div v-if="activeApp.img" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
@@ -476,12 +522,14 @@ onMounted(() => {
                 </div>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
-                <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
-                <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">Facade Photo</h3>
+                <i class="fa-solid fa-image text-4xl text-slate-300 mb-4"></i>
+              </div>
+              <div class="p-4 border-t border-slate-50 text-center">
+                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight">Facade Photo</h3>
               </div>
             </div>
 
-            <!-- Custom Criteria Uploaded files -->
+            <!-- Custom / Dynamic Criteria -->
             <div v-for="doc in getActiveHouseDynamicDocs()" :key="doc.id" class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
               <div class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(doc.file_path)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
@@ -489,8 +537,8 @@ onMounted(() => {
                   <button @click="openPreview(getImageUrl(doc.file_path))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
                 </div>
               </div>
-              <div class="p-6 text-center border-t border-slate-50">
-                <h3 class="font-black text-[12px] leading-tight text-slate-900 uppercase tracking-tight">{{ doc.criteria_label || 'Additional Doc' }}</h3>
+              <div class="p-4 border-t border-slate-50 text-center">
+                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.criteria_label || 'Additional Doc' }}</h3>
               </div>
             </div>
           </div>
@@ -555,7 +603,19 @@ onMounted(() => {
                     <tr v-for="(item, i) in getFilteredCriteria()" :key="item.id" class="border-b border-slate-50 last:border-0 hover:bg-amber-50/40 transition-colors"
                         :class="{ 'bg-amber-100 border-l-4 border-amber-500 shadow-inner': activeApp.document_update_pending && (activeApp.last_updated_document === item.permit_key || activeApp.last_updated_document == item.id) }">
                       <td class="p-6 text-center text-slate-300 font-bold text-xs italic">{{ i + 1 }}</td>
-                      <td class="p-6"><span class="text-slate-800 font-semibold text-[14px]">{{ item.label }}</span></td>
+                      <td class="p-6">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-slate-800 font-semibold text-[14px]">{{ item.label }}</span>
+                          <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
+                                class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                            Required
+                          </span>
+                          <span v-else-if="item.permit_key"
+                                class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                            Optional
+                          </span>
+                        </div>
+                      </td>
                       <td class="p-6 text-center">
                         <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 hover:text-blue-800 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
@@ -592,7 +652,17 @@ onMounted(() => {
 
                 <div class="py-1">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Requirement</span>
-                  <span class="text-slate-900 font-bold text-sm leading-snug">{{ item.label }}</span>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-slate-900 font-bold text-sm leading-snug">{{ item.label }}</span>
+                    <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
+                          class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                      Required
+                    </span>
+                    <span v-else-if="item.permit_key"
+                          class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                      Optional
+                    </span>
+                  </div>
                 </div>
 
                 <div class="pt-2 border-t border-slate-100 flex justify-between items-center">

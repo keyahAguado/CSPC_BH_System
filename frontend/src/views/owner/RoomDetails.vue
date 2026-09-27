@@ -237,7 +237,7 @@ const formatMoveInLedger = (occ) => {
   const depM = parseInt(occ.deposit_months || 0);
   const rentPerMonth = parseFloat(room.value.house_price || 0);
   const advAmt = advM * rentPerMonth;
-  const depAmt = (depM * rentPerMonth) + parseFloat(occ.deposit_fixed_amount || 0);
+  const depAmt = depM * rentPerMonth;
   const total = advAmt + depAmt;
   const friendlyType = occ.deposit_type === 'consumable' ? 'Consumable' : 'Refundable (Cash)';
 
@@ -252,6 +252,8 @@ const formatMoveInLedger = (occ) => {
   };
 };
 
+import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
+
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   try {
@@ -261,6 +263,12 @@ const formatDate = (dateStr) => {
   } catch (e) {
     return '—';
   }
+};
+
+const getCheckoutDateDisplay = (occ) => {
+  if (!occ.check_in_date) return '—';
+  const computedDate = computeCheckoutDate(occ.check_in_date, occ.months || 1);
+  return formatCheckoutDateString(computedDate);
 };
 
 onMounted(() => {
@@ -273,7 +281,7 @@ onMounted(() => {
     <OwnerNav />
     <FlashAlert ref="alertRef" />
 
-    <main class="flex-1 max-w-7xl mx-auto w-full py-12 px-6 lg:px-12 text-left animate-in fade-in duration-300">
+    <main class="flex-1 max-w-[1750px] mx-auto w-[96%] py-12 px-2 lg:px-6 text-left animate-in fade-in duration-300">
       <!-- Header -->
       <div class="mb-12">
         <router-link :to="'/owner/rooms/' + room.house_id"
@@ -421,6 +429,10 @@ onMounted(() => {
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Check-In</span>
                     <span class="font-bold text-sm text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
                   </div>
+                  <div class="flex items-center justify-between py-2.5">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Check-Out</span>
+                    <span class="font-bold text-sm text-blue-600">{{ getCheckoutDateDisplay(occ) }}</span>
+                  </div>
                   <div class="flex items-start justify-between py-2.5 gap-4">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">Address</span>
                     <span class="font-bold text-sm text-slate-700 text-right">{{ occ.address || '—' }}</span>
@@ -439,7 +451,7 @@ onMounted(() => {
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Duration</span>
-                    <span class="font-bold text-sm text-slate-700 uppercase">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
+                    <span class="font-bold text-sm text-slate-700">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rent</span>
@@ -490,14 +502,14 @@ onMounted(() => {
                   <th class="px-3 py-4 text-center">Ref No.</th>
                   <th class="px-3 py-4">Student Name</th>
                   <th class="px-3 py-4 text-center">Age</th>
-                  <th class="px-3 py-4 text-center whitespace-nowrap">Check-in</th>
+                  <th class="px-3 py-4 text-center">Check-In /<br/>Check-Out</th>
                   <th class="px-3 py-4">Address</th>
                   <th class="px-3 py-4 text-center">Contact</th>
                   <th class="px-3 py-4 text-center">Emergency</th>
                   <th class="px-3 py-4 text-center">Guardian</th>
                   <th class="px-3 py-4 text-center">Duration</th>
                   <th class="px-3 py-4 text-center whitespace-nowrap">Total Rent</th>
-                  <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in Ledger</th>
+                  <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in<br/>Ledger</th>
                   <th class="px-3 py-4 text-center">Payment</th>
                   <th class="px-3 py-4 text-center whitespace-nowrap">Paid Via</th>
                   <th class="px-3 py-4 text-center">Type</th>
@@ -516,13 +528,14 @@ onMounted(() => {
                   <td class="px-3 py-4 font-bold text-slate-800 uppercase whitespace-nowrap">{{ occ.name }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.age || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
-                    {{ formatDate(occ.check_in_date) }}
+                    <span class="block text-xs font-bold text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
+                    <span class="block text-[9px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(occ) }}</span>
                   </td>
                   <td class="px-3 py-4 font-bold text-slate-700 whitespace-normal min-w-[200px]">{{ occ.address || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.contact_number || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.emergency_contact || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.guardian_name || '—' }}</td>
-                  <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap uppercase">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
+                  <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}
                     <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>

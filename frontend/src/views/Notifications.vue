@@ -140,8 +140,9 @@ const getNotifTargetRoute = (notif) => {
 
   if (role === 'owner') {
     if (type === 'booking') return '/owner/bookings';
-    if (type === 'expiry' || type === 'rejected') return '/owner/documents';
+    if (type === 'expiry' || type === 'rejected' || type === 'general') return '/owner/documents';
     if (type === 'approved') return '/owner/dashboard';
+    return '/owner/documents';
   }
 
   if (role === 'admin') {

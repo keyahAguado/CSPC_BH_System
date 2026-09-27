@@ -1,12 +1,45 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printCompliance } from '../../utils/printHelper.js';
+import { DataTable } from 'simple-datatables';
+import 'simple-datatables/dist/style.css';
 
 const houses = ref([]);
 const reportDate = ref('');
+const searchQuery = ref('');
 const isLoading = ref(true);
+
+let dtInstance = null;
+
+const initDataTable = () => {
+  nextTick(() => {
+    const tableEl = document.getElementById('complianceTable');
+    if (tableEl && !dtInstance) {
+      try {
+        dtInstance = new DataTable(tableEl, {
+          perPage: 10,
+          perPageSelect: [10, 25, 50, 100],
+          searchable: false,
+          labels: {
+            perPage: "entries per page",
+            noRows: "No compliance audit records found",
+            info: "Showing {start} to {end} of {rows} entries",
+          }
+        });
+      } catch (err) {
+        console.warn('DataTable init error:', err);
+      }
+    }
+  });
+};
+
+watch(searchQuery, (val) => {
+  if (dtInstance) {
+    dtInstance.search(val);
+  }
+});
 
 const token = sessionStorage.getItem('cspc_token');
 
@@ -17,17 +50,23 @@ const fetchReport = async () => {
     });
     if (res.data.success) {
       houses.value = res.data.houses || [];
-      reportDate.value = res.data.reportDate || new Date().toLocaleDateString();
+      const rawDate = res.data.reportDate ? new Date(res.data.reportDate) : new Date();
+      reportDate.value = isNaN(rawDate) ? new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : rawDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      initDataTable();
     }
   } catch (err) {
     console.error(err);
   } finally {
     isLoading.value = false;
+    if (!reportDate.value) {
+      reportDate.value = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+    initDataTable();
   }
 };
 
 const handlePrint = () => {
-  printCompliance(houses.value, reportDate.value);
+  window.print();
 };
 
 onMounted(() => {
@@ -39,7 +78,7 @@ onMounted(() => {
   <div class="min-h-screen bg-slate-100 pb-12 font-sans text-left">
     <AdminNav />
 
-    <main class="max-w-[1200px] mx-auto pt-4 md:pt-10 px-4 md:px-6">
+    <main class="max-w-[1400px] mx-auto pt-4 md:pt-10 px-4 md:px-6">
       
       <!-- Loading State Indicator -->
       <div v-if="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
@@ -68,13 +107,22 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Title Section -->
-        <div class="text-center mb-8">
-          <h2 class="text-base md:text-xl font-black text-[#2a528a] uppercase tracking-[0.1em] md:tracking-[0.2em] underline underline-offset-8">Accreditation Compliance Audit Report</h2>
+        <!-- Title & Control Section -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 no-print">
+          <h2 class="text-base md:text-xl font-black text-[#2a528a] uppercase tracking-[0.1em] md:tracking-[0.2em]">Accreditation Compliance Audit Report</h2>
+          
+          <!-- Single Search Input -->
+          <div class="relative w-full md:w-64">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+            </span>
+            <input type="text" v-model="searchQuery" placeholder="SEARCH COMPLIANCE..."
+                class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
+          </div>
         </div>
 
-        <!-- Legend -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-10 bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200">
+        <!-- Legend (Hidden in print) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-10 bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200 no-print-legend no-print">
           <div>
             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Audit Legend</h3>
             <div class="flex flex-wrap gap-4">
@@ -95,20 +143,23 @@ onMounted(() => {
         </div>
 
         <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block overflow-x-auto rounded-xl border border-slate-200 mb-12">
-          <table class="w-full text-left whitespace-nowrap">
+        <div class="hidden md:block print:block overflow-x-auto rounded-xl border border-slate-200 mb-12">
+          <table class="w-full text-left whitespace-nowrap" id="complianceTable">
             <thead class="bg-slate-50 border-b border-slate-200">
-              <tr class="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                <th class="px-4 py-4">House / Owner</th>
-                <th class="px-4 py-4">Compliance</th>
-                <th class="px-4 py-4">Business</th>
-                <th class="px-4 py-4">Cedula</th>
-                <th class="px-4 py-4">DTI</th>
-                <th class="px-4 py-4">Brgy</th>
-                <th class="px-4 py-4">Building</th>
-                <th class="px-4 py-4">Zoning</th>
-                <th class="px-4 py-4">Sanitary</th>
-                <th class="px-4 py-4">Fire</th>
+              <tr class="text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-slate-200">
+                <th rowspan="2" class="px-4 py-4 min-w-[170px] align-middle border-r border-slate-200 bg-slate-100/70">Boarding House & Owner</th>
+                <th rowspan="2" class="px-4 py-4 text-center align-middle border-r border-slate-200 bg-slate-100/70">Status</th>
+                <th colspan="8" class="px-3 py-2 text-center bg-slate-100/90 font-black tracking-widest text-[#2a528a]">Legal Permit Expiration Dates</th>
+              </tr>
+              <tr class="text-[8px] font-black text-slate-500 uppercase tracking-wider">
+                <th class="px-3 py-2 text-center border-r border-slate-200">Business</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">Cedula (CTC)</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">DTI</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">Barangay</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">Building</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">Zoning</th>
+                <th class="px-3 py-2 text-center border-r border-slate-200">Sanitary</th>
+                <th class="px-3 py-2 text-center">Fire Safety</th>
               </tr>
             </thead>
             <tbody class="text-[10px] text-slate-600">
@@ -116,18 +167,24 @@ onMounted(() => {
                 <td colspan="10" class="px-4 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No compliance records found</td>
               </tr>
               <tr v-else v-for="h in houses" :key="h.name" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
-                <td class="px-4 py-4">
+                <td class="px-4 py-3 font-bold">
                   <p class="font-black text-slate-900 uppercase leading-none">{{ h.name }}</p>
                   <p class="text-[8px] text-slate-400 font-bold uppercase mt-1">{{ h.owner_name }}</p>
                 </td>
-                <td class="px-4 py-4">
-                  <span class="px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-tighter" :class="h.compliance_status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'">
+                <td class="px-4 py-3 text-center">
+                  <span class="whitespace-nowrap inline-block text-center min-w-[70px] px-2.5 py-1 rounded-full border text-[8.5px] font-black uppercase tracking-wider"
+                    :class="{
+                      'bg-emerald-50 text-emerald-700 border-emerald-200': (h.compliance_status || '').toLowerCase() === 'active',
+                      'bg-amber-50 text-amber-700 border-amber-200': (h.compliance_status || '').toLowerCase() === 'warning',
+                      'bg-red-50 text-red-700 border-red-200': (h.compliance_status || '').toLowerCase() === 'expired' || (h.compliance_status || '').toLowerCase() === 'inactive'
+                    }">
                     {{ h.compliance_status }}
                   </span>
                 </td>
-                <td v-for="p in ['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire']" :key="p" class="px-4 py-4">
-                  <span v-if="h['expiry_permit_' + p]" :class="new Date(h['expiry_permit_' + p]) < new Date() ? 'text-red-500 font-black' : 'text-slate-600 font-bold'">
+                <td v-for="p in ['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire']" :key="p" class="px-3 py-3 text-center">
+                  <span v-if="h['expiry_permit_' + p]" :class="new Date(h['expiry_permit_' + p]) < new Date() ? 'text-red-600 font-black' : 'text-slate-700 font-bold'">
                     {{ new Date(h['expiry_permit_' + p]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
+                    <span v-if="new Date(h['expiry_permit_' + p]) < new Date()" class="hidden print:inline text-[7pt] text-red-600 font-black uppercase ml-0.5">(EXPIRED)</span>
                   </span>
                   <span v-else class="text-slate-300">N/A</span>
                 </td>
@@ -136,8 +193,8 @@ onMounted(() => {
           </table>
         </div>
 
-        <!-- ================= MOBILE PORTRAIT CARD VIEW ================= -->
-        <div class="block md:hidden space-y-4 mb-12">
+        <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
+        <div class="block md:hidden print:hidden space-y-4 mb-12">
           <div v-if="houses.length === 0" class="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
             No compliance records found
           </div>
@@ -155,14 +212,14 @@ onMounted(() => {
 
             <div class="divide-y divide-slate-100 text-[11px]">
               <div v-for="p in [
-                { key: 'business_form', label: 'Business Permit' },
-                { key: 'cedula', label: 'Cedula' },
-                { key: 'dti', label: 'DTI Permit' },
-                { key: 'barangay', label: 'Barangay Clearance' },
-                { key: 'building', label: 'Building Permit' },
-                { key: 'zoning', label: 'Zoning Clearance' },
-                { key: 'sanitary', label: 'Sanitary Permit' },
-                { key: 'fire', label: 'Fire Safety Permit' }
+                { key: 'business_form', label: 'Business Permit Expiry' },
+                { key: 'cedula', label: 'Cedula (CTC) Expiry' },
+                { key: 'dti', label: 'DTI Permit Expiry' },
+                { key: 'barangay', label: 'Barangay Clearance Expiry' },
+                { key: 'building', label: 'Building Permit Expiry' },
+                { key: 'zoning', label: 'Zoning Clearance Expiry' },
+                { key: 'sanitary', label: 'Sanitary Permit Expiry' },
+                { key: 'fire', label: 'Fire Safety Expiry' }
               ]" :key="p.key" class="px-4 py-2.5 flex justify-between items-center">
                 <span class="text-slate-400 font-bold uppercase text-[10px]">{{ p.label }}</span>
                 <span v-if="h['expiry_permit_' + p.key]" :class="new Date(h['expiry_permit_' + p.key]) < new Date() ? 'text-red-500 font-black' : 'text-slate-700 font-semibold'">
@@ -175,15 +232,15 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Signatories -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-20 pt-10 md:pt-16 mt-auto">
-          <div class="text-center">
-            <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Prepared By: SASO Coordinator</p>
+        <!-- Signatories (Single Line Row Layout with Generous Spacing) -->
+        <div class="grid grid-cols-2 gap-8 mt-16 md:mt-24 pt-10 md:pt-12 text-center signatories-block">
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">PREPARED BY: SASO COORDINATOR</p>
           </div>
-          <div class="text-center">
-            <div class="border-b border-slate-900 mx-auto w-4/5 mb-2"></div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">Approved By: SASO Director</p>
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">APPROVED BY: SASO DIRECTOR</p>
           </div>
         </div>
 
@@ -202,49 +259,66 @@ onMounted(() => {
 @media print {
   @page {
     size: A4 landscape;
-    margin: 1cm;
+    margin: 0.8cm;
   }
-  html, body {
+  html, body, #app, main, div, section, article {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
     width: 100% !important;
     height: auto !important;
-    background: white !important;
     padding: 0 !important;
     margin: 0 !important;
-    font-size: 9pt;
+    box-shadow: none !important;
   }
-  #app {
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    min-height: unset !important;
-  }
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-  }
-  .no-print {
+  .no-print, .no-print-legend, .block.md\:hidden, .md\:hidden {
     display: none !important;
   }
-  .min-h-screen {
-    min-height: unset !important;
+  .hidden.md\:block, .md\:block, .print\:block {
+    display: block !important;
   }
-  .shadow-xl, .shadow-sm {
+  .shadow-xl, .shadow-sm, .shadow-lg {
     box-shadow: none !important;
+  }
+  .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+  .border-t-8 {
+    border-top: none !important;
   }
   .overflow-x-auto {
     overflow: visible !important;
   }
   table {
-    page-break-inside: auto;
+    display: table !important;
     width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+    background: #ffffff !important;
   }
-  tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
+  th, td {
+    border: 1px solid #94a3b8 !important;
+    padding: 4px 5px !important;
+    font-size: 7.5pt !important;
+    line-height: 1.2 !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  th {
+    font-size: 7pt !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    background-color: #ffffff !important;
   }
   .whitespace-nowrap {
     white-space: normal !important;
+  }
+  .signatories-block {
+    margin-top: 4rem !important;
+    padding-top: 2rem !important;
+    page-break-inside: avoid !important;
   }
 }
 </style>

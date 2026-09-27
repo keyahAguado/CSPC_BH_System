@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printEmergencyRegistry } from '../../utils/printHelper.js';
+import { DataTable } from 'simple-datatables';
+import 'simple-datatables/dist/style.css';
 
 const route = useRoute();
 
@@ -12,8 +14,39 @@ const boardingHouses = ref([]);
 const selectedBarangay = ref('');
 const selectedHouse = ref('');
 const selectedCourse = ref(route.query.course || '');
+const searchQuery = ref('');
 const courseOptions = ref([]);
 const isLoading = ref(true);
+
+let dtInstance = null;
+
+const initDataTable = () => {
+  nextTick(() => {
+    const tableEl = document.getElementById('emergencyTable');
+    if (tableEl && !dtInstance) {
+      try {
+        dtInstance = new DataTable(tableEl, {
+          perPage: 10,
+          perPageSelect: [10, 25, 50, 100],
+          searchable: false,
+          labels: {
+            perPage: "entries per page",
+            noRows: "No active residents found",
+            info: "Showing {start} to {end} of {rows} entries",
+          }
+        });
+      } catch (err) {
+        console.warn('DataTable init error:', err);
+      }
+    }
+  });
+};
+
+watch(searchQuery, (val) => {
+  if (dtInstance) {
+    dtInstance.search(val);
+  }
+});
 
 const genderCounts = computed(() => {
   return residents.value.reduce((acc, r) => {
@@ -69,11 +102,13 @@ const fetchRegistry = async () => {
       if (response.data.boardingHouses && boardingHouses.value.length === 0) {
         boardingHouses.value = response.data.boardingHouses;
       }
+      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load emergency monitoring registry:', error);
   } finally {
     isLoading.value = false;
+    initDataTable();
   }
 };
 
@@ -187,7 +222,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-[#eef6ff] min-h-screen pb-10 text-left font-sans">
+  <div class="bg-slate-50 min-h-screen pb-10 text-left font-sans">
     <AdminNav />
 
     <main class="max-w-[1400px] mx-auto pt-4 md:pt-10 px-4 md:px-6">
@@ -227,6 +262,12 @@ onMounted(() => {
             </select>
           </div>
 
+          <!-- Search Input -->
+          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
+            <div class="pl-3 text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></div>
+            <input type="text" v-model="searchQuery" placeholder="SEARCH RESIDENTS..." class="bg-transparent border-none w-full text-[11px] font-bold text-slate-700 outline-none pr-2 placeholder:text-slate-400" />
+          </div>
+
           <!-- Export/Print Button -->
           <button @click="handleExport"
              class="w-full md:w-auto justify-center bg-red-600 border border-red-700 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition shadow-sm flex items-center gap-2">
@@ -247,7 +288,7 @@ onMounted(() => {
       <div v-else class="animate-in fade-in duration-300 space-y-6 md:space-y-8">
         
         <!-- Compact Stats Bar -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 no-print">
           <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Total Residents</div>
             <div class="text-xl md:text-2xl font-black text-slate-800">{{ residents.length }}</div>
@@ -281,9 +322,9 @@ onMounted(() => {
         </div>
 
         <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="hidden md:block print:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
+            <table class="w-full text-left border-collapse" id="emergencyTable">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                   <th class="px-6 py-4">Student Identity</th>
@@ -380,8 +421,8 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- ================= MOBILE PORTRAIT CARD VIEW ================= -->
-        <div class="block md:hidden space-y-6">
+        <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
+        <div class="block md:hidden print:hidden space-y-6">
           <!-- No results at all -->
           <div v-if="residents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
             <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active residents registered across all boarding houses.</p>
@@ -467,7 +508,72 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Signatories (Single Line Row Layout with Generous Spacing) -->
+        <div class="grid grid-cols-2 gap-8 mt-16 sm:mt-24 pt-10 sm:pt-12 mt-auto text-center signatories-block">
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">PREPARED BY: SASO COORDINATOR</p>
+          </div>
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-600">APPROVED BY: SASO DIRECTOR</p>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
 </template>
+
+<style>
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 1cm;
+  }
+  html, body, #app, main, div, section, article {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  .no-print, .block.md\:hidden, .md\:hidden {
+    display: none !important;
+  }
+  .hidden.md\:block, .md\:block, .print\:block {
+    display: block !important;
+  }
+  .shadow-xl, .shadow-sm, .shadow-lg {
+    box-shadow: none !important;
+  }
+  .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+  table {
+    display: table !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    background: #ffffff !important;
+  }
+  th, td {
+    border: 1px solid #94a3b8 !important;
+    padding: 6px 8px !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  th {
+    background-color: #ffffff !important;
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+  }
+  .signatories-block {
+    margin-top: 4rem !important;
+    padding-top: 2rem !important;
+    page-break-inside: avoid !important;
+  }
+}
+</style>

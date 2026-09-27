@@ -124,13 +124,20 @@ async function buildUserPayload(user) {
 
     if (user.role === 'owner') {
         const [houses] = await pool.query(
-            'SELECT id, name, house_status FROM boarding_houses WHERE owner_id = ?',
+            'SELECT id, name, house_status FROM boarding_houses WHERE owner_id = ? ORDER BY id DESC',
             [user.id]
         );
         if (houses.length > 0) {
-            payload.houseStatus = houses[0].house_status;
-            payload.houseId = houses[0].id;
-            payload.houseName = houses[0].name;
+            const accredited = houses.find(h => h.house_status === 'accredited');
+            if (accredited) {
+                payload.houseStatus = 'accredited';
+                payload.houseId = accredited.id;
+                payload.houseName = accredited.name;
+            } else {
+                payload.houseStatus = houses[0].house_status;
+                payload.houseId = houses[0].id;
+                payload.houseName = houses[0].name;
+            }
         }
     }
 
@@ -331,7 +338,7 @@ router.post('/register/owner', async (req, res) => {
 //    log them in immediately.
 // =========================================================================
 router.post('/register/owner-complete', async (req, res) => {
-    const { name, email, phone, address, google_id } = req.body;
+    const { name, email, phone, address, google_id, profile_pic } = req.body;
 
     if (!name || !email || !phone || !address || !google_id) {
         return res.status(400).json({ success: false, message: 'All fields are required.' });
@@ -351,8 +358,8 @@ router.post('/register/owner-complete', async (req, res) => {
         }
 
         const [result] = await pool.query(
-            'INSERT INTO users (google_id, name, email, role, status, phone, address) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [google_id, name, email, 'owner', 'pending', phone, address]
+            'INSERT INTO users (google_id, name, email, role, status, phone, address, profile_pic) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [google_id, name, email, 'owner', 'pending', phone, address, profile_pic || null]
         );
 
         const newUser = {
@@ -363,6 +370,7 @@ router.post('/register/owner-complete', async (req, res) => {
             status: 'pending',
             phone,
             address,
+            profile_pic: profile_pic || null,
         };
 
         const token = jwt.sign(
@@ -431,6 +439,25 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Set/Change Password Error:', err.message);
         return res.status(500).json({ success: false, message: 'Internal server error while updating password.' });
+    }
+});
+
+// =========================================================================
+// DATA PRIVACY ACT (RA 10173) CONSENT AUDIT LOGGING
+// =========================================================================
+router.post('/dpa-consent', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        await pool.query('UPDATE users SET dpa_accepted = 1, dpa_accepted_at = NOW() WHERE id = ?', [userId]);
+
+        // Also update session user if stored
+        return res.json({
+            success: true,
+            message: 'Data Privacy Act consent recorded successfully.'
+        });
+    } catch (err) {
+        console.error('DPA Consent Error:', err.message);
+        return res.status(500).json({ success: false, message: 'Failed to record DPA consent.' });
     }
 });
 

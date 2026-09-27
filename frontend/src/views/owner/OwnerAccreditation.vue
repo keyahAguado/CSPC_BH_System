@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
 import axios from 'axios';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
 import { getImageUrl } from '../../config/api.js';
 import NABUA_BARANGAYS from '../../constants/barangays.js';
 
@@ -15,6 +16,12 @@ const alertRef = ref(null);
 
 const currentUser = ref(JSON.parse(sessionStorage.getItem('cspc_user') || '{}'));
 const activeStep = ref(1);
+const showDpaModal = ref(!Boolean(currentUser.value.dpa_accepted));
+
+const handleDpaAccepted = () => {
+  showDpaModal.value = false;
+  currentUser.value.dpa_accepted = 1;
+};
 
 const isLoading = ref(true);
 const isSaving = ref(false);
@@ -60,15 +67,18 @@ const maxPhotosLimit = 10;
 const barangaysList = ref(NABUA_BARANGAYS);
 
 const criteria = ref([
-  { id: 1, label: 'Business Permit Application Form', permit_key: 'permit_business_form' },
-  { id: 2, label: 'Community Tax Certificate (Cedula)', permit_key: 'permit_cedula' },
-  { id: 3, label: 'DTI Registration Certificate', permit_key: 'permit_dti' },
-  { id: 4, label: 'Barangay Business Clearance', permit_key: 'permit_barangay' },
-  { id: 5, label: 'Certificate of Building Inspection', permit_key: 'permit_building' },
-  { id: 6, label: 'Zoning Certificate / Locational Clearance', permit_key: 'permit_zoning' },
-  { id: 7, label: 'Sanitary Permit / Health Clearance', permit_key: 'permit_sanitary' },
-  { id: 8, label: 'Valid Fire Safety Inspection Certificate', permit_key: 'permit_fire' }
+  { id: 1, label: 'Business Permit Application Form', permit_key: 'permit_business_form', required: true },
+  { id: 2, label: 'Community Tax Certificate (Cedula)', permit_key: 'permit_cedula', required: false },
+  { id: 3, label: 'DTI Registration Certificate', permit_key: 'permit_dti', required: false },
+  { id: 4, label: 'Barangay Business Clearance', permit_key: 'permit_barangay', required: true },
+  { id: 5, label: 'Certificate of Building Inspection', permit_key: 'permit_building', required: false },
+  { id: 6, label: 'Zoning Certificate / Locational Clearance', permit_key: 'permit_zoning', required: false },
+  { id: 7, label: 'Sanitary Permit / Health Clearance', permit_key: 'permit_sanitary', required: true },
+  { id: 8, label: 'Valid Fire Safety Inspection Certificate', permit_key: 'permit_fire', required: true }
 ]);
+
+const requiredCriteria = computed(() => criteria.value.filter(p => p.required));
+const optionalCriteria = computed(() => criteria.value.filter(p => !p.required));
 
 // Amenities Lists
 const freeAmenities = ref(['Wi-Fi', '24/7 Water', 'CCTV', 'Electric Fan', 'Caretaker', 'Study Area', 'Visitor Area', 'Fire Exit']);
@@ -84,6 +94,7 @@ const newPaidText = ref('');
 // Google Maps & Modals Refs
 const mapContainer = ref(null);
 const largeMapContainer = ref(null);
+const addressInputRef = ref(null);
 const showFullscreenMap = ref(false);
 const isGpsLoading = ref(false);
 
@@ -208,8 +219,20 @@ async function fetchHouseDetails() {
       longitude.value = house.longitude || '';
       description.value = house.description || '';
       
-      selectedFree.value = JSON.parse(house.amenities_free || '[]');
-      selectedPaid.value = JSON.parse(house.amenities_paid || '[]');
+      selectedFree.value = typeof house.amenities_free === 'string'
+        ? JSON.parse(house.amenities_free || '[]')
+        : (Array.isArray(house.amenities_free) ? house.amenities_free : []);
+      selectedPaid.value = typeof house.amenities_paid === 'string'
+        ? JSON.parse(house.amenities_paid || '[]')
+        : (Array.isArray(house.amenities_paid) ? house.amenities_paid : []);
+
+      // Add any custom amenities to the options list so checkboxes render
+      selectedFree.value.forEach(tag => {
+        if (!freeAmenities.value.includes(tag)) freeAmenities.value.push(tag);
+      });
+      selectedPaid.value.forEach(tag => {
+        if (!paidAmenities.value.includes(tag)) paidAmenities.value.push(tag);
+      });
       
       // Update warning context according to specific loaded details
       isRejected.value = house.house_status === 'rejected';
@@ -239,8 +262,157 @@ async function fetchHouseDetails() {
   }
 }
 
+// Geographic bounds & center for Nabua, Camarines Sur (Lat: 13.4072, Lng: 123.3748)
+const NABUA_CENTER = { lat: 13.4072, lng: 123.3748 };
+const NABUA_BOUNDS = {
+  north: 13.4500,
+  south: 13.3700,
+  east: 123.4100,
+  west: 123.3300
+};
+
+// Reactive Instant Validation Error Trackers
+const permitFileErrors = ref({});
+const mainImgError = ref('');
+const photosError = ref('');
+const fieldErrors = ref({});
+
+// Image Validation Helper (Max 10MB to accommodate high quality photos)
+const validateImageFile = (file) => {
+  if (!file) return { valid: false, message: 'No file selected.' };
+  
+  const fileName = file.name ? file.name.toLowerCase() : '';
+  const fileType = file.type ? file.type.toLowerCase() : '';
+  
+  const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif'];
+  const isImageMime = fileType.startsWith('image/');
+  const hasImageExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+  
+  if (!isImageMime && !hasImageExtension) {
+    return { valid: false, message: 'Invalid file format. Only image files (PNG, JPG, JPEG, WEBP) are allowed.' };
+  }
+  
+  const maxSizeInBytes = 10 * 1024 * 1024; // 10MB max size
+  if (file.size > maxSizeInBytes) {
+    return { valid: false, message: 'File is too large. Maximum size is 10MB.' };
+  }
+  
+  return { valid: true, message: '' };
+};
+
+const validateField = (fieldName) => {
+  if (fieldName === 'houseName') {
+    if (!houseName.value.trim()) {
+      fieldErrors.value.houseName = 'Boarding House Name is required.';
+    } else {
+      delete fieldErrors.value.houseName;
+    }
+  }
+  if (fieldName === 'contactNumber') {
+    const val = contactNumber.value.trim();
+    if (!val) {
+      fieldErrors.value.contactNumber = 'Contact Phone Number is required.';
+    } else {
+      const digitsOnly = val.replace(/\D/g, '');
+      const isValidFormat = /^[\d\s\/,\-\+\(\)]{7,100}$/.test(val);
+      if (!isValidFormat || digitsOnly.length < 7) {
+        fieldErrors.value.contactNumber = 'Please enter valid contact number(s) (e.g., 09123456789 or 09123456789 / 09987654321).';
+      } else {
+        delete fieldErrors.value.contactNumber;
+      }
+    }
+  }
+  if (fieldName === 'price') {
+    if (!price.value || parseFloat(price.value) <= 0) {
+      fieldErrors.value.price = 'Rent price must be a valid number greater than 0.';
+    } else {
+      delete fieldErrors.value.price;
+    }
+  }
+  if (fieldName === 'selectedBarangay') {
+    if (!selectedBarangay.value) {
+      fieldErrors.value.selectedBarangay = 'Official Barangay selection is required.';
+    } else {
+      delete fieldErrors.value.selectedBarangay;
+    }
+  }
+};
+
+const handleOwnerPhoneKeypress = (e) => {
+  const char = String.fromCharCode(e.which || e.keyCode);
+  if (!/[\d\s\/,\-\+]/.test(char)) {
+    e.preventDefault();
+  }
+};
+
+const handleOwnerPhoneInput = (e) => {
+  contactNumber.value = e.target.value.replace(/[^\d\s\/,\-\+]/g, '');
+  validateField('contactNumber');
+};
+
+const validateCurrentStep = () => {
+  const errors = [];
+  if (activeStep.value === 1) {
+    criteria.value.forEach(p => {
+      const hasFile = !!permitFiles.value[p.permit_key] || !!existingFiles.value[p.permit_key];
+      const hasExpiry = !!permitExpiries.value[p.permit_key];
+
+      if (p.required && !hasFile) {
+        permitFileErrors.value[p.permit_key] = `${p.label} document is required.`;
+        errors.push(`${p.label} document is required.`);
+      } else if (hasFile && !hasExpiry) {
+        permitFileErrors.value[p.permit_key] = `Expiration date is required for ${p.label}.`;
+        errors.push(`Expiration date is required for ${p.label}.`);
+      } else if (hasFile && hasExpiry && permitFileErrors.value[p.permit_key] === `Expiration date is required for ${p.label}.`) {
+        delete permitFileErrors.value[p.permit_key];
+      }
+    });
+
+    if (Object.keys(permitFileErrors.value).length > 0 && errors.length === 0) {
+      errors.push('Please fix permit upload errors before proceeding.');
+    }
+  } else if (activeStep.value === 2) {
+    if (!houseId.value && !mainHouseImg.value) {
+      mainImgError.value = 'Featured Main Image (Exterior) is required for registration.';
+      errors.push('Featured Main Image (Exterior) is required for registration.');
+    }
+    if (photosError.value) {
+      errors.push(photosError.value);
+    }
+  } else if (activeStep.value === 3) {
+    validateField('houseName');
+    validateField('contactNumber');
+    validateField('price');
+    validateField('selectedBarangay');
+
+    if (!locationAddress.value.trim()) {
+      fieldErrors.value.locationAddress = 'A valid property address is required.';
+    } else {
+      delete fieldErrors.value.locationAddress;
+    }
+
+    if (!latitude.value || !longitude.value || parseFloat(latitude.value) === 0) {
+      errors.push('Precise map pin coordinates are required.');
+    } else if (pinNeedsConfirmation.value) {
+      errors.push('Address text changed but map pin was not confirmed. Please select a dropdown suggestion or move the pin.');
+    }
+
+    if (Object.keys(fieldErrors.value).length > 0) {
+      errors.push('Please fix the highlighted input errors before proceeding.');
+    }
+  }
+  return errors;
+};
+
 // Stepper Navigation Methods
 const nextStep = () => {
+  const stepErrors = validateCurrentStep();
+  if (stepErrors.length > 0) {
+    validationErrors.value = stepErrors;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  validationErrors.value = [];
   if (activeStep.value < 4) activeStep.value++;
 };
 
@@ -261,31 +433,61 @@ const addCustomAmenity = (type) => {
   }
 };
 
-// Handle generic permit file changes with automatic background conversion
+// Handle generic permit file changes with automatic background conversion & instant reactive validation
 const handlePermitFile = async (key, event) => {
   const file = event.target.files[0];
-  if (file) {
-    const processedFile = await transcodeHeicFile(file);
-    permitFiles.value[key] = processedFile;
+  if (!file) return;
+
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    permitFileErrors.value[key] = validation.message;
+    event.target.value = '';
+    delete permitFiles.value[key];
+    return;
   }
+
+  delete permitFileErrors.value[key];
+  const processedFile = await transcodeHeicFile(file);
+  permitFiles.value[key] = processedFile;
 };
 
-// Handle Main House Image
+// Handle Main House Image with instant validation
 const handleMainImg = async (event) => {
   const file = event.target.files[0];
-  if (file) {
-    const processedFile = await transcodeHeicFile(file);
-    mainHouseImg.value = processedFile;
-    mainHouseImgPreview.value = URL.createObjectURL(processedFile);
+  if (!file) return;
+
+  const validation = validateImageFile(file);
+  if (!validation.valid) {
+    mainImgError.value = validation.message;
+    event.target.value = '';
+    mainHouseImg.value = null;
+    return;
   }
+
+  mainImgError.value = '';
+  const processedFile = await transcodeHeicFile(file);
+  mainHouseImg.value = processedFile;
+  mainHouseImgPreview.value = URL.createObjectURL(processedFile);
 };
 
-// Handle Dynamic Multi-Photo uploads
+// Handle Dynamic Multi-Photo uploads with instant validation
 const handlePhotosSelected = async (event) => {
   const files = Array.from(event.target.files);
+  photosError.value = '';
+
   if (selectedPhotos.value.length + files.length > maxPhotosLimit) {
-    alert(`You can only upload a maximum of ${maxPhotosLimit} property photos.`);
+    photosError.value = `You can only upload a maximum of ${maxPhotosLimit} property photos.`;
+    event.target.value = '';
     return;
+  }
+
+  for (const file of files) {
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      photosError.value = validation.message;
+      event.target.value = '';
+      return;
+    }
   }
 
   for (const file of files) {
@@ -296,6 +498,7 @@ const handlePhotosSelected = async (event) => {
       dbValue: null
     });
   }
+  event.target.value = '';
 };
 
 const removePhoto = (index) => {
@@ -407,13 +610,21 @@ const detectMyLocation = () => {
         updateCoords(lat, lng);
         reverseGeocode(lat, lng);
         isGpsLoading.value = false;
+
+        // Friendly notification if current GPS position is outside Nabua area
+        if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+            lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+          fieldErrors.value.locationAddress = `GPS detected location outside Nabua, Camarines Sur (${lat.toFixed(5)}, ${lng.toFixed(5)}). Boarding house properties must be situated within Nabua.`;
+        } else {
+          delete fieldErrors.value.locationAddress;
+        }
       },
       (err) => {
         console.error("GPS Error:", err);
-        alert("Could not retrieve GPS location. Please verify settings.");
+        alert("Could not retrieve precise GPS location. Please ensure location permissions are granted.");
         isGpsLoading.value = false;
       },
-      { enableHighAccuracy: false, timeout: 15000 } 
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 } 
     );
   } else {
     alert("Geolocation is not supported by your browser.");
@@ -427,7 +638,6 @@ const reverseGeocode = (lat, lng) => {
   const geocoder = new googleInstance.maps.Geocoder();
   geocoder.geocode({ location: { lat, lng } }, (results, status) => {
     if (status === 'OK' && results && results.length > 0) {
-      // Find the most detailed result that isn't a pure Plus Code result
       const target = results.find(r =>
         r.formatted_address && !/^[A-Z0-9]{4,}\+[A-Z0-9]{2,}/.test(r.formatted_address.trim())
       ) || results[0];
@@ -441,20 +651,25 @@ const reverseGeocode = (lat, lng) => {
         return null;
       };
 
-      // Philippine address order: street/route, barangay, municipality/city, province, country
       const parts = [
         get('street_number') && get('route') ? `${get('street_number')} ${get('route')}` : get('route'),
-        get('sublocality_level_1', 'sublocality', 'neighborhood'),  // Barangay
-        get('locality', 'administrative_area_level_3'),              // Municipality / City
-        get('administrative_area_level_2'),                          // Province
+        get('sublocality_level_1', 'sublocality', 'neighborhood'),
+        get('locality', 'administrative_area_level_3'),
+        get('administrative_area_level_2'),
         get('country')
       ].filter(Boolean);
 
       if (parts.length >= 2) {
         locationAddress.value = parts.join(', ');
       } else {
-        // Fallback: strip leading Plus Code segment
         locationAddress.value = target.formatted_address.replace(/^[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s*/, '');
+      }
+
+      // Synchronize Autocomplete input field with reverse geocoded address
+      const wrapper = document.getElementById('autocomplete-wrapper');
+      if (wrapper) {
+        const autocompleteEl = wrapper.querySelector('gmp-place-autocomplete') || wrapper.firstChild;
+        if (autocompleteEl) autocompleteEl.value = locationAddress.value;
       }
     }
   });
@@ -466,8 +681,8 @@ const toggleFullscreenMap = () => {
   
   if (showFullscreenMap.value) {
     setTimeout(() => {
-      const lat = parseFloat(latitude.value) || 13.4079;
-      const lng = parseFloat(longitude.value) || 123.3751;
+      const lat = parseFloat(latitude.value) || NABUA_CENTER.lat;
+      const lng = parseFloat(longitude.value) || NABUA_CENTER.lng;
       const pos = { lat, lng };
 
       if (!largeMapInstance) {
@@ -479,6 +694,10 @@ const toggleFullscreenMap = () => {
           mapTypeControl: true,
           streetViewControl: true,
           fullscreenControl: false,
+          restriction: {
+            latLngBounds: NABUA_BOUNDS,
+            strictBounds: false
+          },
           mapId: 'CSPC_ACCREDITATION_MAP_LARGE'
         });
 
@@ -514,7 +733,7 @@ const toggleFullscreenMap = () => {
   }
 };
 
-// Initializes Google Map Dynamically
+// Initializes Google Map Dynamically with strict Nabua restrictions
 const initGoogleMap = async () => {
   const mapContainerEl = mapContainer.value;
   if (!mapContainerEl) return;
@@ -522,20 +741,20 @@ const initGoogleMap = async () => {
   if (mapInstance) {
     const { event } = googleInstance.maps;
     event.trigger(mapInstance, 'resize');
-    const lat = parseFloat(latitude.value) || 13.4079;
-    const lng = parseFloat(longitude.value) || 123.3751;
+    const lat = parseFloat(latitude.value) || NABUA_CENTER.lat;
+    const lng = parseFloat(longitude.value) || NABUA_CENTER.lng;
     mapInstance.setCenter({ lat, lng });
     return;
   }
 
-  const defaultLat = parseFloat(latitude.value) || 13.4079;
-  const defaultLng = parseFloat(longitude.value) || 123.3751;
+  const defaultLat = parseFloat(latitude.value) || NABUA_CENTER.lat;
+  const defaultLng = parseFloat(longitude.value) || NABUA_CENTER.lng;
   const myLatLng = { lat: defaultLat, lng: defaultLng };
 
   try {
-    const { Map } = await googleInstance.maps.importLibrary("maps");
-    const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary("marker");
-    const { PlaceAutocompleteElement } = await googleInstance.maps.importLibrary("places");
+    if (!googleInstance?.maps) return;
+    const Map = googleInstance.maps.Map;
+    const AdvancedMarkerElement = googleInstance.maps.marker?.AdvancedMarkerElement || googleInstance.maps.Marker;
 
     mapInstance = new Map(mapContainerEl, {
       zoom: 16,
@@ -543,6 +762,10 @@ const initGoogleMap = async () => {
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: true,
+      restriction: {
+        latLngBounds: NABUA_BOUNDS,
+        strictBounds: true
+      },
       mapId: 'CSPC_ACCREDITATION_MAP_SMALL'
     });
 
@@ -556,57 +779,61 @@ const initGoogleMap = async () => {
     markerInstance.addListener('gmp-dragend', () => {
       const pos = markerInstance.position;
       if (pos) {
-        updateCoords(pos.lat, pos.lng);
-        reverseGeocode(pos.lat, pos.lng);
+        const lat = typeof pos.lat === 'function' ? pos.lat() : pos.lat;
+        const lng = typeof pos.lng === 'function' ? pos.lng() : pos.lng;
+        if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+            lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+          fieldErrors.value.locationAddress = 'Only locations within Nabua, Camarines Sur are allowed (Iriga and Bato are excluded).';
+          return;
+        }
+        delete fieldErrors.value.locationAddress;
+        updateCoords(lat, lng);
+        reverseGeocode(lat, lng);
       }
     });
 
     await nextTick();
-    const wrapper = document.getElementById('autocomplete-wrapper');
-    if (wrapper) {
-      wrapper.innerHTML = ''; 
-      
-      const autocompleteEl = new PlaceAutocompleteElement({
-        componentRestrictions: { country: 'ph' }
-      });
-      
-      autocompleteEl.placeholder = 'Type your boarding house address or street name...';
-
-      autocompleteEl.style.width = '100%';
-      autocompleteEl.style.border = '2px solid #e2e8f0'; 
-      autocompleteEl.style.borderRadius = '1rem'; 
-      autocompleteEl.style.padding = '1rem'; 
-      autocompleteEl.style.backgroundColor = '#ffffff';
-      autocompleteEl.style.outline = 'none';
-      autocompleteEl.style.fontSize = '0.875rem'; 
-      autocompleteEl.style.fontWeight = '700'; 
-      autocompleteEl.style.color = '#0f172a'; 
-
+    const inputEl = addressInputRef.value || document.querySelector('input[placeholder*="Type boarding house address"]');
+    if (inputEl) {
       if (locationAddress.value) {
-        autocompleteEl.value = locationAddress.value;
+        inputEl.value = locationAddress.value;
       }
 
-      wrapper.appendChild(autocompleteEl);
-
-      // Typing changes the visible text without moving the pin — flag it as
-      // unconfirmed until the owner actually picks a suggestion (or uses
-      // GPS/drags the pin, which clear the flag in updateCoords).
-      autocompleteEl.addEventListener('input', () => {
-        pinNeedsConfirmation.value = true;
+      const autocomplete = new googleInstance.maps.places.Autocomplete(inputEl, {
+        componentRestrictions: { country: 'ph' },
+        bounds: NABUA_BOUNDS,
+        fields: ['formatted_address', 'geometry', 'name']
       });
 
-      autocompleteEl.addEventListener('gmp-select', async (event) => {
-        const prediction = event.placePrediction;
-        if (!prediction) return;
+      inputEl.addEventListener('input', () => {
+        pinNeedsConfirmation.value = true;
+        locationAddress.value = inputEl.value;
+      });
 
-        const place = prediction.toPlace();
-        await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place && place.geometry && place.geometry.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          const addr = (place.formatted_address || place.name || '').toLowerCase();
 
-        if (place.location) {
-          const lat = place.location.lat();
-          const lng = place.location.lng();
+          // Reject Iriga, Bato, and points outside strict Nabua bounds
+          if (addr.includes('iriga') || addr.includes('bato') ||
+              lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
+              lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
+            fieldErrors.value.locationAddress = 'Only locations within Nabua, Camarines Sur are allowed (Iriga and Bato are excluded).';
+            return;
+          }
+          delete fieldErrors.value.locationAddress;
+
           updateCoords(lat, lng);
-          locationAddress.value = place.formattedAddress || '';
+          locationAddress.value = place.formatted_address || place.name || '';
+          inputEl.value = locationAddress.value;
+
+          setTimeout(() => {
+            document.querySelectorAll('.pac-container').forEach(el => el.style.display = 'none');
+            inputEl.blur();
+          }, 50);
         }
       });
     }
@@ -624,15 +851,8 @@ onMounted(async () => {
     // Resolve form state setup based on routing contexts
     await loadOnboardingData();
 
-    setOptions({
-      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_FALLBACK_GOOGLE_KEY',
-      v: 'weekly'
-    });
-
-    await importLibrary('maps');
-    await importLibrary('marker'); 
-    await importLibrary('places');
-    await importLibrary('geocoding');
+    // Use shared loader — ensures the API key is always attached
+    await ensureMapsLoaded();
 
     googleInstance = window.google; 
   } catch (err) {
@@ -656,7 +876,7 @@ watch(activeStep, async (newStep) => {
     await nextTick();
     await initGoogleMap();
   }
-});
+}, { immediate: true });
 
 watch(locationAddress, (newVal) => {
   const el = document.querySelector('gmp-place-autocomplete');
@@ -939,46 +1159,121 @@ const submitApplication = async () => {
       <form v-show="!isLoading" @submit.prevent="submitApplication" class="space-y-10" novalidate>
         
         <!-- ================= STEP 1: MANDATORY PERMITS ================= -->
-        <div v-show="activeStep === 1" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
-          <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-blue-100 text-blue-600 w-10 h-10 rounded-full flex items-center justify-center font-black">1</div>
-            <h2 class="text-xs font-black text-slate-900 uppercase tracking-[0.2em]">Mandatory Legal Permits</h2>
+        <div v-show="activeStep === 1" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
+          <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+            <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-black shadow-sm">1</div>
+            <div>
+              <h2 class="text-sm font-black text-slate-900 uppercase tracking-wider">Legal Permits &amp; Clearances</h2>
+              <p class="text-xs text-slate-500 font-medium mt-0.5">Please provide the 4 mandatory permits and any additional supporting documents.</p>
+            </div>
           </div>
           
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-            <div 
-              v-for="p in criteria" 
-              :key="p.id" 
-              class="relative group bg-slate-50/50 p-5 rounded-2xl border border-slate-100 hover:border-blue-200 transition-all"
-            >
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest transition group-hover:text-blue-500">
-                {{ p.label }}
-              </label>
-              
-              <div class="space-y-4">
-                <div>
-                  <p class="text-[9px] font-black text-slate-300 uppercase mb-1.5 ml-1">Upload Scanned Document</p>
-                  <input 
-                    type="file" 
-                    @change="(e) => handlePermitFile(p.permit_key, e)"
-                    class="w-full text-[11px] font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
-                  />
-                  <div v-if="existingFiles[p.permit_key]" class="mt-2 flex flex-col gap-1.5">
-                    <div class="flex items-center gap-2">
-                      <p class="text-[9px] text-green-600 font-black uppercase tracking-widest"><i class="fa-solid fa-circle-check"></i> Current file:</p>
-                      <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[9px] font-black text-blue-600 hover:underline uppercase tracking-widest overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+          <div class="space-y-10">
+            <!-- SECTION A: MANDATORY REQUIRED DOCUMENTS -->
+            <div>
+              <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
+                <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <i class="fa-solid fa-shield-halved text-blue-600"></i> Mandatory Documents
+                </h3>
+                <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Required (Items 1-4)</span>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div 
+                  v-for="(p, idx) in requiredCriteria" 
+                  :key="p.id" 
+                  class="relative group p-6 rounded-2xl border transition-all"
+                  :class="permitFileErrors[p.permit_key] ? 'bg-rose-50/30 border-rose-300' : 'bg-slate-50/60 border-slate-200/80 hover:border-blue-300 hover:bg-white'"
+                >
+                  <div class="flex items-center justify-between mb-4 gap-2">
+                    <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
+                      <span class="text-blue-600 font-black mr-1">{{ idx + 1 }}.</span> {{ p.label }}
+                    </label>
+                    <span class="bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Required</span>
+                  </div>
+                  
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        @change="(e) => handlePermitFile(p.permit_key, e)"
+                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
+                      />
+                      <p v-if="permitFileErrors[p.permit_key]" class="text-[11px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
+                      </p>
+                      <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
+                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
+                      <input type="date" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
                     </div>
                   </div>
                 </div>
-                
-                <div>
-                  <p class="text-[9px] font-black text-slate-300 uppercase mb-1.5 ml-1">Expiry Date</p>
-                  <input type="date" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs font-bold focus:border-blue-400 outline-none transition" />
+              </div>
+            </div>
+
+            <!-- SECTION B: ADDITIONAL SUPPORTING DOCUMENTS -->
+            <div>
+              <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
+                <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <i class="fa-solid fa-folder-open text-slate-400"></i> Additional Documents
+                </h3>
+                <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Optional (Items 5-8)</span>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div 
+                  v-for="(p, idx) in optionalCriteria" 
+                  :key="p.id" 
+                  class="relative group p-6 rounded-2xl border transition-all"
+                  :class="permitFileErrors[p.permit_key] ? 'bg-rose-50/30 border-rose-300' : 'bg-slate-50/60 border-slate-200/80 hover:border-blue-300 hover:bg-white'"
+                >
+                  <div class="flex items-center justify-between mb-4 gap-2">
+                    <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
+                      <span class="text-slate-400 font-bold mr-1">{{ idx + 5 }}.</span> {{ p.label }}
+                    </label>
+                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Optional</span>
+                  </div>
+                  
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        @change="(e) => handlePermitFile(p.permit_key, e)"
+                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer" 
+                      />
+                      <p v-if="permitFileErrors[p.permit_key]" class="text-[11px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
+                      </p>
+                      <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
+                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
+                      <input type="date" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-          <p class="mt-8 text-[9px] text-slate-400 font-bold uppercase italic tracking-widest text-center">* Only PNG and JPG formats are accepted.</p>
+          <p class="mt-8 text-[10px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC up to 10MB.</p>
         </div>
 
         <!-- ================= STEP 2: DYNAMIC PROPERTY PHOTOS ================= -->
@@ -991,10 +1286,17 @@ const submitApplication = async () => {
           <div class="space-y-8">
             <!-- Main Featured Image -->
             <div>
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Featured Main Image (Facade/Exterior)</label>
-              <div class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-green-400 transition cursor-pointer relative">
-                <input type="file" @change="handleMainImg" class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-green-600 file:text-white hover:file:bg-black transition cursor-pointer" />
+              <label class="block text-[10px] font-black uppercase mb-3 ml-1" :class="mainImgError ? 'text-red-600' : 'text-slate-400'">Featured Main Image (Facade/Exterior)</label>
+              <div 
+                class="border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer relative"
+                :class="mainImgError ? 'bg-red-50/50 border-red-400' : 'bg-slate-50 border-slate-200 hover:border-green-400'"
+              >
+                <input type="file" accept="image/*" @change="handleMainImg" class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-green-600 file:text-white hover:file:bg-black transition cursor-pointer" />
                 
+                <p v-if="mainImgError" class="text-[10px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-circle-exclamation"></i> {{ mainImgError }}
+                </p>
+
                 <!-- Main Image Preview Card -->
                 <div v-if="mainHouseImgPreview" class="mt-4 max-w-xs mx-auto rounded-xl overflow-hidden border border-slate-200 shadow-sm relative group">
                   <img :src="mainHouseImgPreview" class="w-full h-48 object-cover" alt="Featured Exterior" />
@@ -1007,9 +1309,12 @@ const submitApplication = async () => {
             
             <!-- Dynamic Interior / Extra Photos Uploader -->
             <div class="border-t border-slate-100 pt-6">
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
+              <label class="block text-[10px] font-black uppercase mb-3 ml-1" :class="photosError ? 'text-red-600' : 'text-slate-400'">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
               
-              <div class="flex items-center justify-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-blue-400 transition cursor-pointer mb-6">
+              <div 
+                class="flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-6 transition cursor-pointer mb-6"
+                :class="photosError ? 'bg-red-50/50 border-red-400' : 'bg-slate-50 border-slate-200 hover:border-blue-400'"
+              >
                 <input 
                   type="file" 
                   multiple 
@@ -1017,6 +1322,9 @@ const submitApplication = async () => {
                   @change="handlePhotosSelected" 
                   class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer"
                 />
+                <p v-if="photosError" class="text-[10px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-circle-exclamation"></i> {{ photosError }}
+                </p>
               </div>
 
               <!-- Interactive Previews Grid with Delete option -->
@@ -1049,29 +1357,72 @@ const submitApplication = async () => {
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="md:col-span-2">
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Boarding House Name</label>
-              <input type="text" v-model="houseName" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="E.g. Nabua Heights Residence" />
+              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.houseName ? 'text-red-600' : 'text-slate-400'">Boarding House Name</label>
+              <input 
+                type="text" 
+                v-model="houseName" 
+                @blur="validateField('houseName')" 
+                @input="validateField('houseName')"
+                class="w-full p-4 rounded-xl text-sm font-bold outline-none transition border" 
+                :class="fieldErrors.houseName ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
+                placeholder="E.g. Nabua Heights Residence" 
+              />
+              <p v-if="fieldErrors.houseName" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.houseName }}
+              </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Contact Number</label>
-              <input type="text" v-model="contactNumber" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="e.g. 09123456789 / 09987654321" />
-              <p class="text-[10px] text-slate-400 font-bold mt-1.5 ml-1">
+              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.contactNumber ? 'text-red-600' : 'text-slate-400'">Contact Number</label>
+              <input 
+                type="text" 
+                inputmode="tel"
+                v-model="contactNumber" 
+                @keypress="handleOwnerPhoneKeypress"
+                @blur="validateField('contactNumber')" 
+                @input="handleOwnerPhoneInput"
+                class="w-full p-4 rounded-xl text-sm font-bold outline-none transition border" 
+                :class="fieldErrors.contactNumber ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
+                placeholder="e.g. 09123456789 / 09987654321" 
+              />
+              <p v-if="fieldErrors.contactNumber" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.contactNumber }}
+              </p>
+              <p v-else class="text-[10px] text-slate-400 font-bold mt-1.5 ml-1">
                 <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
               </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Official Barangay (Nabua)</label>
-              <select v-model="selectedBarangay" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer">
+              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.selectedBarangay ? 'text-red-600' : 'text-slate-400'">Official Barangay (Nabua)</label>
+              <select 
+                v-model="selectedBarangay" 
+                @change="validateField('selectedBarangay')"
+                class="w-full p-4 rounded-xl text-sm font-bold outline-none transition cursor-pointer border" 
+                :class="fieldErrors.selectedBarangay ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'"
+              >
                 <option value="">Select Barangay</option>
                 <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
               </select>
+              <p v-if="fieldErrors.selectedBarangay" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.selectedBarangay }}
+              </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent Price (₱)</label>
-              <input type="number" v-model="price" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="1500" />
+              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.price ? 'text-red-600' : 'text-slate-400'">Monthly Rent Price (₱)</label>
+              <input 
+                type="number" 
+                v-model="price" 
+                @blur="validateField('price')" 
+                @input="validateField('price')"
+                class="w-full p-4 rounded-xl text-sm font-bold outline-none transition border" 
+                :class="fieldErrors.price ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
+                placeholder="1500" 
+              />
+              <p v-if="fieldErrors.price" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.price }}
+              </p>
             </div>
 
             <!-- Advance & Deposit Policy -->
@@ -1121,7 +1472,14 @@ const submitApplication = async () => {
                     <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
                     <label class="text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
                   </div>
-                  <div id="autocomplete-wrapper" class="w-full"></div>
+                  <input 
+                    ref="addressInputRef"
+                    type="text" 
+                    v-model="locationAddress"
+                    @input="pinNeedsConfirmation = true"
+                    placeholder="Type boarding house address or street name in Nabua..." 
+                    class="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-blue-600 transition shadow-sm"
+                  />
                 </div>
 
                 <!-- STEP B: MAP VERIFICATION -->
@@ -1317,6 +1675,14 @@ const submitApplication = async () => {
 
       </form>
     </main>
+
+    <!-- Data Privacy Act (DPA 2012) Mandatory Consent Notice Modal -->
+    <DataPrivacyModal 
+      :show="showDpaModal" 
+      title="Owner Accreditation Data Privacy Notice"
+      subtitle="Republic Act No. 10173 (Data Privacy Act of 2012)"
+      @accepted="handleDpaAccepted" 
+    />
   </div>
 </template>
 

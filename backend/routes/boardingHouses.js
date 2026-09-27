@@ -148,12 +148,13 @@ router.get('/my-property', authenticateToken, async (req, res) => {
             LEFT JOIN rooms r ON bh.id = r.house_id
             WHERE bh.owner_id = ?
             GROUP BY bh.id
+            ORDER BY bh.created_at DESC
         `, [req.user.id]);
         if (rows.length === 0) {
-            return res.json({ success: true, hasProperty: false });
+            return res.json({ success: true, hasProperty: false, properties: [] });
         }
-        const formatted = attachPriceRange(rows[0], rows[0].min_price, rows[0].max_price);
-        res.json({ success: true, hasProperty: true, data: formatted });
+        const formatted = rows.map(h => attachPriceRange(h, h.min_price, h.max_price));
+        res.json({ success: true, hasProperty: true, data: formatted[0], properties: formatted });
     } catch (err) {
         console.error('Fetch My Property Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to fetch property details.' });
@@ -171,16 +172,16 @@ router.get('/documents/:id', authenticateToken, async (req, res) => {
         }
         const house = houseRows[0];
 
-        // 1. Map standard institutional requirements
+        // 1. Map standard institutional requirements (Mandatory 1-4, Optional 5-8)
         const standardCriteria = [
-            { id: 30, label: 'Business Permit Application Form', permit_key: 'permit_business_form' },
-            { id: 31, label: 'Community Tax Certificate (Cedula)', permit_key: 'permit_cedula' },
-            { id: 32, label: 'DTI Registration Certificate', permit_key: 'permit_dti' },
-            { id: 33, label: 'Barangay Business Clearance', permit_key: 'permit_barangay' },
-            { id: 34, label: 'Certificate of Building Inspection', permit_key: 'permit_building' },
-            { id: 35, label: 'Zoning Certificate / Locational Clearance', permit_key: 'permit_zoning' },
-            { id: 36, label: 'Sanitary Permit / Health Clearance', permit_key: 'permit_sanitary' },
-            { id: 37, label: 'Valid Fire Safety Inspection Certificate', permit_key: 'permit_fire' }
+            { id: 30, label: 'Business Permit Application Form', permit_key: 'permit_business_form', required: true },
+            { id: 33, label: 'Barangay Business Clearance', permit_key: 'permit_barangay', required: true },
+            { id: 37, label: 'Valid Fire Safety Inspection Certificate', permit_key: 'permit_fire', required: true },
+            { id: 36, label: 'Sanitary Permit / Health Clearance', permit_key: 'permit_sanitary', required: true },
+            { id: 31, label: 'Community Tax Certificate (Cedula)', permit_key: 'permit_cedula', required: false },
+            { id: 32, label: 'DTI Registration Certificate', permit_key: 'permit_dti', required: false },
+            { id: 34, label: 'Certificate of Building Inspection', permit_key: 'permit_building', required: false },
+            { id: 35, label: 'Zoning Certificate / Locational Clearance', permit_key: 'permit_zoning', required: false }
         ];
 
         const standardCriteriaMapped = standardCriteria.map(p => ({
@@ -547,7 +548,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
+                    house_name, house_img, img_1, img_2, img_3, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 200), description || '',
                     sanitizedFree, sanitizedPaid,
                     permit_business_form, permit_cedula, permit_dti, permit_barangay,
                     permit_building, permit_zoning, permit_sanitary, permit_fire,
@@ -588,12 +589,12 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         }
 
         // ================= CASE B: NEW REGISTRATION (WITH DUPLICATE GUARD) =================
-        // Check if an unaccredited/existing house row already exists for this owner to prevent duplicate creation on network retry
+        // Check if a house with the exact same name already exists for this owner to prevent duplicate creation on network retry
         const [existingOwnerHouse] = await pool.query(
             `SELECT id FROM boarding_houses 
-             WHERE owner_id = ? AND (house_status IN ('pending', 'rejected', 'archived') OR name = ?) 
+             WHERE owner_id = ? AND LOWER(name) = LOWER(?) 
              ORDER BY id DESC LIMIT 1`,
-            [ownerId, house_name]
+            [ownerId, house_name.trim()]
         );
 
         if (existingOwnerHouse.length > 0) {
@@ -631,7 +632,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                      latitude = ?, longitude = ?, advance_months = ?, deposit_months = ?, deposit_type = ?
                  WHERE id = ? AND owner_id = ?`,
                 [
-                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description || '',
+                    house_name, location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 200), description || '',
                     sanitizedFree, sanitizedPaid,
                     ...(house_img ? [house_img] : []),
                     ...(img_1 ? [img_1] : []),
@@ -696,7 +697,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 ownerId, house_name, house_img, img_1, img_2, img_3,
-                location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 20), description,
+                location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 200), description,
                 sanitizedFree, sanitizedPaid, 'pending',
                 permit_business_form, permit_cedula, permit_dti, permit_barangay,
                 permit_building, permit_zoning, permit_sanitary, permit_fire,

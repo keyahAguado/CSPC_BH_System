@@ -1,11 +1,13 @@
 <template>
   <!-- router-view dynamically loads HomeView, Login, or Register depending on the URL -->
   <router-view />
+  <PwaInstallBanner />
 </template>
 
 <script setup>
 import { onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import PwaInstallBanner from './components/partials/PwaInstallBanner.vue';
 
 const router = useRouter();
 const route = useRoute();

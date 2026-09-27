@@ -100,6 +100,8 @@ const fetchBookings = async () => {
   }
 };
 
+import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
+
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   try {
@@ -109,6 +111,14 @@ const formatDate = (dateStr) => {
   } catch (e) {
     return '—';
   }
+};
+
+const getCheckoutDateDisplay = (booking) => {
+  const checkIn = booking.occupant_check_in || booking.check_in_date;
+  if (!checkIn) return '—';
+  const extMonths = booking.is_extension_requested ? (parseInt(booking.extension_months) || 0) : 0;
+  const computedDate = computeCheckoutDate(checkIn, booking.months, extMonths);
+  return formatCheckoutDateString(computedDate);
 };
 
 const formatMoney = (val) =>
@@ -207,6 +217,16 @@ const printReceipt = () => {
     ? `<tr><td>Security Deposit (${r.deposit_months} Mo)</td><td class="amt">&#8369;${depositAmt}</td></tr>`
     : '';
 
+  // Compute check-in and check-out
+  const checkInDateRaw = r.occupant_check_in || r.check_in_date;
+  const checkInDisplay = checkInDateRaw
+    ? new Date(checkInDateRaw).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—';
+  const checkOutDate = computeCheckoutDate(checkInDateRaw, r.months, 0);
+  const checkOutDisplay = checkOutDate
+    ? checkOutDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—';
+
   const win = window.open('', '_blank');
   if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
 
@@ -271,6 +291,8 @@ const printReceipt = () => {
     <tr><td class="label">Boarding House</td><td class="value upper">${r.house_name || ''}</td></tr>
     <tr><td class="label">Room</td><td class="value">Room ${r.room_number || 'N/A'}</td></tr>
     <tr><td class="label">Duration</td><td class="value">${r.months || 0} Month(s)</td></tr>
+    <tr><td class="label">Check-In</td><td class="value">${checkInDisplay}</td></tr>
+    <tr><td class="label">Check-Out</td><td class="value" style="color:#2563eb">${checkOutDisplay}</td></tr>
     <tr><td class="label">Monthly Rent</td><td class="value">&#8369;${parseFloat(r.monthly_rent || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
   </table>
 
@@ -342,7 +364,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <main class="py-12 px-6 lg:px-12 max-w-6xl mx-auto">
+    <main class="py-12 px-6 lg:px-10 max-w-[1400px] mx-auto">
       <header class="mb-10 text-center md:text-left">
         <h1 class="text-3xl font-black text-slate-900 tracking-tight uppercase leading-none">My Bookings</h1>
         <p class="text-slate-400 font-bold uppercase text-[9px] tracking-[0.2em] mt-2">Tracking your pending and confirmed stays</p>
@@ -369,91 +391,99 @@ onMounted(() => {
         <!-- DESKTOP TABLE VIEW (Visible on tablet & desktop screens) -->
         <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse min-w-[950px] table-fixed">
+            <table class="w-full text-left border-collapse" style="min-width:1100px; table-layout:fixed;">
               <colgroup>
-                <col class="w-[26%]" />
-                <col class="w-[14%]" />
-                <col class="w-[28%]" />
-                <col class="w-[14%]" />
-                <col class="w-[18%]" />
+                <col style="width:22%" />
+                <col style="width:16%" />
+                <col style="width:30%" />
+                <col style="width:11%" />
+                <col style="width:21%" />
               </colgroup>
               <thead>
-                <tr class="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <th class="p-6">Boarding House</th>
-                  <th class="p-6">Duration of Stay</th>
-                  <th class="p-6 text-center">Payment Details</th>
-                  <th class="p-6">Booking Date</th>
-                  <th class="p-6 text-center">Status</th>
+                <tr class="bg-slate-50 border-b-2 border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <th class="px-5 py-4 text-left">Boarding House</th>
+                  <th class="px-5 py-4 text-left">Duration &amp; Dates</th>
+                  <th class="px-5 py-4 text-center">Payment Details</th>
+                  <th class="px-5 py-4 text-left">Booked On</th>
+                  <th class="px-5 py-4 text-center">Status</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-50 text-[13px] font-semibold text-slate-700">
+              <tbody class="text-[13px] font-semibold text-slate-700 divide-y divide-slate-100">
                 <tr
                   v-for="booking in bookings"
                   :key="booking.id"
-                  class="hover:bg-slate-50/20 transition group"
+                  class="hover:bg-slate-50/40 transition-colors group align-top"
                 >
                   <!-- House Info -->
-                  <td class="p-6 align-top">
-                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-tight group-hover:text-blue-600 transition-colors">
+                  <td class="px-5 py-5 align-top">
+                    <p class="text-sm font-black text-slate-900 uppercase tracking-tight group-hover:text-blue-600 transition-colors leading-snug">
                       {{ booking.house_name }}
-                    </h3>
-                    <p class="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest inline-flex items-start gap-1.5 leading-snug">
+                    </p>
+                    <p class="text-[10px] text-slate-400 font-bold mt-1.5 tracking-wide flex items-start gap-1.5 leading-snug">
                       <i class="fa-solid fa-location-dot text-[9px] text-blue-500 shrink-0 mt-0.5"></i>
                       <span>{{ formatAddress({ barangay: booking.house_barangay, location: booking.house_location }) || 'Address Pending' }}</span>
                     </p>
                   </td>
-                  <td class="p-6 align-top">
-                    <span class="text-sm font-black text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                  </td>
 
-                  <!-- Payment Details with Move-in Ledger -->
-                  <td class="p-6 align-top text-center">
-                    <div class="flex flex-col gap-2 items-center">
-                      <!-- Primary figure: Total, with monthly rate as a quiet caption -->
-                      <div class="leading-tight">
-                        <span class="text-lg font-black text-slate-900">₱{{ formatMoney(booking.amount) }}</span>
-                        <span class="block text-[10px] font-bold text-slate-400">₱{{ formatMoney(booking.monthly_rent) }} / month</span>
+                  <!-- Duration + Dates -->
+                  <td class="px-5 py-5 align-top">
+                    <span class="text-sm font-black text-blue-600 block">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+                    <div v-if="booking.check_in_date || booking.occupant_check_in" class="mt-2 space-y-1.5">
+                      <div class="flex items-center gap-2">
+                        <span class="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase tracking-widest shrink-0 leading-none">IN</span>
+                        <span class="text-xs font-bold text-slate-700">{{ formatDate(booking.occupant_check_in || booking.check_in_date) }}</span>
                       </div>
-
-                      <!-- Room + payment method, one row -->
-                      <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                        <span class="inline-block bg-blue-50 text-blue-600 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Room {{ booking.room_number }}</span>
-                        <span class="inline-flex items-center gap-1 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest"
-                              :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
-                          <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                          {{ booking.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
-                        </span>
-                      </div>
-
-                      <!-- Move-in ledger, set apart as its own quiet block -->
-                      <div v-if="booking.initial_payment > 0" class="mt-1 pt-3 border-t border-slate-100 w-full max-w-[200px] flex items-center justify-between gap-3">
-                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wide text-left leading-snug">
-                          Move-in Cost
-                          <span class="block text-[8px] font-semibold normal-case text-slate-300 mt-0.5">
-                            <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
-                              {{ booking.advance_months }} Mo Advance + {{ booking.deposit_months }} Mo Deposit
-                            </template>
-                            <template v-else-if="Number(booking.advance_months) > 0">
-                              {{ booking.advance_months }} Mo Advance Only
-                            </template>
-                            <template v-else-if="Number(booking.deposit_months) > 0">
-                              {{ booking.deposit_months }} Mo Deposit Only
-                            </template>
-                            <template v-else>Due upon check-in</template>
-                          </span>
-                        </span>
-                        <span class="text-sm font-black text-emerald-600 shrink-0">₱{{ formatMoney(booking.initial_payment) }}</span>
+                      <div class="flex items-center gap-2">
+                        <span class="text-[8px] font-black bg-blue-100 text-blue-600 px-1 py-0.5 rounded uppercase tracking-widest shrink-0 leading-none">OUT</span>
+                        <span class="text-xs font-black text-blue-600">{{ getCheckoutDateDisplay(booking) }}</span>
                       </div>
                     </div>
                   </td>
 
-                  <!-- Date -->
-                  <td class="p-6 align-top">
-                    <p class="text-sm font-bold text-slate-600">{{ formatDate(booking.booking_date) }}</p>
+                  <!-- Payment Details -->
+                  <td class="px-5 py-5 align-top text-center">
+                    <!-- Total + rate -->
+                    <p class="text-xl font-black text-slate-900 leading-none">₱{{ formatMoney(booking.amount) }}</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-1">₱{{ formatMoney(booking.monthly_rent) }}/month × {{ booking.months }} month{{ booking.months > 1 ? 's' : '' }}</p>
+
+                    <!-- Room + method badges + Move-in cost — all in one width-constrained block -->
+                    <div class="inline-flex flex-col gap-2 mt-2">
+                      <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                        <span class="inline-block bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-blue-100">Room {{ booking.room_number }}</span>
+                        <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border"
+                              :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                          <i class="fa-solid text-[8px]" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                          {{ booking.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
+                        </span>
+                      </div>
+
+                      <!-- Move-in cost — same width as badges row above -->
+                      <div v-if="booking.initial_payment > 0" class="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-left w-full">
+                        <p class="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Move-in Cost</p>
+                        <p class="text-sm font-black text-emerald-700 mt-0.5">₱{{ formatMoney(booking.initial_payment) }}</p>
+                        <p class="text-[9px] font-semibold text-emerald-600/70 mt-0.5 leading-snug">
+                          <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
+                            {{ booking.advance_months }} Month Advance + {{ booking.deposit_months }} Month Deposit
+                          </template>
+                          <template v-else-if="Number(booking.advance_months) > 0">
+                            {{ booking.advance_months }} Month Advance Only
+                          </template>
+                          <template v-else-if="Number(booking.deposit_months) > 0">
+                            {{ booking.deposit_months }} Month Deposit Only
+                          </template>
+                          <template v-else>Due upon check-in</template>
+                        </p>
+                      </div>
+                    </div>
                   </td>
 
-                  <!-- Status Pill Badges -->
-                  <td class="p-6 align-top text-center whitespace-nowrap">
+                  <!-- Booked On -->
+                  <td class="px-5 py-5 align-top">
+                    <p class="text-xs font-bold text-slate-600">{{ formatDate(booking.booking_date) }}</p>
+                  </td>
+
+                  <!-- Status -->
+                  <td class="px-5 py-5 align-top text-center">
                     <!-- Pending -->
                     <div v-if="booking.status === 'pending'" class="flex flex-col items-center gap-3">
                       <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
@@ -468,11 +498,7 @@ onMounted(() => {
 
                     <!-- Confirmed / Active Stay -->
                     <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center gap-2.5">
-                      <!-- Zone 1: what's happening -->
                       <span class="bg-emerald-50 text-emerald-700 border border-emerald-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Confirmed</span>
-                      <span v-if="booking.occupant_check_in" class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                        Check-in: {{ formatDate(booking.occupant_check_in) }}
-                      </span>
 
                       <!-- Zone 2: what you can do — grouped as one quiet block -->
                       <template v-if="booking.payment_status === 'paid'">
@@ -585,8 +611,18 @@ onMounted(() => {
               <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300">
                 Duration
               </div>
-              <div class="p-5 text-center border-b border-slate-200 flex items-center justify-center">
+              <div class="p-5 text-center border-b border-slate-200 flex flex-col items-center justify-center gap-1">
                 <span class="text-base sm:text-lg font-black text-blue-600 tracking-tight">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+                <div v-if="booking.check_in_date || booking.occupant_check_in" class="mt-2 space-y-1.5">
+                  <div class="flex items-center justify-center gap-2">
+                    <span class="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase tracking-widest leading-none shrink-0">IN</span>
+                    <span class="text-xs font-bold text-slate-700">{{ formatDate(booking.occupant_check_in || booking.check_in_date) }}</span>
+                  </div>
+                  <div class="flex items-center justify-center gap-2">
+                    <span class="text-[8px] font-black bg-blue-100 text-blue-600 px-1 py-0.5 rounded uppercase tracking-widest leading-none shrink-0">OUT</span>
+                    <span class="text-xs font-black text-blue-600">{{ getCheckoutDateDisplay(booking) }}</span>
+                  </div>
+                </div>
               </div>
 
               <!-- ROW 3: Payment Details -->
@@ -608,23 +644,21 @@ onMounted(() => {
                   </span>
                 </div>
 
-                <div v-if="booking.initial_payment > 0" class="pt-2.5 border-t border-slate-100 w-full max-w-[220px] flex items-center justify-between gap-3">
-                  <span class="text-[8px] font-bold text-slate-400 uppercase tracking-wide text-left leading-snug">
-                    Move-in Cost
-                    <span class="block text-[7px] font-semibold normal-case text-slate-300 mt-0.5">
-                      <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
-                        {{ booking.advance_months }} Mo Advance + {{ booking.deposit_months }} Mo Deposit
-                      </template>
-                      <template v-else-if="Number(booking.advance_months) > 0">
-                        {{ booking.advance_months }} Mo Advance Only
-                      </template>
-                      <template v-else-if="Number(booking.deposit_months) > 0">
-                        {{ booking.deposit_months }} Mo Deposit Only
-                      </template>
-                      <template v-else>Due upon check-in</template>
-                    </span>
-                  </span>
-                  <span class="text-xs font-black text-emerald-600 shrink-0">₱{{ formatMoney(booking.initial_payment) }}</span>
+                <div v-if="booking.initial_payment > 0" class="mt-1.5 bg-emerald-50 border border-emerald-100 rounded-xl w-full px-3 py-2.5 text-left">
+                  <p class="text-[8px] font-black text-emerald-700 uppercase tracking-widest">Move-in Cost</p>
+                  <p class="text-base font-black text-emerald-600 mt-0.5">₱{{ formatMoney(booking.initial_payment) }}</p>
+                  <p class="text-[9px] font-semibold text-emerald-600/70 mt-0.5 leading-snug">
+                    <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
+                      {{ booking.advance_months }} Month Advance + {{ booking.deposit_months }} Month Deposit
+                    </template>
+                    <template v-else-if="Number(booking.advance_months) > 0">
+                      {{ booking.advance_months }} Month Advance Only
+                    </template>
+                    <template v-else-if="Number(booking.deposit_months) > 0">
+                      {{ booking.deposit_months }} Month Deposit Only
+                    </template>
+                    <template v-else>Due upon check-in</template>
+                  </p>
                 </div>
               </div>
 
@@ -644,9 +678,6 @@ onMounted(() => {
                 <!-- Pending -->
                 <div v-if="booking.status === 'pending'" class="flex flex-col items-center gap-2.5">
                   <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
-                  <span v-if="booking.check_in_date" class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                    Requested Check-in: {{ formatDate(booking.check_in_date) }}
-                  </span>
                   <button
                     @click="cancelReservation(booking.id)"
                     class="text-[9px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
@@ -655,11 +686,7 @@ onMounted(() => {
 
                 <!-- Confirmed / Active Stay -->
                 <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center gap-2 w-full">
-                  <!-- Zone 1: what's happening -->
                   <span class="bg-emerald-100 text-emerald-700 border border-emerald-200/60 text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-sm">Confirmed</span>
-                  <span v-if="booking.occupant_check_in" class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                    Check-in: {{ formatDate(booking.occupant_check_in) }}
-                  </span>
 
                   <!-- Zone 2: what you can do — grouped as one quiet block -->
                   <template v-if="booking.payment_status === 'paid'">

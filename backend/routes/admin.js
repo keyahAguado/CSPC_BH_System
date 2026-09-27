@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
+import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -643,8 +644,10 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
         }
 
         // Notify owner only
+        const approveMsg = `CONGRATULATIONS: Your boarding house "${house[0].name}" has been officially ACCREDITED by SASO!`;
         await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [owner_id, `CONGRATULATIONS: Your boarding house "${house[0].name}" has been officially ACCREDITED by SASO!`]);
+            [owner_id, approveMsg]);
+        sendNotificationEmail(owner_id, 'CONGRATULATIONS: Boarding House Accreditation Approved!', approveMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -690,8 +693,10 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
                  WHERE id = ?`,
                 [admin_comments, houseId]
             );
+            const rejectMsg = `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [owner_id, `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`]);
+                [owner_id, rejectMsg]);
+            sendNotificationEmail(owner_id, 'NOTICE: Boarding House Application Status Update', rejectMsg);
         } else {
             // Document-update review on an already-accredited/archived house: preserve house_status.
             await connection.query(
@@ -708,8 +713,10 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
                 ? 'Your listing remains active and bookable — please correct and re-upload the document.'
                 : `Your listing is currently ${house[0].house_status} (unrelated to this specific document) — please correct and re-upload the document.`;
 
+            const docRejectMsg = `ALERT: Your resubmitted document for "${house[0].name}" was not approved by SASO. Reason: ${admin_comments}. ${statusNote}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [owner_id, `ALERT: Your resubmitted document for "${house[0].name}" was not approved by SASO. Reason: ${admin_comments}. ${statusNote}`]);
+                [owner_id, docRejectMsg]);
+            sendNotificationEmail(owner_id, 'ALERT: Document Resubmission Status', docRejectMsg);
         }
 
         await connection.commit();

@@ -16,7 +16,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallbackDenylist: [/^\/auth-success/, /^\/api\/auth/],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'], // Automatically caches static files for offline usability
-        maximumFileSizeToCacheInBytes: 3000000,
+        maximumFileSizeToCacheInBytes: 15000000,
         runtimeCaching: [
           {
             // Bypasses Service Worker cache for Google OAuth callback & token handoff

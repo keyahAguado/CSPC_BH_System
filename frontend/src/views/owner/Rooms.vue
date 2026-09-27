@@ -10,6 +10,8 @@ const route = useRoute();
 const house = ref({ id: '', name: '' });
 const femaleRooms = ref([]);
 const maleRooms = ref([]);
+const archivedRooms = ref([]);
+const activeTab = ref('active'); // 'active' or 'archived'
 
 // Form states for adding new room
 const newRoomNumber = ref('');
@@ -56,12 +58,32 @@ const fetchRooms = async () => {
       const rooms = response.data.rooms || [];
       femaleRooms.value = rooms.filter(r => r.gender_type === 'female');
       maleRooms.value = rooms.filter(r => r.gender_type === 'male');
+      archivedRooms.value = response.data.archivedRooms || [];
     }
   } catch (error) {
     console.error('Failed to load rooms:', error);
     showSystemAlert('Could not fetch room details.', 'warning');
   } finally {
     isLoading.value = false;
+  }
+};
+
+const handleRestoreRoom = async (roomId, roomNumber) => {
+  try {
+    isSubmitting.value = true;
+    const response = await axios.post(`/api/owner/rooms/restore/${roomId}`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.data.success) {
+      showSystemAlert(`Room ${roomNumber} restored successfully!`, 'success');
+      fetchRooms();
+    }
+  } catch (error) {
+    console.error('Failed to restore room:', error);
+    showSystemAlert(error.response?.data?.message || 'Failed to restore room.', 'error');
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
@@ -153,7 +175,7 @@ const handleUpdateRoom = async () => {
 // --- Delete Room ---
 const openDeleteModal = (room) => {
   if (room.occupant_count > 0) {
-    showSystemAlert('Cannot delete room with active occupants. Please check out boarders first.', 'warning');
+    showSystemAlert('Attention Required: Cannot archive room with active occupants. Please check out all boarders first.', 'warning');
     return;
   }
   deletingRoomId.value = room.id;
@@ -244,7 +266,27 @@ onMounted(() => {
           </router-link>
         </div>
 
-        <div class="grid grid-cols-1 gap-12">
+        <!-- Room Filter Tabs: Active Rooms vs Archived Rooms -->
+        <div class="flex items-center justify-between border-b border-slate-200/80 pb-4">
+          <div class="flex items-center gap-3">
+            <button 
+              @click="activeTab = 'active'"
+              class="px-5 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
+              :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60'"
+            >
+              <i class="fa-solid fa-door-open text-xs"></i> Active Rooms ({{ femaleRooms.length + maleRooms.length }})
+            </button>
+            <button 
+              @click="activeTab = 'archived'"
+              class="px-5 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
+              :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60'"
+            >
+              <i class="fa-solid fa-box-archive text-xs"></i> Archived Rooms ({{ archivedRooms.length }})
+            </button>
+          </div>
+        </div>
+
+        <div v-if="activeTab === 'active'" class="grid grid-cols-1 gap-12">
           
           <!-- Female's Room Section -->
           <section class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
@@ -285,8 +327,8 @@ onMounted(() => {
                   <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
                     Edit
                   </button>
-                  <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
-                    Delete
+                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Archive
                   </button>
                 </div>
               </div>
@@ -306,7 +348,7 @@ onMounted(() => {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr v-if="femaleRooms.length === 0">
-                    <td colspan="4" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
                       No Female Rooms listed
                     </td>
                   </tr>
@@ -332,8 +374,8 @@ onMounted(() => {
                         <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
                           Edit
                         </button>
-                        <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-100 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
-                          Delete
+                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Archive
                         </button>
                       </div>
                     </td>
@@ -401,7 +443,7 @@ onMounted(() => {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr v-if="maleRooms.length === 0">
-                    <td colspan="4" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
                       No Male Rooms listed
                     </td>
                   </tr>
@@ -437,6 +479,63 @@ onMounted(() => {
               </table>
             </div>
           </section>
+        </div>
+
+        <!-- ARCHIVED ROOMS SECTION -->
+        <div v-else class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
+          <div class="bg-slate-900 text-white px-5 md:px-8 py-4 md:py-5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <i class="fa-solid fa-box-archive text-amber-400"></i>
+              <h2 class="text-sm font-black uppercase tracking-widest">Archived (Soft-Deleted) Rooms</h2>
+            </div>
+            <span class="text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
+              Preserved in Database
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead>
+                <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100 bg-slate-50/50">
+                  <th class="px-8 py-5 text-center">Room No.</th>
+                  <th class="px-8 py-5 text-center">Wing / Gender</th>
+                  <th class="px-8 py-5 text-center">Monthly Rent</th>
+                  <th class="px-8 py-5 text-center">Status</th>
+                  <th class="px-8 py-5 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-if="archivedRooms.length === 0">
+                  <td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    No soft-deleted / archived rooms found.
+                  </td>
+                </tr>
+                <tr v-for="room in archivedRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
+                  <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
+                  <td class="px-8 py-5 text-center font-bold text-slate-600 capitalize">
+                    <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
+                      {{ room.gender_type }}'s Wing
+                    </span>
+                  </td>
+                  <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
+                  <td class="px-8 py-5 text-center">
+                    <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">
+                      Archived
+                    </span>
+                  </td>
+                  <td class="px-8 py-5 text-center">
+                    <button 
+                      @click="handleRestoreRoom(room.id, room.room_number)"
+                      :disabled="isSubmitting"
+                      class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-5 py-2.5 rounded-xl uppercase tracking-widest transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                    >
+                      <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Global Action Buttons -->
@@ -527,22 +626,22 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- ===== Delete Room Confirmation Modal ===== -->
+    <!-- ===== Archive Room Confirmation Modal ===== -->
     <div v-if="showDeleteConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
-        <div class="text-red-500 mb-4 flex justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+        <div class="text-amber-500 mb-4 flex justify-center">
+          <div class="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center border border-amber-200/60">
+            <i class="fa-solid fa-box-archive text-amber-500 text-2xl"></i>
+          </div>
         </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Delete Room {{ deletingRoomNumber }}?</h3>
+        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Archive Room {{ deletingRoomNumber }}?</h3>
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
-          Are you sure you want to remove this room from your property? This action cannot be undone.
+          Are you sure you want to archive this room? It will be safely moved to your Archived Rooms tab and can be restored at any time.
         </p>
         
         <div class="flex gap-3">
-          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 disabled:opacity-50 cursor-pointer">
-            {{ isSubmitting ? 'Deleting...' : 'Delete Room' }}
+          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 disabled:opacity-50 cursor-pointer">
+            {{ isSubmitting ? 'Archiving...' : 'Archive Room' }}
           </button>
           <button @click="closeDeleteModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
             Cancel

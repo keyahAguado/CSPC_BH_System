@@ -1,34 +1,40 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import Header from '../../components/partials/Header.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
+import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
 
 const route  = useRoute();
 const router = useRouter();
 
-// ── Pre-filled from Google OAuth redirect query params ──
-const email     = ref('');
-const name      = ref('');
-const googleId  = ref('');
+const email      = ref('');
+const name       = ref('');
+const googleId   = ref('');
 const profilePic = ref('');
 
-// ── Owner-specific fields to collect ──
 const phone   = ref('');
 const address = ref('');
+
+const initAddressAutocomplete = (el) => {
+  if (el) {
+    setupAddressAutocomplete(el, (selectedAddress) => {
+      address.value = selectedAddress;
+    });
+  }
+};
 
 const errorMessage   = ref('');
 const successMessage = ref('');
 const isLoading      = ref(false);
 
-onMounted(() => {
+onMounted(async () => {
   email.value      = route.query.email     || '';
   name.value       = route.query.name      || '';
   googleId.value   = route.query.google_id || '';
   profilePic.value = route.query.pic       || '';
 
-  // If critical params are missing the URL was tampered — send back to login
   if (!email.value || !googleId.value) {
     router.replace('/login?error=invalid_payload');
   }
@@ -54,11 +60,12 @@ const handleSubmit = async () => {
 
   try {
     const response = await axios.post('/api/auth/register/owner-complete', {
-      name:      name.value,
-      email:     email.value,
-      google_id: googleId.value,
-      phone:     phone.value.trim(),
-      address:   address.value.trim(),
+      name:        name.value,
+      email:       email.value,
+      google_id:   googleId.value,
+      phone:       phone.value.trim(),
+      address:     address.value.trim(),
+      profile_pic: profilePic.value || '',
     });
 
     if (response.data.success) {
@@ -96,6 +103,7 @@ const handleSubmit = async () => {
           <img
             v-if="profilePic"
             :src="profilePic"
+            @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=dbeafe&color=1d4ed8&bold=true&size=128`"
             :alt="name"
             class="w-16 h-16 rounded-full mx-auto mb-4 border-2 border-blue-100 object-cover"
           />
@@ -165,13 +173,15 @@ const handleSubmit = async () => {
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">
               Residential Address <span class="text-red-400">*</span>
             </label>
-            <textarea
+            <input
+              :ref="initAddressAutocomplete"
               v-model="address"
-              rows="3"
-              placeholder="e.g. Zone 1, Nabua, Camarines Sur"
-              class="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:border-blue-500 outline-none font-medium resize-none"
+              type="text"
+              placeholder="e.g. Zone 1, Barangay San Esteban, Nabua, Camarines Sur"
+              class="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:border-blue-500 outline-none font-medium"
               required
-            ></textarea>
+            />
+            <p class="text-[9px] text-slate-400 mt-1 ml-1 font-medium">Your personal home address — not the boarding house location.</p>
           </div>
 
           <!-- Notice -->

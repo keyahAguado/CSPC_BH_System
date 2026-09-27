@@ -371,9 +371,6 @@ router.beforeEach((to, from, next) => {
         }
 
         if (to.name === 'OwnerPendingReview') {
-            if (houseStatus === 'accredited') {
-                return next('/owner/dashboard');
-            }
             if (houseStatus === 'none') {
                 return next('/owner/accreditation');
             }

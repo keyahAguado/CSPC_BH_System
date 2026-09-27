@@ -53,7 +53,7 @@ const BASE_STYLES = `
 `;
 
 function getReportDate() {
-  return new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  return new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 function openPrintWindow(html, title, landscape = false) {
@@ -319,7 +319,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
     </div>
     <div class="print-footer">
       Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
-    </div>`, 'Emergency Student Residency Registry');
+    </div>`, 'Emergency Student Residency Registry', true);
 }
 
 /** TRANSACTIONS REPORT */

@@ -52,7 +52,28 @@ app.use((req, res, next) => {
     res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
 });
 
-app.use(cors());
+// Restrict CORS to known frontend origins only
+const allowedOrigins = [
+    'http://localhost',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'https://cspc-bh-system.vercel.app',
+    'https://boardinghouse.cspc.edu.ph',
+    process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`CORS: Origin '${origin}' is not allowed.`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({
     verify: (req, res, buf) => {
         // Stores a raw, unparsed copy of every request body so webhook signature
@@ -193,25 +214,6 @@ app.get('/api/utils/resolve-map-link', (req, res) => {
 // B. Simple Connection Test Endpoint
 app.get('/api/test', (req, res) => {
     res.json({ success: true, message: "Hello from the CSPC Boarding House system backend API!" });
-});
-
-// C. OAuth Config Debug (shows what callback URL the server loaded — remove before production)
-app.get('/api/debug/oauth', (req, res) => {
-    res.json({
-        GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL || '(not set)',
-        FRONTEND_URL: process.env.FRONTEND_URL || '(not set)',
-        GOOGLE_CLIENT_ID_SET: !!process.env.GOOGLE_CLIENT_ID,
-    });
-});
-
-// C. Database Diagnostic Table Inspector
-app.get('/api/tables', async (req, res) => {
-    try {
-        const [rows] = await pool.execute('SHOW TABLES');
-        res.json({ success: true, tables: rows });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
 });
 
 // ===================================================
