@@ -2,7 +2,7 @@
 import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
-import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import NABUA_BARANGAYS from '../../constants/barangays.js';
 
@@ -61,7 +61,6 @@ import { getImageUrl } from '../../config/api';
 // Google Maps Refs
 const mapContainer = ref(null);
 const largeMapContainer = ref(null);
-const addressInputRef = ref(null);
 
 let googleInstance = null;
 let mapInstance = null;
@@ -176,9 +175,9 @@ const initGoogleMap = async () => {
   const myLatLng = { lat: defaultLat, lng: defaultLng };
 
   try {
-    if (!googleInstance?.maps) return;
-    const Map = googleInstance.maps.Map;
-    const AdvancedMarkerElement = googleInstance.maps.marker?.AdvancedMarkerElement || googleInstance.maps.Marker;
+    const { Map } = await googleInstance.maps.importLibrary("maps");
+    const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary("marker");
+    const { PlaceAutocompleteElement } = await googleInstance.maps.importLibrary("places");
 
     mapInstance = new Map(mapContainerEl, {
       zoom: 16,
@@ -216,29 +215,51 @@ const initGoogleMap = async () => {
     });
 
     await nextTick();
-    const inputEl = addressInputRef.value || document.querySelector('input[placeholder*="Type boarding house address"]');
-    if (inputEl) {
+    const wrapper = document.getElementById('autocomplete-wrapper');
+    if (wrapper) {
+      wrapper.innerHTML = '';
+      
+      const autocompleteEl = new PlaceAutocompleteElement({
+        componentRestrictions: { country: "ph" },
+        includedRegionCodes: ['ph'],
+        locationRestriction: NABUA_BOUNDS
+      });
+
+      autocompleteEl.placeholder = 'Type boarding house address or street name...';
+      autocompleteEl.style.width = '100%';
+      autocompleteEl.style.border = '1px solid #cbd5e1'; 
+      autocompleteEl.style.borderRadius = '0.75rem'; 
+      autocompleteEl.style.padding = '0.85rem'; 
+      autocompleteEl.style.backgroundColor = '#f8fafc';
+      autocompleteEl.style.outline = 'none';
+      autocompleteEl.style.fontSize = '0.875rem'; 
+      autocompleteEl.style.fontWeight = '600'; 
+      autocompleteEl.style.color = '#000000';
+
       if (locationAddress.value) {
-        inputEl.value = locationAddress.value;
+        autocompleteEl.value = locationAddress.value;
       }
 
-      const autocomplete = new googleInstance.maps.places.Autocomplete(inputEl, {
-        componentRestrictions: { country: 'ph' },
-        bounds: NABUA_BOUNDS,
-        fields: ['formatted_address', 'geometry', 'name']
-      });
+      wrapper.appendChild(autocompleteEl);
 
-      inputEl.addEventListener('input', () => {
+      // Typing changes the visible text without moving the pin — flag it as
+      // unconfirmed until the owner actually picks a suggestion (or uses
+      // GPS/drags the pin, which clear the flag in updateCoords).
+      autocompleteEl.addEventListener('input', () => {
         pinNeedsConfirmation.value = true;
-        locationAddress.value = inputEl.value;
       });
 
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place && place.geometry && place.geometry.location) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          const addr = (place.formatted_address || place.name || '').toLowerCase();
+      autocompleteEl.addEventListener('gmp-select', async (event) => {
+        const prediction = event.placePrediction;
+        if (!prediction) return;
+
+        const place = prediction.toPlace();
+        await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+
+        if (place.location) {
+          const lat = place.location.lat();
+          const lng = place.location.lng();
+          const addr = (place.formattedAddress || '').toLowerCase();
 
           // Reject Iriga, Bato, and points outside strict Nabua bounds
           if (addr.includes('iriga') || addr.includes('bato') ||
@@ -249,13 +270,7 @@ const initGoogleMap = async () => {
           }
 
           updateCoords(lat, lng);
-          locationAddress.value = place.formatted_address || place.name || '';
-          inputEl.value = locationAddress.value;
-
-          setTimeout(() => {
-            document.querySelectorAll('.pac-container').forEach(el => el.style.display = 'none');
-            inputEl.blur();
-          }, 50);
+          locationAddress.value = place.formattedAddress || '';
         }
       });
     }
@@ -570,7 +585,15 @@ const loadHouseDetails = async () => {
     isLoading.value = false;
     await nextTick();
 
-    await ensureMapsLoaded();
+    setOptions({
+      key: mapApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+      v: 'weekly'
+    });
+
+    await importLibrary('maps');
+    await importLibrary('marker');
+    await importLibrary('places');
+
     googleInstance = window.google;
     await initGoogleMap();
   }
@@ -842,14 +865,7 @@ onMounted(() => {
                     <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
                     <label class="text-[10px] sm:text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
                   </div>
-                  <input 
-                    ref="addressInputRef"
-                    type="text" 
-                    v-model="locationAddress"
-                    @input="pinNeedsConfirmation = true"
-                    placeholder="Type boarding house address or street name..." 
-                    class="w-full px-4 py-3 bg-[#f8fafc] border border-[#cbd5e1] rounded-xl text-sm font-semibold text-black outline-none focus:bg-white focus:border-black transition shadow-sm"
-                  />
+                  <div id="autocomplete-wrapper" class="w-full"></div>
                 </div>
 
                 <!-- STEP B -->

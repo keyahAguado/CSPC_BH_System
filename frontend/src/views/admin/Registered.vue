@@ -6,7 +6,7 @@ import { DataTable } from 'simple-datatables';
 import 'simple-datatables/dist/style.css';
 
 import FlashAlert from '../../components/partials/FlashAlert.vue';
-import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
@@ -473,7 +473,15 @@ onMounted(async () => {
     isLoading.value = true;
     await fetchRegisteredHouses();
 
-    await ensureMapsLoaded();
+    setOptions({
+      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+      v: 'weekly'
+    });
+
+    await importLibrary('maps');
+    await importLibrary('marker'); 
+    await importLibrary('places');
+
     googleInstance = window.google; 
   } catch (err) {
     console.error('Google Maps loader failed:', err);

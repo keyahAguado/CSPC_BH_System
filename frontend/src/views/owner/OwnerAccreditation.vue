@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ensureMapsLoaded } from '../../utils/placesAutocomplete.js';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import axios from 'axios';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
@@ -94,7 +94,6 @@ const newPaidText = ref('');
 // Google Maps & Modals Refs
 const mapContainer = ref(null);
 const largeMapContainer = ref(null);
-const addressInputRef = ref(null);
 const showFullscreenMap = ref(false);
 const isGpsLoading = ref(false);
 
@@ -752,9 +751,9 @@ const initGoogleMap = async () => {
   const myLatLng = { lat: defaultLat, lng: defaultLng };
 
   try {
-    if (!googleInstance?.maps) return;
-    const Map = googleInstance.maps.Map;
-    const AdvancedMarkerElement = googleInstance.maps.marker?.AdvancedMarkerElement || googleInstance.maps.Marker;
+    const { Map } = await googleInstance.maps.importLibrary("maps");
+    const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary("marker");
+    const { PlaceAutocompleteElement } = await googleInstance.maps.importLibrary("places");
 
     mapInstance = new Map(mapContainerEl, {
       zoom: 16,
@@ -793,29 +792,49 @@ const initGoogleMap = async () => {
     });
 
     await nextTick();
-    const inputEl = addressInputRef.value || document.querySelector('input[placeholder*="Type boarding house address"]');
-    if (inputEl) {
+    const wrapper = document.getElementById('autocomplete-wrapper');
+    if (wrapper) {
+      wrapper.innerHTML = ''; 
+      
+      const autocompleteEl = new PlaceAutocompleteElement({
+        componentRestrictions: { country: 'ph' },
+        includedRegionCodes: ['ph'],
+        locationRestriction: NABUA_BOUNDS
+      });
+
+      autocompleteEl.placeholder = 'Type boarding house address or street name...';
+
+      autocompleteEl.style.width = '100%';
+      autocompleteEl.style.border = '2px solid #e2e8f0'; 
+      autocompleteEl.style.borderRadius = '1rem'; 
+      autocompleteEl.style.padding = '1rem'; 
+      autocompleteEl.style.backgroundColor = '#ffffff';
+      autocompleteEl.style.outline = 'none';
+      autocompleteEl.style.fontSize = '0.875rem'; 
+      autocompleteEl.style.fontWeight = '700'; 
+      autocompleteEl.style.color = '#0f172a'; 
+
       if (locationAddress.value) {
-        inputEl.value = locationAddress.value;
+        autocompleteEl.value = locationAddress.value;
       }
 
-      const autocomplete = new googleInstance.maps.places.Autocomplete(inputEl, {
-        componentRestrictions: { country: 'ph' },
-        bounds: NABUA_BOUNDS,
-        fields: ['formatted_address', 'geometry', 'name']
-      });
+      wrapper.appendChild(autocompleteEl);
 
-      inputEl.addEventListener('input', () => {
+      autocompleteEl.addEventListener('input', () => {
         pinNeedsConfirmation.value = true;
-        locationAddress.value = inputEl.value;
       });
 
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (place && place.geometry && place.geometry.location) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          const addr = (place.formatted_address || place.name || '').toLowerCase();
+      autocompleteEl.addEventListener('gmp-select', async (event) => {
+        const prediction = event.placePrediction;
+        if (!prediction) return;
+
+        const place = prediction.toPlace();
+        await place.fetchFields({ fields: ['location', 'formattedAddress', 'addressComponents'] });
+
+        if (place.location) {
+          const lat = place.location.lat();
+          const lng = place.location.lng();
+          const addr = (place.formattedAddress || '').toLowerCase();
 
           // Reject Iriga, Bato, and points outside strict Nabua bounds
           if (addr.includes('iriga') || addr.includes('bato') ||
@@ -827,13 +846,7 @@ const initGoogleMap = async () => {
           delete fieldErrors.value.locationAddress;
 
           updateCoords(lat, lng);
-          locationAddress.value = place.formatted_address || place.name || '';
-          inputEl.value = locationAddress.value;
-
-          setTimeout(() => {
-            document.querySelectorAll('.pac-container').forEach(el => el.style.display = 'none');
-            inputEl.blur();
-          }, 50);
+          locationAddress.value = place.formattedAddress || '';
         }
       });
     }
@@ -851,8 +864,15 @@ onMounted(async () => {
     // Resolve form state setup based on routing contexts
     await loadOnboardingData();
 
-    // Use shared loader — ensures the API key is always attached
-    await ensureMapsLoaded();
+    setOptions({
+      key: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+      v: 'weekly'
+    });
+
+    await importLibrary('maps');
+    await importLibrary('marker'); 
+    await importLibrary('places');
+    await importLibrary('geocoding');
 
     googleInstance = window.google; 
   } catch (err) {
@@ -876,7 +896,7 @@ watch(activeStep, async (newStep) => {
     await nextTick();
     await initGoogleMap();
   }
-}, { immediate: true });
+});
 
 watch(locationAddress, (newVal) => {
   const el = document.querySelector('gmp-place-autocomplete');
@@ -1472,14 +1492,7 @@ const submitApplication = async () => {
                     <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
                     <label class="text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
                   </div>
-                  <input 
-                    ref="addressInputRef"
-                    type="text" 
-                    v-model="locationAddress"
-                    @input="pinNeedsConfirmation = true"
-                    placeholder="Type boarding house address or street name in Nabua..." 
-                    class="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-blue-600 transition shadow-sm"
-                  />
+                  <div id="autocomplete-wrapper" class="w-full"></div>
                 </div>
 
                 <!-- STEP B: MAP VERIFICATION -->

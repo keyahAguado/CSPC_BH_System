@@ -1,43 +1,8 @@
-import { Loader } from '@googlemaps/js-api-loader';
-
-// ── Single shared loader instance for the entire app ──────────────────────
-// Using Loader (not setOptions/importLibrary) ensures the API key is always
-// attached at construction time and the script is loaded exactly once,
-// regardless of which component initialises it first.
-let _loader = null;
-let _loadPromise = null;
-
-const getLoader = () => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-    if (!_loader) {
-        _loader = new Loader({
-            apiKey,
-            version: 'weekly',
-            libraries: ['places', 'marker', 'geometry'],
-        });
-    }
-    return _loader;
-};
-
-/**
- * Loads the Google Maps Places library exactly once.
- * Returns true when ready, false if the key is missing.
- */
-export const ensureMapsLoaded = async () => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-    if (!apiKey) {
-        console.warn('[PLACES API] VITE_GOOGLE_MAPS_API_KEY is not set.');
-        return false;
-    }
-    if (!_loadPromise) {
-        _loadPromise = getLoader().load();
-    }
-    await _loadPromise;
-    return !!(window.google?.maps);
-};
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 /**
  * Hides the Google Places autocomplete dropdown (.pac-container) immediately.
+ * Called after selection so the popup doesn't block the rest of the form.
  */
 const dismissPacContainer = () => {
     document.querySelectorAll('.pac-container').forEach(el => {
@@ -47,59 +12,55 @@ const dismissPacContainer = () => {
 
 /**
  * Attaches Google Places Autocomplete to an HTML input element.
+ * Retains 100% manual typing capability if the location is not in Google Maps.
  *
- * - On place selected: fills address, hides dropdown, blurs input.
+ * Behaviour:
+ * - On place selected: fills the address, immediately hides the dropdown,
+ *   and blurs the input so the user can smoothly continue filling the form.
  * - On blur (click outside): dropdown closes automatically.
- * - Falls back to plain text input if key missing or offline.
+ * - Falls back to plain text input if the API key is missing or offline.
  *
- * @param {HTMLInputElement} inputEl
- * @param {Function} onAddressSelected
+ * @param {HTMLInputElement} inputEl - Target input element
+ * @param {Function} onAddressSelected - Callback triggered when user selects a suggestion
  */
 export const setupAddressAutocomplete = async (inputEl, onAddressSelected) => {
     if (!inputEl) return;
 
     try {
-        const ready = await ensureMapsLoaded();
-        if (!ready) return;
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (apiKey) {
+            setOptions({ apiKey, version: 'weekly' });
+        }
 
-        const autocomplete = new window.google.maps.places.Autocomplete(inputEl, {
-            componentRestrictions: { country: 'ph' },
-            fields: ['formatted_address', 'name', 'geometry'],
-        });
+        await importLibrary('places');
 
-        // Handle selection from Google Places dropdown
-        autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            const selectedAddress = place?.formatted_address || place?.name || inputEl.value;
-            if (selectedAddress) {
-                inputEl.value = selectedAddress;
-                inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                if (typeof onAddressSelected === 'function') {
-                    onAddressSelected(selectedAddress);
+        if (window.google && window.google.maps && window.google.maps.places) {
+            const autocomplete = new window.google.maps.places.Autocomplete(inputEl, {
+                componentRestrictions: { country: 'ph' },
+                fields: ['formatted_address', 'name', 'geometry']
+            });
+
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+                if (place && (place.formatted_address || place.name)) {
+                    const selectedAddress = place.formatted_address || place.name;
+                    if (typeof onAddressSelected === 'function') {
+                        onAddressSelected(selectedAddress);
+                    }
+                    // Dismiss dropdown and blur input so user can continue the form
+                    dismissPacContainer();
+                    inputEl.blur();
                 }
-            }
-            setTimeout(() => {
-                dismissPacContainer();
-                inputEl.blur();
-            }, 50);
-        });
+            });
 
-        // Guaranteed manual typing fallback for rural barangays and sitios missing on Google Maps
-        const syncManualTyping = () => {
-            if (typeof onAddressSelected === 'function') {
-                onAddressSelected(inputEl.value);
-            }
-        };
-
-        inputEl.addEventListener('input', syncManualTyping);
-        inputEl.addEventListener('change', syncManualTyping);
-
-        inputEl.addEventListener('blur', () => {
-            syncManualTyping();
-            setTimeout(dismissPacContainer, 150);
-        });
-
+            // Dismiss on blur — covers clicking anywhere outside the field
+            inputEl.addEventListener('blur', () => {
+                // Short delay so a click on a pac-item registers before hiding
+                setTimeout(dismissPacContainer, 150);
+            });
+        }
     } catch (err) {
-        console.warn('[PLACES API] Autocomplete fallback active:', err.message);
+        // Silently fallback to manual input if API script fails to load or offline
+        console.warn('[PLACES API] Autocomplete fallback active (manual typing enabled):', err.message);
     }
 };
