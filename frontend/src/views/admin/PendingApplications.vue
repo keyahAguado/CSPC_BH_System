@@ -371,7 +371,6 @@ onMounted(() => {
                   <tr v-for="(app, index) in applications" :key="app.id" class="border-b border-slate-200 hover:bg-slate-50 transition">
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-500 font-bold">{{ index + 1 }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 font-semibold">{{ app.owner_name }}</td>
-                    <td class="py-6 px-6 border-r border-slate-200 text-slate-600">{{ app.owner_email }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 font-black text-slate-900">
                       {{ app.name }}
                       <span v-if="app.house_status !== 'pending' && app.document_update_pending"
@@ -396,7 +395,7 @@ onMounted(() => {
                 </template>
                 <template v-else>
                   <tr class="border-b border-slate-200">
-                    <td colspan="7" class="py-12 text-center text-slate-400 italic font-semibold tracking-wider">
+                    <td colspan="6" class="py-12 text-center text-slate-400 italic font-semibold tracking-wider">
                       NO PENDING APPLICATIONS AT THE MOMENT.
                     </td>
                   </tr>

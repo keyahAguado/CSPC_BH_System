@@ -371,20 +371,19 @@ onMounted(() => {
                   <th class="px-6 py-4 text-center">Sex</th>
                   <th class="px-6 py-4">Course / Year</th>
                   <th class="px-6 py-4">Current Residence</th>
-                  <th class="px-6 py-4">Check-In</th>
                   <th class="px-6 py-4">Emergency Contact</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 text-[12px]">
                 <!-- No results at all -->
                 <tr v-if="filteredResidents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse && !searchQuery">
-                  <td colspan="6" class="px-6 py-20 text-center">
+                  <td colspan="5" class="px-6 py-20 text-center">
                     <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active residents registered across all boarding houses.</p>
                   </td>
                 </tr>
                 <!-- Filter applied but no matches -->
                 <tr v-else-if="filteredResidents.length === 0">
-                  <td colspan="6" class="px-6 py-16 text-center">
+                  <td colspan="5" class="px-6 py-16 text-center">
                     <p class="text-slate-700 font-black uppercase tracking-widest text-[11px] mb-2">No Active Residents on Record</p>
                     <p class="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Selected filter or search query has no matching residents at this time.</p>
                   </td>
@@ -392,7 +391,7 @@ onMounted(() => {
                 <template v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="group.house_name">
                   <!-- House Group Header Banner -->
                   <tr class="bg-blue-50/70 border-y border-blue-100">
-                    <td colspan="6" class="px-6 py-3.5">
+                    <td colspan="5" class="px-6 py-3.5">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-3">
                           <div class="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xs shadow-sm">
@@ -442,9 +441,6 @@ onMounted(() => {
                     <td class="px-6 py-5">
                       <div class="font-bold text-slate-700 uppercase tracking-tighter">{{ r.house_name }}</div>
                       <div class="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">Room #{{ r.room_number || 'N/A' }}</div>
-                    </td>
-                    <td class="px-6 py-5 text-slate-500 font-bold">
-                      {{ new Date(r.booking_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
                     </td>
                     <td class="px-6 py-5">
                       <div class="flex items-center gap-3">

@@ -483,10 +483,6 @@ onMounted(() => {
                   <span class="print-field-value print-name">{{ booking.student_name }}</span>
                 </div>
                 <div class="print-field">
-                  <span class="print-field-label">Age</span>
-                  <span class="print-field-value">{{ booking.age || '—' }}</span>
-                </div>
-                <div class="print-field">
                   <span class="print-field-label">Room</span>
                   <span class="print-field-value">
                     Room {{ booking.room_number }}
@@ -500,14 +496,6 @@ onMounted(() => {
                 <div class="print-field">
                   <span class="print-field-label">Check-Out Date</span>
                   <span class="print-field-value print-blue">{{ getCheckoutDateDisplay(booking) }}</span>
-                </div>
-                <div class="print-field print-field-wide">
-                  <span class="print-field-label">Address</span>
-                  <span class="print-field-value">{{ booking.address || '—' }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Contact Number</span>
-                  <span class="print-field-value">{{ booking.contact_number || '—' }}</span>
                 </div>
                 <div class="print-field">
                   <span class="print-field-label">Emergency Contact</span>
@@ -570,11 +558,8 @@ onMounted(() => {
               <tr class="text-slate-800 uppercase text-[10px] font-black tracking-wider">
                 <th class="px-4 py-3 whitespace-nowrap">REF NO.</th>
                 <th class="px-4 py-3 whitespace-nowrap">STUDENT NAME</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">AGE</th>
                 <th class="px-3 py-3 text-center whitespace-nowrap">ROOM</th>
                 <th class="px-3 py-3 text-center" style="min-width:110px">CHECK-IN /<br/>CHECK-OUT</th>
-                <th class="px-4 py-3 whitespace-nowrap">ADDRESS</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">CONTACT<br/>NUMBER</th>
                 <th class="px-3 py-3 text-center whitespace-nowrap">EMERGENCY<br/>CONTACT</th>
                 <th class="px-4 py-3 whitespace-nowrap">GUARDIAN<br/>NAME</th>
                 <th class="px-3 py-3 text-center whitespace-nowrap">DURATION<br/>&amp; STAY</th>
@@ -588,7 +573,7 @@ onMounted(() => {
                 
                 <!-- House Group Header (Matches User Screenshot) -->
                 <tr class="bg-blue-50/50 border-y border-blue-100 house-group-header">
-                  <td colspan="13" class="px-6 py-3.5">
+                  <td colspan="10" class="px-6 py-3.5">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-3">
                         <div class="w-8 h-8 bg-[#2a528a] text-white rounded-lg flex items-center justify-center shadow-xs shrink-0">
@@ -621,7 +606,6 @@ onMounted(() => {
                   <td class="px-4 py-6 font-bold text-slate-900 text-sm whitespace-nowrap">
                     {{ booking.student_name }}
                   </td>
-                  <td class="px-3 py-6 text-center font-bold text-slate-700">{{ booking.age || 'N/A' }}</td>
                   <td class="px-3 py-6 text-center whitespace-nowrap">
                     <span class="font-bold text-slate-900 text-xs block">Room {{ booking.room_number }}</span>
                     <span class="text-[9px] font-black uppercase tracking-wider block" :class="booking.room_gender === 'female' ? 'text-pink-500' : 'text-blue-500'">
@@ -631,12 +615,6 @@ onMounted(() => {
                   <td class="px-3 py-6 text-center font-bold text-slate-800 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-800">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' }}</span>
                     <span class="block text-[9px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
-                  </td>
-                  <td class="px-4 py-6 font-bold text-slate-600 text-xs min-w-[180px] max-w-[220px] leading-snug">
-                    {{ booking.address || 'N/A' }}
-                  </td>
-                  <td class="px-3 py-6 text-center font-bold text-slate-700 text-xs whitespace-nowrap">
-                    {{ booking.contact_number || 'N/A' }}
                   </td>
                   <td class="px-3 py-6 text-center font-bold text-slate-700 text-xs whitespace-nowrap">
                     {{ booking.emergency_contact || 'N/A' }}
@@ -810,10 +788,6 @@ onMounted(() => {
                 <span class="m-val">{{ booking.student_name }}</span>
               </div>
               <div class="m-row">
-                <span class="m-lbl">Age</span>
-                <span class="m-val">{{ booking.age || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
                 <span class="m-lbl">Room</span>
                 <span class="m-val">
                   {{ booking.room_number }}
@@ -832,14 +806,6 @@ onMounted(() => {
                 <span class="m-val font-extrabold text-blue-600">
                   <span>{{ getCheckoutDateDisplay(booking) }}</span>
                 </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Address</span>
-                <span class="m-val">{{ booking.address || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Contact Number</span>
-                <span class="m-val">{{ booking.contact_number || 'N/A' }}</span>
               </div>
               <div class="m-row">
                 <span class="m-lbl">Emergency Contact</span>

@@ -583,8 +583,6 @@ onMounted(async () => {
                 <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
                   <th class="py-6 px-3 w-12 border-r border-slate-100">#</th>
                   <th class="py-6 px-4 border-r border-slate-100">Boarding House</th>
-                  <th class="py-6 px-4 border-r border-slate-100">Owner Name</th>
-                  <th class="py-6 px-4 border-r border-slate-100">Email</th>
                   <th class="py-6 px-4 border-r border-slate-100 text-center">Date</th>
                   <th class="py-6 px-3 border-r border-slate-100">Owners Profile</th>
                   <th class="py-6 px-3 border-r border-slate-100">Boarding House Info</th>
@@ -595,15 +593,13 @@ onMounted(async () => {
               </thead>
               <tbody class="text-[13px] font-bold text-slate-700 divide-y divide-slate-100">
                 <tr v-if="filteredHouses.length === 0">
-                  <td colspan="10" class="py-20 text-slate-400 italic text-sm text-center font-black uppercase tracking-widest">
+                  <td colspan="8" class="py-20 text-slate-400 italic text-sm text-center font-black uppercase tracking-widest">
                     No archived boarding houses found.
                   </td>
                 </tr>
                 <tr v-for="(house, index) in paginatedHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
                   <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ startItemIndex + index }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-black text-slate-900 leading-tight uppercase">{{ house.name }}</td>
-                  <td class="py-6 px-4 border-r border-slate-100 font-semibold">{{ house.owner_name }}</td>
-                  <td class="py-6 px-4 border-r border-slate-100 text-slate-500">{{ house.owner_email }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 text-slate-400 font-black">
                     {{ formatDate(house.created_at) }}
                   </td>
