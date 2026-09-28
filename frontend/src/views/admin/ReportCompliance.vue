@@ -1,45 +1,17 @@
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printCompliance } from '../../utils/printHelper.js';
-import { DataTable } from 'simple-datatables';
-import 'simple-datatables/dist/style.css';
+import { matchesSearch } from '../../utils/search.js';
 
 const houses = ref([]);
 const reportDate = ref('');
 const searchQuery = ref('');
 const isLoading = ref(true);
 
-let dtInstance = null;
-
-const initDataTable = () => {
-  nextTick(() => {
-    const tableEl = document.getElementById('complianceTable');
-    if (tableEl && !dtInstance) {
-      try {
-        dtInstance = new DataTable(tableEl, {
-          perPage: 10,
-          perPageSelect: [10, 25, 50, 100],
-          searchable: false,
-          labels: {
-            perPage: "entries per page",
-            noRows: "No compliance audit records found",
-            info: "Showing {start} to {end} of {rows} entries",
-          }
-        });
-      } catch (err) {
-        console.warn('DataTable init error:', err);
-      }
-    }
-  });
-};
-
-watch(searchQuery, (val) => {
-  if (dtInstance) {
-    dtInstance.search(val);
-  }
-});
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
 
 const token = sessionStorage.getItem('cspc_token');
 
@@ -52,7 +24,6 @@ const fetchReport = async () => {
       houses.value = res.data.houses || [];
       const rawDate = res.data.reportDate ? new Date(res.data.reportDate) : new Date();
       reportDate.value = isNaN(rawDate) ? new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : rawDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-      initDataTable();
     }
   } catch (err) {
     console.error(err);
@@ -61,9 +32,41 @@ const fetchReport = async () => {
     if (!reportDate.value) {
       reportDate.value = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     }
-    initDataTable();
   }
 };
+
+const filteredHouses = computed(() => {
+  if (!searchQuery.value || !searchQuery.value.trim()) return houses.value;
+  return houses.value.filter(h =>
+    matchesSearch(searchQuery.value, [
+      h.name,
+      h.owner_name,
+      h.compliance_status
+    ])
+  );
+});
+
+const paginatedHouses = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return filteredHouses.value.slice(start, start + itemsPerPage.value);
+});
+
+const totalPages = computed(() => {
+  return Math.ceil(filteredHouses.value.length / itemsPerPage.value) || 1;
+});
+
+const startItemIndex = computed(() => {
+  if (filteredHouses.value.length === 0) return 0;
+  return (currentPage.value - 1) * itemsPerPage.value + 1;
+});
+
+const endItemIndex = computed(() => {
+  return Math.min(currentPage.value * itemsPerPage.value, filteredHouses.value.length);
+});
+
+watch([searchQuery, itemsPerPage], () => {
+  currentPage.value = 1;
+});
 
 const handlePrint = () => {
   window.print();
@@ -111,18 +114,36 @@ onMounted(() => {
         <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 no-print">
           <h2 class="text-base md:text-xl font-black text-[#2a528a] uppercase tracking-[0.1em] md:tracking-[0.2em]">Accreditation Compliance Audit Report</h2>
           
-          <!-- Single Search Input -->
-          <div class="relative w-full md:w-64">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
-              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+          <!-- Search Control Bar -->
+          <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+            <div class="relative w-full sm:w-72">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                <i class="fa-solid fa-magnifying-glass text-xs"></i>
+              </span>
+              <input 
+                type="text" 
+                v-model="searchQuery" 
+                placeholder="Search by name, owner, status..."
+                class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold tracking-wide focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" 
+              />
+            </div>
+            
+            <button
+              v-if="searchQuery"
+              @click="searchQuery = ''"
+              class="flex items-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-500 hover:text-red-600 rounded-xl text-xs font-black uppercase tracking-widest transition whitespace-nowrap"
+            >
+              <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+
+            <span class="text-xs font-black text-slate-400 uppercase tracking-wider whitespace-nowrap">
+              {{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}
             </span>
-            <input type="text" v-model="searchQuery" placeholder="SEARCH COMPLIANCE..."
-                class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
           </div>
         </div>
 
         <!-- Legend (Hidden in print) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-10 bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200 no-print-legend no-print">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-8 bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200 no-print-legend no-print">
           <div>
             <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Audit Legend</h3>
             <div class="flex flex-wrap gap-4">
@@ -142,8 +163,44 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredHouses.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-[#2a528a] text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block print:block overflow-x-auto rounded-xl border border-slate-200 mb-12">
+        <div class="hidden md:block print:block overflow-x-auto rounded-xl border border-slate-200 mb-8">
           <table class="w-full text-left whitespace-nowrap" id="complianceTable">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr class="text-[9px] font-black text-slate-600 uppercase tracking-widest border-b border-slate-200">
@@ -163,10 +220,34 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody class="text-[10px] text-slate-600">
-              <tr v-if="houses.length === 0">
-                <td colspan="10" class="px-4 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No compliance records found</td>
+              <tr v-if="filteredHouses.length === 0">
+                <td colspan="10" class="px-4 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No compliance audit records found</td>
               </tr>
-              <tr v-else v-for="h in houses" :key="h.name" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+              <!-- Use paginatedHouses for screen view, filteredHouses for print view -->
+              <tr v-else v-for="h in paginatedHouses" :key="h.name" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition print:hidden">
+                <td class="px-4 py-3 font-bold">
+                  <p class="font-black text-slate-900 uppercase leading-none">{{ h.name }}</p>
+                  <p class="text-[8px] text-slate-400 font-bold uppercase mt-1">{{ h.owner_name }}</p>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <span class="whitespace-nowrap inline-block text-center min-w-[70px] px-2.5 py-1 rounded-full border text-[8.5px] font-black uppercase tracking-wider"
+                    :class="{
+                      'bg-emerald-50 text-emerald-700 border-emerald-200': (h.compliance_status || '').toLowerCase() === 'active',
+                      'bg-amber-50 text-amber-700 border-amber-200': (h.compliance_status || '').toLowerCase() === 'warning',
+                      'bg-red-50 text-red-700 border-red-200': (h.compliance_status || '').toLowerCase() === 'expired' || (h.compliance_status || '').toLowerCase() === 'inactive'
+                    }">
+                    {{ h.compliance_status }}
+                  </span>
+                </td>
+                <td v-for="p in ['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire']" :key="p" class="px-3 py-3 text-center">
+                  <span v-if="h['expiry_permit_' + p]" :class="new Date(h['expiry_permit_' + p]) < new Date() ? 'text-red-600 font-black' : 'text-slate-700 font-bold'">
+                    {{ new Date(h['expiry_permit_' + p]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
+                  </span>
+                  <span v-else class="text-slate-300">N/A</span>
+                </td>
+              </tr>
+              <!-- Print-only rows showing all filtered entries -->
+              <tr v-for="h in filteredHouses" :key="'print-' + h.name" class="hidden print:table-row border-b border-slate-100 last:border-0">
                 <td class="px-4 py-3 font-bold">
                   <p class="font-black text-slate-900 uppercase leading-none">{{ h.name }}</p>
                   <p class="text-[8px] text-slate-400 font-bold uppercase mt-1">{{ h.owner_name }}</p>
@@ -193,12 +274,36 @@ onMounted(() => {
           </table>
         </div>
 
+        <!-- Bottom Pagination Bar -->
+        <div v-if="filteredHouses.length > 0" class="mb-10 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
+          <div>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</div>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-[#2a528a] text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
         <div class="block md:hidden print:hidden space-y-4 mb-12">
-          <div v-if="houses.length === 0" class="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
-            No compliance records found
+          <div v-if="filteredHouses.length === 0" class="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
+            No compliance audit records found
           </div>
-          <div v-else v-for="h in houses" :key="h.name" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+          <div v-else v-for="h in paginatedHouses" :key="h.name" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             
             <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
               <div>

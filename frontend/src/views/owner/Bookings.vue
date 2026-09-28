@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import { matchesSearch } from '../../utils/search.js';
 
 const route = useRoute();
 
@@ -89,19 +90,20 @@ const filteredBookings = computed(() => {
 
   if (!searchQuery.value || !searchQuery.value.trim()) return list;
 
-  const q = searchQuery.value.toLowerCase().trim();
   return list.filter(b =>
-    (b.student_name || '').toLowerCase().includes(q) ||
-    (b.room_number != null ? b.room_number.toString() : '').includes(q) ||
-    (b.id != null ? `ref-${b.id.toString().padStart(4, '0')}` : '').toLowerCase().includes(q) ||
-    (b.id != null ? b.id.toString() : '').includes(q) ||
-    (b.address || '').toLowerCase().includes(q) ||
-    (b.contact_number || '').toLowerCase().includes(q) ||
-    (b.emergency_contact || '').toLowerCase().includes(q) ||
-    (b.guardian_name || '').toLowerCase().includes(q) ||
-    (b.status || '').toLowerCase().includes(q) ||
-    (b.payment_status || '').toLowerCase().includes(q) ||
-    (b.payment_method || '').toLowerCase().includes(q)
+    matchesSearch(searchQuery.value, [
+      b.student_name,
+      b.room_number != null ? `Room ${b.room_number}` : '',
+      b.room_number != null ? String(b.room_number) : '',
+      b.id != null ? `REF-${b.id.toString().padStart(4, '0')}` : '',
+      b.id != null ? String(b.id) : '',
+      b.emergency_contact,
+      b.guardian_name,
+      b.status,
+      b.payment_status,
+      b.payment_method,
+      b.house_name
+    ])
   );
 });
 
@@ -356,8 +358,8 @@ onMounted(() => {
               <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i>
               </span>
-              <input type="text" v-model="searchQuery" placeholder="SEARCH BOOKINGS..."
-                  class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-300" />
+              <input type="text" v-model="searchQuery" placeholder="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..."
+                  class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
             </div>
 
             <!-- Status Filter -->
