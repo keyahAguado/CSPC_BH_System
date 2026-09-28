@@ -315,6 +315,16 @@ const submitUpdateCriteria = async () => {
   }
 };
 
+const isDocumentItemUpdated = (item) => {
+  if (!activeApp.value || !activeApp.value.document_update_pending || !activeApp.value.last_updated_document) {
+    return false;
+  }
+  const updatedList = String(activeApp.value.last_updated_document).split(',').map(s => s.trim());
+  const permitKey = item.permit_key;
+  const itemId = String(item.id);
+  return (permitKey && updatedList.includes(permitKey)) || updatedList.includes(itemId);
+};
+
 onMounted(() => {
   fetchPendingApplications();
 });
@@ -601,11 +611,15 @@ onMounted(() => {
                   </thead>
                   <tbody class="text-[12px] font-medium">
                     <tr v-for="(item, i) in getFilteredCriteria()" :key="item.id" class="border-b border-slate-50 last:border-0 hover:bg-amber-50/40 transition-colors"
-                        :class="{ 'bg-amber-100 border-l-4 border-amber-500 shadow-inner': activeApp.document_update_pending && (activeApp.last_updated_document === item.permit_key || activeApp.last_updated_document == item.id) }">
+                        :class="{ 'bg-amber-100/90 border-l-4 border-amber-500 shadow-inner': isDocumentItemUpdated(item) }">
                       <td class="p-6 text-center text-slate-300 font-bold text-xs italic">{{ i + 1 }}</td>
                       <td class="p-6">
                         <div class="flex items-center gap-2 flex-wrap">
                           <span class="text-slate-800 font-semibold text-[14px]">{{ item.label }}</span>
+                          <span v-if="isDocumentItemUpdated(item)"
+                                class="inline-flex items-center gap-1 bg-amber-500 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
+                            <i class="fa-solid fa-clock-rotate-left text-[9px]"></i> UPDATED
+                          </span>
                           <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
                                 class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
                             Required
@@ -640,10 +654,16 @@ onMounted(() => {
             <div class="block md:hidden space-y-4 mb-10">
               <div v-for="(item, i) in getFilteredCriteria()" :key="item.id" 
                    class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 transition space-y-3"
-                   :class="{ 'border-amber-500 border-l-4 bg-amber-50/50': activeApp.document_update_pending && (activeApp.last_updated_document === item.permit_key || activeApp.last_updated_document == item.id) }">
+                   :class="{ 'border-amber-500 border-l-4 bg-amber-50/90': isDocumentItemUpdated(item) }">
                 
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item # {{ i + 1 }}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item # {{ i + 1 }}</span>
+                    <span v-if="isDocumentItemUpdated(item)"
+                          class="inline-flex items-center gap-1 bg-amber-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
+                      <i class="fa-solid fa-clock-rotate-left text-[8px]"></i> UPDATED
+                    </span>
+                  </div>
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] font-bold text-slate-500 uppercase">Verify:</span>
                     <input type="checkbox" v-model="checkedChecklist[item.id]" class="w-5 h-5 rounded-md border-slate-300 text-[#2563eb] focus:ring-0 cursor-pointer" />

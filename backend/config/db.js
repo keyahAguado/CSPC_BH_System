@@ -56,6 +56,12 @@ async function ensureSchemaColumns() {
             await pool.query("ALTER TABLE rooms ADD COLUMN deleted_at DATETIME NULL DEFAULT NULL");
             console.log("✅ Auto-migrated: Added deleted_at to rooms table for soft deletes.");
         }
+
+        const [docCols] = await pool.query("SHOW COLUMNS FROM boarding_houses LIKE 'last_updated_document'");
+        if (docCols.length > 0 && docCols[0].Type.toLowerCase().includes('varchar(50)')) {
+            await pool.query("ALTER TABLE boarding_houses MODIFY COLUMN last_updated_document VARCHAR(255)");
+            console.log("✅ Auto-migrated: Expanded last_updated_document in boarding_houses table to VARCHAR(255).");
+        }
     } catch (err) {
         console.warn("⚠️ Auto-migration check warning:", err.message);
     }

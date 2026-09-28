@@ -18,8 +18,9 @@ const nameInput = ref('');
 const phoneInput = ref('');
 const addressInput = ref('');
 
+const savedUserSession = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
 const selectedFile = ref(null);
-const filePreview = ref('');
+const filePreview = ref(savedUserSession.profile_pic || '');
 const isSaving = ref(false);
 const isLoading = ref(true);
 

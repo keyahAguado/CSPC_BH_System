@@ -62,7 +62,7 @@ CREATE TABLE `boarding_houses` (
   `admin_comments` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `document_update_pending` tinyint(1) DEFAULT '0',
   `is_resubmission` tinyint(1) DEFAULT '0',
-  `last_updated_document` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `last_updated_document` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `latitude` decimal(10,8) DEFAULT NULL,
   `longitude` decimal(11,8) DEFAULT NULL,

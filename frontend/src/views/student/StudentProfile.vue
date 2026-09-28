@@ -263,7 +263,7 @@ onMounted(() => {
             <div class="flex flex-col md:flex-row items-center md:items-start gap-8 mb-12 pb-8 border-b border-slate-100 text-center md:text-left">
               <div class="relative group cursor-pointer w-24 h-24 flex-shrink-0 rounded-full border border-blue-200 shadow-sm overflow-hidden">
                 <img
-                  :src="profilePicPreview && !profilePicPreview.includes('googleusercontent') ? profilePicPreview : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
+                  :src="profilePicPreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
                   alt="Profile"
                   class="w-full h-full object-cover"
                   @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"

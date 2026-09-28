@@ -62,7 +62,7 @@ const getNotifType = (message) => {
     return 'general'; // Renders cleanly as a blue "System Update" card
   }
 
-  // Detect Booking / Reservation requests
+  // Detect Booking / Reservation requests & Extension requests
   if (
     msg.includes('booking') ||
     msg.includes('reservation') ||
@@ -70,7 +70,9 @@ const getNotifType = (message) => {
     msg.includes('room request') ||
     msg.includes('payment settled') ||
     msg.includes('new booking') ||
-    msg.includes('occupant')
+    msg.includes('occupant') ||
+    msg.includes('extension') ||
+    msg.includes('extension request')
   ) {
     return 'booking';
   }
@@ -140,8 +142,18 @@ const getNotifTargetRoute = (notif) => {
 
   if (role === 'owner') {
     if (type === 'booking') return '/owner/bookings';
-    if (type === 'expiry' || type === 'rejected' || type === 'general') return '/owner/documents';
+    if (type === 'expiry' || type === 'rejected' || type === 'general') {
+      const match = notif.message ? notif.message.match(/"([^"]+)"/) : null;
+      if (match && match[1]) {
+        return `/owner/documents?houseName=${encodeURIComponent(match[1])}`;
+      }
+      return '/owner/documents';
+    }
     if (type === 'approved') return '/owner/dashboard';
+    const match = notif.message ? notif.message.match(/"([^"]+)"/) : null;
+    if (match && match[1]) {
+      return `/owner/documents?houseName=${encodeURIComponent(match[1])}`;
+    }
     return '/owner/documents';
   }
 

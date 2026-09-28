@@ -314,15 +314,20 @@ onMounted(() => {
                     <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between flex-wrap gap-2">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
-                  <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
-                  <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
-                  <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
+                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
+                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center flex items-center justify-center">
                     View
+                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                      {{ room.pending_request_count }}
+                    </span>
                   </router-link>
                   <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
                     Edit
@@ -362,14 +367,19 @@ onMounted(() => {
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">
-                      <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
-                      <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
-                      <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                      <div class="flex flex-col items-center gap-1.5">
+                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
+                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
+                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                      </div>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-flex items-center">
                           Details
+                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                            {{ room.pending_request_count }}
+                          </span>
                         </router-link>
                         <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
                           Edit
@@ -409,21 +419,26 @@ onMounted(() => {
                     <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between flex-wrap gap-2">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
-                  <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
-                  <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
-                  <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
+                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
+                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center flex items-center justify-center">
                     View
+                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                      {{ room.pending_request_count }}
+                    </span>
                   </router-link>
                   <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
                     Edit
                   </button>
-                  <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
-                    Delete
+                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                    Archive
                   </button>
                 </div>
               </div>
@@ -457,20 +472,25 @@ onMounted(() => {
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">
-                      <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
-                      <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
-                      <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                      <div class="flex flex-col items-center gap-1.5">
+                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
+                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
+                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                      </div>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-block">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-flex items-center">
                           Details
+                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                            {{ room.pending_request_count }}
+                          </span>
                         </router-link>
                         <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
                           Edit
                         </button>
-                        <button @click="openDeleteModal(room)" class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-100 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
-                          Delete
+                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                          Archive
                         </button>
                       </div>
                     </td>

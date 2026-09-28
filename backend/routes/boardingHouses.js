@@ -316,6 +316,25 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
         // If current status is rejected, transition it back to pending upon resubmission
         const targetStatus = currentStatus === 'rejected' ? 'pending' : currentStatus;
 
+        // Fetch current document update tracking state to accumulate multiple updated documents in a single pending session
+        const [currentHouseState] = await connection.query(
+            'SELECT document_update_pending, last_updated_document FROM boarding_houses WHERE id = ?',
+            [houseId]
+        );
+
+        const docKey = (is_custom === 'true' || is_custom === true) ? identifier.toString() : identifier;
+        let updatedDocs = [];
+        if (currentHouseState.length > 0 && currentHouseState[0].document_update_pending && currentHouseState[0].last_updated_document) {
+            const existingList = currentHouseState[0].last_updated_document.split(',').map(s => s.trim()).filter(Boolean);
+            if (!existingList.includes(docKey)) {
+                existingList.push(docKey);
+            }
+            updatedDocs = existingList;
+        } else {
+            updatedDocs = [docKey];
+        }
+        const accumulatedDocsStr = updatedDocs.join(',').slice(0, 250);
+
         // ─── CASE A: Dynamic / Custom Checklist Document ───
         if (is_custom === 'true' || is_custom === true) {
             const criteriaId = parseInt(identifier);
@@ -356,7 +375,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
                 `UPDATE boarding_houses 
                  SET house_status = ?, document_update_pending = 1, last_updated_document = ? 
                  WHERE id = ? AND owner_id = ?`,
-                [targetStatus, criteriaId.toString(), houseId, req.user.id]
+                [targetStatus, accumulatedDocsStr, houseId, req.user.id]
             );
 
             // Fetch label for custom notification message
@@ -383,7 +402,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
                 `UPDATE boarding_houses 
                  SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, document_update_pending = 1, last_updated_document = ? 
                  WHERE id = ? AND owner_id = ?`,
-                [fileUrl, parsedExpiryDate, targetStatus, identifier, houseId, req.user.id]
+                [fileUrl, parsedExpiryDate, targetStatus, accumulatedDocsStr, houseId, req.user.id]
             );
 
             const labels = {

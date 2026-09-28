@@ -11,6 +11,7 @@ const bookings = ref([]);
 const houseName = ref('');
 const houseId = ref(route.query.houseId || '');
 const searchQuery = ref('');
+const statusFilter = ref('all');
 const isLoading = ref(true);
 const reportDate = ref(new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
 
@@ -22,8 +23,8 @@ const alertRef = ref(null);
 const token = sessionStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
 
-// Reset to page 1 whenever user types in search query
-watch(searchQuery, () => {
+// Reset to page 1 whenever user types in search query or changes status filter
+watch([searchQuery, statusFilter], () => {
   currentPage.value = 1;
 });
 
@@ -80,10 +81,16 @@ const fetchBookings = async () => {
 };
 
 const filteredBookings = computed(() => {
-  if (!searchQuery.value || !searchQuery.value.trim()) return bookings.value;
+  let list = bookings.value;
+
+  if (statusFilter.value && statusFilter.value !== 'all') {
+    list = list.filter(b => (b.status || '').toLowerCase() === statusFilter.value.toLowerCase());
+  }
+
+  if (!searchQuery.value || !searchQuery.value.trim()) return list;
 
   const q = searchQuery.value.toLowerCase().trim();
-  return bookings.value.filter(b =>
+  return list.filter(b =>
     (b.student_name || '').toLowerCase().includes(q) ||
     (b.room_number != null ? b.room_number.toString() : '').includes(q) ||
     (b.id != null ? `ref-${b.id.toString().padStart(4, '0')}` : '').toLowerCase().includes(q) ||
@@ -345,12 +352,23 @@ onMounted(() => {
           <!-- Left side -->
           <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <!-- Search bar -->
-            <div class="relative w-full sm:w-64 md:w-80">
+            <div class="relative w-full sm:w-56 md:w-72">
               <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i>
               </span>
               <input type="text" v-model="searchQuery" placeholder="SEARCH BOOKINGS..."
                   class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-300" />
+            </div>
+
+            <!-- Status Filter -->
+            <div class="relative w-full sm:w-44">
+              <select v-model="statusFilter" class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm focus:border-[#2a528a] outline-none cursor-pointer">
+                <option value="all">ALL STATUSES</option>
+                <option value="pending">PENDING REQUESTS</option>
+                <option value="confirmed">CONFIRMED / ACTIVE</option>
+                <option value="completed">COMPLETED / CHECKED OUT</option>
+                <option value="rejected">REJECTED / CANCELLED</option>
+              </select>
             </div>
 
             <!-- Print Trigger button -->

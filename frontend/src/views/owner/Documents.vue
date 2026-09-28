@@ -20,6 +20,9 @@ const isRejected = ref(false);
 const isResubmitted = ref(false);
 const adminComments = ref('');
 
+const ownerProperties = ref([]);
+const selectedHouseId = ref('');
+
 const isLoading = ref(true);
 const isUpdating = ref({});
 const alertRef = ref(null);
@@ -31,10 +34,39 @@ const showSystemAlert = (message, type = 'error') => {
   }
 };
 
-const fetchDocuments = async () => {
+const fetchOwnerProperties = async () => {
+  try {
+    const res = await axios.get('/api/boarding-houses/my-property', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.data.success) {
+      ownerProperties.value = res.data.properties || (res.data.data ? [res.data.data] : []);
+      
+      const paramId = route.params.id;
+      const queryHouseName = route.query.houseName;
+      
+      if (paramId) {
+        selectedHouseId.value = paramId;
+      } else if (queryHouseName) {
+        const matched = ownerProperties.value.find(p => (p.name || '').toLowerCase() === queryHouseName.toLowerCase());
+        if (matched) {
+          selectedHouseId.value = matched.id;
+        } else if (ownerProperties.value.length > 0) {
+          selectedHouseId.value = ownerProperties.value[0].id;
+        }
+      } else if (ownerProperties.value.length > 0) {
+        selectedHouseId.value = ownerProperties.value[0].id;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load owner properties list:', err);
+  }
+};
+
+const fetchDocuments = async (overrideId) => {
   try {
     isLoading.value = true;
-    const houseId = route.params.id || '';
+    const houseId = overrideId || selectedHouseId.value || route.params.id || '';
     
     // Fetch records using correct boarding-houses prefix
     const response = await axios.get(`/api/boarding-houses/documents/${houseId}`, {
@@ -43,6 +75,9 @@ const fetchDocuments = async () => {
 
      if (response.data.success) {
       house.value = response.data.house;
+      if (house.value && house.value.id) {
+        selectedHouseId.value = house.value.id;
+      }
       const rawCriteria = response.data.criteria || [];
       const mandatoryOrder = {
         'permit_business_form': 1,
@@ -91,6 +126,14 @@ const fetchDocuments = async () => {
     showSystemAlert('Could not fetch legal documents data.', 'warning');
   } finally {
     isLoading.value = false;
+  }
+};
+
+const handleHouseSwitch = (e) => {
+  const newId = e.target.value;
+  if (newId) {
+    selectedHouseId.value = newId;
+    fetchDocuments(newId);
   }
 };
 
@@ -204,8 +247,9 @@ const saveDocumentUpdate = async (p) => {
   }
 };
 
-onMounted(() => {
-  fetchDocuments();
+onMounted(async () => {
+  await fetchOwnerProperties();
+  await fetchDocuments();
 });
 </script>
 
@@ -216,10 +260,22 @@ onMounted(() => {
 
     <main class="flex-1 bg-slate-100 py-16 px-4">
       
-<div class="max-w-3xl mx-auto mb-6 text-left">
-        <router-link to="/owner/dashboard" class="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-black uppercase tracking-widest transition mb-4">
-          <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
-        </router-link>
+      <div class="max-w-3xl mx-auto mb-6 text-left">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <router-link to="/owner/dashboard" class="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-black uppercase tracking-widest transition">
+            <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+          </router-link>
+
+          <!-- Boarding House Selector for Multi-Property Owners -->
+          <div v-if="ownerProperties.length > 1" class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">Property:</label>
+            <select :value="selectedHouseId" @change="handleHouseSwitch" class="bg-transparent font-black text-slate-800 text-xs outline-none cursor-pointer">
+              <option v-for="p in ownerProperties" :key="p.id" :value="p.id">
+                {{ p.name }}
+              </option>
+            </select>
+          </div>
+        </div>
         
         <!-- Rejection Warning Alert Card (Active Rejection) -->
         <div v-if="isRejected" class="mb-10 bg-[#fff1f2] border-2 border-[#fecaca] rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden text-left">
@@ -285,11 +341,16 @@ onMounted(() => {
       <div v-else class="max-w-3xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden text-left animate-in fade-in duration-300">
         <div class="p-8 md:p-12">
           
-          <div class="flex items-center justify-center gap-3 mb-8 border-b border-slate-100 pb-8 text-black">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-[#2a528a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <h2 class="text-3xl font-bold tracking-tight">Manage Legal Documents</h2>
+          <div class="flex flex-col items-center justify-center text-center mb-8 border-b border-slate-100 pb-8 text-black">
+            <div class="flex items-center justify-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-[#2a528a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <h2 class="text-3xl font-bold tracking-tight text-slate-800">Manage Legal Documents</h2>
+            </div>
+            <p v-if="house?.name" class="text-[#2a528a] text-sm font-black uppercase tracking-wider mt-2">
+              {{ house.name }}
+            </p>
           </div>
 
           <div class="bg-[#fef3c7] text-[#c2862c] px-6 py-5 rounded-md mb-10 text-[14px]">
