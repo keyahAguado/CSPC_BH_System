@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printEmergencyRegistry } from '../../utils/printHelper.js';
+import { matchesSearch } from '../../utils/search.js';
 import { DataTable } from 'simple-datatables';
 import 'simple-datatables/dist/style.css';
 
@@ -129,8 +130,27 @@ const groupedResidents = computed(() => {
     };
   });
 
-  // Fill in residents
-  residents.value.forEach(r => {
+  // Filter residents using student-side flexible multi-word matching logic
+  const filteredList = searchQuery.value.trim()
+    ? residents.value.filter(r =>
+        matchesSearch(searchQuery.value, [
+          r.resident_name,
+          r.student_email,
+          r.course,
+          r.year_level,
+          r.home_address,
+          r.guardian_name,
+          r.emergency_contact,
+          r.house_name,
+          r.house_location,
+          r.house_barangay,
+          r.house_owner_phone
+        ])
+      )
+    : residents.value;
+
+  // Fill in filtered residents
+  filteredList.forEach(r => {
     const key = r.house_id;
     if (groups[key]) {
       if (!groups[key].house_owner_phone && r.house_owner_phone) {
@@ -262,18 +282,26 @@ onMounted(() => {
             </select>
           </div>
 
-          <!-- Search Input -->
-          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
-            <div class="pl-3 text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></div>
-            <input type="text" v-model="searchQuery" placeholder="SEARCH RESIDENTS..." class="bg-transparent border-none w-full text-[11px] font-bold text-slate-700 outline-none pr-2 placeholder:text-slate-400" />
-          </div>
-
           <!-- Export/Print Button -->
           <button @click="handleExport"
              class="w-full md:w-auto justify-center bg-red-600 border border-red-700 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition shadow-sm flex items-center gap-2">
             <i class="fa-solid fa-print"></i> {{ printLabel }}
           </button>
         </div>
+      </div>
+
+      <!-- Dedicated Flexible Search Control Bar (Relocated Below Filters for Spacious Layout) -->
+      <div class="bg-white rounded-2xl border border-slate-200 px-5 py-3.5 mb-8 shadow-sm flex items-center gap-3 no-print">
+        <div class="text-slate-400 pl-1"><i class="fa-solid fa-magnifying-glass text-sm"></i></div>
+        <input 
+          type="text" 
+          v-model="searchQuery" 
+          placeholder="SEARCH RESIDENTS BY NAME, EMAIL, COURSE, ROOM, HOME ADDRESS, OR EMERGENCY CONTACT..." 
+          class="bg-transparent border-none w-full text-[11px] font-bold text-slate-800 outline-none placeholder:text-slate-400 tracking-wide" 
+        />
+        <button v-if="searchQuery" @click="searchQuery = ''" class="text-slate-400 hover:text-slate-600 text-[10px] font-black uppercase tracking-widest px-2 transition">
+          Clear
+        </button>
       </div>
 
       <!-- Loading State Indicator (PWA inline SVG Loader) -->

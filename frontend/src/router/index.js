@@ -398,4 +398,9 @@ router.beforeEach((to, from, next) => {
     next();
 });
 
+// Clean up orphaned Google Places Autocomplete (.pac-container) elements on route transition
+router.afterEach(() => {
+    document.querySelectorAll('.pac-container').forEach(el => el.remove());
+});
+
 export default router;

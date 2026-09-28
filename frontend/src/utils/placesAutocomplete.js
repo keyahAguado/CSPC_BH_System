@@ -1,11 +1,12 @@
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 /**
- * Hides the Google Places autocomplete dropdown (.pac-container) immediately.
+ * Hides and cleans up Google Places autocomplete dropdown (.pac-container) immediately.
  */
-const dismissPacContainer = () => {
+export const dismissPacContainer = () => {
     document.querySelectorAll('.pac-container').forEach(el => {
         el.style.display = 'none';
+        el.style.visibility = 'hidden';
     });
 };
 

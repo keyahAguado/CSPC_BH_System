@@ -1021,14 +1021,26 @@ const submitApplication = async () => {
     });
 
     if (response.data.success) {
-      successMsg.value = 'Onboarding complete! Awaiting SASO approval.';
+      const isAlreadyAccredited = currentUser.value.houseStatus === 'accredited';
+      const successNotice = isAlreadyAccredited
+        ? 'New boarding house application submitted! Awaiting SASO approval.'
+        : 'Onboarding complete! Awaiting SASO approval.';
+
+      successMsg.value = successNotice;
       if (alertRef.value) {
-        alertRef.value.showSystemAlert('Onboarding application submitted! Awaiting SASO approval.', 'success');
+        alertRef.value.showSystemAlert(successNotice, 'success');
       }
-      const updatedUser = { ...currentUser.value, houseStatus: 'pending', houseId: response.data.houseId };
+
+      const freshHouseStatus = isAlreadyAccredited ? 'accredited' : 'pending';
+      const updatedUser = { ...currentUser.value, houseStatus: freshHouseStatus, houseId: response.data.houseId };
       sessionStorage.setItem('cspc_user', JSON.stringify(updatedUser));
+
       setTimeout(() => {
-        router.push('/owner/pending-review');
+        if (isAlreadyAccredited) {
+          router.push('/owner/dashboard');
+        } else {
+          router.push('/owner/pending-review');
+        }
       }, 1500);
     }
   } catch (err) {

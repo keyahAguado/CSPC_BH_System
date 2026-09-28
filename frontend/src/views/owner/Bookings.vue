@@ -85,7 +85,6 @@ const filteredBookings = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   return bookings.value.filter(b =>
     (b.student_name || '').toLowerCase().includes(q) ||
-    (b.house_name || '').toLowerCase().includes(q) ||
     (b.room_number != null ? b.room_number.toString() : '').includes(q) ||
     (b.id != null ? `ref-${b.id.toString().padStart(4, '0')}` : '').toLowerCase().includes(q) ||
     (b.id != null ? b.id.toString() : '').includes(q) ||
@@ -383,6 +382,44 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredBookings.length > 0" class="px-6 py-3.5 bg-white border-b border-slate-200/60 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print print:hidden">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }} to {{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }} of {{ filteredBookings.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" @change="currentPage = 1" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              type="button"
+              @click="prevPage" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              type="button"
+              @click="nextPage" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
 
         <!-- ===== PRINT-ONLY LAYOUT (hidden on screen, shown only when printing) ===== -->
         <div class="hidden print:block print-report-body">
@@ -676,30 +713,43 @@ onMounted(() => {
 
         <!-- Pagination Bar — always visible when there are bookings -->
         <div v-if="filteredBookings.length > 0" class="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 pagination-container no-print print:hidden">
-          <p class="text-xs font-bold text-slate-500">
-            Showing <span class="font-black text-slate-800">{{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }}</span>
-            to <span class="font-black text-slate-800">{{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }}</span>
-            of <span class="font-black text-slate-800">{{ filteredBookings.length }}</span> booking{{ filteredBookings.length > 1 ? 's' : '' }}
-          </p>
-          <div class="flex items-center gap-3">
-            <select v-model="itemsPerPage" @change="currentPage = 1"
-              class="text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-[#2a528a] transition cursor-pointer">
-              <option :value="10">10 per page</option>
-              <option :value="25">25 per page</option>
-              <option :value="50">50 per page</option>
-              <option :value="9999">Show all</option>
-            </select>
-            <div v-if="totalPages > 1" class="flex items-center gap-2">
-              <button type="button" @click="prevPage" :disabled="currentPage === 1"
-                class="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs cursor-pointer">
-                Previous
-              </button>
-              <span class="text-xs font-black text-slate-700 px-2">Page {{ currentPage }} of {{ totalPages }}</span>
-              <button type="button" @click="nextPage" :disabled="currentPage === totalPages"
-                class="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs cursor-pointer">
-                Next
-              </button>
+          <div class="flex items-center gap-4">
+            <span class="text-xs font-bold text-slate-500">
+              Showing <span class="font-black text-slate-800">{{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }}</span>
+              to <span class="font-black text-slate-800">{{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }}</span>
+              of <span class="font-black text-slate-800">{{ filteredBookings.length }}</span> booking{{ filteredBookings.length > 1 ? 's' : '' }}
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" @change="currentPage = 1" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
             </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              type="button"
+              @click="prevPage" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              type="button"
+              @click="nextPage" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
           </div>
         </div>
 

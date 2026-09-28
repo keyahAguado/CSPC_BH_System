@@ -1,13 +1,10 @@
 <script setup>
-import { ref, watch, computed, onMounted, nextTick } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
-import { DataTable } from 'simple-datatables';
-import 'simple-datatables/dist/style.css';
-
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
-import { downloadOriginalFile } from '../../utils/downloadHelper';
+import { matchesSearch } from '../../utils/search.js';
 import { formatAddress } from '../../utils/formatAddress.js';
 
 const houses = ref([]);
@@ -16,12 +13,21 @@ const searchQuery = ref('');
 
 const filteredHouses = computed(() => {
   if (!searchQuery.value) return houses.value;
-  const q = searchQuery.value.toLowerCase().trim();
   return houses.value.filter(h =>
-    h.name?.toLowerCase().includes(q) ||
-    h.owner_name?.toLowerCase().includes(q) ||
-    h.owner_email?.toLowerCase().includes(q) ||
-    h.location?.toLowerCase().includes(q)
+    matchesSearch(searchQuery.value, [
+      h.name,
+      h.owner_name,
+      h.owner_email,
+      h.created_at ? formatDate(h.created_at) : '',
+      h.created_at ? String(h.created_at) : '',
+      h.owner_phone,
+      h.phone_contact,
+      h.location,
+      h.barangay,
+      h.description,
+      h.amenities_free,
+      h.amenities_paid
+    ])
   );
 });
 
@@ -73,6 +79,8 @@ const showConfirmModal = ref(false);
 // Active contexts 
 const activeHouse = ref(null);
 const activeDocs = ref([]);
+const requiredDocs = ref([]);
+const optionalDocs = ref([]);
 const activeRooms = ref([]);
 const activeRoomOccupants = ref([]);
 const activeRoomData = ref(null);
@@ -132,34 +140,30 @@ const executeConfirm = async () => {
   }
 };
 
-let dtInstance = null;
+// Pure Vue Reactive Pagination
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
 
-const initDataTable = () => {
-  nextTick(() => {
-    const tableEl = document.getElementById('archivedTable');
-    if (tableEl && !dtInstance) {
-      try {
-        dtInstance = new DataTable(tableEl, {
-          perPage: 10,
-          perPageSelect: [10, 25, 50, 100],
-          searchable: false,
-          labels: {
-            perPage: "entries per page",
-            noRows: "No archived boarding houses found",
-            info: "Showing {start} to {end} of {rows} entries",
-          }
-        });
-      } catch (err) {
-        console.warn('DataTable init error:', err);
-      }
-    }
-  });
-};
+watch(searchQuery, () => {
+  currentPage.value = 1;
+});
 
-watch(searchQuery, (val) => {
-  if (dtInstance) {
-    dtInstance.search(val);
-  }
+const paginatedHouses = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return filteredHouses.value.slice(start, start + itemsPerPage.value);
+});
+
+const totalPages = computed(() => {
+  return Math.ceil(filteredHouses.value.length / itemsPerPage.value) || 1;
+});
+
+const startItemIndex = computed(() => {
+  if (filteredHouses.value.length === 0) return 0;
+  return (currentPage.value - 1) * itemsPerPage.value + 1;
+});
+
+const endItemIndex = computed(() => {
+  return Math.min(currentPage.value * itemsPerPage.value, filteredHouses.value.length);
 });
 
 const fetchArchivedHouses = async () => {
@@ -177,7 +181,6 @@ const fetchArchivedHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
-      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load archived houses:', error);
@@ -185,7 +188,6 @@ const fetchArchivedHouses = async () => {
     showSystemAlert('Could not fetch archived boarding houses.', 'warning');
   } finally {
     isLoading.value = false;
-    initDataTable();
   }
 };
 
@@ -278,39 +280,49 @@ const closeBhInfo = () => {
 // Documents Viewer
 const openDocs = (house) => {
   activeHouse.value = house;
-  const permits = [
-    { label: 'Business Permit', key: 'permit_business_form' },
-    { label: 'Cedula', key: 'permit_cedula' },
-    { label: 'DTI Registration', key: 'permit_dti' },
-    { label: 'Barangay Clearance', key: 'permit_barangay' },
-    { label: 'Building Inspection', key: 'permit_building' },
-    { label: 'Zoning/Locational', key: 'permit_zoning' },
-    { label: 'Sanitary/Health', key: 'permit_sanitary' },
-    { label: 'Fire Safety', key: 'permit_fire' }
+
+  const requiredList = [
+    { label: 'BUSINESS PERMIT APPLICATION FORM', key: 'permit_business_form' },
+    { label: 'BARANGAY BUSINESS CLEARANCE', key: 'permit_barangay' },
+    { label: 'SANITARY PERMIT / HEALTH CLEARANCE', key: 'permit_sanitary' },
+    { label: 'VALID FIRE SAFETY INSPECTION CERTIFICATE', key: 'permit_fire' }
   ];
 
-  const uploads = permits.map(p => ({
+  const optionalList = [
+    { label: 'COMMUNITY TAX CERTIFICATE (CEDULA)', key: 'permit_cedula' },
+    { label: 'DTI REGISTRATION CERTIFICATE', key: 'permit_dti' },
+    { label: 'CERTIFICATE OF BUILDING INSPECTION', key: 'permit_building' },
+    { label: 'ZONING CERTIFICATE / LOCATIONAL CLEARANCE', key: 'permit_zoning' }
+  ];
+
+  requiredDocs.value = requiredList.map(p => ({
     label: p.label,
-    file: house[p.key] || null,
-    isDynamic: false
+    file: house[p.key] || null
   }));
+
+  const standardOptional = optionalList.map(p => ({
+    label: p.label,
+    file: house[p.key] || null
+  }));
+
+  const facadeDoc = house.img ? [{ label: 'FACADE PHOTO', file: house.img }] : [];
 
   const dynamicUploaded = dynamicDocs.value
     .filter(d => d.house_id === house.id)
     .map(d => ({
-      label: d.criteria_label || 'Additional Doc',
-      file: d.file_path,
-      isDynamic: true
+      label: (d.criteria_label || 'ADDITIONAL DOCUMENT').toUpperCase(),
+      file: d.file_path
     }));
 
-  activeDocs.value = [...uploads, ...dynamicUploaded];
+  optionalDocs.value = [...standardOptional, ...facadeDoc, ...dynamicUploaded];
   showDocModal.value = true;
 };
 
 const closeDocs = () => {
   showDocModal.value = false;
   activeHouse.value = null;
-  activeDocs.value = [];
+  requiredDocs.value = [];
+  optionalDocs.value = [];
 };
 
 // Rooms Matrix
@@ -438,13 +450,61 @@ onMounted(async () => {
       <!-- Content Container -->
       <div v-else>
         <!-- Search Control Bar (Positioned at TOP for Mobile & Desktop) -->
-        <div class="flex justify-between items-center mb-6 gap-4">
-          <div class="relative w-full sm:w-80">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
-              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+        <div class="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <!-- Search Input -->
+          <div class="relative flex-1 min-w-0 w-full sm:w-auto">
+            <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search by name, owner, contact, location..."
+              class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
+            />
+          </div>
+
+          <!-- Clear Filter Button -->
+          <button
+            v-if="searchQuery"
+            @click="searchQuery = ''"
+            class="flex items-center gap-2 px-4 py-3 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-500 hover:text-red-600 rounded-2xl text-xs font-black uppercase tracking-widest transition whitespace-nowrap w-full sm:w-auto justify-center"
+          >
+            <i class="fa-solid fa-xmark"></i> Clear
+          </button>
+        </div>
+
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredHouses.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
             </span>
-            <input type="text" v-model="searchQuery" placeholder="SEARCH ARCHIVED RECORDS..."
-                class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest focus:border-[#2563eb] outline-none transition-all placeholder:text-slate-400 shadow-xs" />
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
           </div>
         </div>
 
@@ -461,10 +521,10 @@ onMounted(async () => {
           </div>
 
           <div v-else class="space-y-4">
-            <div v-for="(house, index) in filteredHouses" :key="house.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
+            <div v-for="(house, index) in paginatedHouses" :key="house.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
               <div class="flex justify-between items-start border-b border-slate-200/60 pb-2">
                 <div>
-                  <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{{ index + 1 }}</span>
+                  <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{{ startItemIndex + index }}</span>
                   <h3 class="text-base font-black text-slate-900 uppercase tracking-tight leading-tight mt-0.5">{{ house.name }}</h3>
                 </div>
                 <span class="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-2xs">
@@ -511,7 +571,7 @@ onMounted(async () => {
         <!-- DESKTOP TABLE LAYOUT -->
         <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <div class="overflow-x-auto">
-            <table class="w-full text-center border-collapse min-w-[1300px]" id="archivedTable">
+            <table class="w-full text-center border-collapse min-w-[1300px]">
               <thead>
                 <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
                   <th class="py-6 px-3 w-12 border-r border-slate-100">#</th>
@@ -532,8 +592,8 @@ onMounted(async () => {
                     No archived boarding houses found.
                   </td>
                 </tr>
-                <tr v-for="(house, index) in filteredHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
-                  <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ index + 1 }}</td>
+                <tr v-for="(house, index) in paginatedHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
+                  <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ startItemIndex + index }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-black text-slate-900 leading-tight uppercase">{{ house.name }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-semibold">{{ house.owner_name }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 text-slate-500">{{ house.owner_email }}</td>
@@ -573,6 +633,42 @@ onMounted(async () => {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Pure Vue Reactive Pagination Bar -->
+          <div v-if="filteredHouses.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+            <div class="flex items-center gap-4">
+              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+                <select v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                @click="currentPage > 1 && currentPage--" 
+                :disabled="currentPage === 1"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              </button>
+              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-black text-xs">
+                {{ currentPage }} / {{ totalPages }}
+              </span>
+              <button 
+                @click="currentPage < totalPages && currentPage++" 
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -643,7 +739,7 @@ onMounted(async () => {
 
     <!-- Boarding House Info Modal -->
     <div v-if="showBhModal && activeHouse" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh] overflow-hidden text-left border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-6xl flex flex-col max-h-[92vh] overflow-hidden text-left border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="bg-slate-900 text-white px-8 py-5 flex justify-between items-center rounded-t-[2.5rem] shrink-0">
           <div class="flex items-center gap-3">
             <img src="/img/CSPC_logo.png" alt="Logo" class="w-7 h-7 object-contain" />
@@ -653,7 +749,7 @@ onMounted(async () => {
         </div>
         
         <div class="flex-1 overflow-y-auto bg-white p-8 md:p-12 space-y-8">
-          <div class="max-w-3xl mx-auto">
+          <div class="max-w-none">
             <h1 class="text-3xl md:text-4xl font-black text-slate-900 uppercase tracking-tight leading-tight">{{ activeHouse.name }}</h1>
             <div class="flex items-center gap-4 mt-3 flex-wrap">
               <div class="flex items-center gap-2">
@@ -758,6 +854,44 @@ onMounted(async () => {
               <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Description</h3>
               <p class="text-sm font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">{{ activeHouse.description || 'No description provided.' }}</p>
             </div>
+
+            <!-- Student Reviews & Ratings -->
+            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Student Reviews &amp; Ratings</h3>
+                <div v-if="activeHouse.avg_rating" class="flex items-center gap-1.5 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20 shrink-0">
+                  <i class="fa-solid fa-star text-yellow-500 text-[10px]"></i>
+                  <span class="text-[10px] font-black text-yellow-700">{{ Number(activeHouse.avg_rating).toFixed(1) }} average ({{ activeHouse.review_count || 0 }} {{ (activeHouse.review_count || 0) === 1 ? 'review' : 'reviews' }})</span>
+                </div>
+              </div>
+
+              <div v-if="isLoadingReviews" class="py-8 flex justify-center">
+                <div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+              <div v-else-if="reviews.length === 0" class="py-8 text-center">
+                <p class="text-slate-400 italic text-xs font-black uppercase tracking-widest">No reviews submitted yet — rating shown on the dashboard is not yet backed by any review.</p>
+              </div>
+              <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
+                <div v-for="r in reviews" :key="r.id" class="bg-white rounded-2xl p-4 border border-slate-100 flex gap-3">
+                  <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
+                    <img v-if="r.profile_pic" :src="getImageUrl(r.profile_pic)" class="w-full h-full object-cover" />
+                    <i v-else class="fa-solid fa-user text-xs"></i>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <span class="font-black text-slate-800 text-xs uppercase tracking-tight">{{ r.student_name }}</span>
+                      <div class="flex items-center gap-2 shrink-0">
+                        <div class="flex gap-0.5">
+                          <i v-for="star in 5" :key="star" class="fa-solid fa-star text-[10px]" :class="star <= r.rating ? 'text-yellow-400' : 'text-slate-200'"></i>
+                        </div>
+                        <span class="text-[9px] font-bold text-slate-400">{{ formatDate(r.created_at) }}</span>
+                      </div>
+                    </div>
+                    <p class="text-xs text-slate-600 font-medium mt-1.5 leading-relaxed">{{ r.comment || 'No written comment.' }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -789,32 +923,59 @@ onMounted(async () => {
     </div>
     
        
-    <!-- Modal Content Grid -->
-    <div class="p-8 overflow-y-auto grow bg-slate-50/50">
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
-        <div v-for="doc in activeDocs" :key="doc.label" class="flex justify-center">
-          <div v-if="!doc.file" class="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-6 w-full h-72 flex flex-col items-center justify-center text-center opacity-60 shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-300 mb-3">
-              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" />
-            </svg>
-            <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">{{ doc.label }}</h3>
-            <p class="text-[8px] text-slate-300 mt-1 font-bold uppercase tracking-widest">NOT UPLOADED</p>
-          </div>
-
-          <div v-else class="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden w-full h-72 flex flex-col group transition hover:shadow-xl">
-            <div class="h-44 bg-slate-100 relative flex items-center justify-center p-4">
-              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-105 transition duration-300" />
-              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center">
-                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
+    <!-- Modal Content -->
+    <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left space-y-8">
+      
+      <!-- Required Documents Section -->
+      <div>
+        <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> REQUIRED DOCUMENTS
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+          <div v-for="doc in requiredDocs" :key="doc.label"
+               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
+              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
+              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
               </div>
             </div>
-            <div class="p-4 text-center border-t border-slate-50 flex-1 flex flex-col justify-center">
-              <h3 class="font-black text-[11px] text-slate-900 uppercase tracking-tight">{{ doc.label }}</h3>
-              <p class="text-[8px] text-slate-400 mt-1 font-bold uppercase tracking-widest">Verified File</p>
+            <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
+              <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
+              <h3 class="font-black text-[11px] text-rose-400 uppercase tracking-widest">NOT SUBMITTED</h3>
+            </div>
+            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
+              <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Optional Documents Section -->
+      <div>
+        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> OPTIONAL DOCUMENTS
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+          <div v-for="doc in optionalDocs" :key="doc.label"
+               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
+              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
+              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
+              </div>
+            </div>
+            <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
+              <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
+              <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">NOT SUBMITTED</h3>
+            </div>
+            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
+              <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
@@ -162,13 +162,46 @@ const openEditModal = (user) => {
 // Client-Side Live Filters
 const filteredUsers = computed(() => {
   return users.value.filter(u => {
-    const matchQuery = matchesSearch(searchQuery.value, [u.name, u.email]);
+    const matchQuery = matchesSearch(searchQuery.value, [
+      u.name,
+      u.email,
+      u.phone ? normalizePhPhone(u.phone) : '',
+      u.phone || '',
+      u.role,
+      u.status
+    ]);
     
     const matchRole = filterRole.value === 'all' || u.role === filterRole.value;
     const matchStatus = filterStatus.value === 'all' || u.status === filterStatus.value;
     
     return matchQuery && matchRole && matchStatus;
   });
+});
+
+// Pure Vue Reactive Pagination
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+
+watch([searchQuery, filterRole, filterStatus], () => {
+  currentPage.value = 1;
+});
+
+const paginatedUsers = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return filteredUsers.value.slice(start, start + itemsPerPage.value);
+});
+
+const totalPages = computed(() => {
+  return Math.ceil(filteredUsers.value.length / itemsPerPage.value) || 1;
+});
+
+const startItemIndex = computed(() => {
+  if (filteredUsers.value.length === 0) return 0;
+  return (currentPage.value - 1) * itemsPerPage.value + 1;
+});
+
+const endItemIndex = computed(() => {
+  return Math.min(currentPage.value * itemsPerPage.value, filteredUsers.value.length);
 });
 
 // Metrics Computed Layers
@@ -249,6 +282,42 @@ onMounted(() => {
 
       <!-- Content Container -->
       <div v-else>
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredUsers.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- MOBILE VIEW CONTAINER (Card Layout para sa cp) -->
         <div class="block md:hidden bg-white rounded-[2rem] shadow-sm border border-slate-200/60 p-6 space-y-4">
           <div class="border-b border-slate-100 pb-3 text-center">
@@ -264,7 +333,7 @@ onMounted(() => {
 
           <!-- Kung may mga user sa mobile -->
           <div v-else class="space-y-4">
-            <div v-for="user in filteredUsers" :key="user.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
+            <div v-for="user in paginatedUsers" :key="user.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
               <div class="flex items-center gap-3 border-b border-slate-200/60 pb-3">
                 <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
                   <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`"
@@ -357,7 +426,7 @@ onMounted(() => {
                     No matching user accounts registered.
                   </td>
                 </tr>
-                <tr v-for="user in filteredUsers" :key="user.id" class="hover:bg-slate-50/20 transition duration-200">
+                <tr v-for="user in paginatedUsers" :key="user.id" class="hover:bg-slate-50/20 transition duration-200">
                   <td class="py-6 px-8 text-left border-r border-slate-100">
                     <div class="flex items-center gap-5">
                       <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
@@ -429,6 +498,42 @@ onMounted(() => {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Bottom Pagination Bar -->
+          <div v-if="filteredUsers.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+            <div class="flex items-center gap-4">
+              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+                <select v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                @click="currentPage > 1 && currentPage--" 
+                :disabled="currentPage === 1"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              >
+                <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              </button>
+              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-black text-xs">
+                {{ currentPage }} / {{ totalPages }}
+              </span>
+              <button 
+                @click="currentPage < totalPages && currentPage++" 
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              >
+                Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>

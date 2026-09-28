@@ -1,10 +1,7 @@
 <script setup>
-import { ref, onMounted, nextTick, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
-import { DataTable } from 'simple-datatables';
-import 'simple-datatables/dist/style.css';
-
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
@@ -26,55 +23,19 @@ const barangays = NABUA_BARANGAYS;
 const selectedBarangay = ref('');
 const searchQuery = ref('');
 
-let dtInstance = null;
+// Pure Vue Reactive Pagination
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
 
-const initDataTable = () => {
-  nextTick(() => {
-    const tableEl = document.getElementById('registeredTable');
-    if (tableEl && !dtInstance) {
-      try {
-        dtInstance = new DataTable(tableEl, {
-          perPage: 10,
-          perPageSelect: [10, 25, 50, 100],
-          searchable: false,
-          labels: {
-            perPage: "entries per page",
-            noRows: "No registered boarding houses found",
-            info: "Showing {start} to {end} of {rows} entries",
-          }
-        });
-      } catch (err) {
-        console.warn('DataTable init error:', err);
-      }
-    }
-  });
-};
-
-watch(searchQuery, (val) => {
-  if (dtInstance) {
-    dtInstance.search(val);
-  }
+watch([searchQuery, selectedBarangay], () => {
+  currentPage.value = 1;
 });
 
-watch([selectedBarangay, houses], () => {
-  if (dtInstance) {
-    try {
-      dtInstance.destroy();
-    } catch (e) {
-      console.warn('Error destroying DataTables instance:', e);
-    }
-    dtInstance = null;
-  }
-  nextTick(() => {
-    initDataTable();
-  });
-}, { deep: true });
-
-// Client-side filtered list: applies both barangay filter and local search securely
+// Client-side filtered list: applies both barangay filter and flexible multi-word local search
 const filteredHouses = computed(() => {
   let result = houses.value;
 
-  // 1. Strict Barangay Filter (Exact match only, no loose includes)
+  // 1. Strict Barangay Filter (Exact match only)
   if (selectedBarangay.value && selectedBarangay.value !== '') {
     const bVal = selectedBarangay.value.toLowerCase().trim();
     result = result.filter(h => {
@@ -83,15 +44,47 @@ const filteredHouses = computed(() => {
     });
   }
 
-  // 2. Search Query Filter — flexible multi-word match (e.g. "boarding house
-  // Hernandez" still matches "Hernandez Boardinghouse")
+  // 2. Search Query Filter — flexible multi-word match across all fields
   if (searchQuery.value.trim()) {
     result = result.filter(h =>
-      matchesSearch(searchQuery.value, [h.name, h.owner_name, h.owner_email, h.location, h.barangay])
+      matchesSearch(searchQuery.value, [
+        h.name,
+        h.owner_name,
+        h.owner_email,
+        h.created_at ? formatDate(h.created_at) : '',
+        h.created_at ? String(h.created_at) : '',
+        h.owner_phone,
+        h.phone_contact,
+        h.location,
+        h.barangay,
+        h.description,
+        h.amenities_free,
+        h.amenities_paid,
+        h.price ? String(h.price) : '',
+        h.capacity ? String(h.capacity) : ''
+      ])
     );
   }
 
   return result;
+});
+
+const paginatedHouses = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return filteredHouses.value.slice(start, start + itemsPerPage.value);
+});
+
+const totalPages = computed(() => {
+  return Math.ceil(filteredHouses.value.length / itemsPerPage.value) || 1;
+});
+
+const startItemIndex = computed(() => {
+  if (filteredHouses.value.length === 0) return 0;
+  return (currentPage.value - 1) * itemsPerPage.value + 1;
+});
+
+const endItemIndex = computed(() => {
+  return Math.min(currentPage.value * itemsPerPage.value, filteredHouses.value.length);
 });
 
 // Diagnostic States
@@ -137,6 +130,8 @@ const showConfirmModal = ref(false);
 // Active objects (Guarded safely with v-if checks to prevent early render crashes)
 const activeHouse = ref(null);
 const activeDocs = ref([]);
+const requiredDocs = ref([]);
+const optionalDocs = ref([]);
 const activeRooms = ref([]);
 const activeRoomOccupants = ref([]);
 const activeRoomData = ref(null);
@@ -217,7 +212,6 @@ const fetchRegisteredHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
-      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load registered houses:', error);
@@ -225,7 +219,6 @@ const fetchRegisteredHouses = async () => {
     showSystemAlert('Could not fetch registered boarding houses.', 'warning');
   } finally {
     isLoading.value = false;
-    initDataTable();
   }
 };
 
@@ -351,39 +344,49 @@ const closeBhInfo = () => {
 // Documents Viewer
 const openDocs = (house) => {
   activeHouse.value = house;
-  const permits = [
-    { label: 'Business Permit', key: 'permit_business_form' },
-    { label: 'Cedula', key: 'permit_cedula' },
-    { label: 'DTI Registration', key: 'permit_dti' },
-    { label: 'Barangay Clearance', key: 'permit_barangay' },
-    { label: 'Building Inspection', key: 'permit_building' },
-    { label: 'Zoning/Locational', key: 'permit_zoning' },
-    { label: 'Sanitary/Health', key: 'permit_sanitary' },
-    { label: 'Fire Safety', key: 'permit_fire' }
+
+  const requiredList = [
+    { label: 'BUSINESS PERMIT APPLICATION FORM', key: 'permit_business_form' },
+    { label: 'BARANGAY BUSINESS CLEARANCE', key: 'permit_barangay' },
+    { label: 'SANITARY PERMIT / HEALTH CLEARANCE', key: 'permit_sanitary' },
+    { label: 'VALID FIRE SAFETY INSPECTION CERTIFICATE', key: 'permit_fire' }
   ];
 
-  const uploads = permits.map(p => ({
+  const optionalList = [
+    { label: 'COMMUNITY TAX CERTIFICATE (CEDULA)', key: 'permit_cedula' },
+    { label: 'DTI REGISTRATION CERTIFICATE', key: 'permit_dti' },
+    { label: 'CERTIFICATE OF BUILDING INSPECTION', key: 'permit_building' },
+    { label: 'ZONING CERTIFICATE / LOCATIONAL CLEARANCE', key: 'permit_zoning' }
+  ];
+
+  requiredDocs.value = requiredList.map(p => ({
     label: p.label,
-    file: house[p.key] || null,
-    isDynamic: false
+    file: house[p.key] || null
   }));
+
+  const standardOptional = optionalList.map(p => ({
+    label: p.label,
+    file: house[p.key] || null
+  }));
+
+  const facadeDoc = house.img ? [{ label: 'FACADE PHOTO', file: house.img }] : [];
 
   const dynamicUploaded = dynamicDocs.value
     .filter(d => d.house_id === house.id)
     .map(d => ({
-      label: d.criteria_label || 'Additional Doc',
-      file: d.file_path,
-      isDynamic: true
+      label: (d.criteria_label || 'ADDITIONAL DOCUMENT').toUpperCase(),
+      file: d.file_path
     }));
 
-  activeDocs.value = [...uploads, ...dynamicUploaded];
+  optionalDocs.value = [...standardOptional, ...facadeDoc, ...dynamicUploaded];
   showDocModal.value = true;
 };
 
 const closeDocs = () => {
   showDocModal.value = false;
   activeHouse.value = null;
-  activeDocs.value = [];
+  requiredDocs.value = [];
+  optionalDocs.value = [];
 };
 
 // Rooms Matrix Modal
@@ -552,17 +555,51 @@ onMounted(async () => {
       <!-- Table Container & Card Layout -->
       <div v-if="!isLoading" class="animate-fade-in">
         
-        <!-- MOBILE VIEW: Card Layout -->
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredHouses.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
         <div class="block md:hidden space-y-4">
           <div v-if="filteredHouses.length === 0" class="bg-white rounded-2xl p-8 text-center border border-slate-200/60 text-slate-400 italic text-sm font-black uppercase tracking-widest">
             <span v-if="selectedBarangay || searchQuery">No boarding houses match the selected filter.</span>
             <span v-else>No registered boarding houses found.</span>
           </div>
           
-          <div v-for="(house, index) in filteredHouses" :key="'mob-' + house.id" class="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm space-y-4">
+          <div v-for="(house, index) in paginatedHouses" :key="'mob-' + house.id" class="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm space-y-4">
             <div class="flex justify-between items-start gap-3">
               <div>
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">#{{ index + 1 }}</span>
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">#{{ startItemIndex + index }}</span>
                 <h3 class="font-black text-slate-900 uppercase text-base leading-tight mt-0.5">{{ house.name }}</h3>
               </div>
               <span class="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2.5 py-1 rounded-full whitespace-nowrap">
@@ -615,7 +652,7 @@ onMounted(async () => {
         <!-- LAPTOP / DESKTOP VIEW: Table Layout -->
         <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <div class="overflow-x-auto">
-            <table class="w-full text-center border-collapse min-w-[1300px]" id="registeredTable">
+            <table class="w-full text-center border-collapse min-w-[1300px]">
               <thead>
                 <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
                   <th class="py-6 px-3 w-12 border-r border-slate-100">#</th>
@@ -637,9 +674,9 @@ onMounted(async () => {
                     <span v-else>No registered boarding houses found.</span>
                   </td>
                 </tr>
-                <tr v-for="(house, index) in filteredHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
+                <tr v-for="(house, index) in paginatedHouses" :key="house.id" class="hover:bg-slate-50/20 transition duration-200">
 
-                  <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ index + 1 }}</td>
+                  <td class="py-6 px-3 border-r border-slate-100 text-slate-400 font-bold">{{ startItemIndex + index }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-black text-slate-900 leading-tight uppercase">{{ house.name }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 font-semibold">{{ house.owner_name }}</td>
                   <td class="py-6 px-4 border-r border-slate-100 text-slate-500">{{ house.owner_email }}</td>
@@ -679,6 +716,42 @@ onMounted(async () => {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Pure Vue Reactive Pagination Bar -->
+          <div v-if="filteredHouses.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
+            <div class="flex items-center gap-4">
+              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+                <select v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                @click="currentPage > 1 && currentPage--" 
+                :disabled="currentPage === 1"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              </button>
+              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-black text-xs">
+                {{ currentPage }} / {{ totalPages }}
+              </span>
+              <button 
+                @click="currentPage < totalPages && currentPage++" 
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -938,32 +1011,59 @@ onMounted(async () => {
       <button @click="closeDocs" class="ml-auto text-white/80 hover:text-white bg-white/10 hover:bg-red-500 transition flex items-center justify-center h-9 w-9 rounded-full text-xl focus:outline-none cursor-pointer shrink-0">&times;</button>
     </div>
     
-    <!-- Modal Content Grid -->
-    <div class="p-8 overflow-y-auto grow bg-slate-50/50">
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
-        <div v-for="doc in activeDocs" :key="doc.label" class="flex justify-center">
-          <div v-if="!doc.file" class="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-6 w-full h-72 flex flex-col items-center justify-center text-center opacity-60 shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-300 mb-3">
-              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" />
-            </svg>
-            <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">{{ doc.label }}</h3>
-            <p class="text-[8px] text-slate-300 mt-1 font-bold uppercase tracking-widest">NOT UPLOADED</p>
-          </div>
-
-          <div v-else class="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden w-full h-72 flex flex-col group transition hover:shadow-xl">
-            <div class="h-44 bg-slate-100 relative flex items-center justify-center p-4">
-              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-105 transition duration-300" />
-              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center">
-                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
+    <!-- Modal Content -->
+    <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left space-y-8">
+      
+      <!-- Required Documents Section -->
+      <div>
+        <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> REQUIRED DOCUMENTS
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+          <div v-for="doc in requiredDocs" :key="doc.label"
+               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
+              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
+              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
               </div>
             </div>
-            <div class="p-4 text-center border-t border-slate-50 flex-1 flex flex-col justify-center">
-              <h3 class="font-black text-[11px] text-slate-900 uppercase tracking-tight">{{ doc.label }}</h3>
-              <p class="text-[8px] text-slate-400 mt-1 font-bold uppercase tracking-widest">Verified File</p>
+            <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
+              <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
+              <h3 class="font-black text-[11px] text-rose-400 uppercase tracking-widest">NOT SUBMITTED</h3>
+            </div>
+            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
+              <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Optional Documents Section -->
+      <div>
+        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> OPTIONAL DOCUMENTS
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+          <div v-for="doc in optionalDocs" :key="doc.label"
+               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
+            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
+              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
+              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
+                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer">Preview</button>
+              </div>
+            </div>
+            <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
+              <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
+              <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">NOT SUBMITTED</h3>
+            </div>
+            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
+              <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </div>
