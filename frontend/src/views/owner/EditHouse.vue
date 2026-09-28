@@ -381,7 +381,7 @@ const detectMyLocation = () => {
         // Friendly alert if current GPS position is outside Nabua area
         if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
             lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
-          showSystemAlert(`GPS detected your current location at (${lat.toFixed(5)}, ${lng.toFixed(5)}), which is outside Nabua, Camarines Sur. Please make sure your property is situated within Nabua.`, 'warning');
+          showSystemAlert(`Notice: GPS detected location outside Nabua area (${lat.toFixed(5)}, ${lng.toFixed(5)}). Address recorded successfully.`, 'warning');
         }
       },
       (err) => {

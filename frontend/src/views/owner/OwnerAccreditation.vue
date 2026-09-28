@@ -617,13 +617,14 @@ const detectMyLocation = () => {
         reverseGeocode(lat, lng);
         isGpsLoading.value = false;
 
-        // Friendly notification if current GPS position is outside Nabua area
+        // Friendly non-blocking warning notification if current GPS position is outside Nabua area
         if (lat < NABUA_BOUNDS.south || lat > NABUA_BOUNDS.north ||
             lng < NABUA_BOUNDS.west  || lng > NABUA_BOUNDS.east) {
-          fieldErrors.value.locationAddress = `GPS detected location outside Nabua, Camarines Sur (${lat.toFixed(5)}, ${lng.toFixed(5)}). Boarding house properties must be situated within Nabua.`;
+          errorMsg.value = `Notice: GPS detected location outside Nabua area (${lat.toFixed(5)}, ${lng.toFixed(5)}). Address recorded successfully.`;
         } else {
-          delete fieldErrors.value.locationAddress;
+          errorMsg.value = '';
         }
+        delete fieldErrors.value.locationAddress;
       },
       (err) => {
         console.error("GPS Error:", err);

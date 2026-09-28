@@ -64,6 +64,8 @@ const filteredHouses = computed(() => {
         h.phone_contact,
         h.location,
         h.barangay,
+        h.street_address,
+        h.address,
         h.description,
         h.amenities_free,
         h.amenities_paid,
@@ -526,7 +528,7 @@ onMounted(async () => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Search by boarding house name, location..."
+            placeholder="Search by boarding house name, date, location..."
             class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
           />
         </div>

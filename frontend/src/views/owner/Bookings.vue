@@ -626,7 +626,6 @@ onMounted(() => {
                   </td>
                   <td class="px-3 py-6 text-center font-bold text-blue-600 text-xs whitespace-nowrap">
                     <span class="block font-black text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                    <span class="block text-[9px] font-bold text-slate-400 mt-0.5">Duration</span>
                   </td>
                   <td class="px-3 py-6 text-center whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-700">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}<span class="text-slate-400">/month</span></span>
