@@ -268,18 +268,18 @@ onMounted(() => {
 
         <!-- Room Filter Tabs: Active Rooms vs Archived Rooms -->
         <div class="flex items-center justify-between border-b border-slate-200/80 pb-4">
-          <div class="flex items-center gap-3">
+          <div class="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:gap-3">
             <button 
               @click="activeTab = 'active'"
-              class="px-5 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
-              :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60'"
+              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
             >
               <i class="fa-solid fa-door-open text-xs"></i> Active Rooms ({{ femaleRooms.length + maleRooms.length }})
             </button>
             <button 
               @click="activeTab = 'archived'"
-              class="px-5 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2"
-              :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60'"
+              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
             >
               <i class="fa-solid fa-box-archive text-xs"></i> Archived Rooms ({{ archivedRooms.length }})
             </button>
@@ -513,7 +513,46 @@ onMounted(() => {
             </span>
           </div>
 
-          <div class="overflow-x-auto">
+          <!-- MOBILE CARD LIST (hidden on sm+) -->
+          <div class="sm:hidden divide-y divide-slate-100">
+            <div v-if="archivedRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+              No soft-deleted / archived rooms found.
+            </div>
+            <div v-for="room in archivedRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3 text-left">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</span>
+                <span class="font-black text-slate-800 text-sm">{{ room.room_number }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Wing / Gender</span>
+                <span class="inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
+                  {{ room.gender_type }}'s Wing
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Rent</span>
+                <span class="font-black text-slate-900 text-sm">₱{{ Number(room.price || 0).toLocaleString() }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
+                <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                  Archived
+                </span>
+              </div>
+              <div class="pt-2">
+                <button 
+                  @click="handleRestoreRoom(room.id, room.room_number)"
+                  :disabled="isSubmitting"
+                  class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- DESKTOP TABLE (hidden on mobile) -->
+          <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm text-left">
               <thead>
                 <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100 bg-slate-50/50">

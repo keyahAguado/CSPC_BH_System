@@ -426,11 +426,6 @@ onMounted(() => {
                 </div>
 
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Email</span>
-                  <span class="text-slate-600 font-medium text-xs">{{ app.owner_email }}</span>
-                </div>
-
-                <div class="flex flex-col py-1.5 border-b border-slate-50">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Boarding House</span>
                   <span class="font-black text-slate-900 text-base">{{ app.name }}</span>
                   <span v-if="app.house_status !== 'pending' && app.document_update_pending"
