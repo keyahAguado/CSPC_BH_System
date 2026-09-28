@@ -130,7 +130,20 @@ router.get('/details/:id', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Property not found.' });
         }
         const formatted = attachPriceRange(rows[0], rows[0].min_price, rows[0].max_price);
-        res.json({ success: true, data: formatted });
+
+        // Also fetch house_photos table (used on Cloudinary deployments where img_1/2/3 may be null)
+        let photos = [];
+        try {
+            const [photoRows] = await pool.query(
+                'SELECT photo_url FROM house_photos WHERE house_id = ? ORDER BY sort_order ASC',
+                [houseId]
+            );
+            photos = photoRows.map(r => r.photo_url);
+        } catch (e) {
+            // house_photos table may not exist on older DBs — fall back silently
+        }
+
+        res.json({ success: true, data: formatted, photos });
     } catch (err) {
         console.error('Fetch Details Error:', err.message);
         res.status(500).json({ success: false, message: 'Failed to fetch details.' });
@@ -510,11 +523,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         // Upload all house photos via unified storage provider concurrently in parallel
         let uploadedPhotoUrls = [];
         if (req.files && req.files['house_photos'] && req.files['house_photos'].length > 0) {
+            console.log(`[ACCREDITATION PHOTOS] Received ${req.files['house_photos'].length} new photo file(s)`);
             const photoPromises = req.files['house_photos'].map(f => saveUploadedFile(f.buffer, f.originalname, 'house_photos'));
             uploadedPhotoUrls = await Promise.all(photoPromises);
+            console.log(`[ACCREDITATION PHOTOS] Uploaded: ${JSON.stringify(uploadedPhotoUrls)}`);
         }
         const parsedExistingPhotos = existing_photos ? JSON.parse(existing_photos) : [];
         const combinedPhotos = [...parsedExistingPhotos, ...uploadedPhotoUrls];
+        console.log(`[ACCREDITATION PHOTOS] existing=${parsedExistingPhotos.length} new=${uploadedPhotoUrls.length} combined=${combinedPhotos.length}`);
 
         // Sanitize amenities input
         const sanitizedFree = sanitizeJSONInput(amenities_free);
@@ -556,7 +572,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             const expiry_permit_sanitary      = getExpiry('sanitary')      ? parseSafeDate(getExpiry('sanitary'))      : existingHouse.expiry_permit_sanitary;
             const expiry_permit_fire          = getExpiry('fire')          ? parseSafeDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
-            await pool.query(
+            const [updateResult] = await pool.query(
                 `UPDATE boarding_houses 
                  SET name = ?, img = ?, img_1 = ?, img_2 = ?, img_3 = ?, location = ?, barangay = ?, map_link = ?, price = ?, phone_contact = ?, description = ?,
                      amenities_free = ?, amenities_paid = ?, house_status = 'pending', admin_comments = NULL,
@@ -578,6 +594,13 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                     house_id, ownerId
                 ]
             );
+
+            console.log(`[ACCREDITATION UPDATE] house_id=${house_id} owner_id=${ownerId} affectedRows=${updateResult.affectedRows}`);
+
+            if (updateResult.affectedRows === 0) {
+                console.error(`[ACCREDITATION UPDATE] 0 rows affected — house_id=${house_id} may not belong to owner_id=${ownerId}`);
+                return res.status(403).json({ success: false, message: 'Update failed: property not found or ownership mismatch.' });
+            }
 
             // Sync all photos into house_photos table (Safeguarded if table missing)
             try {
