@@ -316,7 +316,7 @@ const submitUpdateCriteria = async () => {
 };
 
 const isDocumentItemUpdated = (item) => {
-  if (!activeApp.value || !activeApp.value.document_update_pending || !activeApp.value.last_updated_document) {
+  if (!activeApp.value || !activeApp.value.last_updated_document) {
     return false;
   }
   const updatedList = String(activeApp.value.last_updated_document).split(',').map(s => s.trim());
@@ -360,7 +360,6 @@ onMounted(() => {
                 <tr class="bg-[#222831] text-white text-[13px] font-bold tracking-wide uppercase">
                   <th class="py-5 px-6 w-16 border-r border-slate-600">#</th>
                   <th class="py-5 px-6 border-r border-slate-600">Owner Name</th>
-                  <th class="py-5 px-6 border-r border-slate-600">Email</th>
                   <th class="py-5 px-6 border-r border-slate-600">Boarding House</th>
                   <th class="py-5 px-6 border-r border-slate-600">Date</th>
                   <th class="py-5 px-6 border-r border-slate-600">Documents</th>

@@ -13,3 +13,4 @@ ALTER TABLE `occupants`
 ALTER TABLE `users`
   MODIFY COLUMN `phone`            VARCHAR(50) DEFAULT NULL,
   MODIFY COLUMN `emergency_contact` VARCHAR(50) DEFAULT NULL;
+pl

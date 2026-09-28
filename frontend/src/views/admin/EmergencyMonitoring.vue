@@ -1,12 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import { printEmergencyRegistry } from '../../utils/printHelper.js';
 import { matchesSearch } from '../../utils/search.js';
-import { DataTable } from 'simple-datatables';
-import 'simple-datatables/dist/style.css';
 
 const route = useRoute();
 
@@ -19,34 +17,12 @@ const searchQuery = ref('');
 const courseOptions = ref([]);
 const isLoading = ref(true);
 
-let dtInstance = null;
+// Pure Vue Reactive Pagination State (matches Registered.vue)
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
 
-const initDataTable = () => {
-  nextTick(() => {
-    const tableEl = document.getElementById('emergencyTable');
-    if (tableEl && !dtInstance) {
-      try {
-        dtInstance = new DataTable(tableEl, {
-          perPage: 10,
-          perPageSelect: [10, 25, 50, 100],
-          searchable: false,
-          labels: {
-            perPage: "entries per page",
-            noRows: "No active residents found",
-            info: "Showing {start} to {end} of {rows} entries",
-          }
-        });
-      } catch (err) {
-        console.warn('DataTable init error:', err);
-      }
-    }
-  });
-};
-
-watch(searchQuery, (val) => {
-  if (dtInstance) {
-    dtInstance.search(val);
-  }
+watch([searchQuery, selectedBarangay, selectedHouse, selectedCourse], () => {
+  currentPage.value = 1;
 });
 
 const genderCounts = computed(() => {
@@ -103,74 +79,74 @@ const fetchRegistry = async () => {
       if (response.data.boardingHouses && boardingHouses.value.length === 0) {
         boardingHouses.value = response.data.boardingHouses;
       }
-      initDataTable();
     }
   } catch (error) {
     console.error('Failed to load emergency monitoring registry:', error);
   } finally {
     isLoading.value = false;
-    initDataTable();
   }
 };
 
+// Filter residents using flexible multi-word matching logic
+const filteredResidents = computed(() => {
+  if (!searchQuery.value.trim()) return residents.value;
+  return residents.value.filter(r =>
+    matchesSearch(searchQuery.value, [
+      r.resident_name,
+      r.student_email,
+      r.course,
+      r.year_level,
+      r.home_address,
+      r.guardian_name,
+      r.emergency_contact,
+      r.house_name,
+      r.house_location,
+      r.house_barangay,
+      r.house_owner_phone
+    ])
+  );
+});
+
+const paginatedResidents = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return filteredResidents.value.slice(start, start + itemsPerPage.value);
+});
+
+const totalPages = computed(() => {
+  return Math.ceil(filteredResidents.value.length / itemsPerPage.value) || 1;
+});
+
+const startItemIndex = computed(() => {
+  if (filteredResidents.value.length === 0) return 0;
+  return (currentPage.value - 1) * itemsPerPage.value + 1;
+});
+
+const endItemIndex = computed(() => {
+  return Math.min(currentPage.value * itemsPerPage.value, filteredResidents.value.length);
+});
+
 const groupedResidents = computed(() => {
-  // Build a map from all boarding houses (including ones with 0 residents)
   const groups = {};
 
-  // Seed all known boarding houses first so empty ones still appear
-  boardingHouses.value.forEach(bh => {
-    groups[bh.id] = {
-      house_id: bh.id,
-      house_name: bh.name,
-      house_status: 'accredited', // this seed list is always accredited-only (see backend query)
-      house_location: bh.location || '',
-      house_barangay: bh.barangay || '',
-      house_owner_phone: '',
-      residents: []
-    };
-  });
-
-  // Filter residents using student-side flexible multi-word matching logic
-  const filteredList = searchQuery.value.trim()
-    ? residents.value.filter(r =>
-        matchesSearch(searchQuery.value, [
-          r.resident_name,
-          r.student_email,
-          r.course,
-          r.year_level,
-          r.home_address,
-          r.guardian_name,
-          r.emergency_contact,
-          r.house_name,
-          r.house_location,
-          r.house_barangay,
-          r.house_owner_phone
-        ])
-      )
-    : residents.value;
-
-  // Fill in filtered residents
-  filteredList.forEach(r => {
-    const key = r.house_id;
-    if (groups[key]) {
-      if (!groups[key].house_owner_phone && r.house_owner_phone) {
-        groups[key].house_owner_phone = r.house_owner_phone;
-      }
-      groups[key].residents.push(r);
-    } else {
-      // Covers residents of a house that's since been archived — the seeded
-      // list above only includes currently-accredited houses, so an archived
-      // house's residents land here instead of being silently dropped.
+  // Group paginated residents by house
+  paginatedResidents.value.forEach(r => {
+    const key = r.house_id || 'unassigned';
+    if (!groups[key]) {
+      const bh = boardingHouses.value.find(h => h.id === r.house_id);
       groups[key] = {
         house_id: r.house_id,
-        house_name: r.house_name || 'Unassigned',
-        house_status: r.house_status || 'archived',
-        house_location: r.house_location || '',
-        house_barangay: r.house_barangay || '',
+        house_name: r.house_name || (bh ? bh.name : 'Unassigned'),
+        house_status: r.house_status || 'accredited',
+        house_location: r.house_location || (bh ? bh.location : ''),
+        house_barangay: r.house_barangay || (bh ? bh.barangay : ''),
         house_owner_phone: r.house_owner_phone || '',
-        residents: [r]
+        residents: []
       };
     }
+    if (!groups[key].house_owner_phone && r.house_owner_phone) {
+      groups[key].house_owner_phone = r.house_owner_phone;
+    }
+    groups[key].residents.push(r);
   });
 
   return Object.values(groups).sort((a, b) => a.house_name.localeCompare(b.house_name));
@@ -349,6 +325,42 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Top Pagination Bar -->
+        <div v-if="filteredResidents.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
+          <div class="flex items-center gap-4">
+            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredResidents.length }} entries</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+                <option :value="10">10</option>
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- ================= DESKTOP TABLE VIEW ================= -->
         <div class="hidden md:block print:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto">
@@ -365,16 +377,16 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 text-[12px]">
                 <!-- No results at all -->
-                <tr v-if="residents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse">
+                <tr v-if="filteredResidents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse && !searchQuery">
                   <td colspan="6" class="px-6 py-20 text-center">
                     <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active residents registered across all boarding houses.</p>
                   </td>
                 </tr>
                 <!-- Filter applied but no matches -->
-                <tr v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse || selectedCourse)">
+                <tr v-else-if="filteredResidents.length === 0">
                   <td colspan="6" class="px-6 py-16 text-center">
                     <p class="text-slate-700 font-black uppercase tracking-widest text-[11px] mb-2">No Active Residents on Record</p>
-                    <p class="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Selected area has no registered residents at this time.</p>
+                    <p class="text-slate-400 font-bold text-[10px] uppercase tracking-wider">Selected filter or search query has no matching residents at this time.</p>
                   </td>
                 </tr>
                 <template v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="group.house_name">
@@ -446,6 +458,42 @@ onMounted(() => {
                 </template>
               </tbody>
             </table>
+          </div>
+
+          <!-- Bottom Pagination Bar -->
+          <div v-if="filteredResidents.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
+            <div class="flex items-center gap-4">
+              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredResidents.length }} entries</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
+                <select v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                @click="currentPage > 1 && currentPage--" 
+                :disabled="currentPage === 1"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              </button>
+              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-black text-xs">
+                {{ currentPage }} / {{ totalPages }}
+              </span>
+              <button 
+                @click="currentPage < totalPages && currentPage++" 
+                :disabled="currentPage === totalPages"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold"
+              >
+                Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              </button>
+            </div>
           </div>
         </div>
 
