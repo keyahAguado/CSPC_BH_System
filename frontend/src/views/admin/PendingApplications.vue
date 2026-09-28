@@ -705,22 +705,27 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="bg-slate-50 p-6 sm:p-8 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b">
-            <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full sm:w-auto bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-8 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2">
-              <i class="fa-solid fa-circle-xmark"></i> Reject
-            </button>
-            <div class="flex flex-wrap gap-2 w-full sm:w-auto justify-center">
-              <button type="submit" :disabled="isSubmitting" class="bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-6 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md">
+          <div class="bg-slate-50 p-4 sm:p-8 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b">
+            <!-- Primary Action Buttons (Approve / Reject) -->
+            <div class="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
+              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-circle-xmark"></i> Reject
+              </button>
+              <button type="submit" :disabled="isSubmitting" class="w-full bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-5 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-circle-check"></i> {{ isSubmitting ? 'Confirming...' : 'Confirm' }}
               </button>
-              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-4 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2">
-                <i class="fa-solid fa-plus"></i> Add
+            </div>
+
+            <!-- Secondary Criteria Management Buttons (Add / Update / Delete) -->
+            <div class="grid grid-cols-3 gap-2 w-full sm:w-auto">
+              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-plus text-[10px]"></i> Add
               </button>
-              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-4 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2">
-                <i class="fa-solid fa-pen-to-square"></i> Update
+              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-pen-to-square text-[10px]"></i> Edit
               </button>
-              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-4 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2">
-                <i class="fa-solid fa-trash-can"></i> Delete
+              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-trash-can text-[10px]"></i> Delete
               </button>
             </div>
           </div>

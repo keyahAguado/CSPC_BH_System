@@ -275,7 +275,7 @@ onMounted(() => {
         </div>
 
         <!-- Bottom Pagination Bar -->
-        <div v-if="filteredHouses.length > 0" class="mb-10 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
+        <div v-if="filteredHouses.length > 0" class="hidden md:flex mb-10 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
           <div>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</div>
           <div class="flex items-center gap-2">
             <button 
@@ -334,6 +334,30 @@ onMounted(() => {
               </div>
             </div>
 
+          </div>
+        </div>
+
+        <!-- Mobile Bottom Pagination Bar -->
+        <div v-if="filteredHouses.length > 0" class="block md:hidden mb-10 px-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between items-center gap-3 text-xs font-bold text-slate-500 no-print">
+          <div>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</div>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="currentPage > 1 && currentPage--" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+            </button>
+            <span class="px-3 py-1 bg-[#2a528a] text-white rounded-xl font-black text-xs">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button 
+              @click="currentPage < totalPages && currentPage++" 
+              :disabled="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+            >
+              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
           </div>
         </div>
 

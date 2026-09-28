@@ -611,11 +611,11 @@ onMounted(fetchData);
 
           <!-- Left/Right Nav Buttons -->
           <button v-if="photos.length > 1" @click.stop="prevPhoto" 
-                  class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-8 h-8 sm:w-11 sm:h-11 rounded-full shadow-md backdrop-blur-md flex items-center justify-center text-sm sm:text-lg font-black transition active:scale-95 cursor-pointer z-10">
+                  class="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 bg-white/75 hover:bg-white text-slate-900 w-7 h-7 sm:w-8 sm:h-8 rounded-full shadow-sm backdrop-blur-md flex items-center justify-center text-xs sm:text-sm font-black transition active:scale-95 cursor-pointer z-10 border border-slate-200/50">
             ‹
           </button>
           <button v-if="photos.length > 1" @click.stop="nextPhoto" 
-                  class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-slate-900 w-8 h-8 sm:w-11 sm:h-11 rounded-full shadow-md backdrop-blur-md flex items-center justify-center text-sm sm:text-lg font-black transition active:scale-95 cursor-pointer z-10">
+                  class="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 bg-white/75 hover:bg-white text-slate-900 w-7 h-7 sm:w-8 sm:h-8 rounded-full shadow-sm backdrop-blur-md flex items-center justify-center text-xs sm:text-sm font-black transition active:scale-95 cursor-pointer z-10 border border-slate-200/50">
             ›
           </button>
         </div>

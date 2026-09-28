@@ -543,33 +543,26 @@ onMounted(async () => {
                 </span>
               </div>
 
-              <div class="space-y-1.5 text-xs">
-                <div class="flex justify-between py-0.5">
-                  <span class="font-black text-slate-400 uppercase tracking-wider text-[10px]">Owner Name:</span>
-                  <span class="font-bold text-slate-700 text-right">{{ house.owner_name }}</span>
-                </div>
-                <div class="flex justify-between py-0.5">
-                  <span class="font-black text-slate-400 uppercase tracking-wider text-[10px]">Email:</span>
-                  <span class="font-semibold text-slate-500 text-right break-all ml-4">{{ house.owner_email }}</span>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2 pt-2">
-                <button @click="openProfile(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                  <i class="fa-solid fa-user-tie text-[12px]"></i> Profile
+              <div class="grid grid-cols-3 gap-2 pt-1">
+                <button @click="openProfile(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition text-[9px] font-black uppercase tracking-wider shadow-2xs cursor-pointer active:scale-95">
+                  <i class="fa-solid fa-user-tie text-[13px] text-blue-500"></i> Profile
                 </button>
-                <button @click="openBhInfo(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                  <i class="fa-solid fa-hotel text-[12px]"></i> BH Info
+                <button @click="openBhInfo(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition text-[9px] font-black uppercase tracking-wider shadow-2xs cursor-pointer active:scale-95">
+                  <i class="fa-solid fa-hotel text-[13px] text-blue-500"></i> BH Info
                 </button>
-                <button @click="openDocs(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                  <i class="fa-solid fa-file-invoice text-[12px]"></i> Docs
-                </button>
-                <button @click="openRoomsMatrix(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                  <i class="fa-solid fa-door-open text-[12px]"></i> Rooms
+                <button @click="openDocs(house)" class="text-blue-600 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition text-[9px] font-black uppercase tracking-wider shadow-2xs cursor-pointer active:scale-95">
+                  <i class="fa-solid fa-file-invoice text-[13px] text-blue-500"></i> Docs
                 </button>
               </div>
 
-              <div class="pt-1">
+              <div class="pt-2">
+                <button @click="openRoomsMatrix(house)" class="w-full text-blue-700 border border-blue-200 bg-blue-50/60 hover:bg-blue-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-2 transition font-black text-[9px] uppercase tracking-widest shadow-2xs active:scale-95 cursor-pointer">
+                  <i class="fa-solid fa-door-open text-[12px] text-blue-600"></i>
+                  <span>View Rooms & Occupants</span>
+                </button>
+              </div>
+
+              <div class="pt-2 border-t border-slate-100">
                 <button @click="triggerConfirm('Confirm Restore?', `Are you sure you want to restore ${house.name} back to the active registered list?`, () => handleRestoreHouse(house.id))"
                         class="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl py-2.5 font-black text-[10px] uppercase tracking-widest transition shadow-sm active:scale-95 cursor-pointer">
                   Restore Property

@@ -616,36 +616,27 @@ onMounted(async () => {
               </span>
             </div>
 
-            <div class="text-xs space-y-1 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-              <div class="flex justify-between">
-                <span class="text-slate-400 font-bold uppercase text-[10px]">Owner:</span>
-                <span class="font-semibold text-slate-800">{{ house.owner_name }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400 font-bold uppercase text-[10px]">Email:</span>
-                <span class="text-slate-500 truncate max-w-[200px]">{{ house.owner_email }}</span>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2 pt-1">
-              <button @click="openProfile(house)" class="text-blue-500 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-2 transition shadow-sm group cursor-pointer active:scale-95">
-                <i class="fa-solid fa-user-tie text-[14px] text-blue-500"></i>
-                <span class="text-[9px] font-black uppercase tracking-widest text-blue-900">Owner Profile</span>
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              <button @click="openProfile(house)" class="text-blue-500 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95">
+                <i class="fa-solid fa-user-tie text-[13px] text-blue-500"></i>
+                <span class="text-[8px] font-black uppercase tracking-widest text-blue-900">Profile</span>
               </button>
               
-              <button @click="openBhInfo(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-2 transition shadow-sm group cursor-pointer active:scale-95">
-                <i class="fa-solid fa-hotel text-[14px] text-blue-500"></i>
-                <span class="text-[9px] font-black uppercase tracking-widest text-blue-900">BH Info</span>
+              <button @click="openBhInfo(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95">
+                <i class="fa-solid fa-hotel text-[13px] text-blue-500"></i>
+                <span class="text-[8px] font-black uppercase tracking-widest text-blue-900">BH Info</span>
               </button>
 
-              <button @click="openDocs(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-2 transition shadow-sm group cursor-pointer active:scale-95">
-                <i class="fa-solid fa-file-invoice text-[14px] text-blue-500"></i>
-                <span class="text-[9px] font-black uppercase tracking-widest text-blue-900">Documents</span>
+              <button @click="openDocs(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95">
+                <i class="fa-solid fa-file-invoice text-[13px] text-blue-500"></i>
+                <span class="text-[8px] font-black uppercase tracking-widest text-blue-900">Docs</span>
               </button>
+            </div>
 
-              <button @click="openRoomsMatrix(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex items-center justify-center gap-2 transition shadow-sm group cursor-pointer active:scale-95">
-                <i class="fa-solid fa-door-open text-[14px] text-blue-500"></i>
-                <span class="text-[9px] font-black uppercase tracking-widest text-blue-900">Rooms</span>
+            <div class="pt-2">
+              <button @click="openRoomsMatrix(house)" class="w-full text-blue-700 border border-blue-200 bg-blue-50/60 hover:bg-blue-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-2 transition font-black text-[9px] uppercase tracking-widest shadow-2xs active:scale-95 cursor-pointer">
+                <i class="fa-solid fa-door-open text-[12px] text-blue-600"></i>
+                <span>View Rooms & Occupants</span>
               </button>
             </div>
 

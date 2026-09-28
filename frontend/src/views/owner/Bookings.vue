@@ -708,7 +708,103 @@ onMounted(() => {
           </table>
         </div>
 
-        <!-- Pagination Bar — always visible when there are bookings -->
+        <!-- ===== MOBILE CARD VIEW (shown only on mobile, hidden in print) ===== -->
+        <div class="mobile-cards-wrapper print:hidden md:hidden">
+          <div v-if="filteredBookings.length === 0" class="py-16 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+            No bookings found under search.
+          </div>
+
+          <template v-for="hName in groupedHouses" :key="'m-' + hName">
+            <!-- House Group Header -->
+            <div class="m-house-hdr">
+              <div class="m-house-icon"><i class="fa-solid fa-house-chimney"></i></div>
+              <div class="m-house-info">
+                <span class="m-house-name">{{ hName }}</span>
+                <span class="m-house-loc">{{ getHouseBookings(hName)[0]?.house_location }}</span>
+              </div>
+              <span class="m-house-count">{{ getHouseBookings(hName).length }} Booking{{ getHouseBookings(hName).length > 1 ? 's' : '' }}</span>
+            </div>
+
+            <!-- Mobile Booking Cards -->
+            <div v-for="booking in getHouseBookings(hName)" :key="'mc-' + booking.id" class="m-card">
+
+              <div class="m-row">
+                <span class="m-lbl">Ref No.</span>
+                <span class="m-val">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Payment Method</span>
+                <span class="m-val">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest"
+                        :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
+                    <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                    {{ paymentMethodLabel(booking.payment_method) }}
+                  </span>
+                </span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Student Name</span>
+                <span class="m-val">{{ booking.student_name }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Room</span>
+                <span class="m-val">
+                  Room {{ booking.room_number }}
+                  <span class="m-gender" :class="booking.room_gender === 'female' ? 'f' : 'm'">{{ booking.room_gender }}</span>
+                </span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Check-In / Out</span>
+                <span class="m-val">
+                  <span v-if="booking.check_in_date">{{ new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</span>
+                  <span v-else style="color:#f97316">Not set</span>
+                  <span class="block text-blue-600 font-bold text-[10px] mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
+                </span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Emergency Contact</span>
+                <span class="m-val">{{ booking.emergency_contact || 'N/A' }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Guardian Name</span>
+                <span class="m-val">{{ booking.guardian_name || 'N/A' }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Duration &amp; Stay</span>
+                <span class="m-val font-black text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+              </div>
+              <div class="m-row">
+                <span class="m-lbl">Rent / Total</span>
+                <span class="m-val">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }} / <span class="font-black text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span></span>
+              </div>
+
+              <!-- Initial Payment -->
+              <div class="m-row" v-if="booking.initial_payment > 0">
+                <span class="m-lbl">Initial Payment</span>
+                <span class="m-val m-val-col">
+                  <span class="m-init-amt">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
+                  <span class="m-init-sub">
+                    Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }} +
+                    Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
+                  </span>
+                </span>
+              </div>
+
+              <!-- Action / Status -->
+              <div class="m-row m-row-action">
+                <span class="m-lbl">Status</span>
+                <span class="m-val">
+                  <span v-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-black text-[9px] uppercase border border-emerald-200">Confirmed</span>
+                  <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-black text-[9px] uppercase border border-amber-200">Pending</span>
+                  <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-black text-[9px] uppercase border border-rose-200">{{ booking.status }}</span>
+                  <span v-else class="text-slate-500 font-bold uppercase text-[9px]">{{ booking.status }}</span>
+                </span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Bottom Pagination Bar — always visible when there are bookings -->
         <div v-if="filteredBookings.length > 0" class="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 pagination-container no-print print:hidden">
           <div class="flex items-center gap-4">
             <span class="text-xs font-bold text-slate-500">
@@ -748,142 +844,6 @@ onMounted(() => {
               Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
             </button>
           </div>
-        </div>
-
-        <!-- ===== MOBILE CARD VIEW (shown only on mobile, hidden in print) ===== -->
-        <div class="mobile-cards-wrapper print:hidden">
-          <div v-if="filteredBookings.length === 0" class="py-16 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-            No bookings found under search.
-          </div>
-
-          <template v-for="hName in groupedHouses" :key="'m-' + hName">
-            <!-- House Group Header -->
-            <div class="m-house-hdr">
-              <div class="m-house-icon"><i class="fa-solid fa-house-chimney"></i></div>
-              <div class="m-house-info">
-                <span class="m-house-name">{{ hName }}</span>
-                <span class="m-house-loc">{{ getHouseBookings(hName)[0]?.house_location }}</span>
-              </div>
-              <span class="m-house-count">{{ getHouseBookings(hName).length }} Booking{{ getHouseBookings(hName).length > 1 ? 's' : '' }}</span>
-            </div>
-
-            <!-- Mobile Booking Cards -->
-            <div v-for="booking in getHouseBookings(hName)" :key="'mc-' + booking.id" class="m-card">
-
-              <div class="m-row">
-                <span class="m-lbl">Ref No.</span>
-                <span class="m-val">{{ booking.id }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Payment Method</span>
-                <span class="m-val">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest"
-                        :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
-                    <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                    {{ paymentMethodLabel(booking.payment_method) }}
-                  </span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Student Name</span>
-                <span class="m-val">{{ booking.student_name }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Room</span>
-                <span class="m-val">
-                  {{ booking.room_number }}
-                  <span class="m-gender" :class="booking.room_gender === 'female' ? 'f' : 'm'">{{ booking.room_gender }}</span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Check-In Date</span>
-                <span class="m-val">
-                  <span v-if="booking.check_in_date">{{ new Date(booking.check_in_date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) }}</span>
-                  <span v-else style="color:#f97316">Not set</span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Check-Out Date</span>
-                <span class="m-val font-extrabold text-blue-600">
-                  <span>{{ getCheckoutDateDisplay(booking) }}</span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Emergency Contact</span>
-                <span class="m-val">{{ booking.emergency_contact || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Guardian Name</span>
-                <span class="m-val">{{ booking.guardian_name || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Stay Months</span>
-                <span class="m-val">{{ booking.months }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Monthly Rent</span>
-                <span class="m-val">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Total Payment</span>
-                <span class="m-val">₱{{ Number(booking.amount).toLocaleString() }}</span>
-              </div>
-
-              <!-- Initial Payment — same detail as desktop -->
-              <div class="m-row" v-if="booking.initial_payment > 0">
-                <span class="m-lbl">Initial Payment</span>
-                <span class="m-val m-val-col">
-                  <span class="m-init-amt">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
-                  <span class="m-init-sub">
-                    Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }} +
-                    Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
-                  </span>
-                </span>
-              </div>
-              <div class="m-row" v-else>
-                <span class="m-lbl">Initial Payment</span>
-                <span class="m-val" style="color:#cbd5e1">—</span>
-              </div>
-
-              <!-- Action / Status -->
-              <div class="m-row m-row-action">
-                <span class="m-lbl">Action/Status</span>
-                <div class="m-actions">
-                  <!-- Extension request -->
-                  <div v-if="booking.is_extension_requested" class="m-ext-box">
-                    <p class="m-ext-title">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
-                    <div class="m-btn-row">
-                      <button @click="handleApproveExtension(booking)" class="m-btn m-btn-amber">Approve</button>
-                      <button @click="handleRejectExtension(booking)" class="m-btn m-btn-red-ol">Reject</button>
-                    </div>
-                  </div>
-                  <!-- Pending -->
-                  <div v-if="booking.status === 'pending'" class="m-btn-row">
-                    <button @click="handleApprove(booking)" class="m-btn m-btn-green">Approve</button>
-                    <button @click="handleReject(booking)" class="m-btn m-btn-red">Reject</button>
-                  </div>
-                  <!-- Approved, awaiting online payment -->
-                  <div v-else-if="isAwaitingOnlinePayment(booking)" class="m-pending-box">
-                    <span class="m-pill m-pill-pending">Reserved — Awaiting Payment</span>
-                    <p class="m-pending-note">Won't count as occupied until the student pays online.</p>
-                  </div>
-                  <!-- Confirmed -->
-                  <div v-else-if="booking.status === 'confirmed'" class="m-btn-row">
-                    <span class="m-pill m-pill-approved">Approved</span>
-                    <button v-if="booking.payment_status !== 'paid'" @click="handleMarkPaid(booking)" class="m-btn m-btn-blue">Mark Paid</button>
-                    <span v-else class="m-pill m-pill-paid">Paid</span>
-                  </div>
-                  <!-- Other statuses -->
-                  <span v-else class="m-pill m-pill-default">{{ booking.status }}</span>
-                </div>
-              </div>
-            </div>
-
-          <!-- End of Records -->
-          <div v-if="filteredBookings.length > 0" class="m-end-of-records">
-            <span class="m-eor-text">End of Records</span>
-          </div>
-          </template>
         </div>
       </div>
 
