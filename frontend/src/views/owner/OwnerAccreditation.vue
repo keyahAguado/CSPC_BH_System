@@ -242,11 +242,18 @@ async function fetchHouseDetails() {
         mainHouseImgPreview.value = getImageUrl(house.img);
       }
 
-      // Populate extra image cells from databases
+      // Populate extra image cells — prefer house_photos table (Cloudinary), fall back to legacy img_1/2/3
       selectedPhotos.value = [];
-      if (house.img_1) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_1), dbValue: house.img_1 });
-      if (house.img_2) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_2), dbValue: house.img_2 });
-      if (house.img_3) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_3), dbValue: house.img_3 });
+      const photosFromServer = res.data.photos || [];
+      if (photosFromServer.length > 0) {
+        photosFromServer.forEach(url => {
+          selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(url), dbValue: url });
+        });
+      } else {
+        if (house.img_1) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_1), dbValue: house.img_1 });
+        if (house.img_2) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_2), dbValue: house.img_2 });
+        if (house.img_3) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_3), dbValue: house.img_3 });
+      }
 
       // Store current file names for permits preview
       criteria.value.forEach(p => {
