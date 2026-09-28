@@ -6,6 +6,13 @@ import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { matchesSearch } from '../../utils/search.js';
 import { formatAddress } from '../../utils/formatAddress.js';
+import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
+
+const getAdminCheckoutDate = (occ) => {
+  if (!occ.check_in_date) return '—';
+  const d = computeCheckoutDate(occ.check_in_date, occ.months || 1);
+  return formatCheckoutDateString(d);
+};
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
@@ -1069,7 +1076,15 @@ onMounted(async () => {
                 </div>
                 <div class="py-3.5 flex justify-between items-center">
                   <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Duration & Ledger</span>
-                  <span class="text-blue-600 font-black">{{ occ.months }} Mos — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
+                  <span class="text-blue-600 font-black">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }} — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
+                </div>
+                <div class="py-3.5 flex justify-between items-center">
+                  <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Check-out Date</span>
+                  <span class="text-blue-600 font-black">{{ getAdminCheckoutDate(occ) }}</span>
+                </div>
+                <div v-if="occ.emergency_contact" class="py-3.5 flex justify-between items-center">
+                  <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Emergency Contact</span>
+                  <span class="text-slate-700">{{ occ.emergency_contact }}</span>
                 </div>
               </div>
 

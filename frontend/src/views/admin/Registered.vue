@@ -7,7 +7,14 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
+import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
 import { matchesSearch } from '../../utils/search.js';
+
+const getAdminCheckoutDate = (occ) => {
+  if (!occ.check_in_date) return '—';
+  const d = computeCheckoutDate(occ.check_in_date, occ.months || 1);
+  return formatCheckoutDateString(d);
+};
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
@@ -1162,20 +1169,20 @@ onMounted(async () => {
               <span class="text-slate-800">{{ occ.age ? `${occ.age} yrs old` : '—' }} • {{ occ.contact_number || 'No contact' }}</span>
             </div>
             <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Paid Via</span>
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
-                    :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-600'">
-                <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                {{ occ.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
-              </span>
-            </div>
-            <div class="py-3.5 flex justify-between items-center">
               <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Check-in Date</span>
               <span>{{ occ.check_in_date ? new Date(occ.check_in_date).toLocaleDateString() : '—' }}</span>
             </div>
             <div class="py-3.5 flex justify-between items-center">
               <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Duration & Ledger</span>
-              <span class="text-blue-600 font-black">{{ occ.months }} Mos — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
+              <span class="text-blue-600 font-black">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }} — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
+            </div>
+            <div class="py-3.5 flex justify-between items-center">
+              <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Check-out Date</span>
+              <span class="text-blue-600 font-black">{{ getAdminCheckoutDate(occ) }}</span>
+            </div>
+            <div v-if="occ.emergency_contact" class="py-3.5 flex justify-between items-center">
+              <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Emergency Contact</span>
+              <span class="text-slate-700">{{ occ.emergency_contact }}</span>
             </div>
           </div>
         </div>
