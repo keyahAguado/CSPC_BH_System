@@ -44,6 +44,7 @@ const oauthErrors = {
   idle_timeout:        'You were logged out after 30 minutes of inactivity. Please log in again.',
   unauthorized:        'Access denied. You do not have permission to view that page.',
   unauthorized_domain: 'That Google account isn\'t authorised. Use your CSPC or personal Gmail.',
+  oauth_failed:        'Google authentication timed out or was interrupted. Please try logging in again.',
   suspended:           'Your account has been suspended. Please contact SASO.',
   server_error:        'Something went wrong. Please try again.',
   invalid_payload:     'Authentication failed. Please try again.',

@@ -244,9 +244,16 @@ router.get('/google/callback',
             ? decodeURIComponent(req.query.state)
             : (process.env.FRONTEND_URL || 'http://localhost');
 
-        passport.authenticate('google', {
-            session: false,
-            failureRedirect: `${targetOrigin}/login?error=unauthorized_domain`,
+        passport.authenticate('google', { session: false }, (err, user, info) => {
+            if (err) {
+                console.warn('⚠️ Google OAuth token exchange warning/error:', err.message || err);
+                return res.redirect(`${targetOrigin}/login?error=oauth_failed`);
+            }
+            if (!user) {
+                return res.redirect(`${targetOrigin}/login?error=unauthorized_domain`);
+            }
+            req.user = user;
+            next();
         })(req, res, next);
     },
     async (req, res) => {
