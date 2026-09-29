@@ -34,6 +34,25 @@ const showSystemAlert = (message, type = 'error') => {
   }
 };
 
+const getDocStatus = (dateVal) => {
+  if (!dateVal) return 'none';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return 'none';
+  
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
+  const expiryStr = formatter.format(d);
+  const todayStr = formatter.format(new Date());
+  
+  if (expiryStr <= todayStr) return 'expired';
+  
+  const thirtyDays = new Date();
+  thirtyDays.setDate(thirtyDays.getDate() + 30);
+  const thirtyDaysStr = formatter.format(thirtyDays);
+  
+  if (expiryStr <= thirtyDaysStr) return 'warning';
+  return 'valid';
+};
+
 const fetchOwnerProperties = async () => {
   try {
     const res = await axios.get('/api/boarding-houses/my-property', {
@@ -368,14 +387,14 @@ onMounted(async () => {
               <!-- Expiry Badges -->
               <div class="absolute top-0 right-0 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-white"
                    :class="[
-                     p.current_expiry && new Date(p.current_expiry) < new Date() ? 'bg-red-500' :
-                     p.current_expiry && new Date(p.current_expiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) ? 'bg-orange-400' : 
-                     p.current_expiry ? 'bg-green-500' : 'bg-slate-400'
+                     getDocStatus(p.current_expiry) === 'expired' ? 'bg-red-500' :
+                     getDocStatus(p.current_expiry) === 'warning' ? 'bg-orange-400' : 
+                     getDocStatus(p.current_expiry) === 'valid' ? 'bg-green-500' : 'bg-slate-400'
                    ]">
                 {{ 
-                  p.current_expiry && new Date(p.current_expiry) < new Date() ? 'Expired' :
-                  p.current_expiry && new Date(p.current_expiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) ? 'Expiring Soon' : 
-                  p.current_expiry ? 'Valid' : 'No Expiry Set'
+                  getDocStatus(p.current_expiry) === 'expired' ? 'Expired' :
+                  getDocStatus(p.current_expiry) === 'warning' ? 'Expiring Soon' : 
+                  getDocStatus(p.current_expiry) === 'valid' ? 'Valid' : 'No Expiry Set'
                 }}
               </div>
 

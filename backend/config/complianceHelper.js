@@ -1,3 +1,19 @@
+const formatDateStr = (d) => {
+    if (!d) return '';
+    if (typeof d === 'string') {
+        const parts = d.split('T')[0];
+        if (parts.length === 10) return parts;
+    }
+    try {
+        const dateObj = new Date(d);
+        if (isNaN(dateObj.getTime())) return '';
+        const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
+        return formatter.format(dateObj);
+    } catch (e) {
+        return '';
+    }
+};
+
 /**
  * Helper to determine compliance status based on expiry dates.
  * Mirrors complianceManager.js: only the 4 critical documents (the ones
@@ -16,17 +32,22 @@ export function getComplianceStatus(house) {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(now.getDate() + 30);
 
+    const todayStr = formatDateStr(now);
+    const thirtyDaysStr = formatDateStr(thirtyDaysFromNow);
+
     let status = 'active'; // Overall status
 
     for (const key of permits) {
         const expiryDate = house[key];
         if (!expiryDate) continue;
 
-        const date = new Date(expiryDate);
-        if (date < now) {
+        const expiryStr = formatDateStr(expiryDate);
+        if (!expiryStr) continue;
+
+        if (expiryStr <= todayStr) {
             return 'expired'; // Immediate fail if any one is expired
         }
-        if (date < thirtyDaysFromNow) {
+        if (expiryStr <= thirtyDaysStr) {
             status = 'warning'; // Downgrade to warning if within 30 days
         }
     }
@@ -51,17 +72,22 @@ export function getSupplementaryStatus(house) {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(now.getDate() + 30);
 
+    const todayStr = formatDateStr(now);
+    const thirtyDaysStr = formatDateStr(thirtyDaysFromNow);
+
     let status = 'active';
 
     for (const key of permits) {
         const expiryDate = house[key];
         if (!expiryDate) continue;
 
-        const date = new Date(expiryDate);
-        if (date < now) {
+        const expiryStr = formatDateStr(expiryDate);
+        if (!expiryStr) continue;
+
+        if (expiryStr <= todayStr) {
             return 'expired';
         }
-        if (date < thirtyDaysFromNow) {
+        if (expiryStr <= thirtyDaysStr) {
             status = 'warning';
         }
     }

@@ -778,11 +778,11 @@ onMounted(() => {
                           REJECT
                         </button>
                       </div>
-                      <div v-else-if="isAwaitingOnlinePayment(booking)" class="flex flex-col gap-1.5 max-w-[160px] mx-auto">
-                        <span class="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest">
+                      <div v-else-if="isAwaitingOnlinePayment(booking)" class="flex flex-col gap-1 items-center justify-center max-w-[170px] mx-auto text-center whitespace-normal">
+                        <span class="bg-amber-100 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider inline-block text-center leading-snug">
                           Reserved — Awaiting Payment
                         </span>
-                        <p class="text-[9px] font-semibold text-slate-400 leading-snug">
+                        <p class="text-[9px] font-semibold text-slate-400 leading-tight mt-1 text-center">
                           Won't count as occupied until student pays online.
                         </p>
                       </div>

@@ -64,6 +64,17 @@ const showSystemAlert = (message, type = 'error') => {
   if (alertRef.value) alertRef.value.showSystemAlert(message, type);
 };
 
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (e) {
+    return 'N/A';
+  }
+};
+
 // ─── Self-Healing Checklist State Synchronizer ───
 const syncChecklistState = () => {
   if (!activeApp.value) return;
@@ -325,6 +336,35 @@ const isDocumentItemUpdated = (item) => {
   return (permitKey && updatedList.includes(permitKey)) || updatedList.includes(itemId);
 };
 
+// Returns the Document Recheck badge label and visibility flag for an application row.
+// Shows the badge when document_update_pending = 1 AND the house is not a brand-new
+// first-time submission — meaning it was previously accredited OR unlisted by the owner.
+const getDocRecheckBadge = (app) => {
+  if (!app.document_update_pending) return null;
+  // Already-accredited house that uploaded a renewal doc (stays accredited, pending re-check)
+  if (app.house_status === 'accredited') {
+    return { label: 'Document Recheck — Already Accredited', color: 'text-amber-600' };
+  }
+  // Owner-unlisted (archived_by = 'owner') then uploaded docs — pushed back to pending
+  if (app.archived_by === 'owner') {
+    return { label: 'Document Recheck — Previously Unlisted by Owner', color: 'text-blue-600' };
+  }
+  // System-archived (expired permits) then uploaded new docs — pushed back to pending
+  if (app.archived_by === 'system') {
+    return { label: 'Document Recheck — Previously Archived (Expired Permits)', color: 'text-red-600' };
+  }
+  // Archived by admin then uploaded docs — pushed back to pending
+  if (app.archived_by === 'admin') {
+    return { label: 'Document Recheck — Previously Suspended by Admin', color: 'text-purple-600' };
+  }
+  // Non-pending status with document_update_pending (fallback)
+  if (app.house_status !== 'pending') {
+    const label = app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1);
+    return { label: `Document Recheck — Already ${label}`, color: 'text-amber-600' };
+  }
+  return null;
+};
+
 onMounted(() => {
   fetchPendingApplications();
 });
@@ -373,13 +413,14 @@ onMounted(() => {
                     <td class="py-6 px-6 border-r border-slate-200 font-semibold">{{ app.owner_name }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 font-black text-slate-900">
                       {{ app.name }}
-                      <span v-if="app.house_status !== 'pending' && app.document_update_pending"
-                            class="block mt-1 text-[9px] font-black uppercase tracking-widest text-amber-600">
-                        <i class="fa-solid fa-rotate"></i> Document Recheck — Already {{ app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1) }}
-                      </span>
+                      <template v-if="getDocRecheckBadge(app)">
+                        <span :class="['block mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
+                          <i class="fa-solid fa-rotate"></i> {{ getDocRecheckBadge(app).label }}
+                        </span>
+                      </template>
                     </td>
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-400 font-bold">
-                      {{ app.created_at ? new Date(app.created_at).toLocaleDateString() : 'N/A' }}
+                      {{ formatDate(app.created_at) }}
                     </td>
                     <td class="py-6 px-6 border-r border-slate-200">
                       <button @click="openDocumentModal(app)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition text-[11px] font-black uppercase tracking-widest shadow-sm">
@@ -414,7 +455,7 @@ onMounted(() => {
               <div class="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
                 <span class="text-xs font-black text-slate-400 uppercase tracking-widest"># {{ index + 1 }}</span>
                 <span class="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                  {{ app.created_at ? new Date(app.created_at).toLocaleDateString() : 'N/A' }}
+                  {{ formatDate(app.created_at) }}
                 </span>
               </div>
 
@@ -428,10 +469,11 @@ onMounted(() => {
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
                   <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Boarding House</span>
                   <span class="font-black text-slate-900 text-base">{{ app.name }}</span>
-                  <span v-if="app.house_status !== 'pending' && app.document_update_pending"
-                        class="mt-1 text-[9px] font-black uppercase tracking-widest text-amber-600">
-                    <i class="fa-solid fa-rotate"></i> Document Recheck — Already {{ app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1) }}
-                  </span>
+                  <template v-if="getDocRecheckBadge(app)">
+                    <span :class="['mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
+                      <i class="fa-solid fa-rotate"></i> {{ getDocRecheckBadge(app).label }}
+                    </span>
+                  </template>
                 </div>
               </div>
 
@@ -574,7 +616,21 @@ onMounted(() => {
                 <div>
                   <h4 class="text-[11px] font-bold text-amber-800 uppercase tracking-widest mb-1">Institutional Re-Verification</h4>
                   <p class="text-[13px] font-medium text-amber-700 leading-tight">
-                    The owner has resubmitted files for validation. Review the checklist below to approve accreditation.
+                    <template v-if="activeApp.house_status === 'accredited'">
+                      This is an <strong>already-accredited</strong> boarding house. The owner has uploaded a renewed/updated document. Review the flagged item below and approve or reject the document re-check.
+                    </template>
+                    <template v-else-if="activeApp.archived_by === 'owner'">
+                      This boarding house was <strong>unlisted by the owner</strong> and was re-queued here after they uploaded new documents. Reviewing this will determine if it can be re-listed as accredited.
+                    </template>
+                    <template v-else-if="activeApp.archived_by === 'system'">
+                      This boarding house was <strong>automatically archived due to expired required permits</strong>. The owner has uploaded renewed documents. Approve to restore accreditation.
+                    </template>
+                    <template v-else-if="activeApp.archived_by === 'admin'">
+                      This boarding house was <strong>previously suspended by an administrator</strong>. The owner has uploaded updated documents in response. Review carefully before approving.
+                    </template>
+                    <template v-else>
+                      The owner has resubmitted files for validation. Review the checklist below to approve or reject accreditation.
+                    </template>
                   </p>
                 </div>
               </div>
@@ -585,7 +641,20 @@ onMounted(() => {
                 <i class="fa-solid fa-rotate text-blue-500 mt-1 text-lg"></i>
                 <div class="w-full">
                   <h4 class="text-[11px] font-bold text-blue-900 uppercase tracking-widest mb-1">Resubmission Alert</h4>
-                  <p class="text-[10px] text-blue-700 leading-relaxed font-medium">This property was previously <strong class="text-red-600 font-bold">REJECTED</strong>. The owner has corrected their application and resubmitted it for your review.</p>
+                  <p class="text-[10px] text-blue-700 leading-relaxed font-medium">
+                    <template v-if="activeApp.archived_by === 'owner'">
+                      This property was <strong class="text-amber-600 font-bold">UNLISTED BY OWNER</strong>. The owner has uploaded new documents while unlisted, queuing this property for re-accreditation review.
+                    </template>
+                    <template v-else-if="activeApp.archived_by === 'system'">
+                      This property was <strong class="text-red-600 font-bold">AUTO-ARCHIVED (EXPIRED PERMITS)</strong>. The owner has uploaded renewed permit documents and is requesting restoration of accreditation.
+                    </template>
+                    <template v-else-if="activeApp.archived_by === 'admin'">
+                      This property was <strong class="text-purple-600 font-bold">SUSPENDED BY ADMIN</strong>. The owner has uploaded updated documents. Verify carefully — admin suspension may have had specific reasons.
+                    </template>
+                    <template v-else>
+                      This property was previously <strong class="text-red-600 font-bold">REJECTED</strong>. The owner has corrected their application and resubmitted it for your review.
+                    </template>
+                  </p>
                 </div>
               </div>
             </div>

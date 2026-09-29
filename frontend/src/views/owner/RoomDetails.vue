@@ -163,6 +163,15 @@ const handleTogglePayment = async (occupant) => {
   }
 };
 
+const calculateTotalRent = (occupant) => {
+  const months = parseInt(occupant.months) || 1;
+  const monthlyRate = parseFloat(room.value.house_price || room.value.price || occupant.monthly_rent || 0);
+  if (monthlyRate > 0) {
+    return months * monthlyRate;
+  }
+  return parseFloat(occupant.amount || 0);
+};
+
 const handleToggleUpfront = async (occupant) => {
   const currentStatus = occupant.upfront_status || 'Paid';
   const newStatus = currentStatus === 'Paid' ? 'Unpaid' : 'Paid';
@@ -466,12 +475,6 @@ onMounted(() => {
                     <span class="font-bold text-sm text-slate-700">{{ occ.reference_no || 'MANUAL' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Classification</span>
-                    <span class="font-bold text-xs" :class="occ.is_non_cspc ? 'text-slate-600' : 'text-blue-600'">
-                      {{ occ.is_non_cspc ? 'Non-CSPC Boarder (External Student)' : 'CSPC Student' }}
-                    </span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Age</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.age || '—' }}</span>
                   </div>
@@ -504,8 +507,11 @@ onMounted(() => {
                     <span class="font-bold text-sm text-slate-700">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rent Rate</span>
-                    <span class="font-bold text-sm text-slate-700">₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Rent</span>
+                    <div class="text-right">
+                      <span class="font-bold text-sm text-slate-700 block">₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}</span>
+                      <span class="text-[9px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>
+                    </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Monthly Rent Status</span>
@@ -602,32 +608,33 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.guardian_name || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
-                    ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}
+                    ₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}
                     <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>
                   </td>
                   <!-- Move-in Ledger Column -->
                   <td class="px-3 py-4 text-left bg-emerald-50/40">
                     <template v-if="formatMoveInLedger(occ).total > 0">
-                      <div class="flex items-center justify-between gap-1">
-                        <span class="font-bold text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
-                        <!-- Online badge (PayMongo - Automated) -->
-                        <span v-if="occ.payment_method === 'paymongo'" class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100/80 text-emerald-800 border border-emerald-200">
-                          <i class="fa-solid fa-mobile-screen-button"></i>
-                          Upfront Paid (Online)
-                        </span>
-                        <!-- Cash badge & toggle button -->
-                        <div v-else class="flex flex-col items-end gap-0.5">
-                          <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
-                                :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-100/80 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
+                      <div class="flex flex-col gap-1">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="font-black text-sm text-emerald-800">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
+                          <!-- Online badge (PayMongo - Automated) -->
+                          <span v-if="occ.payment_method === 'paymongo'" class="inline-flex items-center gap-1 text-[8.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                            Upfront Paid (Online)
+                          </span>
+                          <!-- Cash badge -->
+                          <span v-else class="inline-flex items-center gap-1 text-[8.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 whitespace-nowrap"
+                                :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
                             <i class="fa-solid" :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'fa-money-bill-wave' : 'fa-clock'"></i>
                             {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)' }}
                           </span>
-                          <button @click="handleToggleUpfront(occ)" class="text-[7.5px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer mt-0.5">
-                            {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
-                          </button>
                         </div>
+                        <!-- Cash toggle button -->
+                        <button v-if="occ.payment_method !== 'paymongo'" @click="handleToggleUpfront(occ)" class="self-end text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer">
+                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
+                        </button>
                       </div>
-                      <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight mt-0.5">
+                      <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight mt-1">
                         Advance Rent: ₱{{ formatMoveInLedger(occ).advAmt.toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
                       <span v-if="formatMoveInLedger(occ).depM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight">

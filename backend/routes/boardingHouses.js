@@ -321,13 +321,14 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
 
         // Fetch current status of the boarding house to execute conditional status transitions
         const [houseCheck] = await connection.query(
-            'SELECT house_status FROM boarding_houses WHERE id = ?',
+            'SELECT house_status, is_resubmission FROM boarding_houses WHERE id = ?',
             [houseId]
         );
         const currentStatus = houseCheck.length > 0 ? houseCheck[0].house_status : 'none';
 
-        // If current status is rejected, transition it back to pending upon resubmission
-        const targetStatus = currentStatus === 'rejected' ? 'pending' : currentStatus;
+        // If current status is rejected or archived, transition it back to pending upon resubmission
+        const targetStatus = (currentStatus === 'rejected' || currentStatus === 'archived') ? 'pending' : currentStatus;
+        const isResubmissionVal = (currentStatus === 'rejected' || currentStatus === 'archived' || (houseCheck.length > 0 && houseCheck[0].is_resubmission)) ? 1 : 0;
 
         // Fetch current document update tracking state to accumulate multiple updated documents in a single pending session
         const [currentHouseState] = await connection.query(
@@ -386,9 +387,9 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             // Flag boarding house as pending re-verification & apply target status
             await connection.query(
                 `UPDATE boarding_houses 
-                 SET house_status = ?, document_update_pending = 1, last_updated_document = ? 
+                 SET house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL 
                  WHERE id = ? AND owner_id = ?`,
-                [targetStatus, accumulatedDocsStr, houseId, req.user.id]
+                [targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );
 
             // Fetch label for custom notification message
@@ -413,9 +414,9 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             // Update standard columns & apply target status
             await connection.query(
                 `UPDATE boarding_houses 
-                 SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, document_update_pending = 1, last_updated_document = ? 
+                 SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL 
                  WHERE id = ? AND owner_id = ?`,
-                [fileUrl, parsedExpiryDate, targetStatus, accumulatedDocsStr, houseId, req.user.id]
+                [fileUrl, parsedExpiryDate, targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );
 
             const labels = {

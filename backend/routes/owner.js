@@ -4,6 +4,7 @@ import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 import NABUA_BARANGAYS from '../config/barangays.js';
 import { getComplianceStatus, getSupplementaryStatus } from '../config/complianceHelper.js';
+import { evaluateHouseCompliance } from '../config/complianceManager.js';
 import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
@@ -334,43 +335,34 @@ router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, a
 
         const house = houseRows[0];
 
-        // 1. If archived by admin or compliance, owner cannot self-reactivate
-        if (house.archived_by === 'admin' || house.admin_comments) {
-            return res.status(403).json({
+        // 1. Run compliance evaluation to sync compliance_status column in DB
+        await evaluateHouseCompliance(houseId);
+
+        // Fetch fresh house record after evaluation
+        const [freshRows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ?', [houseId]);
+        const currentHouse = freshRows.length > 0 ? freshRows[0] : house;
+
+        const liveCompliance = getComplianceStatus(currentHouse);
+        if (currentHouse.compliance_status === 'expired' || liveCompliance === 'expired') {
+            return res.status(400).json({
                 success: false,
-                message: 'This listing was suspended by SASO Admin. Please contact SASO Admin to request reinstatement.'
+                message: 'Cannot reactivate listing: One or more required legal permits have expired. Please upload updated permits under Docs to proceed.'
             });
         }
 
-        // 2. Check critical permits expiry
-        const criticalPermits = [
-            { key: 'expiry_permit_business_form', label: 'Business Permit' },
-            { key: 'expiry_permit_barangay', label: 'Barangay Business Clearance' },
-            { key: 'expiry_permit_sanitary', label: 'Sanitary/Health Clearance' },
-            { key: 'expiry_permit_fire', label: 'Fire Safety Certificate' }
-        ];
-
-        const now = new Date();
-        const expiredPermits = [];
-
-        for (const p of criticalPermits) {
-            const expiryDate = house[p.key];
-            if (!expiryDate) continue;
-            if (new Date(expiryDate) < now) {
-                expiredPermits.push(p.label);
-            }
-        }
-
-        if (expiredPermits.length > 0) {
-            return res.status(400).json({
+        // 2. If archived by admin with explicit admin comments
+        if (currentHouse.archived_by === 'admin' || currentHouse.admin_comments) {
+            return res.status(403).json({
                 success: false,
-                message: `Cannot reactivate listing: The following critical permit(s) are expired: ${expiredPermits.join(', ')}. Please renew your permit documents first.`
+                message: currentHouse.admin_comments 
+                    ? `Listing inactive: ${currentHouse.admin_comments}. Please upload updated documents under Docs for SASO re-accreditation.`
+                    : 'This listing cannot be reactivated because legal permit documents require SASO re-accreditation. Please upload updated permits under Docs to proceed.'
             });
         }
 
         await pool.query(
             `UPDATE boarding_houses 
-             SET house_status = 'accredited', archived_by = NULL, archive_reason = NULL, archived_at = NULL 
+             SET house_status = 'accredited', compliance_status = 'active', archived_by = NULL, archive_reason = NULL, archived_at = NULL 
              WHERE id = ? AND owner_id = ?`,
             [houseId, req.user.id]
         );

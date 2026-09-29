@@ -23,7 +23,7 @@ const EXPLICIT_BH_COLUMNS = `
     bh.expiry_permit_barangay, bh.expiry_permit_building, bh.expiry_permit_zoning, 
     bh.expiry_permit_sanitary, bh.expiry_permit_fire, bh.latitude, bh.longitude, 
     bh.advance_months, bh.deposit_months, bh.deposit_type, bh.document_update_pending, 
-    bh.last_updated_document, bh.is_resubmission, bh.admin_comments, bh.created_at
+    bh.last_updated_document, bh.is_resubmission, bh.admin_comments, bh.archived_by, bh.created_at
 `;
 
 // Helper: Self-healing automatic backfill for missing barangay values using location field
@@ -360,7 +360,7 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
             FROM boarding_houses bh 
             JOIN users u ON bh.owner_id = u.id 
             WHERE bh.house_status = 'pending' OR bh.document_update_pending = 1
-            ORDER BY bh.created_at DESC
+            ORDER BY bh.created_at DESC, bh.id DESC
         `);
         // Query 2: ALL checklist criteria (both global 8 + any house-specific ones)
         const [dbCriteria] = await pool.query('SELECT * FROM checklist_criteria');

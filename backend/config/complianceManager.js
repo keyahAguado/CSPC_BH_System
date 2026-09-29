@@ -18,18 +18,40 @@ const supplementaryPermits = [
     { key: 'expiry_permit_zoning', label: 'Zoning/Locational Clearance' }
 ];
 
+const formatDateStr = (d) => {
+    if (!d) return '';
+    if (typeof d === 'string') {
+        const parts = d.split('T')[0];
+        if (parts.length === 10) return parts;
+    }
+    try {
+        const dateObj = new Date(d);
+        if (isNaN(dateObj.getTime())) return '';
+        const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
+        return formatter.format(dateObj);
+    } catch (e) {
+        return '';
+    }
+};
+
 const classify = (house, permitList, now, thirtyDaysFromNow) => {
     let status = 'active';
     const expiringSoon = [];
     const expired = [];
+    const todayStr = formatDateStr(now);
+    const thirtyDaysStr = formatDateStr(thirtyDaysFromNow);
+
     for (const p of permitList) {
         const expiryDate = house[p.key];
         if (!expiryDate) continue; // no expiry date → skip this permit
-        const date = new Date(expiryDate);
-        if (date < now) {
+
+        const expiryStr = formatDateStr(expiryDate);
+        if (!expiryStr) continue;
+
+        if (expiryStr <= todayStr) {
             expired.push(p.label);
             status = 'expired';
-        } else if (date < thirtyDaysFromNow && status !== 'expired') {
+        } else if (expiryStr <= thirtyDaysStr && status !== 'expired') {
             expiringSoon.push(p.label);
             status = 'warning';
         }
@@ -44,7 +66,7 @@ const classify = (house, permitList, now, thirtyDaysFromNow) => {
  * saves a document, so notifications don't have to wait for the next sweep.
  */
 export async function evaluateHouseCompliance(houseId) {
-    const [rows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ? AND house_status != \'archived\'', [houseId]);
+    const [rows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ?', [houseId]);
     if (rows.length === 0) return;
     const house = rows[0];
 
@@ -56,9 +78,12 @@ export async function evaluateHouseCompliance(houseId) {
     const supplementary = classify(house, supplementaryPermits, now, thirtyDaysFromNow);
 
     // 1. Critical documents drive compliance_status and auto-archiving
-    if (house.compliance_status !== critical.status) {
+    if (house.compliance_status !== critical.status || (critical.status === 'expired' && house.house_status !== 'archived')) {
         if (critical.status === 'expired') {
-            await pool.query("UPDATE boarding_houses SET compliance_status = ?, house_status = 'archived' WHERE id = ?", [critical.status, house.id]);
+            await pool.query(
+                "UPDATE boarding_houses SET compliance_status = ?, house_status = 'archived', archived_by = 'system', archive_reason = 'Required permits expired' WHERE id = ?",
+                [critical.status, house.id]
+            );
 
             const ownerMsg = `URGENT: Your boarding house "${house.name}" has been AUTOMATICALLY ARCHIVED because the following required documents expired: ${critical.expired.join(', ')}.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
