@@ -78,6 +78,15 @@ const showReactivateBlockedModal = ref(false);
 const blockedHouseId = ref(null);
 const blockedErrorMessage = ref('');
 
+// Supplementary doc info pop-up
+const showSuppModal = ref(false);
+const suppModalStatus = ref('');
+
+const openSuppModal = (status) => {
+  suppModalStatus.value = status;
+  showSuppModal.value = true;
+};
+
 // Reactivation confirmation modal
 const showReactivateConfirmModal = ref(false);
 const pendingReactivateHouseId = ref(null);
@@ -338,25 +347,19 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Supplementary Doc Notice -->
-            <div v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
-                 class="bg-slate-50 border-l-4 border-slate-400 p-3 mb-4 rounded-r-lg">
-              <div class="flex items-center gap-2">
-                <i class="fa-solid fa-circle-info text-slate-500 text-[10px]"></i>
-                <p class="text-[9px] font-black text-slate-600 uppercase tracking-widest">
-                  {{ house.supplementary_status === 'expired'
-                    ? 'Not urgent: a supplementary document has expired. Your listing stays visible and bookable — renew it when convenient.'
-                    : 'Heads up: a supplementary document expires soon. No action needed yet — this will not affect your listing.' }}
-                </p>
-              </div>
-            </div>
-
             <!-- Body Details -->
             <div class="mb-4 flex-1 px-1">
               <h2 class="font-black text-lg text-slate-900 leading-tight mb-1 uppercase tracking-tight">
                 {{ house.name }}
               </h2>
               <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{{ formatAddress(house) }}</p>
+              <!-- Supplementary Doc Notice — compact chip, click for details -->
+              <button v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
+                      @click="openSuppModal(house.supplementary_status)"
+                      class="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-400 bg-slate-100 hover:bg-slate-200 hover:text-slate-600 px-2 py-0.5 rounded-full transition cursor-pointer">
+                <i class="fa-solid fa-circle-info text-[8px]"></i>
+                {{ house.supplementary_status === 'expired' ? 'Supplementary doc expired — non-urgent' : 'Supplementary doc expiring soon' }}
+              </button>
             </div>
 
             <!-- Actions Panel -->
@@ -390,7 +393,7 @@ onUnmounted(() => {
                   <i class="fa-solid fa-eye-slash text-[10px]"></i> Pause / Unlist Listing
                 </button>
               </div>
-              <div v-else-if="house.house_status === 'archived' && (house.archived_by === 'owner' || (!house.archived_by && house.compliance !== 'expired' && !house.admin_comments))" class="mt-2 pt-2 border-t border-slate-200">
+              <div v-else-if="house.house_status === 'archived' && house.archived_by !== 'admin'" class="mt-2 pt-2 border-t border-slate-200">
                 <button @click="openReactivateConfirm(house.id)"
                         class="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black py-2 px-4 rounded-lg uppercase tracking-widest transition shadow-sm cursor-pointer">
                   <i class="fa-solid fa-play text-[9px]"></i> Reactivate Listing
@@ -414,6 +417,39 @@ onUnmounted(() => {
         </div>
       </div>
     </main>
+
+    <!-- Supplementary Document Info Modal -->
+    <div v-if="showSuppModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[250] flex items-center justify-center p-4" @click.self="showSuppModal = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden">
+        <div class="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+              <i class="fa-solid fa-circle-info text-slate-500"></i>
+            </div>
+            <h3 class="text-[11px] font-black text-slate-700 uppercase tracking-widest">Supplementary Document</h3>
+          </div>
+          <button @click="showSuppModal = false" class="text-slate-300 hover:text-slate-600 transition cursor-pointer">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <div class="px-6 py-5">
+          <p class="text-[13px] font-semibold text-slate-600 leading-relaxed">
+            <template v-if="suppModalStatus === 'expired'">
+              A supplementary document (e.g. Cedula, DTI, Building Inspection, or Zoning Clearance) has expired. <strong class="text-slate-800">Your listing stays visible and bookable</strong> — these are non-critical documents that don't affect your accreditation status. Renew it when convenient.
+            </template>
+            <template v-else>
+              A supplementary document is expiring soon. <strong class="text-slate-800">No action needed yet</strong> — this will not affect your listing or accreditation status. You may upload a renewed copy in advance under <strong>Docs</strong>.
+            </template>
+          </p>
+        </div>
+        <div class="px-6 pb-5">
+          <button @click="showSuppModal = false"
+                  class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black py-2.5 rounded-xl uppercase tracking-widest transition cursor-pointer">
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Pause / Unlist Listing Modal -->
     <div v-if="showPauseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
