@@ -62,11 +62,21 @@ const fetchDashboardData = async () => {
   }
 };
 
-// Confirmation States
+// Confirmation, Unlist & Reactivation Modal States
 const showConfirmModal = ref(false);
 const confirmTitle = ref('');
 const confirmMessage = ref('');
 const confirmAction = ref(null);
+
+const showPauseModal = ref(false);
+const pauseHouseId = ref(null);
+const pauseReason = ref('Fully Booked / At Capacity');
+const customPauseReason = ref('');
+const isArchiving = ref(false);
+
+const showReactivateBlockedModal = ref(false);
+const blockedHouseId = ref(null);
+const blockedErrorMessage = ref('');
 
 const triggerConfirm = (title, message, action) => {
   confirmTitle.value = title;
@@ -83,26 +93,64 @@ const executeConfirm = async () => {
   }
 };
 
-const removeHouse = (houseId) => {
-  triggerConfirm(
-    'Confirm Removal',
-    'Are you sure you want to remove this boarding house? This action cannot be undone.',
-    async () => {
-      try {
-        const response = await axios.delete(`/api/owner/boarding-houses/${houseId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+const openPauseModal = (houseId) => {
+  pauseHouseId.value = houseId;
+  pauseReason.value = 'Fully Booked / At Capacity';
+  customPauseReason.value = '';
+  showPauseModal.value = true;
+};
 
-        if (response.data.success) {
-          showSystemAlert('Boarding house removed successfully.', 'success');
-          fetchDashboardData();
-        }
-      } catch (error) {
-        console.error('Error removing boarding house:', error);
-        showSystemAlert(error.response?.data?.message || 'Failed to remove the boarding house. Please try again.', 'error');
-      }
+const closePauseModal = () => {
+  showPauseModal.value = false;
+  pauseHouseId.value = null;
+};
+
+const closeReactivateBlockedModal = () => {
+  showReactivateBlockedModal.value = false;
+  blockedHouseId.value = null;
+  blockedErrorMessage.value = '';
+};
+
+const handlePauseListing = async () => {
+  if (!pauseHouseId.value) return;
+  const reasonToSave = pauseReason.value === 'Other' ? customPauseReason.value : pauseReason.value;
+  try {
+    isArchiving.value = true;
+    const response = await axios.delete(`/api/owner/boarding-houses/${pauseHouseId.value}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { reason: reasonToSave || 'Unlisted by Landlord' }
+    });
+
+    if (response.data.success) {
+      showSystemAlert('Boarding house unlisted & archived. Active boarders remain tracked.', 'success');
+      closePauseModal();
+      fetchDashboardData();
     }
-  );
+  } catch (error) {
+    console.error('Error archiving boarding house:', error);
+    showSystemAlert(error.response?.data?.message || 'Failed to unlist listing.', 'error');
+  } finally {
+    isArchiving.value = false;
+  }
+};
+
+const handleReactivateHouse = async (houseId) => {
+  try {
+    const response = await axios.post(`/api/owner/boarding-houses/reactivate/${houseId}`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.data.success) {
+      showSystemAlert('Boarding house reactivated successfully! Listing is now active.', 'success');
+      fetchDashboardData();
+    }
+  } catch (error) {
+    console.error('Error reactivating boarding house:', error);
+    const msg = error.response?.data?.message || 'Reactivation blocked by system compliance.';
+    blockedHouseId.value = houseId;
+    blockedErrorMessage.value = msg;
+    showReactivateBlockedModal.value = true;
+  }
 };
 
 const preventBackNavigation = () => {
@@ -181,22 +229,42 @@ onUnmounted(() => {
                    class="w-full h-full object-cover grayscale-[10%] hover:grayscale-0 transition duration-500"
                    @error="e => e.target.src = '/img/cspc_bg.webp'" />
               
-              <!-- ARCHIVED: EXPIRED PERMITS (automatic, triggered by the system) -->
-              <div v-if="house.house_status === 'archived' && house.compliance === 'expired'" class="absolute inset-0 bg-red-600/60 backdrop-blur-sm flex items-center justify-center p-6 text-center">
-                <div>
-                  <i class="fa-solid fa-ban text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
-                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Renew &amp; resubmit your documents to be reviewed for reinstatement.</p>
+              <!-- ARCHIVED BY OWNER -->
+              <div v-if="house.house_status === 'archived' && (house.archived_by === 'owner' || (!house.archived_by && house.compliance !== 'expired' && !house.admin_comments))" 
+                   class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+                <div class="flex flex-col items-center">
+                  <i class="fa-solid fa-eye-slash text-amber-400 text-3xl mb-2"></i>
+                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">UNLISTED BY OWNER (HIDDEN FROM STUDENTS)</p>
+                  <p v-if="house.archive_reason" class="text-slate-300 text-[9px] font-bold uppercase tracking-wide mt-2 bg-slate-800/70 px-3 py-1 rounded-full">
+                    Reason: {{ house.archive_reason }}
+                  </p>
+                  <button @click="handleReactivateHouse(house.id)"
+                          class="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black px-5 py-2.5 rounded-full uppercase tracking-widest shadow-xl transition active:scale-95 cursor-pointer">
+                    <i class="fa-solid fa-play mr-1.5 text-[9px]"></i> Reactivate Listing
+                  </button>
                 </div>
               </div>
 
-              <!-- ARCHIVED: BY ADMIN (manual — e.g. owner requested, at capacity, non-compliance unrelated to doc expiry) -->
-              <div v-else-if="house.house_status === 'archived'" class="absolute inset-0 bg-slate-700/70 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+              <!-- ARCHIVED: EXPIRED PERMITS (automatic compliance) -->
+              <div v-else-if="house.house_status === 'archived' && house.compliance === 'expired'" class="absolute inset-0 bg-red-600/70 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+                <div>
+                  <i class="fa-solid fa-ban text-white text-3xl mb-2"></i>
+                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
+                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Renew your permits under Docs to reactivate listing.</p>
+                  <router-link :to="`/owner/documents/${house.id}`" 
+                               class="inline-block mt-3 bg-white text-red-600 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md hover:bg-slate-100 transition">
+                    Upload Renewed Permits
+                  </router-link>
+                </div>
+              </div>
+
+              <!-- ARCHIVED: BY ADMIN -->
+              <div v-else-if="house.house_status === 'archived'" class="absolute inset-0 bg-slate-800/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div>
                   <i class="fa-solid fa-box-archive text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: ARCHIVED BY SASO ADMIN</p>
-                  <p v-if="house.admin_comments" class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">"{{ house.admin_comments }}"</p>
-                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Contact SASO if you'd like this listing reactivated.</p>
+                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">SUSPENDED BY SASO ADMIN</p>
+                  <p v-if="house.admin_comments" class="text-amber-300 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">"{{ house.admin_comments }}"</p>
+                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Contact SASO Admin for reinstatement.</p>
                 </div>
               </div>
 
@@ -219,11 +287,14 @@ onUnmounted(() => {
                 <div v-else-if="house.house_status === 'rejected'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Rejected
                 </div>
+                <div v-else-if="house.house_status === 'archived' && (house.archived_by === 'owner' || (!house.archived_by && house.compliance !== 'expired' && !house.admin_comments))" class="bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                  Unlisted by Owner
+                </div>
                 <div v-else-if="house.house_status === 'archived' && house.compliance === 'expired'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Suspended: Permits Expired
                 </div>
-                <div v-else-if="house.house_status === 'archived'" class="bg-slate-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
-                  Archived by Admin
+                <div v-else-if="house.house_status === 'archived'" class="bg-slate-700 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                  Suspended by SASO
                 </div>
                 <div v-else-if="house.compliance === 'warning'" class="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Warning: Renew Permits
@@ -234,16 +305,16 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Warning Box -->
-            <div v-if="house.house_status !== 'archived' && house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
+            <!-- Warning Box (Shown on active or unlisted houses if permits expiring) -->
+            <div v-if="house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
               <div class="flex items-center gap-2">
                 <i class="fa-solid fa-clock text-orange-600 text-[10px]"></i>
                 <p class="text-[9px] font-black text-orange-700 uppercase tracking-widest">Action Required: Permits expiring soon!</p>
               </div>
             </div>
 
-            <!-- Supplementary Doc Notice (informational only — listing stays active & bookable) -->
-            <div v-if="house.house_status !== 'archived' && house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
+            <!-- Supplementary Doc Notice -->
+            <div v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
                  class="bg-slate-50 border-l-4 border-slate-400 p-3 mb-4 rounded-r-lg">
               <div class="flex items-center gap-2">
                 <i class="fa-solid fa-circle-info text-slate-500 text-[10px]"></i>
@@ -265,7 +336,6 @@ onUnmounted(() => {
 
             <!-- Actions Panel -->
             <div class="mt-auto bg-slate-50 rounded-xl p-4 flex flex-wrap gap-2 justify-center items-center border border-slate-100">
-            <!-- DYNAMIC REDIRECTION TO LEGAL DOCUMENTS -->
               <router-link v-if="house.house_status === 'rejected'" :to="`/owner/documents/${house.id}`" 
                  class="bg-red-600 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center">
                 Fix Application
@@ -285,9 +355,15 @@ onUnmounted(() => {
                   {{ house.pending_count }}
                 </span>
               </router-link>
-              <button @click="removeHouse(house.id)" 
-                      class="bg-slate-200 text-slate-500 text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:bg-red-500 hover:text-white">
-                Remove
+              <button v-if="house.house_status === 'accredited' || house.house_status === 'pending'"
+                      @click="openPauseModal(house.id)" 
+                      class="bg-slate-200 text-slate-600 text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:bg-amber-500 hover:text-white cursor-pointer">
+                Unlist Listing
+              </button>
+              <button v-else-if="house.house_status === 'archived' && (house.archived_by === 'owner' || (!house.archived_by && house.compliance !== 'expired' && !house.admin_comments))"
+                      @click="handleReactivateHouse(house.id)"
+                      class="bg-emerald-500 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:bg-emerald-600 cursor-pointer">
+                Reactivate
               </button>
             </div>
           </div>
@@ -307,6 +383,68 @@ onUnmounted(() => {
         </div>
       </div>
     </main>
+
+    <!-- Unlist Listing Reason Modal -->
+    <div v-if="showPauseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-left border border-slate-100 animate-in zoom-in-95 duration-200">
+        <div class="w-12 h-12 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-4 text-xl">
+          <i class="fa-solid fa-eye-slash"></i>
+        </div>
+        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">Unlist Boarding House</h3>
+        <p class="text-slate-500 text-xs font-bold leading-relaxed mb-6">
+          Are you sure you want to unlist this boarding house? Current boarders remain active and tracked, but students will not find your house in public search.
+        </p>
+
+        <div class="space-y-4 mb-6">
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Select Reason for Unlisting *</label>
+            <select v-model="pauseReason" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs font-bold outline-none focus:border-amber-500 cursor-pointer">
+              <option value="Fully Booked / At Capacity">Fully Booked / At Capacity</option>
+              <option value="Renovation & Upgrades">Renovation &amp; Upgrades</option>
+              <option value="End of Semester / Vacation Break">End of Semester / Vacation Break</option>
+              <option value="Personal / Landlord Break">Personal / Landlord Break</option>
+              <option value="Other">Other (Specify below)</option>
+            </select>
+          </div>
+
+          <div v-if="pauseReason === 'Other'">
+            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Specify Custom Reason</label>
+            <input v-model="customPauseReason" type="text" placeholder="e.g. Temporary structural repair" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs font-bold outline-none focus:border-amber-500" />
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <button @click="handlePauseListing" :disabled="isArchiving" class="flex-1 bg-amber-500 hover:bg-slate-900 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition shadow-md disabled:opacity-50 cursor-pointer">
+            {{ isArchiving ? 'Unlisting...' : 'Confirm Unlist' }}
+          </button>
+          <button @click="closePauseModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition cursor-pointer">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reactivation Blocked (Expired Permits) Pop-Up Modal -->
+    <div v-if="showReactivateBlockedModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+        <div class="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h3 class="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Cannot Reactivate Listing</h3>
+        <p class="text-slate-600 text-xs font-bold leading-relaxed mb-6 bg-red-50/80 border border-red-100 p-4 rounded-xl text-left">
+          {{ blockedErrorMessage }}
+        </p>
+        <div class="flex flex-col gap-3">
+          <router-link v-if="blockedHouseId" :to="`/owner/documents/${blockedHouseId}`" 
+                       class="w-full bg-red-600 hover:bg-slate-900 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition shadow-md text-center">
+            Upload Renewed Permits
+          </router-link>
+          <button @click="closeReactivateBlockedModal" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition cursor-pointer">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Custom Confirmation Modal -->
     <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">

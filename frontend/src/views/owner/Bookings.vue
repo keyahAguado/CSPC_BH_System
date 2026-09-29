@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
+import html2pdf from 'html2pdf.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { matchesSearch } from '../../utils/search.js';
@@ -107,14 +108,78 @@ const filteredBookings = computed(() => {
   );
 });
 
-// Paginated Slice of Filtered Bookings
+// Datatable Sorting State
+const sortBy = ref('room'); // Default sort by Room (Number & Male/Female)
+const sortOrder = ref('asc');
+
+const toggleSort = (col) => {
+  if (sortBy.value === col) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortBy.value = col;
+    sortOrder.value = 'asc';
+  }
+};
+
+const sortedBookings = computed(() => {
+  const list = [...filteredBookings.value];
+  const order = sortOrder.value === 'asc' ? 1 : -1;
+
+  return list.sort((a, b) => {
+    if (sortBy.value === 'ref') {
+      return (a.id - b.id) * order;
+    }
+    if (sortBy.value === 'student') {
+      return (a.student_name || '').localeCompare(b.student_name || '') * order;
+    }
+    if (sortBy.value === 'room') {
+      // Sort by room number first, then room gender (male -> female)
+      const numA = parseInt(a.room_number) || 0;
+      const numB = parseInt(b.room_number) || 0;
+      if (numA !== numB) return (numA - numB) * order;
+      const genderA = (a.room_gender || '').toLowerCase();
+      const genderB = (b.room_gender || '').toLowerCase();
+      return genderA.localeCompare(genderB) * order;
+    }
+    if (sortBy.value === 'checkin') {
+      const dateA = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
+      const dateB = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
+      return (dateA - dateB) * order;
+    }
+    if (sortBy.value === 'contact') {
+      return (a.emergency_contact || '').localeCompare(b.emergency_contact || '') * order;
+    }
+    if (sortBy.value === 'guardian') {
+      return (a.guardian_name || '').localeCompare(b.guardian_name || '') * order;
+    }
+    if (sortBy.value === 'duration') {
+      return ((parseInt(a.months) || 0) - (parseInt(b.months) || 0)) * order;
+    }
+    if (sortBy.value === 'rent') {
+      const valA = parseFloat(a.amount || a.total_amount || 0);
+      const valB = parseFloat(b.amount || b.total_amount || 0);
+      return (valA - valB) * order;
+    }
+    if (sortBy.value === 'payment') {
+      const valA = parseFloat(a.initial_payment || 0);
+      const valB = parseFloat(b.initial_payment || 0);
+      return (valA - valB) * order;
+    }
+    if (sortBy.value === 'status') {
+      return (a.status || '').localeCompare(b.status || '') * order;
+    }
+    return 0;
+  });
+});
+
+// Paginated Slice of Sorted & Filtered Bookings
 const paginatedBookings = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value;
-  return filteredBookings.value.slice(start, start + itemsPerPage.value);
+  return sortedBookings.value.slice(start, start + itemsPerPage.value);
 });
 
 const totalPages = computed(() => {
-  return Math.ceil(filteredBookings.value.length / itemsPerPage.value) || 1;
+  return Math.ceil(sortedBookings.value.length / itemsPerPage.value) || 1;
 });
 
 const prevPage = () => {
@@ -138,7 +203,7 @@ const groupedHouses = computed(() => {
 // Print view uses ALL filtered bookings (not paginated)
 const allGroupedHouses = computed(() => {
   const list = [];
-  filteredBookings.value.forEach(b => {
+  sortedBookings.value.forEach(b => {
     if (!list.includes(b.house_name)) {
       list.push(b.house_name);
     }
@@ -316,18 +381,128 @@ onMounted(() => {
 
       <!-- Header Section -->
       <div class="mb-12 text-center">
-        <!-- Print Only Header -->
-        <div class="hidden print:flex flex-row justify-between items-center border-b-2 border-slate-300 pb-6 mb-8 text-left">
-          <div class="flex items-center gap-6">
-            <img src="/img/CSPC_logo.png" class="w-16 h-16 object-contain" />
-            <div>
-              <h1 class="text-xl font-black text-slate-900 uppercase tracking-tight">CSPC Boarding House Management System</h1>
-              <p class="text-sm font-black text-[#2a528a] uppercase tracking-wider mt-0.5">Property Booking Monitoring Report</p>
+        <!-- Hidden Template for PDF Direct Download & Print -->
+        <div id="pdf-report-template" class="hidden print:block">
+          <!-- Print Only Header -->
+          <div class="hidden print:flex flex-row justify-between items-center border-b-2 border-slate-300 pb-6 mb-8 text-left">
+            <div class="flex items-center gap-6">
+              <img src="/img/CSPC_logo.png" class="w-16 h-16 object-contain" />
+              <div>
+                <h1 class="text-xl font-black text-slate-900 uppercase tracking-tight">CSPC Boarding House Management System</h1>
+                <p class="text-sm font-black text-[#2a528a] uppercase tracking-wider mt-0.5">Property Booking Monitoring Report</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">REPORT DATE</p>
+              <p class="font-bold text-slate-900 text-base">{{ reportDate }}</p>
             </div>
           </div>
-          <div class="text-right">
-            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">REPORT DATE</p>
-            <p class="font-bold text-slate-900 text-base">{{ reportDate }}</p>
+
+          <!-- ===== PRINT-ONLY LAYOUT (hidden on screen, shown only when printing) ===== -->
+          <div class="hidden print:block print-report-body">
+            <template v-for="hName in allGroupedHouses" :key="'p-' + hName">
+              <!-- House Section Header -->
+              <div class="print-house-header">
+                <div class="print-house-title">
+                  <span class="print-house-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e3a5f" style="width:16px;height:16px;display:inline-block;vertical-align:middle"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z"/><path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z"/></svg>
+                </span>
+                  <div>
+                    <strong>{{ hName }}</strong>
+                    <span v-if="getAllHouseBookings(hName)[0]?.house_location" class="print-house-loc">{{ getAllHouseBookings(hName)[0]?.house_location }}</span>
+                  </div>
+                </div>
+                <span class="print-house-count">{{ getAllHouseBookings(hName).length }} TOTAL BOOKING{{ getAllHouseBookings(hName).length > 1 ? 'S' : '' }}</span>
+              </div>
+
+              <!-- Booking Entry Cards -->
+              <div v-for="booking in getAllHouseBookings(hName)" :key="'p-' + booking.id" class="print-booking-card">
+                <!-- Card Header Row -->
+                <div class="print-card-header">
+                  <div class="print-ref-block">
+                    <span class="print-ref-no">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
+                    <span class="print-payment-method">{{ paymentMethodLabel(booking.payment_method) }}</span>
+                  </div>
+                  <div class="print-status-block">
+                    <span class="print-status-badge" :class="[
+                      booking.status === 'confirmed' && booking.payment_status === 'paid' ? 'print-status-paid' :
+                      booking.status === 'confirmed' ? 'print-status-approved' :
+                      booking.status === 'pending' ? 'print-status-pending' :
+                      booking.status === 'rejected' ? 'print-status-rejected' : 'print-status-other'
+                    ]">
+                      {{ booking.status === 'confirmed' ? (booking.payment_status === 'paid' ? 'APPROVED / PAID' : 'APPROVED') : booking.status.toUpperCase() }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Field Grid -->
+                <div class="print-fields-grid">
+                  <div class="print-field">
+                    <span class="print-field-label">Student Name</span>
+                    <span class="print-field-value print-name">{{ booking.student_name }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Room</span>
+                    <span class="print-field-value">
+                      Room {{ booking.room_number }}
+                      <span class="print-gender" :class="booking.room_gender === 'female' ? 'print-gender-f' : 'print-gender-m'">{{ booking.room_gender }}</span>
+                    </span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Check-In Date</span>
+                    <span class="print-field-value">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Check-Out Date</span>
+                    <span class="print-field-value print-blue">{{ getCheckoutDateDisplay(booking) }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Emergency Contact</span>
+                    <span class="print-field-value">{{ booking.emergency_contact || '—' }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Guardian Name</span>
+                    <span class="print-field-value">{{ booking.guardian_name || '—' }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Duration of Stay</span>
+                    <span class="print-field-value print-blue">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Monthly Rent</span>
+                    <span class="print-field-value">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}</span>
+                  </div>
+                  <div class="print-field">
+                    <span class="print-field-label">Total Payment</span>
+                    <span class="print-field-value print-bold">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span>
+                  </div>
+                  <div class="print-field" v-if="booking.initial_payment > 0">
+                    <span class="print-field-label">Initial Payment (Move-In)</span>
+                    <span class="print-field-value print-green">
+                      ₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
+                      <span class="print-payment-breakdown">
+                        Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }} + Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Report Footer -->
+            <div class="print-footer">
+              <div class="print-footer-sig">
+                <div class="print-sig-line"></div>
+                <span>Prepared by (Owner / Manager)</span>
+              </div>
+              <div class="print-footer-sig">
+                <div class="print-sig-line"></div>
+                <span>Verified by</span>
+              </div>
+              <div class="print-footer-note">
+                This report was generated from the CSPC Boarding House Management System.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -376,8 +551,8 @@ onMounted(() => {
             <!-- Print Trigger button -->
             <button @click="handlePrint"
                 class="bg-[#d9454f] hover:bg-black text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn">
-              <i class="fa-solid fa-file-pdf"></i>
-              <span class="cb-pdf-label">Download PDF</span>
+              <i class="fa-solid fa-print"></i>
+              <span class="cb-pdf-label">Print / Save PDF</span>
             </button>
 
             <!-- Back to Dashboard — mobile: shows as '<', desktop: full label -->
@@ -389,11 +564,6 @@ onMounted(() => {
 
           <!-- Right side (desktop only) -->
           <div class="hidden sm:flex items-center gap-3">
-            <router-link v-if="houseId" to="/owner/bookings"
-                class="inline-flex items-center gap-2 group text-[11px] font-black text-slate-500 bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-slate-900 hover:text-slate-900 transition-all duration-300 uppercase tracking-widest shadow-sm">
-              <i class="fa-solid fa-list-ul"></i>
-              View All Bookings
-            </router-link>
             <router-link to="/owner/dashboard"
                 class="inline-flex items-center gap-2 group text-[11px] font-black text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-widest shadow-sm">
               Back to Dashboard
@@ -441,133 +611,73 @@ onMounted(() => {
         </div>
 
 
-        <!-- ===== PRINT-ONLY LAYOUT (hidden on screen, shown only when printing) ===== -->
-        <div class="hidden print:block print-report-body">
-          <template v-for="hName in allGroupedHouses" :key="'p-' + hName">
-            <!-- House Section Header -->
-            <div class="print-house-header">
-              <div class="print-house-title">
-                <span class="print-house-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1e3a5f" style="width:16px;height:16px;display:inline-block;vertical-align:middle"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z"/><path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z"/></svg>
-              </span>
-                <div>
-                  <strong>{{ hName }}</strong>
-                  <span v-if="getAllHouseBookings(hName)[0]?.house_location" class="print-house-loc">{{ getAllHouseBookings(hName)[0]?.house_location }}</span>
-                </div>
-              </div>
-              <span class="print-house-count">{{ getAllHouseBookings(hName).length }} TOTAL BOOKING{{ getAllHouseBookings(hName).length > 1 ? 'S' : '' }}</span>
-            </div>
 
-            <!-- Booking Entry Cards -->
-            <div v-for="booking in getAllHouseBookings(hName)" :key="'p-' + booking.id" class="print-booking-card">
-              <!-- Card Header Row -->
-              <div class="print-card-header">
-                <div class="print-ref-block">
-                  <span class="print-ref-no">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
-                  <span class="print-payment-method">{{ paymentMethodLabel(booking.payment_method) }}</span>
-                </div>
-                <div class="print-status-block">
-                  <span class="print-status-badge" :class="[
-                    booking.status === 'confirmed' && booking.payment_status === 'paid' ? 'print-status-paid' :
-                    booking.status === 'confirmed' ? 'print-status-approved' :
-                    booking.status === 'pending' ? 'print-status-pending' :
-                    booking.status === 'rejected' ? 'print-status-rejected' : 'print-status-other'
-                  ]">
-                    {{ booking.status === 'confirmed' ? (booking.payment_status === 'paid' ? 'APPROVED / PAID' : 'APPROVED') : booking.status.toUpperCase() }}
-                  </span>
-                </div>
-              </div>
-
-              <!-- Field Grid -->
-              <div class="print-fields-grid">
-                <div class="print-field">
-                  <span class="print-field-label">Student Name</span>
-                  <span class="print-field-value print-name">{{ booking.student_name }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Room</span>
-                  <span class="print-field-value">
-                    Room {{ booking.room_number }}
-                    <span class="print-gender" :class="booking.room_gender === 'female' ? 'print-gender-f' : 'print-gender-m'">{{ booking.room_gender }}</span>
-                  </span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Check-In Date</span>
-                  <span class="print-field-value">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Check-Out Date</span>
-                  <span class="print-field-value print-blue">{{ getCheckoutDateDisplay(booking) }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Emergency Contact</span>
-                  <span class="print-field-value">{{ booking.emergency_contact || '—' }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Guardian Name</span>
-                  <span class="print-field-value">{{ booking.guardian_name || '—' }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Duration of Stay</span>
-                  <span class="print-field-value print-blue">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Monthly Rent</span>
-                  <span class="print-field-value">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}</span>
-                </div>
-                <div class="print-field">
-                  <span class="print-field-label">Total Payment</span>
-                  <span class="print-field-value print-bold">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span>
-                </div>
-                <div class="print-field" v-if="booking.initial_payment > 0">
-                  <span class="print-field-label">Initial Payment (Move-In)</span>
-                  <span class="print-field-value print-green">
-                    ₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
-                    <span class="print-payment-breakdown">
-                      Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }} + Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <!-- No bookings fallback -->
-          <div v-if="filteredBookings.length === 0" class="print-empty">
-            No booking records found.
-          </div>
-
-          <!-- Report Footer -->
-          <div class="print-footer">
-            <div class="print-footer-sig">
-              <div class="print-sig-line"></div>
-              <span>Prepared by (Owner / Manager)</span>
-            </div>
-            <div class="print-footer-sig">
-              <div class="print-sig-line"></div>
-              <span>Verified by</span>
-            </div>
-            <div class="print-footer-note">
-              This report was generated from the CSPC Boarding House Management System.
-            </div>
-          </div>
-        </div>
 
         <!-- ===== DESKTOP TABLE (hidden on mobile, hidden on print) ===== -->
         <div class="booking-table-wrapper w-full overflow-x-auto shadow-sm rounded-xl border border-slate-200 print:hidden">
           <table class="w-full text-left border-collapse min-w-[1250px] divide-y divide-slate-200" id="bookingsTable">
             <thead class="bg-slate-100/80 border-b border-slate-300">
-              <tr class="text-slate-800 uppercase text-[10px] font-black tracking-wider">
-                <th class="px-4 py-3 whitespace-nowrap">REF NO.</th>
-                <th class="px-4 py-3 whitespace-nowrap">STUDENT NAME</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">ROOM</th>
-                <th class="px-3 py-3 text-center" style="min-width:110px">CHECK-IN /<br/>CHECK-OUT</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">EMERGENCY<br/>CONTACT</th>
-                <th class="px-4 py-3 whitespace-nowrap">GUARDIAN<br/>NAME</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">DURATION<br/>&amp; STAY</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">RENT /<br/>TOTAL</th>
-                <th class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800" style="min-width:160px">INITIAL PAYMENT<br/><span class="font-bold normal-case text-[9px] text-emerald-600">DUE (MOVE-IN)</span></th>
-                <th class="px-4 py-3 text-center whitespace-nowrap">ACTION /<br/>STATUS</th>
+              <tr class="text-slate-800 uppercase text-[10px] font-black tracking-wider select-none">
+                <th @click="toggleSort('ref')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center gap-1.5">
+                    REF NO.
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('student')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center gap-1.5">
+                    STUDENT NAME
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('room')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center justify-center gap-1.5">
+                    ROOM (MALE/FEMALE)
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('checkin')" class="px-3 py-3 text-center cursor-pointer hover:bg-slate-200/60 transition" style="min-width:110px">
+                  <div class="flex items-center justify-center gap-1.5">
+                    CHECK-IN /<br/>CHECK-OUT
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('contact')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center justify-center gap-1.5">
+                    EMERGENCY<br/>CONTACT
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('guardian')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center gap-1.5">
+                    GUARDIAN<br/>NAME
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('duration')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center justify-center gap-1.5">
+                    DURATION<br/>&amp; STAY
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('rent')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center justify-center gap-1.5">
+                    RENT /<br/>TOTAL
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('payment')" class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800 cursor-pointer hover:bg-emerald-100/80 transition" style="min-width:160px">
+                  <div class="flex items-center gap-1.5">
+                    INITIAL PAYMENT<br/><span class="font-bold normal-case text-[9px] text-emerald-600">DUE (MOVE-IN)</span>
+                    <i class="fa-solid text-[9px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
+                  </div>
+                </th>
+                <th @click="toggleSort('status')" class="px-4 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                  <div class="flex items-center justify-center gap-1.5">
+                    ACTION /<br/>STATUS
+                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody class="text-[12px] font-semibold text-slate-700 divide-y divide-slate-100">

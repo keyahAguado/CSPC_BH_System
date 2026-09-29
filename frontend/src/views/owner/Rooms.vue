@@ -506,7 +506,7 @@ onMounted(() => {
           <div class="bg-slate-900 text-white px-5 md:px-8 py-4 md:py-5 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <i class="fa-solid fa-box-archive text-amber-400"></i>
-              <h2 class="text-sm font-black uppercase tracking-widest">Archived (Soft-Deleted) Rooms</h2>
+              <h2 class="text-sm font-black uppercase tracking-widest">Archived Rooms</h2>
             </div>
             <span class="text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
               Preserved in Database

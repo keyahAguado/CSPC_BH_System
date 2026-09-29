@@ -135,10 +135,8 @@ router.get('/dashboard', authenticateToken, verifyOwner, async (req, res) => {
         // they were archived, and shouldn't shift just because dates were edited
         // afterward while awaiting admin re-review.
         for (const h of houseRows) {
-            if (h.house_status !== 'archived') {
-                h.compliance = getComplianceStatus(h);
-                h.supplementary_status = getSupplementaryStatus(h);
-            }
+            h.compliance = getComplianceStatus(h);
+            h.supplementary_status = getSupplementaryStatus(h);
         }
 
         const totalListings = houseRows.length;
@@ -285,6 +283,105 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
         res.status(500).json({ success: false, message: err.message || 'Database failed to save updates.' });
     } finally {
         connection.release();
+    }
+});
+
+// Soft-Delete / Archive Boarding House by Owner
+router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        const houseId = req.params.id;
+        const reason = req.body?.reason || 'Paused by Landlord';
+
+        const [houseRows] = await pool.query(
+            'SELECT id, name FROM boarding_houses WHERE id = ? AND owner_id = ?',
+            [houseId, req.user.id]
+        );
+
+        if (houseRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Boarding house record not found or unauthorized.' });
+        }
+
+        await pool.query(
+            `UPDATE boarding_houses 
+             SET house_status = 'archived', archived_by = 'owner', archive_reason = ?, archived_at = NOW() 
+             WHERE id = ? AND owner_id = ?`,
+            [reason, houseId, req.user.id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Boarding house listing has been paused and archived. Active occupants remain recorded.'
+        });
+    } catch (err) {
+        console.error('Archive Boarding House Error:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to archive boarding house.' });
+    }
+});
+
+// Reactivate Boarding House by Owner (with Critical Permit Expiry Check)
+router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, async (req, res) => {
+    try {
+        const houseId = req.params.id;
+
+        const [houseRows] = await pool.query(
+            'SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ?',
+            [houseId, req.user.id]
+        );
+
+        if (houseRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Boarding house record not found or unauthorized.' });
+        }
+
+        const house = houseRows[0];
+
+        // 1. If archived by admin or compliance, owner cannot self-reactivate
+        if (house.archived_by === 'admin' || house.admin_comments) {
+            return res.status(403).json({
+                success: false,
+                message: 'This listing was suspended by SASO Admin. Please contact SASO Admin to request reinstatement.'
+            });
+        }
+
+        // 2. Check critical permits expiry
+        const criticalPermits = [
+            { key: 'expiry_permit_business_form', label: 'Business Permit' },
+            { key: 'expiry_permit_barangay', label: 'Barangay Business Clearance' },
+            { key: 'expiry_permit_sanitary', label: 'Sanitary/Health Clearance' },
+            { key: 'expiry_permit_fire', label: 'Fire Safety Certificate' }
+        ];
+
+        const now = new Date();
+        const expiredPermits = [];
+
+        for (const p of criticalPermits) {
+            const expiryDate = house[p.key];
+            if (!expiryDate) continue;
+            if (new Date(expiryDate) < now) {
+                expiredPermits.push(p.label);
+            }
+        }
+
+        if (expiredPermits.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot reactivate listing: The following critical permit(s) are expired: ${expiredPermits.join(', ')}. Please renew your permit documents first.`
+            });
+        }
+
+        await pool.query(
+            `UPDATE boarding_houses 
+             SET house_status = 'accredited', archived_by = NULL, archive_reason = NULL, archived_at = NULL 
+             WHERE id = ? AND owner_id = ?`,
+            [houseId, req.user.id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Boarding house has been reactivated and is now visible to students.'
+        });
+    } catch (err) {
+        console.error('Reactivate Boarding House Error:', err.message);
+        res.status(500).json({ success: false, message: err.message || 'Failed to reactivate boarding house.' });
     }
 });
 
@@ -740,6 +837,39 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, asyn
     } catch (err) {
         await connection.rollback();
         console.error('[OCCUPANT PAYMENT SYNC ERROR]:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// I-2. POST - Toggle occupant Move-in Upfront Fee payment status (for cash bookings/manual boarders)
+router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwner, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 0. Ensure upfront_status column exists in occupants table
+        try {
+            await connection.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
+        } catch (colErr) {
+            // Column already exists, ignore error
+        }
+
+        const { status } = req.body;
+        const targetStatus = status || 'Paid';
+
+        // 1. Update the occupant's upfront payment status
+        await connection.query(
+            'UPDATE occupants SET upfront_status = ? WHERE id = ?',
+            [targetStatus, req.params.id]
+        );
+
+        await connection.commit();
+        res.json({ success: true, message: `Upfront payment status updated to ${targetStatus}.` });
+    } catch (err) {
+        await connection.rollback();
+        console.error('[UPFRONT PAYMENT TOGGLE ERROR]:', err.message);
         res.status(500).json({ success: false, message: err.message });
     } finally {
         connection.release();

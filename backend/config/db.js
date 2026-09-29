@@ -62,6 +62,12 @@ async function ensureSchemaColumns() {
             await pool.query("ALTER TABLE boarding_houses MODIFY COLUMN last_updated_document VARCHAR(255)");
             console.log("✅ Auto-migrated: Expanded last_updated_document in boarding_houses table to VARCHAR(255).");
         }
+
+        const [archByCols] = await pool.query("SHOW COLUMNS FROM boarding_houses LIKE 'archived_by'");
+        if (archByCols.length === 0) {
+            await pool.query("ALTER TABLE boarding_houses ADD COLUMN archived_by VARCHAR(50) DEFAULT NULL, ADD COLUMN archive_reason TEXT DEFAULT NULL, ADD COLUMN archived_at DATETIME DEFAULT NULL");
+            console.log("✅ Auto-migrated: Added archived_by, archive_reason, and archived_at columns to boarding_houses table.");
+        }
     } catch (err) {
         console.warn("⚠️ Auto-migration check warning:", err.message);
     }

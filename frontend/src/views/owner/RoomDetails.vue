@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
@@ -34,6 +34,17 @@ const room = ref({
 
 const occupants = ref([]);
 const pendingBookings = ref([]);
+const occupantFilter = ref('all'); // Filter: 'all', 'cspc', 'non_cspc'
+
+const filteredOccupants = computed(() => {
+  if (occupantFilter.value === 'cspc') {
+    return occupants.value.filter(o => !o.is_non_cspc);
+  }
+  if (occupantFilter.value === 'non_cspc') {
+    return occupants.value.filter(o => o.is_non_cspc);
+  }
+  return occupants.value;
+});
 
 const isLoading = ref(true);
 const isSavingNonCspc = ref(false);
@@ -143,12 +154,31 @@ const handleTogglePayment = async (occupant) => {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (response.data.success) {
-      showSystemAlert(`Payment status updated to ${newStatus}.`, 'success');
+      showSystemAlert(`Monthly payment status updated to ${newStatus}.`, 'success');
       fetchRoomDetails();
     }
   } catch (error) {
     console.error('Payment toggle failed:', error);
     showSystemAlert(error.response?.data?.message || 'Failed to update payment status.', 'error');
+  }
+};
+
+const handleToggleUpfront = async (occupant) => {
+  const currentStatus = occupant.upfront_status || 'Paid';
+  const newStatus = currentStatus === 'Paid' ? 'Unpaid' : 'Paid';
+  try {
+    const response = await axios.post(`/api/owner/rooms/occupants/upfront-payment/${occupant.id}`, {
+      status: newStatus
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (response.data.success) {
+      showSystemAlert(`Move-in Upfront status updated to ${newStatus}.`, 'success');
+      fetchRoomDetails();
+    }
+  } catch (error) {
+    console.error('Upfront payment toggle failed:', error);
+    showSystemAlert(error.response?.data?.message || 'Failed to update upfront payment status.', 'error');
   }
 };
 
@@ -374,23 +404,35 @@ onMounted(() => {
 
         <!-- Table Section -->
         <section class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
-          <div class="bg-slate-50/80 px-8 py-5 border-b border-slate-200 flex items-center gap-3">
-            <div class="w-2 h-6 rounded-full" :class="room.gender_type === 'female' ? 'bg-pink-400' : 'bg-blue-400'"></div>
-            <h2 class="text-sm font-black text-slate-800 uppercase tracking-widest">
-              {{ room.room_number }} — Boarder Details
-            </h2>
-            <span class="ml-auto text-[10px] font-black uppercase tracking-widest" :class="room.gender_type === 'female' ? 'text-pink-500' : 'text-blue-500'">
-              {{ room.gender_type === 'female' ? "Female's Room" : "Male's Room" }}
-            </span>
+          <div class="bg-slate-50/80 px-8 py-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-6 rounded-full" :class="room.gender_type === 'female' ? 'bg-pink-400' : 'bg-blue-400'"></div>
+              <h2 class="text-sm font-black text-slate-800 uppercase tracking-widest">
+                {{ room.room_number }} — Boarder Details
+              </h2>
+            </div>
+            
+            <div class="flex items-center gap-3">
+              <!-- Occupant Type Filter -->
+              <select v-model="occupantFilter" class="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase text-slate-700 shadow-sm focus:border-blue-600 outline-none cursor-pointer">
+                <option value="all">ALL BOARDERS ({{ occupants.length }})</option>
+                <option value="cspc">CSPC STUDENTS ONLY</option>
+                <option value="non_cspc">NON-CSPC BOARDERS / STUDENTS</option>
+              </select>
+
+              <span class="text-[10px] font-black uppercase tracking-widest hidden sm:inline" :class="room.gender_type === 'female' ? 'text-pink-500' : 'text-blue-500'">
+                {{ room.gender_type === 'female' ? "Female's Room" : "Male's Room" }}
+              </span>
+            </div>
           </div>
 
           <!-- ===== MOBILE ACCORDION (hidden on sm+) ===== -->
           <div class="sm:hidden divide-y divide-slate-100">
-            <div v-if="occupants.length === 0" class="px-5 py-10 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
-              No boarders in this room yet.
+            <div v-if="filteredOccupants.length === 0" class="px-5 py-10 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+              No matching boarders found in this room.
             </div>
 
-            <div v-for="(occ, i) in occupants" :key="occ.id">
+            <div v-for="(occ, i) in filteredOccupants" :key="occ.id">
               <!-- Collapsed header row -->
               <button
                 @click="toggleOccupant(occ.id)"
@@ -404,8 +446,10 @@ onMounted(() => {
                   </svg>
                 </span>
                 <div class="flex-1 min-w-0">
-                  <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Student Name</p>
-                  <p class="font-black text-slate-900 uppercase text-sm truncate">{{ occ.name }}</p>
+                  <div class="flex items-center gap-2">
+                    <p class="font-black text-slate-900 uppercase text-sm truncate">{{ occ.name }}</p>
+                  </div>
+                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{{ occ.contact_number || 'No contact' }}</p>
                 </div>
                 <!-- Status badge -->
                 <span v-if="occ.payment_status === 'Paid'" class="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0">Paid</span>
@@ -420,6 +464,12 @@ onMounted(() => {
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ref No.</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.reference_no || 'MANUAL' }}</span>
+                  </div>
+                  <div class="flex items-center justify-between py-2.5">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Classification</span>
+                    <span class="font-bold text-xs" :class="occ.is_non_cspc ? 'text-slate-600' : 'text-blue-600'">
+                      {{ occ.is_non_cspc ? 'Non-CSPC Boarder (External Student)' : 'CSPC Student' }}
+                    </span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Age</span>
@@ -454,35 +504,50 @@ onMounted(() => {
                     <span class="font-bold text-sm text-slate-700">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rent</span>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rent Rate</span>
                     <span class="font-bold text-sm text-slate-700">₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payment</span>
-                    <div class="flex items-center gap-2">
-                      <span v-if="occ.payment_status === 'Paid'" class="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Paid</span>
-                      <button @click="handleTogglePayment(occ)" class="text-[9px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest underline cursor-pointer">
-                        {{ occ.payment_status === 'Paid' ? 'Undo' : 'Mark Paid' }}
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Monthly Rent Status</span>
+                    <div class="flex items-center gap-1.5">
+                      <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                            :class="occ.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'">
+                        <i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'"></i>
+                        {{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}
+                      </span>
+                      <button @click="handleTogglePayment(occ)"
+                              class="text-[8.5px] font-black px-2 py-0.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm"
+                              :class="occ.payment_status === 'Paid' ? 'bg-slate-100 hover:bg-orange-500 hover:text-white text-slate-600 border-slate-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'">
+                        {{ occ.payment_status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid' }}
                       </button>
                     </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Paid Via</span>
-                    <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest"
-                          :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
-                      <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                      {{ occ.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
-                    </span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Type</span>
-                    <span v-if="occ.is_non_cspc" class="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Non-CSPC</span>
-                    <span v-else class="bg-blue-50 text-blue-600 border border-blue-100 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">CSPC</span>
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Move-in Upfront</span>
+                    <div class="flex flex-col items-end gap-0.5">
+                      <span class="font-bold text-xs text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
+                      <template v-if="occ.payment_method === 'paymongo'">
+                        <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <i class="fa-solid fa-mobile-screen-button"></i>
+                          Upfront Paid (Online)
+                        </span>
+                      </template>
+                      <template v-else>
+                        <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                              :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
+                          <i class="fa-solid" :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'fa-money-bill-wave' : 'fa-clock'"></i>
+                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)' }}
+                        </span>
+                        <button @click="handleToggleUpfront(occ)" class="text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-wider underline cursor-pointer mt-0.5">
+                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
+                        </button>
+                      </template>
+                    </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Action</span>
                     <button @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}?`, () => handleCheckoutOccupant(occ.id))"
-                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[9px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer">
+                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[8.5px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer">
                       Checkout
                     </button>
                   </div>
@@ -509,23 +574,23 @@ onMounted(() => {
                   <th class="px-3 py-4 text-center">Guardian</th>
                   <th class="px-3 py-4 text-center">Duration</th>
                   <th class="px-3 py-4 text-center whitespace-nowrap">Total Rent</th>
-                  <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in<br/>Ledger</th>
-                  <th class="px-3 py-4 text-center">Payment</th>
-                  <th class="px-3 py-4 text-center whitespace-nowrap">Paid Via</th>
-                  <th class="px-3 py-4 text-center">Type</th>
+                  <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in Upfront<br/>Fee</th>
+                  <th class="px-3 py-4 text-center whitespace-nowrap">Monthly Rent<br/>Status</th>
                   <th class="px-3 py-4 text-center">Action</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
-                <tr v-if="occupants.length === 0">
-                  <td colspan="16" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
-                    No boarders in this room yet.
+                <tr v-if="filteredOccupants.length === 0">
+                  <td colspan="14" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    No matching boarders found in this room.
                   </td>
                 </tr>
-                <tr v-for="(occ, i) in occupants" :key="occ.id" class="hover:bg-slate-50/50 transition-colors">
+                <tr v-for="(occ, i) in filteredOccupants" :key="occ.id" class="hover:bg-slate-50/50 transition-colors">
                   <td class="px-3 py-4 text-center font-bold text-slate-500">{{ i + 1 }}</td>
                   <td class="px-3 py-4 text-center font-mono font-bold text-slate-500">{{ occ.reference_no || 'MANUAL' }}</td>
-                  <td class="px-3 py-4 font-bold text-slate-800 uppercase whitespace-nowrap">{{ occ.name }}</td>
+                  <td class="px-3 py-4 font-bold text-slate-800 uppercase whitespace-nowrap">
+                    {{ occ.name }}
+                  </td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.age || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
@@ -543,7 +608,25 @@ onMounted(() => {
                   <!-- Move-in Ledger Column -->
                   <td class="px-3 py-4 text-left bg-emerald-50/40">
                     <template v-if="formatMoveInLedger(occ).total > 0">
-                      <span class="block font-bold text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="font-bold text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
+                        <!-- Online badge (PayMongo - Automated) -->
+                        <span v-if="occ.payment_method === 'paymongo'" class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100/80 text-emerald-800 border border-emerald-200">
+                          <i class="fa-solid fa-mobile-screen-button"></i>
+                          Upfront Paid (Online)
+                        </span>
+                        <!-- Cash badge & toggle button -->
+                        <div v-else class="flex flex-col items-end gap-0.5">
+                          <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                                :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-100/80 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
+                            <i class="fa-solid" :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'fa-money-bill-wave' : 'fa-clock'"></i>
+                            {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)' }}
+                          </span>
+                          <button @click="handleToggleUpfront(occ)" class="text-[7.5px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer mt-0.5">
+                            {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
+                          </button>
+                        </div>
+                      </div>
                       <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight mt-0.5">
                         Advance Rent: ₱{{ formatMoveInLedger(occ).advAmt.toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
@@ -558,38 +641,28 @@ onMounted(() => {
                       </span>
                     </template>
                     <template v-else>
-                      <span class="text-slate-300 font-bold">No Deposit / Advance</span>
+                      <span class="text-slate-400 font-bold">No Deposit / Advance</span>
                     </template>
                   </td>
-                  <td class="px-3 py-4 text-center">
-                    <div v-if="occ.payment_status === 'Paid'" class="flex flex-col items-center">
-                      <span class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Paid</span>
-                      <button @click="handleTogglePayment(occ)" class="text-[7px] font-black text-slate-400 hover:text-red-500 uppercase tracking-tighter underline mt-1 cursor-pointer">
-                        Mark Unpaid
+                  <!-- Monthly Rent Status Column -->
+                  <td class="px-3 py-4 text-center whitespace-nowrap">
+                    <div class="flex flex-col items-center gap-1.5">
+                      <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                            :class="occ.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'">
+                        <i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'"></i>
+                        {{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}
+                      </span>
+                      <button @click="handleTogglePayment(occ)"
+                              class="text-[8.5px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm"
+                              :class="occ.payment_status === 'Paid' ? 'bg-slate-100 hover:bg-orange-500 hover:text-white text-slate-600 border-slate-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'">
+                        {{ occ.payment_status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid' }}
                       </button>
                     </div>
-                    <div v-else class="flex flex-col items-center">
-                      <span class="inline-block bg-orange-50 text-orange-600 border border-orange-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mb-1">Unpaid</span>
-                      <button @click="handleTogglePayment(occ)" class="bg-blue-600 text-white text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
-                        Mark Paid
-                      </button>
-                    </div>
                   </td>
-                  <td class="px-3 py-4 text-center">
-                    <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
-                          :title="occ.payment_method === 'paymongo' ? 'Paid Online via GCash or Card' : 'Paid in Cash'"
-                          :class="occ.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
-                      <i class="fa-solid" :class="occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                      {{ occ.payment_method === 'paymongo' ? 'Online' : 'Cash' }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-4 text-center">
-                    <span v-if="occ.is_non_cspc" class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Non-CSPC</span>
-                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">CSPC</span>
-                  </td>
+                  <!-- Action Column -->
                   <td class="px-3 py-4 text-center">
                     <button @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}? This will free their slot in this room.`, () => handleCheckoutOccupant(occ.id))"
-                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[9px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider transition-all duration-200 shadow-sm active:scale-95 cursor-pointer">
+                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[8.5px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 shadow-sm active:scale-95 cursor-pointer">
                       Checkout
                     </button>
                   </td>
