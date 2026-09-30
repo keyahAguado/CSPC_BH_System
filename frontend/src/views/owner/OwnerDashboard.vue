@@ -266,12 +266,12 @@ onUnmounted(() => {
         </div>
 
         <!-- Cards Container -->
-        <!-- Filter tabs — centered, 3-way: All / Active / Archived -->
-        <div v-if="archivedCount > 0" class="mb-8 px-2">
-          <div class="flex items-center gap-1 bg-white rounded-xl p-1 border border-slate-200 shadow-sm w-full">
+        <!-- Filter tabs — centered, 3-way: All / Active / Archived (Permanently visible when houses exist) -->
+        <div v-if="houses.length > 0" class="mb-8 max-w-xl mx-auto px-2">
+          <div class="flex items-center gap-1 bg-white rounded-xl p-1.5 border border-slate-200 shadow-sm w-full">
             <button @click="listingFilter = 'all'"
-                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'all' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'all' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'">
               <i class="fa-solid fa-layer-group text-[9px] shrink-0"></i>
               <span class="truncate">All</span>
               <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
@@ -280,8 +280,8 @@ onUnmounted(() => {
               </span>
             </button>
             <button @click="listingFilter = 'active'"
-                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'active' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'active' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'">
               <i class="fa-solid fa-house-chimney text-[9px] shrink-0"></i>
               <span class="truncate">Active</span>
               <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
@@ -290,12 +290,12 @@ onUnmounted(() => {
               </span>
             </button>
             <button @click="listingFilter = 'archived'"
-                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'archived' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'archived' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'">
               <i class="fa-solid fa-box-archive text-[9px] shrink-0"></i>
               <span class="truncate">Archived</span>
               <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
-                    :class="listingFilter === 'archived' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
+                    :class="listingFilter === 'archived' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'">
                 {{ archivedCount }}
               </span>
             </button>
@@ -464,13 +464,14 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="visibleHouses.length === 0" class="p-16 border-2 border-dashed border-slate-200 rounded-3xl w-full max-w-2xl bg-white/50 flex flex-col items-center justify-center">
-            <p class="text-slate-400 font-black uppercase text-sm tracking-widest">
+          <div v-if="visibleHouses.length === 0" class="p-12 border-2 border-dashed border-slate-300 rounded-3xl w-full max-w-xl bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center my-4 shadow-sm">
+            <i class="fa-solid fa-folder-open text-slate-300 text-4xl mb-3"></i>
+            <p class="text-slate-600 font-bold uppercase text-xs tracking-wider mb-1">
               {{ houses.length === 0 ? 'No properties listed yet.' : 'No listings in this category.' }}
             </p>
-            <button v-if="houses.length > 0 && listingFilter === 'active'" @click="listingFilter = 'all'"
-                    class="mt-4 text-[10px] font-black text-blue-500 uppercase tracking-widest underline cursor-pointer">
-              Show all listings
+            <button v-if="houses.length > 0 && listingFilter !== 'all'" @click="listingFilter = 'all'"
+                    class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest px-6 py-2.5 rounded-full shadow-md transition active:scale-95 cursor-pointer">
+              Show All Listings ({{ houses.length }})
             </button>
           </div>
 
