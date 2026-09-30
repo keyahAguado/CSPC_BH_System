@@ -340,28 +340,16 @@ const isDocumentItemUpdated = (item) => {
 // Shows the badge when document_update_pending = 1 AND the house is not a brand-new
 // first-time submission — meaning it was previously accredited OR unlisted by the owner.
 const getDocRecheckBadge = (app) => {
-  if (!app.document_update_pending) return null;
-  // Already-accredited house that uploaded a renewal doc (stays accredited, pending re-check)
+  if (!app.document_update_pending && !app.is_resubmission) return null;
+  
   if (app.house_status === 'accredited') {
-    return { label: 'Document Recheck — Already Accredited', color: 'text-amber-600' };
+    return { label: 'DOCUMENT RECHECK — ALREADY ACCREDITED', color: 'text-amber-600' };
   }
-  // Owner-unlisted (archived_by = 'owner') then uploaded docs — pushed back to pending
-  if (app.archived_by === 'owner') {
-    return { label: 'Document Recheck — Previously Unlisted by Owner', color: 'text-blue-600' };
+  
+  if (app.house_status === 'archived' || app.archived_by || app.is_resubmission || app.document_update_pending) {
+    return { label: 'DOCUMENT RECHECK — ALREADY ARCHIVED', color: 'text-amber-600' };
   }
-  // System-archived (expired permits) then uploaded new docs — pushed back to pending
-  if (app.archived_by === 'system') {
-    return { label: 'Document Recheck — Previously Archived (Expired Permits)', color: 'text-red-600' };
-  }
-  // Archived by admin then uploaded docs — pushed back to pending
-  if (app.archived_by === 'admin') {
-    return { label: 'Document Recheck — Previously Suspended by Admin', color: 'text-purple-600' };
-  }
-  // Non-pending status with document_update_pending (fallback)
-  if (app.house_status !== 'pending') {
-    const label = app.house_status.charAt(0).toUpperCase() + app.house_status.slice(1);
-    return { label: `Document Recheck — Already ${label}`, color: 'text-amber-600' };
-  }
+  
   return null;
 };
 

@@ -5,22 +5,26 @@ import pool from '../config/db.js';
  * Dynamically constructs a Nodemailer Transport instance using environment configuration.
  * Supports standard Gmail App Passwords and custom SMTP gateways.
  */
-const getTransporter = () => {
+const createTransporter = (portOverride = null, secureOverride = null) => {
     const user = process.env.SMTP_USER || process.env.EMAIL_USER || '';
     const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
     const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const port = parseInt(process.env.SMTP_PORT || '465');
-    const secure = process.env.SMTP_SECURE !== 'false'; // default true for port 465
+
+    const configuredPort = parseInt(process.env.SMTP_PORT || '587');
+    const port = portOverride !== null ? portOverride : configuredPort;
+    const secure = secureOverride !== null ? secureOverride : (process.env.SMTP_SECURE === 'true' || port === 465);
 
     if (process.env.SMTP_SERVICE === 'gmail' || host.includes('gmail.com')) {
         return nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true, // SSL/TLS — works on Render (port 587 STARTTLS is blocked)
+            port,
+            secure,
+            requireTLS: !secure,
             auth: { user, pass },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 10000
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 12000,
+            greetingTimeout: 12000,
+            socketTimeout: 12000
         });
     }
 
@@ -30,9 +34,9 @@ const getTransporter = () => {
         secure,
         auth: { user, pass },
         tls: { rejectUnauthorized: false },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        connectionTimeout: 12000,
+        greetingTimeout: 12000,
+        socketTimeout: 12000
     });
 };
 
@@ -60,7 +64,7 @@ export const sendNotificationEmail = (userId, subject, message) => {
 };
 
 /**
- * Direct raw email dispatcher helper
+ * Direct raw email dispatcher helper with automatic dual-port fallback
  */
 export const sendRawEmail = async (recipientEmail, recipientName, subject, message) => {
     try {
@@ -94,10 +98,25 @@ export const sendRawEmail = async (recipientEmail, recipientName, subject, messa
         };
 
         if (user && pass) {
-            const transporter = getTransporter();
-            const info = await transporter.sendMail(mailOptions);
-            console.log(`[EMAIL DISPATCHED SUCCESS]: Sent "${subject}" to ${recipientEmail} | MessageID: ${info.messageId}`);
-            return { success: true, messageId: info.messageId };
+            // Primary Dispatch Attempt
+            try {
+                const transporter = createTransporter();
+                const info = await transporter.sendMail(mailOptions);
+                console.log(`[EMAIL DISPATCHED SUCCESS]: Sent "${subject}" to ${recipientEmail} | MessageID: ${info.messageId}`);
+                return { success: true, messageId: info.messageId };
+            } catch (primaryErr) {
+                console.warn(`[EMAIL DISPATCH WARNING]: Primary transport attempt failed (${primaryErr.message}). Attempting fallback transport...`);
+                
+                // Fallback Dispatch Attempt (toggle between 587 STARTTLS and 465 SSL)
+                const configuredPort = parseInt(process.env.SMTP_PORT || '587');
+                const fallbackPort = configuredPort === 465 ? 587 : 465;
+                const fallbackSecure = fallbackPort === 465;
+
+                const fallbackTransporter = createTransporter(fallbackPort, fallbackSecure);
+                const info = await fallbackTransporter.sendMail(mailOptions);
+                console.log(`[EMAIL DISPATCHED SUCCESS VIA FALLBACK]: Sent "${subject}" to ${recipientEmail} on port ${fallbackPort} | MessageID: ${info.messageId}`);
+                return { success: true, messageId: info.messageId };
+            }
         } else {
             console.log(`[EMAIL SIMULATED (SMTP Credentials Not Set in backend/.env)]: Subject: "${subject}" | To: ${recipientEmail}`);
             return { success: true, simulated: true, note: 'SMTP_USER and SMTP_PASS must be added to backend/.env to send real emails.' };
