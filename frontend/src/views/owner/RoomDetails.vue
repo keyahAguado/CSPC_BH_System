@@ -29,6 +29,7 @@ const room = ref({
   gender_type: 'female',
   capacity: 2,
   occupant_count: 0,
+  price: 0,
   house_price: 0
 });
 
@@ -165,7 +166,8 @@ const handleTogglePayment = async (occupant) => {
 
 const calculateTotalRent = (occupant) => {
   const months = parseInt(occupant.months) || 1;
-  const monthlyRate = parseFloat(room.value.house_price || room.value.price || occupant.monthly_rent || 0);
+  // Room's own price takes priority over house base price
+  const monthlyRate = parseFloat(room.value.price || room.value.house_price || occupant.monthly_rent || 0);
   if (monthlyRate > 0) {
     return months * monthlyRate;
   }
@@ -274,7 +276,8 @@ const closeRemoveModal = () => {
 const formatMoveInLedger = (occ) => {
   const advM = parseInt(occ.advance_months || 0);
   const depM = parseInt(occ.deposit_months || 0);
-  const rentPerMonth = parseFloat(room.value.house_price || 0);
+  // Room's own price takes priority over house base price
+  const rentPerMonth = parseFloat(room.value.price || room.value.house_price || 0);
   const advAmt = advM * rentPerMonth;
   const depAmt = depM * rentPerMonth;
   const total = advAmt + depAmt;
@@ -510,7 +513,7 @@ onMounted(() => {
                     <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Rent</span>
                     <div class="text-right">
                       <span class="font-bold text-sm text-slate-700 block">₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}</span>
-                      <span class="text-[9px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>
+                      <span class="text-[9px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
                     </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
@@ -609,7 +612,7 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     ₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}
-                    <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.house_price || 0).toLocaleString() }}/mo)</span>
+                    <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
                   </td>
                   <!-- Move-in Ledger Column -->
                   <td class="px-3 py-4 text-left bg-emerald-50/40">
