@@ -206,7 +206,8 @@ router.get('/house/:id', async (req, res) => {
 
         const [rooms] = await pool.query(`
             SELECT r.*,
-                   (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count
+                   (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count,
+                   (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'pending') AS pending_request_count
             FROM rooms r
             WHERE r.house_id = ? AND (r.deleted_at IS NULL OR r.deleted_at = 0)
         `, [houseId]);

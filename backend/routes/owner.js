@@ -132,13 +132,31 @@ router.get('/dashboard', authenticateToken, verifyOwner, async (req, res) => {
         // only update when the compliance sweep (daily cron, or immediately after a
         // document save) runs, so they can go stale between sweeps. Actual archiving
         // still only happens via that sweep — this only affects what the owner sees
-        // here. Archived houses are left as-is: their stored status is the reason
-        // they were archived, and shouldn't shift just because dates were edited
-        // afterward while awaiting admin re-review.
+        // here.
+        // For owner-unlisted houses: if critical permits have since expired, override
+        // archived_by in the response to 'system' so the frontend shows the correct
+        // "PERMITS EXPIRED" overlay instead of the "UNLISTED BY OWNER" overlay.
+        // This is display-only — the DB is NOT touched here.
         for (const h of houseRows) {
             h.compliance = getComplianceStatus(h);
             h.supplementary_status = getSupplementaryStatus(h);
+            if (h.house_status === 'archived' && h.archived_by === 'owner' && h.compliance === 'expired') {
+                h.archived_by = 'system';
+                h.compliance_status = 'expired';
+            }
         }
+
+        // Sort: accredited first, then pending, then rejected, then archived (owner-unlisted),
+        // then archived (system/admin) — so active listings are always at the top.
+        const statusOrder = { accredited: 0, pending: 1, rejected: 2 };
+        houseRows.sort((a, b) => {
+            const getOrder = (h) => {
+                if (h.house_status !== 'archived') return statusOrder[h.house_status] ?? 1;
+                if (h.archived_by === 'owner') return 3;   // unlisted by owner
+                return 4;                                   // system/admin archived
+            };
+            return getOrder(a) - getOrder(b);
+        });
 
         const totalListings = houseRows.length;
         const pendingBookings = houseRows.reduce((sum, h) => sum + h.pending_count, 0);
@@ -907,13 +925,12 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, asy
             );
 
             // 4. Notify the student via the notifications inbox
+            const checkoutMsg = `NOTICE: Your residency at "${house_name}" has been checked out by the property owner. We hope you had a comfortable stay.`;
             await connection.query(
                 'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [
-                    student_id,
-                    `NOTICE: Your residency at "${house_name}" has been checked out by the property owner. We hope you had a comfortable stay.`
-                ]
+                [student_id, checkoutMsg]
             );
+            sendNotificationEmail(student_id, 'NOTICE: Residency Checked Out', checkoutMsg);
             console.log(`[CHECKOUT] Notification dispatched => student_id=${student_id}, house="${house_name}"`);
         } else {
             // Non-CSPC occupant — no student account to notify

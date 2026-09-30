@@ -3,6 +3,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
+import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -129,10 +130,12 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
         // 2. Fetch full student details joined with boarding house criteria to calculate upfront move-in costs
         const [fullBooking] = await connection.query(
             `SELECT b.*, u.name as student_name, u.age, u.address, u.phone, u.emergency_contact, u.guardian_name,
-                    bh.advance_months, bh.deposit_months, bh.deposit_type
+                    bh.advance_months, bh.deposit_months, bh.deposit_type, bh.name as house_name, bh.owner_id as house_owner_id,
+                    r.room_number
              FROM bookings b 
              JOIN users u ON b.student_id = u.id 
              JOIN boarding_houses bh ON b.house_id = bh.id
+             JOIN rooms r ON b.room_id = r.id
              WHERE b.id = ?`,
             [bookingId]
         );
@@ -164,13 +167,22 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
         const formattedPayment = initialPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         // 4. Send payment settlement notification to the student with the correct move-in cost paid
+        const paymentMsg = `PAYMENT SETTLED: Your payment of ₱${formattedPayment} has been verified! Your room reservation is now officially secured.`;
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [
-                fb.student_id,
-                `PAYMENT SETTLED: Your payment of ₱${formattedPayment} has been verified! Your room reservation is now officially secured.`
-            ]
+            [fb.student_id, paymentMsg]
         );
+        sendNotificationEmail(fb.student_id, 'PAYMENT SETTLED: Room Reservation Secured', paymentMsg);
+
+        // 5. Notify the owner that payment has cleared and the student is now occupying the room
+        if (fb.house_owner_id) {
+            const ownerPaymentMsg = `PAYMENT RECEIVED: ${fb.student_name} has completed their online payment of ₱${formattedPayment} for Room ${fb.room_number} at "${fb.house_name}". They are now officially an occupant.`;
+            await connection.query(
+                'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+                [fb.house_owner_id, ownerPaymentMsg]
+            );
+            sendNotificationEmail(fb.house_owner_id, 'PAYMENT RECEIVED: Room Now Occupied', ownerPaymentMsg);
+        }
 
         await connection.commit();
         res.json({ success: true, message: 'Payment verified and occupancy successfully recorded.' });
@@ -263,9 +275,13 @@ router.post('/webhook', async (req, res) => {
 
                         // 2. Fetch student details to insert occupant row
                         const [fullBooking] = await connection.query(
-                            `SELECT b.*, u.name as student_name, u.age, u.address, u.phone, u.emergency_contact, u.guardian_name 
+                            `SELECT b.*, u.name as student_name, u.age, u.address, u.phone, u.emergency_contact, u.guardian_name,
+                                    bh.name as house_name, bh.owner_id as house_owner_id,
+                                    r.room_number
                              FROM bookings b 
-                             JOIN users u ON b.student_id = u.id 
+                             JOIN users u ON b.student_id = u.id
+                             JOIN boarding_houses bh ON b.house_id = bh.id
+                             JOIN rooms r ON b.room_id = r.id
                              WHERE b.id = ?`,
                             [parsedBookingId]
                         );
@@ -289,13 +305,22 @@ router.post('/webhook', async (req, res) => {
                         );
 
                         // 4. Send payment settlement notification to the student
+                        const webhookPaymentMsg = `PAYMENT SETTLED: Your payment of ₱${fb.amount} has been verified! Your room reservation is now officially secured.`;
                         await connection.query(
                             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                            [
-                                fb.student_id,
-                                `PAYMENT SETTLED: Your payment of ₱${fb.amount} has been verified! Your room reservation is now officially secured.`
-                            ]
+                            [fb.student_id, webhookPaymentMsg]
                         );
+                        sendNotificationEmail(fb.student_id, 'PAYMENT SETTLED: Room Reservation Secured', webhookPaymentMsg);
+
+                        // 5. Notify the owner that payment cleared via webhook
+                        if (fb.house_owner_id) {
+                            const whOwnerMsg = `PAYMENT RECEIVED: ${fb.student_name} has completed their online payment of ₱${fb.amount} for Room ${fb.room_number} at "${fb.house_name}". They are now officially an occupant.`;
+                            await connection.query(
+                                'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+                                [fb.house_owner_id, whOwnerMsg]
+                            );
+                            sendNotificationEmail(fb.house_owner_id, 'PAYMENT RECEIVED: Room Now Occupied', whOwnerMsg);
+                        }
 
                         await connection.commit();
                         console.log(`[WEBHOOK] Booking ID ${parsedBookingId} successfully settled and room occupied.`);

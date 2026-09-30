@@ -387,7 +387,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             // Flag boarding house as pending re-verification & apply target status
             await connection.query(
                 `UPDATE boarding_houses 
-                 SET house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL 
+                 SET house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL, resubmitted_at = NOW()
                  WHERE id = ? AND owner_id = ?`,
                 [targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );
@@ -414,7 +414,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             // Update standard columns & apply target status
             await connection.query(
                 `UPDATE boarding_houses 
-                 SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL 
+                 SET ${fileColumn} = ?, ${expiryColumn} = ?, house_status = ?, is_resubmission = ?, document_update_pending = 1, last_updated_document = ?, admin_comments = NULL, resubmitted_at = NOW()
                  WHERE id = ? AND owner_id = ?`,
                 [fileUrl, parsedExpiryDate, targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );

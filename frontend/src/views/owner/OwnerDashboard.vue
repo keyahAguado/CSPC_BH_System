@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { getImageUrl } from '../../config/api';
@@ -77,6 +77,24 @@ const isArchiving = ref(false);
 const showReactivateBlockedModal = ref(false);
 const blockedHouseId = ref(null);
 const blockedErrorMessage = ref('');
+
+// Toggle to show/hide archived listings on the dashboard
+const listingFilter = ref('active'); // 'all' | 'active' | 'archived'
+
+// Filtered house list based on filter tab
+const visibleHouses = computed(() => {
+  if (listingFilter.value === 'archived') return houses.value.filter(h => h.house_status === 'archived');
+  if (listingFilter.value === 'active') return houses.value.filter(h => h.house_status !== 'archived');
+  return houses.value; // 'all'
+});
+
+// Count of archived houses (drives the filter badge)
+const archivedCount = computed(() =>
+  houses.value.filter(h => h.house_status === 'archived').length
+);
+
+// Keep showArchived as an alias for backward-compat with any other refs
+const showArchived = computed(() => listingFilter.value === 'archived');
 
 // Supplementary doc info pop-up
 const showSuppModal = ref(false);
@@ -248,9 +266,45 @@ onUnmounted(() => {
         </div>
 
         <!-- Cards Container -->
+        <!-- Filter tabs — centered, 3-way: All / Active / Archived -->
+        <div v-if="archivedCount > 0" class="mb-8 px-2">
+          <div class="flex items-center gap-1 bg-white rounded-xl p-1 border border-slate-200 shadow-sm w-full">
+            <button @click="listingFilter = 'all'"
+                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'all' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+              <i class="fa-solid fa-layer-group text-[9px] shrink-0"></i>
+              <span class="truncate">All</span>
+              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+                    :class="listingFilter === 'all' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
+                {{ houses.length }}
+              </span>
+            </button>
+            <button @click="listingFilter = 'active'"
+                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'active' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+              <i class="fa-solid fa-house-chimney text-[9px] shrink-0"></i>
+              <span class="truncate">Active</span>
+              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+                    :class="listingFilter === 'active' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
+                {{ houses.filter(h => h.house_status !== 'archived').length }}
+              </span>
+            </button>
+            <button @click="listingFilter = 'archived'"
+                    class="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    :class="listingFilter === 'archived' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+              <i class="fa-solid fa-box-archive text-[9px] shrink-0"></i>
+              <span class="truncate">Archived</span>
+              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+                    :class="listingFilter === 'archived' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
+                {{ archivedCount }}
+              </span>
+            </button>
+          </div>
+        </div>
+
         <div class="flex flex-wrap gap-8 mb-16 justify-center">
           
-          <div v-for="house in houses" :key="house.id" 
+          <div v-for="house in visibleHouses" :key="house.id" 
                class="bg-white rounded-2xl p-4 shadow-sm border border-white hover:shadow-md transition-all duration-300 w-full max-w-[400px] flex flex-col text-left">
             
             <div class="rounded-xl overflow-hidden mb-4 h-[220px] relative">
@@ -364,26 +418,28 @@ onUnmounted(() => {
 
             <!-- Actions Panel -->
             <div class="mt-auto bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div class="flex flex-wrap gap-2 justify-center items-center">
+              <div class="grid grid-cols-3 gap-2">
                 <router-link v-if="house.house_status === 'rejected'" :to="`/owner/documents/${house.id}`" 
-                   class="bg-red-600 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
+                   class="col-span-3 bg-red-600 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
                   <i class="fa-solid fa-wrench text-[9px]"></i> Fix Application
                 </router-link>
-                <router-link v-else :to="`/owner/edit/${house.id}`" 
-                   class="bg-orange-400 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                  <i class="fa-solid fa-pen text-[9px]"></i> Edit
-                </router-link>
-                <router-link :to="`/owner/documents/${house.id}`" 
-                   class="bg-blue-500 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                  <i class="fa-solid fa-file-lines text-[9px]"></i> Docs
-                </router-link>
-                <router-link :to="`/owner/rooms/${house.id}`" 
-                   class="relative bg-green-500 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                  <i class="fa-solid fa-door-open text-[9px]"></i> Rooms
-                  <span v-if="house.pending_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                    {{ house.pending_count }}
-                  </span>
-                </router-link>
+                <template v-else>
+                  <router-link :to="`/owner/edit/${house.id}`" 
+                     class="bg-orange-400 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-pen text-[9px]"></i> Edit
+                  </router-link>
+                  <router-link :to="`/owner/documents/${house.id}`" 
+                     class="bg-blue-500 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-file-lines text-[9px]"></i> Docs
+                  </router-link>
+                  <router-link :to="`/owner/rooms/${house.id}`" 
+                     class="relative bg-green-500 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-door-open text-[9px]"></i> Rooms
+                    <span v-if="house.pending_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                      {{ house.pending_count }}
+                    </span>
+                  </router-link>
+                </template>
               </div>
 
               <!-- Unlist / Reactivate — full-width row below the main action buttons -->
@@ -402,8 +458,14 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="houses.length === 0" class="p-16 border-2 border-dashed border-slate-200 rounded-3xl w-full max-w-2xl bg-white/50 flex flex-col items-center justify-center">
-            <p class="text-slate-400 font-black uppercase text-sm tracking-widest">No properties listed yet.</p>
+          <div v-if="visibleHouses.length === 0" class="p-16 border-2 border-dashed border-slate-200 rounded-3xl w-full max-w-2xl bg-white/50 flex flex-col items-center justify-center">
+            <p class="text-slate-400 font-black uppercase text-sm tracking-widest">
+              {{ houses.length === 0 ? 'No properties listed yet.' : 'No listings in this category.' }}
+            </p>
+            <button v-if="houses.length > 0 && listingFilter === 'active'" @click="listingFilter = 'all'"
+                    class="mt-4 text-[10px] font-black text-blue-500 uppercase tracking-widest underline cursor-pointer">
+              Show all listings
+            </button>
           </div>
 
         </div>

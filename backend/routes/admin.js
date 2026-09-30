@@ -23,7 +23,7 @@ const EXPLICIT_BH_COLUMNS = `
     bh.expiry_permit_barangay, bh.expiry_permit_building, bh.expiry_permit_zoning, 
     bh.expiry_permit_sanitary, bh.expiry_permit_fire, bh.latitude, bh.longitude, 
     bh.advance_months, bh.deposit_months, bh.deposit_type, bh.document_update_pending, 
-    bh.last_updated_document, bh.is_resubmission, bh.admin_comments, bh.archived_by, bh.created_at
+    bh.last_updated_document, bh.is_resubmission, bh.admin_comments, bh.archived_by, bh.resubmitted_at, bh.created_at
 `;
 
 // Helper: Self-healing automatic backfill for missing barangay values using location field
@@ -493,10 +493,12 @@ router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => 
         );
 
         // 2. Insert Alert notification for the Owner ONLY
+        const archiveMsg = `WARNING: Your boarding house "${house[0].name}" has been ARCHIVED by the SASO Administrator.${reason && reason.trim() ? ` Reason: ${reason.trim()}` : ''} Your listing is now hidden from students.`;
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [ownerId, `WARNING: Your boarding house "${house[0].name}" has been ARCHIVED by the SASO Administrator.${reason && reason.trim() ? ` Reason: ${reason.trim()}` : ''} Your listing is now hidden from students.`]
+            [ownerId, archiveMsg]
         );
+        sendNotificationEmail(ownerId, 'WARNING: Boarding House Archived by SASO', archiveMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -531,10 +533,12 @@ router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => 
         );
 
         // 2. Insert Approved notification for the Owner ONLY
+        const restoreMsg = `CONGRATULATIONS: Your boarding house "${house[0].name}" has been RESTORED and is now active on the system.`;
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [ownerId, `CONGRATULATIONS: Your boarding house "${house[0].name}" has been RESTORED and is now active on the system.`]
+            [ownerId, restoreMsg]
         );
+        sendNotificationEmail(ownerId, 'CONGRATULATIONS: Boarding House Restored', restoreMsg);
 
         await connection.commit();
         res.json({ success: true });

@@ -181,6 +181,11 @@ export async function runComplianceCheck() {
 
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.owner_id, ownerMsg]);
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.student_id, studentMsg]);
+
+            // Email both parties for stay-end reminders — these only fire once (on the day
+            // itself and 7 days prior), so email isn't spammy.
+            sendNotificationEmail(booking.owner_id, daysLeft <= 0 ? 'STAY ENDED: Action Required' : 'REMINDER: Upcoming Stay End', ownerMsg);
+            sendNotificationEmail(booking.student_id, daysLeft <= 0 ? 'STAY ENDED: Checkout Today' : 'REMINDER: Your Stay Ends Soon', studentMsg);
         }
 
         console.log('[COMPLIANCE] Daily check completed.');

@@ -346,12 +346,18 @@ onMounted(async () => {
                         <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
-                      <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
-                      </span>
-                      <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
-                      </span>
+                      <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
+                          {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
+                        </span>
+                        <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
+                          Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
+                        </span>
+                        <span v-if="room.pending_request_count > 0 && room.occupant_count < room.capacity"
+                              class="bg-amber-50 text-amber-700 border border-amber-200/60 text-[9px] px-2 py-0.5 rounded-full font-bold">
+                          {{ room.pending_request_count }} pending request{{ room.pending_request_count > 1 ? 's' : '' }}
+                        </span>
+                      </div>
                     </div>
                   </label>
                 </div>
@@ -385,12 +391,18 @@ onMounted(async () => {
                         <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
                         <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
                       </div>
-                      <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
-                      </span>
-                      <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm shrink-0">
-                        Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
-                      </span>
+                      <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
+                          {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
+                        </span>
+                        <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
+                          Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
+                        </span>
+                        <span v-if="room.pending_request_count > 0 && room.occupant_count < room.capacity"
+                              class="bg-amber-50 text-amber-700 border border-amber-200/60 text-[9px] px-2 py-0.5 rounded-full font-bold">
+                          {{ room.pending_request_count }} pending request{{ room.pending_request_count > 1 ? 's' : '' }}
+                        </span>
+                      </div>
                     </div>
                   </label>
                 </div>
@@ -687,10 +699,10 @@ onMounted(async () => {
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- CUSTOM INFORMATIONAL MODAL: Booking Success & Next Steps   -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="handleSuccessModalClose">
-      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+    <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 sm:p-6" @click.self="handleSuccessModalClose">
+      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left flex flex-col max-h-[90vh]">
         <!-- Header -->
-        <div class="bg-blue-600 px-8 py-6 flex items-center gap-4">
+        <div class="bg-blue-600 px-8 py-6 flex items-center gap-4 shrink-0">
           <div class="w-12 h-12 bg-white/15 rounded-2xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-circle-check text-white text-2xl"></i>
           </div>
@@ -700,8 +712,8 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Body -->
-        <div class="p-8 md:p-10 space-y-6">
+        <!-- Body — scrollable so it never clips on small screens -->
+        <div class="p-8 md:p-10 space-y-6 overflow-y-auto flex-1">
           <p class="text-slate-600 font-semibold text-sm leading-relaxed">
             Hello, <strong class="text-slate-900">{{ form.resident_name }}</strong>! Your room reservation request for <strong class="text-slate-900">{{ house.name }}</strong> has been successfully sent to the landlord.
           </p>
@@ -773,7 +785,7 @@ onMounted(async () => {
         </div>
 
         <!-- Footer Actions -->
-        <div class="px-8 pb-8 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100 pt-4">
+        <div class="px-8 pb-8 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100 pt-4 shrink-0">
           <button type="button" @click="router.push('/student/house/' + houseId)" class="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[11px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
             <i class="fa-solid fa-house text-[10px]"></i> Back to House
           </button>
