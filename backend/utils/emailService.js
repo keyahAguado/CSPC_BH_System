@@ -1,47 +1,23 @@
-import nodemailer from 'nodemailer';
 import pool from '../config/db.js';
 
 /**
- * Dynamically constructs a Nodemailer Transport instance using environment configuration.
- * Supports standard Gmail App Passwords and custom SMTP gateways.
+ * Escapes special HTML characters in text inputs to prevent HTML injection in emails.
+ * @param {string} str 
+ * @returns {string}
  */
-const createTransporter = (portOverride = null, secureOverride = null) => {
-    const user = process.env.SMTP_USER || process.env.EMAIL_USER || '';
-    const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
-    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-
-    const configuredPort = parseInt(process.env.SMTP_PORT || '587');
-    const port = portOverride !== null ? portOverride : configuredPort;
-    const secure = secureOverride !== null ? secureOverride : (process.env.SMTP_SECURE === 'true' || port === 465);
-
-    if (process.env.SMTP_SERVICE === 'gmail' || host.includes('gmail.com')) {
-        return nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port,
-            secure,
-            requireTLS: !secure,
-            auth: { user, pass },
-            tls: { rejectUnauthorized: false },
-            connectionTimeout: 4000,
-            greetingTimeout: 4000,
-            socketTimeout: 4000
-        });
-    }
-
-    return nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: { user, pass },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 4000,
-        greetingTimeout: 4000,
-        socketTimeout: 4000
-    });
+const escapeHtml = (str) => {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 };
 
 /**
- * Asynchronously sends an email notification to a registered user without blocking API flow
+ * Asynchronously sends an email notification to a registered user without blocking API flow.
+ * Checks sendRawEmail's result and logs success/failure accurately.
  * @param {number} userId - The target user database ID
  * @param {string} subject - Email subject line
  * @param {string} message - Notification text message
@@ -52,11 +28,18 @@ export const sendNotificationEmail = (userId, subject, message) => {
             if (!userId) return;
 
             const [[user]] = await pool.query('SELECT name, email FROM users WHERE id = ?', [userId]);
-            if (!user || !user.email) return;
+            if (!user || !user.email) {
+                console.warn(`[EMAIL NOTICE]: Target user ID ${userId} has no valid email address recorded.`);
+                return;
+            }
 
-            await sendRawEmail(user.email, user.name, subject, message);
+            console.log(`[EMAIL QUEUED]: Prepared Brevo HTTPS notification for user ID ${userId} (${user.email}).`);
+            const result = await sendRawEmail(user.email, user.name, subject, message);
+            if (!result.success) {
+                console.error(`[EMAIL DISPATCH FAILED]: Brevo rejected notification for user ID ${userId} (${user.email}): ${result.error}`);
+            }
         } catch (err) {
-            console.error('[EMAIL SERVICE ERROR]: Failed to dispatch user notification email:', err.message);
+            console.error('[EMAIL SERVICE ERROR]: Exception during email notification processing:', err.message);
         }
     }).catch(err => {
         console.error('[EMAIL UNHANDLED REJECTION]:', err.message);
@@ -64,13 +47,46 @@ export const sendNotificationEmail = (userId, subject, message) => {
 };
 
 /**
- * Direct raw email dispatcher helper with HTTPS API support and dual-port fallback
+ * Direct transactional email dispatcher helper using Brevo HTTPS REST API (v3).
+ * API Endpoint: POST https://api.brevo.com/v3/smtp/email
+ * Header: api-key: BREVO_API_KEY
+ * 
+ * @param {string} recipientEmail 
+ * @param {string} recipientName 
+ * @param {string} subject 
+ * @param {string} message 
+ * @returns {Promise<{success: boolean, messageId?: string, error?: string, status?: number}>}
  */
 export const sendRawEmail = async (recipientEmail, recipientName, subject, message) => {
     try {
-        const user = process.env.SMTP_USER || process.env.EMAIL_USER || '';
-        const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
-        const resendApiKey = process.env.RESEND_API_KEY || process.env.RESEND_KEY || '';
+        const apiKey = process.env.BREVO_API_KEY || '';
+        const senderAddress = process.env.EMAIL_FROM_ADDRESS || '';
+        const senderName = process.env.EMAIL_FROM_NAME || 'CSPC Boarding House System';
+
+        if (!apiKey) {
+            console.warn('[EMAIL CONFIG MISSING]: BREVO_API_KEY is not set in environment variables.');
+            return {
+                success: false,
+                error: 'BREVO_API_KEY is missing. Please set BREVO_API_KEY in Render Environment Variables.'
+            };
+        }
+
+        if (!senderAddress) {
+            console.warn('[EMAIL CONFIG MISSING]: EMAIL_FROM_ADDRESS is not set in environment variables.');
+            return {
+                success: false,
+                error: 'EMAIL_FROM_ADDRESS is missing. Please set EMAIL_FROM_ADDRESS in Render Environment Variables.'
+            };
+        }
+
+        if (!recipientEmail) {
+            return { success: false, error: 'Recipient email address is required.' };
+        }
+
+        const safeRecipientName = escapeHtml(recipientName || 'User');
+        const safeMessage = escapeHtml(message || '');
+        const formattedSubject = `[CSPC Boarding House System] ${subject}`;
+        const plainText = `Hello ${recipientName || 'User'},\n\n${message}\n\nBest regards,\nCSPC Boarding House Management Team`;
 
         const htmlContent = `
             <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b;">
@@ -79,8 +95,8 @@ export const sendRawEmail = async (recipientEmail, recipientName, subject, messa
                         <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">CSPC Boarding House System</h2>
                     </div>
                     <div style="padding: 32px 24px;">
-                        <p style="font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 0;">Hello ${recipientName || 'User'},</p>
-                        <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 24px;">${message}</p>
+                        <p style="font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 0;">Hello ${safeRecipientName},</p>
+                        <p style="font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 24px;">${safeMessage}</p>
                         <div style="padding: 16px; background-color: #f1f5f9; border-radius: 8px; border-left: 4px solid #1e40af;">
                             <p style="margin: 0; font-size: 12px; color: #64748b; font-weight: 600;">You can log in to your CSPC Boarding House Portal to review details and take necessary action.</p>
                         </div>
@@ -92,70 +108,61 @@ export const sendRawEmail = async (recipientEmail, recipientName, subject, messa
             </div>
         `;
 
-        // Option A: Use Resend HTTPS API if API Key is configured in environment (100% reliable on Vercel/serverless)
-        if (resendApiKey) {
-            try {
-                const resendRes = await fetch('https://api.resend.com/emails', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${resendApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        from: process.env.EMAIL_FROM || 'CSPC Boarding House System <onboarding@resend.dev>',
-                        to: [recipientEmail],
-                        subject: `[CSPC Boarding House System] ${subject}`,
-                        html: htmlContent
-                    })
-                });
-                if (resendRes.ok) {
-                    const data = await resendRes.json();
-                    console.log(`[EMAIL DISPATCHED VIA RESEND HTTPS]: Sent to ${recipientEmail} | ID: ${data.id}`);
-                    return { success: true, messageId: data.id };
+        const payload = {
+            sender: {
+                name: senderName,
+                email: senderAddress
+            },
+            to: [
+                {
+                    email: recipientEmail,
+                    name: recipientName || 'User'
                 }
-            } catch (resendErr) {
-                console.warn(`[EMAIL RESEND HTTPS ERROR]: ${resendErr.message}. Falling back to Nodemailer SMTP...`);
-            }
-        }
-
-        // Option B: Nodemailer SMTP with Dual-Port Auto Fallback (587 / 465)
-        const mailOptions = {
-            from: `"CSPC Boarding House System" <${user || 'no-reply@cspc.edu.ph'}>`,
-            to: recipientEmail,
-            subject: `[CSPC Boarding House System] ${subject}`,
-            text: `Hello ${recipientName || 'User'},\n\n${message}\n\nBest regards,\nCSPC Boarding House Management Team`,
-            html: htmlContent
+            ],
+            subject: formattedSubject,
+            textContent: plainText,
+            htmlContent: htmlContent
         };
 
-        if (user && pass) {
-            try {
-                const transporter = createTransporter();
-                const info = await transporter.sendMail(mailOptions);
-                console.log(`[EMAIL DISPATCHED SUCCESS]: Sent "${subject}" to ${recipientEmail} | MessageID: ${info.messageId}`);
-                return { success: true, messageId: info.messageId };
-            } catch (primaryErr) {
-                console.warn(`[EMAIL DISPATCH WARNING]: Primary transport attempt failed (${primaryErr.message}). Attempting fallback...`);
-                
-                try {
-                    const configuredPort = parseInt(process.env.SMTP_PORT || '587');
-                    const fallbackPort = configuredPort === 465 ? 587 : 465;
-                    const fallbackSecure = fallbackPort === 465;
+        // Bounded request timeout (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-                    const fallbackTransporter = createTransporter(fallbackPort, fallbackSecure);
-                    const info = await fallbackTransporter.sendMail(mailOptions);
-                    console.log(`[EMAIL DISPATCHED SUCCESS VIA FALLBACK]: Sent "${subject}" to ${recipientEmail} on port ${fallbackPort} | MessageID: ${info.messageId}`);
-                    return { success: true, messageId: info.messageId };
-                } catch (fallbackErr) {
-                    console.error(`[EMAIL DISPATCH NOTICE]: Direct SMTP connection timed out or blocked on host network (${fallbackErr.message}).`);
-                    return { success: false, simulated: true, error: fallbackErr.message };
-                }
-            }
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': apiKey,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        }).finally(() => clearTimeout(timeoutId));
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok) {
+            const messageId = data.messageId || (Array.isArray(data.messageIds) ? data.messageIds[0] : 'accepted');
+            console.log(`[EMAIL BREVO ACCEPTED]: Sent "${subject}" to ${recipientEmail} | MessageID: ${messageId}`);
+            return {
+                success: true,
+                messageId
+            };
         } else {
-            console.log(`[EMAIL SIMULATED (SMTP Credentials Not Set in backend/.env)]: Subject: "${subject}" | To: ${recipientEmail}`);
-            return { success: true, simulated: true, note: 'SMTP_USER and SMTP_PASS or RESEND_API_KEY must be added to backend/.env to send real emails.' };
+            const errorMsg = data.message || data.code || `HTTP Status ${response.status}`;
+            console.error(`[EMAIL BREVO REJECTED]: Provider returned error (HTTP ${response.status}): ${errorMsg}`);
+            return {
+                success: false,
+                status: response.status,
+                error: errorMsg
+            };
         }
     } catch (err) {
-        console.error(`[EMAIL DISPATCH ERROR]: Failed to send to ${recipientEmail}: ${err.message}`);
-        return { success: false, error: err.message };
+        const errorMsg = err.name === 'AbortError' ? 'HTTPS request timed out after 10 seconds' : err.message;
+        console.error(`[EMAIL DISPATCH ERROR]: Failed to send to ${recipientEmail}: ${errorMsg}`);
+        return {
+            success: false,
+            error: errorMsg
+        };
     }
 };
