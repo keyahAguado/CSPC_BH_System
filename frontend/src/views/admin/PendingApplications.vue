@@ -517,7 +517,7 @@ onMounted(() => {
         <div class="bg-[#2563eb] text-white px-6 sm:px-8 py-5 flex justify-between items-center shrink-0 gap-4">
           <div class="flex items-center gap-3 overflow-hidden">
             <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center shrink-0"><i class="fa-regular fa-folder-open text-xl"></i></div>
-            <h2 class="text-xs sm:text-lg font-black uppercase tracking-tight truncate">{{ activeApp.owner_name }} - Legal Documents</h2>
+            <h2 class="text-xs sm:text-lg font-black uppercase tracking-tight truncate">{{ activeApp.name }} - Legal Documents</h2>
           </div>
           <button @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>

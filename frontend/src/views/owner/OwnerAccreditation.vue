@@ -687,6 +687,10 @@ const toggleFullscreenMap = () => {
   showFullscreenMap.value = !showFullscreenMap.value;
   
   if (showFullscreenMap.value) {
+    // Reset map instance so it re-initializes into the freshly mounted DOM node
+    largeMapInstance = null;
+    largeMarkerInstance = null;
+
     setTimeout(() => {
       const lat = parseFloat(latitude.value) || NABUA_CENTER.lat;
       const lng = parseFloat(longitude.value) || NABUA_CENTER.lng;

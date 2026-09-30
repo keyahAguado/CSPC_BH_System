@@ -9,13 +9,18 @@ const getTransporter = () => {
     const user = process.env.SMTP_USER || process.env.EMAIL_USER || '';
     const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
     const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const port = parseInt(process.env.SMTP_PORT || '587');
-    const secure = process.env.SMTP_SECURE === 'true';
+    const port = parseInt(process.env.SMTP_PORT || '465');
+    const secure = process.env.SMTP_SECURE !== 'false'; // default true for port 465
 
     if (process.env.SMTP_SERVICE === 'gmail' || host.includes('gmail.com')) {
         return nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user, pass }
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true, // SSL/TLS — works on Render (port 587 STARTTLS is blocked)
+            auth: { user, pass },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
         });
     }
 
@@ -24,7 +29,10 @@ const getTransporter = () => {
         port,
         secure,
         auth: { user, pass },
-        tls: { rejectUnauthorized: false }
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
     });
 };
 

@@ -18,6 +18,7 @@ const getAdminCheckoutDate = (occ) => {
 
 const houses = ref([]);
 const dynamicDocs = ref([]);
+const housePhotos = ref([]);
 
 const isLoading = ref(true);
 const alertRef = ref(null);
@@ -221,6 +222,7 @@ const fetchRegisteredHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
+      housePhotos.value = response.data.housePhotos || [];
     }
   } catch (error) {
     console.error('Failed to load registered houses:', error);
@@ -291,7 +293,12 @@ const closeProfile = () => {
 // BH Info Modal (Student style preview)
 const openBhInfo = async (house) => {
   activeHouse.value = house;
-  bhPhotos.value = [house.img, house.img_1, house.img_2, house.img_3].filter(i => i && i !== 'null');
+  // Prefer house_photos table entries (supports > 4 photos), fall back to legacy img columns
+  const photosFromTable = housePhotos.value
+    .filter(p => p.house_id === house.id)
+    .map(p => p.photo_url);
+  const legacyPhotos = [house.img, house.img_1, house.img_2, house.img_3].filter(i => i && i !== 'null');
+  bhPhotos.value = photosFromTable.length > 0 ? photosFromTable : legacyPhotos;
   currentPhotoIndex.value = 0;
   showBhModal.value = true;
 

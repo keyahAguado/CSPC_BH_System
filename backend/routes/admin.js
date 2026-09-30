@@ -439,7 +439,11 @@ router.get('/applications/registered', authenticateToken, verifyAdmin, async (re
             JOIN checklist_criteria cc ON hd.criteria_id = cc.id
         `);
 
-        res.json({ success: true, houses, dynamicDocs });
+        const [housePhotos] = await pool.query(`
+            SELECT house_id, photo_url, sort_order FROM house_photos ORDER BY sort_order ASC
+        `);
+
+        res.json({ success: true, houses, dynamicDocs, housePhotos });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -460,7 +464,11 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
             ORDER BY bh.created_at DESC
         `);
 
-        res.json({ success: true, houses });
+        const [housePhotos] = await pool.query(`
+            SELECT house_id, photo_url, sort_order FROM house_photos ORDER BY sort_order ASC
+        `);
+
+        res.json({ success: true, houses, housePhotos });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

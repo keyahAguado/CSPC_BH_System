@@ -348,7 +348,7 @@ onUnmounted(() => {
                   <i class="fa-solid fa-box-archive text-white text-3xl mb-2"></i>
                   <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">SUSPENDED BY SASO ADMIN</p>
                   <p v-if="house.admin_comments" class="text-amber-300 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">"{{ house.admin_comments }}"</p>
-                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Upload updated documents under Docs for SASO re-accreditation.</p>
+                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Contact SASO or upload updated documents to request re-accreditation.</p>
                   <router-link :to="`/owner/documents/${house.id}`" 
                                class="inline-block mt-3 bg-amber-400 text-slate-900 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md hover:bg-amber-300 transition">
                     Upload Updated Documents
@@ -414,6 +414,12 @@ onUnmounted(() => {
                 <i class="fa-solid fa-circle-info text-[8px]"></i>
                 {{ house.supplementary_status === 'expired' ? 'Supplementary doc expired — non-urgent' : 'Supplementary doc expiring soon' }}
               </button>
+              <!-- Document Re-Verification Pending chip — shown when owner uploaded a doc awaiting admin review -->
+              <span v-if="house.document_update_pending"
+                    class="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
+                Document update pending admin review
+              </span>
             </div>
 
             <!-- Actions Panel -->
