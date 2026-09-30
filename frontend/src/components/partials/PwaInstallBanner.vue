@@ -14,8 +14,9 @@ const checkIfIos = () => {
 };
 
 onMounted(() => {
-  // Don't show if user previously dismissed
-  const isDismissed = localStorage.getItem('pwa_prompt_dismissed');
+  // Show again if 7 days have passed since last dismissal
+  const dismissed = localStorage.getItem('pwa_prompt_dismissed');
+  const isDismissed = dismissed && (Date.now() - parseInt(dismissed)) < 7 * 24 * 60 * 60 * 1000;
   
   isIos.value = checkIfIos();
 
@@ -67,7 +68,7 @@ const handleInstallClick = async () => {
 
 const dismissBanner = () => {
   showBanner.value = false;
-  localStorage.setItem('pwa_prompt_dismissed', 'true');
+  localStorage.setItem('pwa_prompt_dismissed', Date.now().toString());
 };
 
 const closeIosModal = () => {
@@ -101,7 +102,7 @@ const closeIosModal = () => {
                 Install CSPC Boarding App
               </h3>
               <p class="text-[11px] font-medium text-slate-300 mt-0.5 leading-tight">
-                Install for quick access, full screen view & offline updates.
+                Install for quick access, full-screen view & browse listings offline.
               </p>
             </div>
           </div>
