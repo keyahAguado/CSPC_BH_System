@@ -67,8 +67,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
-      - media_storage
+      backend:
+        condition: service_started
+      media_storage:
+        condition: service_healthy
 
   # --- 4. Dedicated Nginx Media Storage Service (ICTU Compliant) ---
   media_storage:
@@ -79,6 +81,12 @@ services:
       - "8080:80"
     volumes:
       - media_uploads:/usr/share/nginx/html/uploads:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/uploads/ >/dev/null 2>&1 || exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   db_data:

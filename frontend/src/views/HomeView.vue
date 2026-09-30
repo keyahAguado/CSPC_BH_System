@@ -95,7 +95,7 @@ const plotMarkers = (googleInstance) => {
         </div>
       `
     });
-    marker.addListener('click', () => infoWindow.open({ anchor: marker, map: mapInstance }));
+    marker.addEventListener('gmp-click', () => infoWindow.open({ anchor: marker, map: mapInstance }));
     mapMarkers.push(marker);
   });
 
