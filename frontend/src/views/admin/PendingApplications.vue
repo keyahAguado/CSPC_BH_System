@@ -362,9 +362,8 @@ const isDocumentItemUpdated = (item) => {
   return (permitKey && updatedList.includes(permitKey)) || updatedList.includes(itemId);
 };
 
-// Returns the Document Recheck badge label and visibility flag for an application row.
-// Shows the badge when document_update_pending = 1 AND the house is not a brand-new
-// first-time submission — meaning it was previously accredited OR unlisted by the owner.
+// Show rechecks for pending document updates or application resubmissions.
+// Archive wording requires an archived state or recognized archive provenance.
 const getDocRecheckBadge = (app) => {
   if (!app.document_update_pending && !app.is_resubmission) return null;
   
@@ -372,11 +371,11 @@ const getDocRecheckBadge = (app) => {
     return { label: 'DOCUMENT RECHECK — ALREADY ACCREDITED', color: 'text-amber-600' };
   }
   
-  if (app.house_status === 'archived' || app.archived_by || app.is_resubmission || app.document_update_pending) {
+  if (app.house_status === 'archived' || ['owner', 'system', 'admin'].includes(app.archived_by)) {
     return { label: 'DOCUMENT RECHECK — ALREADY ARCHIVED', color: 'text-amber-600' };
   }
   
-  return null;
+  return { label: 'DOCUMENT RECHECK', color: 'text-amber-600' };
 };
 
 onMounted(() => {

@@ -72,6 +72,7 @@ const newOccupant = ref({
   emergency_contact: '',
   guardian_name: '',
   payment_status: 'Not Paid',
+  upfront_status: 'Unpaid',
   address: ''
 });
 
@@ -174,9 +175,26 @@ const calculateTotalRent = (occupant) => {
   return parseFloat(occupant.amount || 0);
 };
 
+// Manual occupants require an explicit upfront collection status.
+// Preserve the existing fallback for CSPC cash bookings.
+const isUpfrontCollected = (occupant) => (occupant.upfront_status || (occupant.is_non_cspc ? 'Unpaid' : 'Paid')) === 'Paid';
+
+const getUpfrontLabel = (occupant) => {
+  if (occupant.is_non_cspc) {
+    return isUpfrontCollected(occupant) ? 'Upfront Collected' : 'Upfront Not Collected';
+  }
+  return isUpfrontCollected(occupant) ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)';
+};
+
+const getUpfrontActionLabel = (occupant) => {
+  if (occupant.is_non_cspc) {
+    return isUpfrontCollected(occupant) ? 'Mark Not Collected' : 'Mark Collected';
+  }
+  return isUpfrontCollected(occupant) ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid';
+};
+
 const handleToggleUpfront = async (occupant) => {
-  const currentStatus = occupant.upfront_status || 'Paid';
-  const newStatus = currentStatus === 'Paid' ? 'Unpaid' : 'Paid';
+  const newStatus = isUpfrontCollected(occupant) ? 'Unpaid' : 'Paid';
   try {
     const response = await axios.post(`/api/owner/rooms/occupants/upfront-payment/${occupant.id}`, {
       status: newStatus
@@ -261,6 +279,7 @@ const closeAddModal = () => {
     emergency_contact: '',
     guardian_name: '',
     payment_status: 'Not Paid',
+    upfront_status: 'Unpaid',
     address: ''
   };
 };
@@ -543,12 +562,12 @@ onMounted(() => {
                       </template>
                       <template v-else>
                         <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
-                              :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
-                          <i class="fa-solid" :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'fa-money-bill-wave' : 'fa-clock'"></i>
-                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)' }}
+                              :class="isUpfrontCollected(occ) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
+                          <i class="fa-solid" :class="isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock'"></i>
+                          {{ getUpfrontLabel(occ) }}
                         </span>
                         <button @click="handleToggleUpfront(occ)" class="text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-wider underline cursor-pointer mt-0.5">
-                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
+                          {{ getUpfrontActionLabel(occ) }}
                         </button>
                       </template>
                     </div>
@@ -627,14 +646,14 @@ onMounted(() => {
                           </span>
                           <!-- Cash badge -->
                           <span v-else class="inline-flex items-center gap-1 text-[8.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 whitespace-nowrap"
-                                :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
-                            <i class="fa-solid" :class="(occ.upfront_status || 'Paid') === 'Paid' ? 'fa-money-bill-wave' : 'fa-clock'"></i>
-                            {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Upfront Paid (Cash)' : 'Upfront Unpaid (Cash)' }}
+                                :class="isUpfrontCollected(occ) ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
+                            <i class="fa-solid" :class="isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock'"></i>
+                            {{ getUpfrontLabel(occ) }}
                           </span>
                         </div>
                         <!-- Cash toggle button -->
                         <button v-if="occ.payment_method !== 'paymongo'" @click="handleToggleUpfront(occ)" class="self-end text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer">
-                          {{ (occ.upfront_status || 'Paid') === 'Paid' ? 'Mark Upfront Unpaid' : 'Mark Upfront Paid' }}
+                          {{ getUpfrontActionLabel(occ) }}
                         </button>
                       </div>
                       <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight mt-1">
@@ -740,10 +759,17 @@ onMounted(() => {
             <input v-model="newOccupant.guardian_name" type="text" placeholder="Guardian's full name" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Payment Status</label>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Monthly Rent Status</label>
             <select v-model="newOccupant.payment_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
               <option value="Not Paid">Not Paid</option>
               <option value="Paid">Paid</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Move-In Upfront</label>
+            <select v-model="newOccupant.upfront_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+              <option value="Unpaid">Not Collected</option>
+              <option value="Paid">Collected</option>
             </select>
           </div>
           <div class="md:col-span-2">

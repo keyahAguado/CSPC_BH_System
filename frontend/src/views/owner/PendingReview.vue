@@ -36,6 +36,12 @@ const fetchMyProperty = async () => {
           sessionStorage.setItem('cspc_user', JSON.stringify(currentUser.value));
         }
 
+        // Enter the dashboard after the refreshed accreditation status is saved.
+        if (hasAccredited) {
+          await router.replace('/owner/dashboard');
+          return;
+        }
+
         // Calculate submitted count for primary house
         const permitsKeys = [
           'permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay',

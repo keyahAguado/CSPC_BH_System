@@ -765,7 +765,7 @@ router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req,
 router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, async (req, res) => {
     try {
         const { roomId } = req.params;
-        const { name, age, contact_number, check_in_date, months, emergency_contact, guardian_name, payment_status, address } = req.body;
+        const { name, age, contact_number, check_in_date, months, emergency_contact, guardian_name, payment_status, upfront_status, address } = req.body;
 
         const [roomRows] = await pool.query(
             `SELECT r.*, 
@@ -785,6 +785,19 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
             return res.status(400).json({ success: false, message: 'Room has reached maximum occupant capacity.' });
         }
 
+        // The existing upfront toggle lazily creates this column. Manual additions
+        // also need it so the owner's choice is stored on the first occupant.
+        const [upfrontColumns] = await pool.query("SHOW COLUMNS FROM occupants LIKE 'upfront_status'");
+        if (upfrontColumns.length === 0) {
+            try {
+                await pool.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
+            } catch (err) {
+                if (err.code !== 'ER_DUP_FIELDNAME') throw err;
+            }
+        }
+
+        const upfrontStatus = upfront_status === 'Paid' ? 'Paid' : 'Unpaid';
+
         const checkIn = check_in_date || new Date().toISOString().split('T')[0];
         const monthlyRent = parseFloat(targetRoom.price || 0);
         const totalAmount = monthlyRent * (parseInt(months) || 1);
@@ -793,12 +806,12 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
             `INSERT INTO occupants (
                 room_id, student_id, reference_no, name, age, address, 
                 contact_number, emergency_contact, guardian_name, check_in_date, 
-                months, amount, payment_status, is_non_cspc
-            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                months, amount, payment_status, upfront_status, is_non_cspc
+            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
             [
                 roomId, name, parseInt(age) || null, address || '',
                 contact_number || '', emergency_contact || '', guardian_name || '',
-                checkIn, parseInt(months) || 1, totalAmount, payment_status || 'Not Paid'
+                checkIn, parseInt(months) || 1, totalAmount, payment_status || 'Not Paid', upfrontStatus
             ]
         );
 

@@ -6,6 +6,7 @@ import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
+import { formatCheckoutDateString } from '../../utils/dateHelper.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -646,7 +647,7 @@ onMounted(async () => {
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Check-In Date</p>
-              <p class="font-bold text-slate-800">{{ form.check_in_date || '—' }}</p>
+              <p class="font-bold text-slate-800">{{ formatCheckoutDateString(form.check_in_date ? new Date(form.check_in_date + 'T00:00:00') : null) }}</p>
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Est. Check-Out Date</p>

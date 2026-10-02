@@ -509,14 +509,14 @@ onMounted(() => {
               <h2 class="text-sm font-black uppercase tracking-widest">Archived Rooms</h2>
             </div>
             <span class="text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
-              Preserved in Database
+              Retained for Records
             </span>
           </div>
 
           <!-- MOBILE CARD LIST (hidden on sm+) -->
           <div class="sm:hidden divide-y divide-slate-100">
             <div v-if="archivedRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
-              No soft-deleted / archived rooms found.
+              No archived rooms.
             </div>
             <div v-for="room in archivedRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3 text-left">
               <div class="flex items-center justify-between">
@@ -566,7 +566,7 @@ onMounted(() => {
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="archivedRooms.length === 0">
                   <td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
-                    No soft-deleted / archived rooms found.
+                    No archived rooms.
                   </td>
                 </tr>
                 <tr v-for="room in archivedRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
