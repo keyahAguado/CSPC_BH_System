@@ -6,7 +6,7 @@ import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
-import { formatCheckoutDateString } from '../../utils/dateHelper.js';
+import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -18,6 +18,7 @@ const isLoading = ref(true);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
+const reservationBlocked = ref(false);
 const showConfirmModal = ref(false);   // Pre-submission review modal
 const showSuccessModal = ref(false);   // Post-submission result modal
 const showDpaModal = ref(false);       // Data Privacy Act consent modal
@@ -196,6 +197,7 @@ const sanitizePhoneInput = (fieldKey) => {
 
 // Step 1: Form submit opens the review/confirmation modal — nothing is sent yet
 const openConfirmModal = () => {
+  if (reservationBlocked.value) return;
   if (isGuest) {
     errorMsg.value = 'You must be logged in to book.';
     return;
@@ -219,6 +221,7 @@ const openConfirmModal = () => {
 
 // Step 2: "Ok, Submit Booking" in the confirm modal — this is where the booking is actually sent
 const confirmAndSubmit = async () => {
+  if (reservationBlocked.value) return;
   if (isSaving.value) return; // Hard guard: prevent double-fire
   showConfirmModal.value = false;
   isSaving.value = true;
@@ -230,6 +233,7 @@ const confirmAndSubmit = async () => {
     });
     showSuccessModal.value = true;
   } catch (e) {
+    reservationBlocked.value = ['pending_booking', 'confirmed_booking', 'active_stay'].includes(e.response?.data?.errorCode);
     errorMsg.value = e.response?.data?.message || 'Unable to submit booking. Please check your connection and try again.';
     if (alertRef.value) {
       alertRef.value.showSystemAlert(errorMsg.value, 'error');
@@ -258,6 +262,20 @@ const initAddressAutocomplete = (el) => {
 
 onMounted(async () => {
   await fetchData();
+  if (!token) return;
+  try {
+    const response = await axios.get('/api/student/bookings', { headers: { Authorization: `Bearer ${token}` } });
+    const existing = (response.data.bookings || []).find(b => b.status === 'pending' || b.status === 'confirmed');
+    if (existing) {
+      reservationBlocked.value = true;
+      errorMsg.value = existing.status === 'pending'
+        ? `You already have a pending reservation at ${existing.house_name}. Cancel it or wait for the owner's decision before reserving another boarding house.`
+        : 'You already have a confirmed booking. View My Bookings to manage your stay.';
+    }
+  } catch (error) {
+    // Submission still checks current reservation eligibility on the server.
+    console.warn('Could not check existing reservations:', error.message);
+  }
 });
 </script>
 
@@ -287,6 +305,7 @@ onMounted(async () => {
         </div>
         <div v-if="errorMsg" class="mb-6 bg-rose-50 border border-rose-200 text-rose-800 text-[13px] font-semibold p-5 rounded-2xl flex items-center gap-3 animate-fade-in">
           <i class="fa-solid fa-circle-info text-rose-500"></i> {{ errorMsg }}
+          <router-link v-if="reservationBlocked" to="/student/bookings" class="font-bold underline shrink-0">My Bookings</router-link>
         </div>
 
         <form @submit.prevent="openConfirmModal" class="space-y-6 text-left">
@@ -589,7 +608,7 @@ onMounted(async () => {
             >Cancel</router-link>
             <button
               type="submit"
-              :disabled="isSaving"
+              :disabled="isSaving || reservationBlocked"
               class="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-slate-900 transition-all transform hover:-translate-y-1 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               <div v-if="isSaving" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -647,16 +666,12 @@ onMounted(async () => {
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Check-In Date</p>
-              <p class="font-bold text-slate-800">{{ formatCheckoutDateString(form.check_in_date ? new Date(form.check_in_date + 'T00:00:00') : null) }}</p>
+              <p class="font-bold text-slate-800">{{ formatCheckoutDateString(form.check_in_date) }}</p>
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Est. Check-Out Date</p>
               <p class="font-bold text-blue-600">
-                {{ form.check_in_date && form.months ? (() => {
-                    const d = new Date(form.check_in_date);
-                    d.setMonth(d.getMonth() + parseInt(form.months || 0));
-                    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                  })() : '—' }}
+                {{ form.check_in_date && form.months ? formatCheckoutDateString(computeCheckoutDate(form.check_in_date, form.months)) : '—' }}
               </p>
             </div>
             <div>
@@ -687,7 +702,7 @@ onMounted(async () => {
             class="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[11px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
             <i class="fa-solid fa-arrow-left text-[10px]"></i> Back to Form
           </button>
-          <button type="button" @click="confirmAndSubmit" :disabled="isSaving"
+          <button type="button" @click="confirmAndSubmit" :disabled="isSaving || reservationBlocked"
             class="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-slate-900 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
             <div v-if="isSaving" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             {{ isSaving ? 'Submitting...' : 'Submit Booking' }}

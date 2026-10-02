@@ -25,54 +25,6 @@ const EXPLICIT_BH_COLUMNS = `
     bh.last_updated_document, bh.is_resubmission, bh.admin_comments, bh.archived_by, bh.resubmitted_at, bh.created_at
 `;
 
-// Helper: Self-healing automatic backfill for missing barangay values using location field
-// Only fills houses where barangay is genuinely empty — never overrides owner-set values
-const autoBackfillBarangays = async () => {
-    try {
-        // Correct any houses whose barangay was wrongly set by the old hardcoded backfill.
-        // These corrections are safe to run repeatedly — they only update specific rows.
-        const corrections = [
-            { namePattern: '%mikeah%', correctBarangay: 'San Miguel' },
-            { namePattern: '%rebecca%', correctBarangay: 'San Antonio' },
-        ];
-        for (const fix of corrections) {
-            await pool.query(
-                `UPDATE boarding_houses SET barangay = ? WHERE LOWER(name) LIKE ? AND barangay != ?`,
-                [fix.correctBarangay, fix.namePattern, fix.correctBarangay]
-            );
-        }
-
-        // Fill genuinely empty barangay fields from location string
-        const [houses] = await pool.query("SELECT id, name, location FROM boarding_houses WHERE barangay IS NULL OR barangay = ''");
-        const knownBarangays = [
-            'San Antonio', 'San Esteban', 'San Isidro', 'San Juan', 'San Luis',
-            'San Miguel', 'San Nicolas', 'San Roque', 'Angustia', 'Atate',
-            'Malawag', 'Palbreak', 'Santa Cruz', 'Santa Elena', 'Santa Lucia',
-            'Santiago Old', 'Santiago Young', 'Santo Domingo', 'Topas Proper', 'Topas Samar'
-        ];
-        for (const h of houses) {
-            let matched = null;
-            if (h.location) {
-                matched = knownBarangays.find(b => h.location.toLowerCase().includes(b.toLowerCase()));
-            }
-            if (matched) {
-                await pool.query("UPDATE boarding_houses SET barangay = ? WHERE id = ?", [matched, h.id]);
-            }
-        }
-    } catch (e) {
-        console.error('[BARANGAY AUTO-BACKFILL ERROR]:', e.message);
-    }
-};
-autoBackfillBarangays();
-
-// One-time correction: fix any houses whose barangay was incorrectly set by old backfill logic
-pool.query(`
-    UPDATE boarding_houses 
-    SET barangay = 'San Miguel' 
-    WHERE LOWER(name) LIKE '%mikeah%' AND (barangay IS NULL OR barangay != 'San Miguel')
-`).catch(e => console.error('[BARANGAY CORRECTION ERROR]:', e.message));
-
-
 // 1. GET - Retrieve Dashboard Statistics
 router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
     try {
@@ -100,7 +52,7 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             SELECT SUM(r.capacity) AS total_capacity 
             FROM rooms r
             INNER JOIN boarding_houses bh ON r.house_id = bh.id
-            WHERE bh.house_status = 'accredited'
+            WHERE bh.house_status = 'accredited' AND r.deleted_at IS NULL
         `);
         const [[occupantsRow]] = await pool.query(`
             SELECT 
@@ -402,7 +354,6 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
 // 3. GET - Retrieve accredited/registered houses & dynamic uploads (filterable by barangay)
 router.get('/applications/registered', authenticateToken, verifyAdmin, async (req, res) => {
     try {
-        await autoBackfillBarangays();
         const { barangay } = req.query;
 
         let barangayClause = '';
@@ -489,14 +440,15 @@ router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => 
         // Fetch house and owner details
         const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
         const ownerId = house[0].owner_id;
 
         // 1. Update Boarding House status (compliance_status is left untouched)
         await connection.query(
-            "UPDATE boarding_houses SET house_status = 'archived', admin_comments = ? WHERE id = ?",
-            [reason && reason.trim() ? reason.trim() : null, houseId]
+            "UPDATE boarding_houses SET status_before_archive = CASE WHEN house_status = 'archived' THEN status_before_archive ELSE house_status END, house_status = 'archived', archived_by = 'admin', archive_reason = ?, archived_at = NOW(), admin_comments = ? WHERE id = ?",
+            [reason && reason.trim() ? reason.trim() : null, reason && reason.trim() ? reason.trim() : null, houseId]
         );
 
         // 2. Insert Alert notification for the Owner ONLY
@@ -528,6 +480,7 @@ router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => 
         // Fetch house and owner details
         const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
         const ownerId = house[0].owner_id;
@@ -632,6 +585,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
 
         const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
         const owner_id = house[0].owner_id;
@@ -689,6 +643,7 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
 
         const [house] = await connection.query('SELECT owner_id, name, house_status FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Record not found.' });
         }
         const owner_id = house[0].owner_id;
@@ -836,9 +791,11 @@ router.post('/criteria/update/:id', authenticateToken, verifyAdmin, async (req, 
             [criteriaId]
         );
         if (criteriaRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Criteria record not found.' });
         }
         if (criteriaRows[0].house_id === null) {
+            await connection.rollback();
             return res.status(400).json({ success: false, message: 'Institutional items locked.' });
         }
 
@@ -895,9 +852,11 @@ router.post('/criteria/delete/:id', authenticateToken, verifyAdmin, async (req, 
             [criteriaId]
         );
         if (criteriaRows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Criteria record not found.' });
         }
         if (criteriaRows[0].house_id === null) {
+            await connection.rollback();
             return res.status(400).json({ success: false, message: 'Institutional items locked.' });
         }
 
@@ -1081,7 +1040,7 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                 ) AS female_count
             FROM boarding_houses bh
             LEFT JOIN users u ON bh.owner_id = u.id
-            LEFT JOIN rooms r ON bh.id = r.house_id
+            LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
             WHERE bh.house_status = 'accredited'
             GROUP BY bh.id, bh.name, bh.location, bh.house_status, u.name, u.phone
             ORDER BY bh.name ASC
@@ -1134,7 +1093,6 @@ router.get('/reports/compliance', authenticateToken, verifyAdmin, async (req, re
         // GET - Emergency Student Residency Registry (filterable by barangay and boarding house)
 router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async (req, res) => {
     try {
-        await autoBackfillBarangays();
         const { barangay, house_id, course } = req.query;
 
         let whereClauses = [
@@ -1153,7 +1111,7 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
 
         if (barangay && barangay.trim() !== '' && barangay.toLowerCase() !== 'all') {
             const cleanBarangay = barangay.trim();
-            whereClauses.push('(bh.barangay = ? OR (bh.barangay IS NULL AND bh.location LIKE ?))');
+            whereClauses.push("(bh.barangay = ? OR ((bh.barangay IS NULL OR bh.barangay = '') AND bh.location LIKE ?))");
             queryParams.push(cleanBarangay, `%${cleanBarangay}%`);
         }
 

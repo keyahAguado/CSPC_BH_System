@@ -97,16 +97,26 @@ const toggleAddModal = () => {
   }
 };
 
+const validateRoomForm = (number, capacity) => {
+  if (!String(number ?? '').trim()) return 'Room number is required.';
+  if (Array.from(String(number).trim()).length > 50) return 'Room number must be 50 characters or fewer.';
+  const value = Number(capacity);
+  if (!Number.isInteger(value) || value < 1 || value > 2147483647) return 'Capacity must be a whole number of at least 1 within the supported range.';
+  return null;
+};
+
 const handleSaveRoom = async () => {
-  if (!newRoomNumber.value || !newCapacity.value) {
-    showSystemAlert('Please fill in all room details.', 'error');
+  if (isSubmitting.value) return;
+  const validationError = validateRoomForm(newRoomNumber.value, newCapacity.value);
+  if (validationError) {
+    showSystemAlert(validationError, 'error');
     return;
   }
 
   try {
     isSubmitting.value = true;
     const response = await axios.post(`/api/owner/rooms/add/${house.value.id}`, {
-      room_number: newRoomNumber.value,
+      room_number: String(newRoomNumber.value).trim(),
       gender_type: newGenderType.value,
       capacity: newCapacity.value,
       price: newPrice.value
@@ -143,15 +153,17 @@ const closeEditModal = () => {
 };
 
 const handleUpdateRoom = async () => {
-  if (!editRoomNumber.value || !editCapacity.value) {
-    showSystemAlert('Please fill in all room details.', 'error');
+  if (isSubmitting.value) return;
+  const validationError = validateRoomForm(editRoomNumber.value, editCapacity.value);
+  if (validationError) {
+    showSystemAlert(validationError, 'error');
     return;
   }
 
   try {
     isSubmitting.value = true;
     const response = await axios.put(`/api/owner/rooms/edit/${editingRoomId.value}`, {
-      room_number: editRoomNumber.value,
+      room_number: String(editRoomNumber.value).trim(),
       gender_type: editGenderType.value,
       capacity: editCapacity.value,
       price: editPrice.value
@@ -635,7 +647,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
-            <input v-model="newCapacity" type="number" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
@@ -672,7 +684,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
-            <input v-model="editCapacity" type="number" min="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="editCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>

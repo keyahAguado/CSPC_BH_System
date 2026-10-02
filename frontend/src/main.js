@@ -31,13 +31,24 @@ if (baseUrl.includes('ngrok')) {
   axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'any';
 }
 
-// Global response interceptor: redirect to login on expired/invalid token
+// Global response interceptor: handle deactivated accounts and expired tokens.
+let isRedirectingToAccountNotice = false;
 axios.interceptors.response.use(
   response => response,
   error => {
     const status = error?.response?.status;
     const msg = error?.response?.data?.message || '';
-    if ((status === 401 || status === 403) && msg.toLowerCase().includes('token')) {
+    const isInactive = (status === 401 || status === 403) &&
+      (error?.response?.data?.code === 'ACCOUNT_INACTIVE' || msg === 'Your account has been deactivated by SASO.');
+    if (isInactive) {
+      sessionStorage.removeItem('cspc_token');
+      sessionStorage.removeItem('cspc_user');
+      if (!isRedirectingToAccountNotice && router.currentRoute.value.name !== 'AccountDeactivated') {
+        isRedirectingToAccountNotice = true;
+        router.replace('/account-deactivated').finally(() => { isRedirectingToAccountNotice = false; });
+      }
+    } else if (!isRedirectingToAccountNotice && router.currentRoute.value.name !== 'AccountDeactivated' &&
+      (status === 401 || status === 403) && msg.toLowerCase().includes('token')) {
       sessionStorage.removeItem('cspc_token');
       sessionStorage.removeItem('cspc_user');
       router.push('/login');

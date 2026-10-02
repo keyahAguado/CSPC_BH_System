@@ -1,4 +1,5 @@
 <script setup>
+import { escapeHtml } from '../utils/htmlHelper.js';
 import { ref, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -84,14 +85,15 @@ const plotMarkers = (googleInstance) => {
       map: mapInstance,
       position,
       title: house.name,
+      gmpClickable: true,
     });
 
     const infoWindow = new googleInstance.maps.InfoWindow({
       content: `
         <div style="font-family: sans-serif; padding: 4px; max-width: 200px;">
-          <strong style="display:block; margin-bottom:4px; font-size: 13px;">${house.name}</strong>
-          <span style="font-size: 11px; color: #64748b;">${formatAddress(house)}</span><br/>
-          <a href="/student/house/${house.id}" style="font-size: 11px; color: #2a528a; font-weight: bold;">View Details →</a>
+          <strong style="display:block; margin-bottom:4px; font-size: 13px;">${escapeHtml(house.name)}</strong>
+          <span style="font-size: 11px; color: #64748b;">${escapeHtml(formatAddress(house))}</span><br/>
+          <a href="/student/house/${escapeHtml(encodeURIComponent(String(house.id)))}" style="font-size: 11px; color: #2a528a; font-weight: bold;">View Details →</a>
         </div>
       `
     });

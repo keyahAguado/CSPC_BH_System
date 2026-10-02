@@ -23,7 +23,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
         if (!req.user || !req.user.id) {
             return res.status(401).json({ success: false, message: 'Invalid session token.' });
         }
-        const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+        const [rows] = await pool.query('SELECT id, email, role, name, phone, address, status, student_id, sex, course, year_section, dob, age, emergency_contact, guardian_name, profile_pic, created_at FROM users WHERE id = ?', [req.user.id]);
         if (rows.length === 0) {
             return res.status(404).json({ success: false, message: 'User profile not found.' });
         }
@@ -90,9 +90,9 @@ router.get('/houses', async (req, res) => {
                 SELECT bh.*,
                        (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
                        (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
-                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
-                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
-                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
+                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
+                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
+                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price
                 FROM boarding_houses bh
                 WHERE bh.house_status = 'accredited'
                 ORDER BY bh.created_at DESC
@@ -114,9 +114,9 @@ router.get('/houses', async (req, res) => {
                 SELECT bh.*,
                        (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
                        (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
-                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id) AS room_count,
-                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
-                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price,
+                       (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
+                       (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
+                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price,
                        (${scoreClauses.join(' + ')}) AS relevance
                 FROM boarding_houses bh
                 WHERE bh.house_status = 'accredited' AND (${whereClauses.join(' OR ')})
@@ -159,8 +159,8 @@ router.get('/house/:id', async (req, res) => {
 
         const [houseRows] = await pool.query(`
             SELECT bh.*, u.name as owner_name, u.email as owner_email,
-                   (SELECT MIN(price) FROM rooms WHERE house_id = bh.id) AS min_price,
-                   (SELECT MAX(price) FROM rooms WHERE house_id = bh.id) AS max_price
+                   (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
+                   (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price
             FROM boarding_houses bh
             JOIN users u ON bh.owner_id = u.id
             WHERE bh.id = ? AND bh.house_status = 'accredited'
@@ -278,6 +278,9 @@ router.post('/review/:id', authenticateToken, async (req, res) => {
 
 // 7. [POST] - Submit a student reservation booking request (Rigorously Guarded)
 router.post('/book/:houseId', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'student') {
+        return res.status(403).json({ success: false, message: 'Only students can submit reservation requests.' });
+    }
     const houseId = req.params.houseId;
     const studentId = req.user.id;
     const {
@@ -291,6 +294,13 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        // Serialize reservation submission and approval for this student.
+        const [bookingStudent] = await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [studentId]);
+        if (bookingStudent.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Student account not found.' });
+        }
+
         // Update student sex/gender in database if provided in booking request
         if (studentGender) {
             await connection.query(
@@ -301,33 +311,44 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
 
         // --- SYSTEM GUARD 1: Prevent students checked-in somewhere else from booking duplicates ---
         const [activeOccupancy] = await connection.query(
-            'SELECT id FROM occupants WHERE student_id = ? AND check_out_date IS NULL',
+            'SELECT id FROM occupants WHERE student_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE',
             [studentId]
         );
         if (activeOccupancy.length > 0) {
             await connection.rollback();
             return res.status(403).json({
                 success: false,
-                message: 'Booking blocked. You are currently checked-in as an active resident of a boarding house. You must check out before making a new reservation.'
+                message: 'Booking blocked. You are currently checked-in as an active resident of a boarding house. You must check out before making a new reservation.',
+                errorCode: 'active_stay'
             });
         }
 
         // --- SYSTEM GUARD 2: Prevent students with already approved stays from double-booking ---
         const [confirmedBookings] = await connection.query(
-            "SELECT id FROM bookings WHERE student_id = ? AND status = 'confirmed'",
+            "SELECT id FROM bookings WHERE student_id = ? AND status = 'confirmed' FOR UPDATE",
             [studentId]
         );
         if (confirmedBookings.length > 0) {
             await connection.rollback();
             return res.status(403).json({
                 success: false,
-                message: 'Booking blocked. You already have a confirmed stay. Please complete or cancel your active stay before booking another property.'
+                message: 'Booking blocked. You already have a confirmed booking. View My Bookings to manage it before reserving another property.',
+                errorCode: 'confirmed_booking'
             });
+        }
+
+        const [pendingBookingRows] = await connection.query(
+            "SELECT id FROM bookings WHERE student_id = ? AND status = 'pending' FOR UPDATE",
+            [studentId]
+        );
+        if (pendingBookingRows.length > 0) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'You already have a pending reservation. Cancel it or wait for the owner\'s decision before reserving another boarding house.', errorCode: 'pending_booking' });
         }
 
         // --- Standard checks ---
         const [roomRows] = await connection.query(
-            'SELECT * FROM rooms WHERE id = ? AND house_id = ?',
+            'SELECT r.* FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id WHERE r.id = ? AND r.house_id = ? AND r.deleted_at IS NULL AND bh.house_status = \'accredited\' FOR UPDATE',
             [roomId, houseId]
         );
         if (roomRows.length === 0) {
@@ -372,15 +393,6 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
         if (activeOccupantsCount >= room.capacity) {
             await connection.rollback();
             return res.status(400).json({ success: false, message: 'This room has already reached maximum capacity.' });
-        }
-
-        const [pendingBookingRows] = await connection.query(
-            "SELECT id FROM bookings WHERE student_id = ? AND house_id = ? AND status = 'pending' FOR UPDATE",
-            [studentId, houseId]
-        );
-        if (pendingBookingRows.length > 0) {
-            await connection.rollback();
-            return res.status(400).json({ success: false, message: 'You already have an active pending reservation request for this boarding house.' });
         }
 
         const monthlyRent = parseFloat(room.price || 0);
@@ -509,10 +521,13 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
             });
         }
 
-        await pool.query(
-            "UPDATE bookings SET status = 'cancelled' WHERE id = ?",
-            [req.params.id]
+        const [cancelResult] = await pool.query(
+            "UPDATE bookings SET status = 'cancelled' WHERE id = ? AND status = ? AND payment_status = ?",
+            [req.params.id, b.status, b.payment_status]
         );
+        if (cancelResult.affectedRows === 0) {
+            return res.status(409).json({ success: false, message: 'This reservation has changed. Please refresh My Bookings before cancelling.' });
+        }
 
         const refNo = `REF-${req.params.id.toString().padStart(4, '0')}`;
         const cancelMsg = `RESERVATION CANCELLED: A student has cancelled their pending reservation request for your property "${booking[0].house_name}" (${refNo}).`;
@@ -531,34 +546,54 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
 
 // 10. [POST] - Request stay extension
 router.post('/bookings/extend/:id', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'student') {
+        return res.status(403).json({ success: false, message: 'Only students can request stay extensions.' });
+    }
+    const value = req.body.extension_months;
+    const months = Number(value);
+    if (!['string', 'number'].includes(typeof value) || !Number.isInteger(months) || months < 1 || months > 2147483647) {
+        return res.status(400).json({ success: false, message: 'Extension duration must be a positive whole number of months.' });
+    }
+    let connection;
     try {
-        const { extension_months } = req.body;
-        const [booking] = await pool.query(
-            'SELECT b.*, bh.owner_id, bh.name as house_name FROM bookings b JOIN boarding_houses bh ON b.house_id = bh.id WHERE b.id = ? AND b.student_id = ?',
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [booking] = await connection.query(
+            'SELECT b.*, bh.owner_id, bh.name as house_name FROM bookings b JOIN boarding_houses bh ON b.house_id = bh.id WHERE b.id = ? AND b.student_id = ? FOR UPDATE',
             [req.params.id, req.user.id]
         );
 
         if (booking.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Reservation not found.' });
         }
 
-        await pool.query(
+        if (booking[0].status !== 'confirmed' || booking[0].is_extension_requested) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'Only a confirmed booking without a pending extension can request an extension.' });
+        }
+
+        await connection.query(
             'UPDATE bookings SET is_extension_requested = 1, extension_months = ? WHERE id = ?',
-            [parseInt(extension_months) || 1, req.params.id]
+            [months, req.params.id]
         );
 
         const refNo = `REF-${req.params.id.toString().padStart(4, '0')}`;
-        const extensionMsg = `EXTENSION REQUEST: A student has requested a stay extension of +${extension_months} months for Room ${booking[0].room_id} in your property "${booking[0].house_name}" (${refNo}).`;
+        const extensionMsg = `EXTENSION REQUEST: A student has requested a stay extension of +${months} months for Room ${booking[0].room_id} in your property "${booking[0].house_name}" (${refNo}).`;
         // Notify owner
-        await pool.query(
+        await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [booking[0].owner_id, extensionMsg]
         );
 
+        await connection.commit();
         res.json({ success: true });
     } catch (err) {
+        if (connection) await connection.rollback();
         console.error('Request stay extension failed:', err.message);
         res.status(500).json({ success: false, message: 'Failed to submit extension request.' });
+    } finally {
+        connection?.release();
     }
 });
 

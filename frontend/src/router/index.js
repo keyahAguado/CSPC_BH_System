@@ -3,6 +3,7 @@ import { h } from 'vue';
 
 // 1. Root & Auth Views
 import HomeView from '../views/HomeView.vue';
+import AccountDeactivated from '../views/AccountDeactivated.vue';
 import Login from '../views/student/Login.vue';
 import Register from '../views/student/Register.vue';
 import AuthSuccess from '../views/student/AuthSuccess.vue';
@@ -49,6 +50,12 @@ const Placeholder = {
 };
 
 const routes = [
+    {
+        path: '/account-deactivated',
+        name: 'AccountDeactivated',
+        component: AccountDeactivated,
+        meta: { public: true, title: 'Account Deactivated' }
+    },
     {
         path: '/',
         name: 'Home',

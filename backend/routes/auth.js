@@ -89,16 +89,22 @@ export const authenticateToken = (req, res, next) => {
             if (!decoded || !decoded.id) {
                 return res.status(403).json({ success: false, message: 'Invalid Token Payload.' });
             }
-            const [rows] = await pool.query('SELECT id, status FROM users WHERE id = ?', [decoded.id]);
-            if (rows.length > 0 && (rows[0].status === 'suspended' || rows[0].status === 'blocked')) {
-                return res.status(401).json({ success: false, message: 'Your account has been suspended by SASO.' });
+            const [rows] = await pool.query('SELECT id, status, role FROM users WHERE id = ?', [decoded.id]);
+            if (rows.length === 0) {
+                return res.status(401).json({ success: false, message: 'Your account is no longer available. Please log in again.' });
             }
-            req.user = decoded;
+            const user = rows[0];
+            if (!['active', 'pending'].includes(user.status)) {
+                return res.status(401).json({ success: false, code: 'ACCOUNT_INACTIVE', message: 'Your account has been deactivated. Please contact SASO for assistance.' });
+            }
+            if (!['student', 'owner', 'admin'].includes(user.role)) {
+                return res.status(403).json({ success: false, message: 'Invalid account role.' });
+            }
+            req.user = { ...decoded, id: user.id, role: user.role, status: user.status };
             next();
         } catch (dbErr) {
-            console.warn('Session verification DB warning (falling back to JWT payload):', dbErr.message);
-            req.user = decoded;
-            next();
+            console.warn('Session verification database check failed:', dbErr.code || 'database_error');
+            return res.status(503).json({ success: false, message: 'Unable to verify your account right now. Please try again shortly.' });
         }
     });
 };
@@ -187,13 +193,7 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        let isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch && user.email === 'admin@cspc.edu.ph' && password === 'admin_saso_2026') {
-            const newHash = await bcrypt.hash(password, 10);
-            await pool.query('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
-            user.password = newHash;
-            isMatch = true;
-        }
+        const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
             return res.status(401).json({ success: false, message: 'Incorrect credentials. Please try again.' });

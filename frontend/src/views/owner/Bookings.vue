@@ -43,7 +43,10 @@ const showSystemAlert = (message, type = 'error') => {
   }
 };
 
+const isProcessingDecision = ref(false);
+
 const triggerConfirmModal = (title, text, type, confirmAction) => {
+  if (isProcessingDecision.value) return;
   modalTitle.value = title;
   modalText.value = text;
   modalType.value = type;
@@ -52,9 +55,15 @@ const triggerConfirmModal = (title, text, type, confirmAction) => {
 };
 
 const executeConfirm = async () => {
+  if (isProcessingDecision.value || !modalConfirmAction.value) return;
+  const action = modalConfirmAction.value;
+  modalConfirmAction.value = null;
+  isProcessingDecision.value = true;
   showModal.value = false;
-  if (modalConfirmAction.value) {
-    await modalConfirmAction.value();
+  try {
+    await action();
+  } finally {
+    isProcessingDecision.value = false;
   }
 };
 
@@ -235,11 +244,12 @@ const handleApprove = (booking) => {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.data.success) {
-          showSystemAlert('Booking confirmed and student notified!', 'success');
-          fetchBookings();
+          showSystemAlert(response.data.message || 'Booking confirmed and student notified!', 'success');
+          await fetchBookings();
         }
       } catch (error) {
         showSystemAlert(error.response?.data?.message || 'Approval failed.', 'error');
+        if ([404, 409].includes(error.response?.status)) await fetchBookings();
       }
     }
   );
@@ -345,8 +355,7 @@ import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateH
 const getCheckoutDateDisplay = (booking) => {
   const checkIn = booking.check_in_date;
   if (!checkIn) return '—';
-  const extMonths = booking.is_extension_requested ? (parseInt(booking.extension_months) || 0) : 0;
-  const computedDate = computeCheckoutDate(checkIn, booking.months, extMonths);
+  const computedDate = computeCheckoutDate(checkIn, booking.months);
   return formatCheckoutDateString(computedDate);
 };
 
@@ -371,7 +380,7 @@ onMounted(() => {
         <h2 class="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">{{ modalTitle }}</h2>
         <p class="text-slate-500 mb-6 text-sm">{{ modalText }}</p>
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="bg-black hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1">
+          <button @click="executeConfirm" :disabled="isProcessingDecision" class="bg-black hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1">
             Confirm
           </button>
           <button @click="showModal = false" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1">
@@ -775,7 +784,10 @@ onMounted(() => {
                       </div>
 
                       <!-- Main status actions -->
-                      <div v-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
+                      <div v-if="booking.payment_requires_review" class="text-amber-700 text-[10px] font-semibold text-center">
+                        Payment received: review required. No occupancy recorded.
+                      </div>
+                      <div v-else-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
                         <button @click="handleApprove(booking)" class="w-24 bg-[#108548] hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-black text-[9px] transition shadow-xs uppercase tracking-widest cursor-pointer">
                           APPROVE
                         </button>
@@ -909,7 +921,8 @@ onMounted(() => {
               <div class="m-row m-row-action">
                 <span class="m-lbl">Status</span>
                 <span class="m-val">
-                  <span v-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-black text-[9px] uppercase border border-emerald-200">Confirmed</span>
+                  <span v-if="booking.payment_requires_review" class="text-amber-700 text-[10px] font-semibold">Payment received: review required</span>
+                  <span v-else-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-black text-[9px] uppercase border border-emerald-200">Confirmed</span>
                   <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-black text-[9px] uppercase border border-amber-200">Pending</span>
                   <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-black text-[9px] uppercase border border-rose-200">{{ booking.status }}</span>
                   <span v-else class="text-slate-500 font-bold uppercase text-[9px]">{{ booking.status }}</span>

@@ -69,7 +69,7 @@ const handleAccreditedFetch = async (req, res) => {
                        MIN(r.price) AS min_price, 
                        MAX(r.price) AS max_price 
                 FROM boarding_houses bh
-                LEFT JOIN rooms r ON bh.id = r.house_id
+                LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
                 WHERE bh.house_status = 'accredited'
                 GROUP BY bh.id
                 ORDER BY bh.created_at DESC
@@ -93,7 +93,7 @@ const handleAccreditedFetch = async (req, res) => {
                        MAX(r.price) AS max_price,
                        (${scoreClauses.join(' + ')}) AS relevance 
                 FROM boarding_houses bh
-                LEFT JOIN rooms r ON bh.id = r.house_id
+                LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
                 WHERE bh.house_status = 'accredited' AND (${whereClauses.join(' OR ')})
                 GROUP BY bh.id
                 ORDER BY relevance DESC, bh.created_at DESC
@@ -121,7 +121,7 @@ router.get('/details/:id', authenticateToken, async (req, res) => {
                    MIN(r.price) AS min_price, 
                    MAX(r.price) AS max_price 
             FROM boarding_houses bh
-            LEFT JOIN rooms r ON bh.id = r.house_id
+            LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
             WHERE bh.id = ?
             GROUP BY bh.id
         `, [houseId]);
@@ -158,7 +158,7 @@ router.get('/my-property', authenticateToken, async (req, res) => {
                    MIN(r.price) AS min_price, 
                    MAX(r.price) AS max_price 
             FROM boarding_houses bh
-            LEFT JOIN rooms r ON bh.id = r.house_id
+            LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
             WHERE bh.owner_id = ?
             GROUP BY bh.id
             ORDER BY bh.created_at DESC
@@ -298,12 +298,39 @@ router.get('/documents', authenticateToken, async (req, res) => {
 
 // 6. [POST] - Update a single legal document dynamically (Standard or Custom)
 router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), async (req, res) => {
+    if (req.user.role !== 'owner') {
+        return res.status(403).json({ success: false, message: 'Only owners can update property documents.' });
+    }
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
         const houseId = parseInt(req.params.id);
         const { identifier, is_custom, expiry_date } = req.body;
+
+        const [ownedHouse] = await connection.query(
+            'SELECT id FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE',
+            [houseId, req.user.id]
+        );
+        if (ownedHouse.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Property not found or access denied.' });
+        }
+
+        if (is_custom === 'true' || is_custom === true) {
+            const criteriaId = Number(identifier);
+            const [applicableCriteria] = Number.isInteger(criteriaId) && criteriaId > 0
+                ? await connection.query(
+                    'SELECT id FROM checklist_criteria WHERE id = ? AND (house_id IS NULL OR house_id = ?) FOR UPDATE',
+                    [criteriaId, houseId]
+                )
+                : [[]];
+            if (applicableCriteria.length === 0) {
+                await connection.rollback();
+                return res.status(400).json({ success: false, message: 'This custom requirement is unavailable for this property. Please refresh the page.' });
+            }
+        }
+
 
         if (!req.file) {
             await connection.rollback();

@@ -1,3 +1,5 @@
+import { escapeHtml } from './htmlHelper.js';
+
 /**
  * printHelper.js
  * Opens a standalone print window with clean, inline-styled HTML.
@@ -85,7 +87,7 @@ function openPrintWindow(html, title, landscape = false) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <style>${pageCSS}${BASE_STYLES}</style>
 </head>
 <body>
@@ -116,22 +118,22 @@ export function printMasterlist(houses, reportDate) {
   const rows = (houses || []).map((h, i) => `
     <tr>
       <td class="text-center bold small">${i + 1}</td>
-      <td><div class="bold upper">${h.name || ''}</div><div class="small">${h.address || ''}</div></td>
-      <td><div class="bold">${h.owner_name || 'N/A'}</div><div class="small">${h.owner_phone || ''}</div></td>
+      <td><div class="bold upper">${escapeHtml(h.name || '')}</div><div class="small">${escapeHtml(h.address || '')}</div></td>
+      <td><div class="bold">${escapeHtml(h.owner_name || 'N/A')}</div><div class="small">${escapeHtml(h.owner_phone || '')}</div></td>
       <td class="text-center">
-        <span style="color:#2563eb;font-weight:900">${h.male_rooms || 0}M</span>&nbsp;
-        <span style="color:#db2777;font-weight:900">${h.female_rooms || 0}F</span>
-        <div class="small">${h.total_rooms || 0} Total</div>
+        <span style="color:#2563eb;font-weight:900">${escapeHtml(h.male_rooms || 0)}M</span>&nbsp;
+        <span style="color:#db2777;font-weight:900">${escapeHtml(h.female_rooms || 0)}F</span>
+        <div class="small">${escapeHtml(h.total_rooms || 0)} Total</div>
       </td>
-      <td class="text-center bold">${h.total_capacity || 0} Pax</td>
+      <td class="text-center bold">${escapeHtml(h.total_capacity || 0)} Pax</td>
       <td class="text-center">
-        <div class="bold" style="color:#1e4a8d">${h.current_occupants || 0}</div><div class="small">Students</div>
+        <div class="bold" style="color:#1e4a8d">${escapeHtml(h.current_occupants || 0)}</div><div class="small">Students</div>
         <div class="small" style="margin-top:2px">
-          <span style="color:#2563eb;font-weight:900">${h.male_count || 0}B</span>&nbsp;
-          <span style="color:#db2777;font-weight:900">${h.female_count || 0}G</span>
+          <span style="color:#2563eb;font-weight:900">${escapeHtml(h.male_count || 0)}B</span>&nbsp;
+          <span style="color:#db2777;font-weight:900">${escapeHtml(h.female_count || 0)}G</span>
         </div>
       </td>
-      <td class="text-center"><span class="badge badge-green">${h.house_status || ''}</span></td>
+      <td class="text-center"><span class="badge badge-green">${escapeHtml(h.house_status || '')}</span></td>
     </tr>`).join('');
 
   openPrintWindow(`
@@ -143,7 +145,7 @@ export function printMasterlist(houses, reportDate) {
           <div class="school-sub">Office of Student Affairs and Services (SASO)</div>
         </div>
       </div>
-      <div class="report-date"><div class="label">Report Date</div><div class="value">${reportDate || getReportDate()}</div></div>
+      <div class="report-date"><div class="label">Report Date</div><div class="value">${escapeHtml(reportDate || getReportDate())}</div></div>
     </div>
     <div class="title-section"><h2>Accredited Boarding Houses Masterlist</h2></div>
     <table>
@@ -174,8 +176,8 @@ export function printCompliance(houses, reportDate) {
 
   const rows = (houses || []).map(h => `
     <tr>
-      <td><div class="bold upper">${h.name || ''}</div><div class="small">${h.owner_name || 'N/A'}</div></td>
-      <td class="text-center"><span class="badge ${h.compliance_status === 'active' ? 'badge-green' : 'badge-red'}">${h.compliance_status || ''}</span></td>
+      <td><div class="bold upper">${escapeHtml(h.name || '')}</div><div class="small">${escapeHtml(h.owner_name || 'N/A')}</div></td>
+      <td class="text-center"><span class="badge ${h.compliance_status === 'active' ? 'badge-green' : 'badge-red'}">${escapeHtml(h.compliance_status || '')}</span></td>
       <td class="text-center">${expiryCell(h.expiry_permit_business_form)}</td>
       <td class="text-center">${expiryCell(h.expiry_permit_cedula)}</td>
       <td class="text-center">${expiryCell(h.expiry_permit_dti)}</td>
@@ -195,7 +197,7 @@ export function printCompliance(houses, reportDate) {
           <div class="school-sub">Office of Student Affairs and Services (SASO)</div>
         </div>
       </div>
-      <div class="report-date"><div class="label">Generated On</div><div class="value">${reportDate || getReportDate()}</div></div>
+      <div class="report-date"><div class="label">Generated On</div><div class="value">${escapeHtml(reportDate || getReportDate())}</div></div>
     </div>
     <div class="title-section"><h2>Accreditation Compliance Audit Report</h2></div>
     <div class="legend">
@@ -262,25 +264,25 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
         const rows = group.list.map(r => `
           <tr>
             <td>
-              <div class="bold upper">${r.resident_name || ''}</div>
-              <div class="small">${r.student_email || ''} | ${r.student_phone || 'N/A'}</div>
-              ${r.home_address ? `<div class="small bold" style="color:#2563eb;margin-top:2px;">Home Address: ${r.home_address}</div>` : ''}
+              <div class="bold upper">${escapeHtml(r.resident_name || '')}</div>
+              <div class="small">${escapeHtml(r.student_email || '')} | ${escapeHtml(r.student_phone || 'N/A')}</div>
+              ${r.home_address ? `<div class="small bold" style="color:#2563eb;margin-top:2px;">Home Address: ${escapeHtml(r.home_address)}</div>` : ''}
             </td>
-            <td class="text-center"><span class="badge ${normSex(r.sex) === 'male' ? 'badge-blue' : normSex(r.sex) === 'female' ? 'badge-pink' : 'badge-gray'}">${r.sex || 'N/A'}</span></td>
-            <td><div class="bold upper">${formatCourse(r.course)}</div><div class="small">Year: ${r.year_level || 'N/A'}</div></td>
-            <td><div class="bold">Room #${r.room_number || 'N/A'}</div></td>
-            <td class="bold">${r.guardian_name || 'N/A'}</td>
-            <td class="text-right bold" style="color:#dc2626">${r.emergency_contact || 'N/A'}</td>
+            <td class="text-center"><span class="badge ${normSex(r.sex) === 'male' ? 'badge-blue' : normSex(r.sex) === 'female' ? 'badge-pink' : 'badge-gray'}">${escapeHtml(r.sex || 'N/A')}</span></td>
+            <td><div class="bold upper">${escapeHtml(formatCourse(r.course))}</div><div class="small">Year: ${escapeHtml(r.year_level || 'N/A')}</div></td>
+            <td><div class="bold">Room #${escapeHtml(r.room_number || 'N/A')}</div></td>
+            <td class="bold">${escapeHtml(r.guardian_name || 'N/A')}</td>
+            <td class="text-right bold" style="color:#dc2626">${escapeHtml(r.emergency_contact || 'N/A')}</td>
           </tr>`).join('');
 
         return `
           <div style="margin-top: 24px; margin-bottom: 8px; padding: 10px 14px; background-color: #f1f5f9; border-left: 5px solid #1e4a8d; border-radius: 6px;">
             <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
-              ${houseName} <span style="font-size: 10px; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
+              ${escapeHtml(houseName)} <span style="font-size: 10px; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
               ${group.status !== 'accredited' ? '<span class="badge badge-amber" style="margin-left:8px">Archived Property</span>' : ''}
             </div>
             <div style="font-size: 10px; color: #475569; margin-top: 4px; font-weight: 600;">
-              ${group.location}${group.phone ? ` &nbsp;&bull;&nbsp; Owner Contact: ${group.phone}` : ''}
+              ${escapeHtml(group.location)}${group.phone ? ` &nbsp;&bull;&nbsp; Owner Contact: ${escapeHtml(group.phone)}` : ''}
             </div>
           </div>
           <table>
@@ -301,11 +303,11 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
           <div class="school-sub">Office of Student Affairs and Services (SASO)</div>
         </div>
       </div>
-      <div class="report-date"><div class="label">Report Date</div><div class="value">${reportDate || getReportDate()}</div></div>
+      <div class="report-date"><div class="label">Report Date</div><div class="value">${escapeHtml(reportDate || getReportDate())}</div></div>
     </div>
     <div class="title-section">
       <h2>Emergency Student Residency Registry</h2>
-      <div class="subtitle">Summary of Lists per Boarding House | Scope: ${targetArea || 'Unified Registry'}</div>
+      <div class="subtitle">Summary of Lists per Boarding House | Scope: ${escapeHtml(targetArea || 'Unified Registry')}</div>
       <div class="subtitle" style="margin-top:6px">
         Total Residents: ${(residents || []).length} &nbsp;&bull;&nbsp;
         <span style="color:#2563eb;font-weight:900">Boys: ${totalMale}</span> &nbsp;&bull;&nbsp;
@@ -326,11 +328,11 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
 export function printTransactions(transactions, reportDate) {
   const rows = (transactions || []).map(t => `
     <tr>
-      <td class="small bold" style="color:#94a3b8">#RES-${t.id}</td>
-      <td class="bold upper">${t.student_name || ''}</td>
-      <td>${t.house_name || ''}</td>
-      <td class="text-center"><span class="badge ${t.status === 'confirmed' ? 'badge-green' : 'badge-blue'}">${t.status || ''}</span></td>
-      <td class="text-center"><span class="badge ${t.payment_status === 'paid' ? 'badge-green' : 'badge-amber'}">${t.payment_status || ''}</span></td>
+      <td class="small bold" style="color:#94a3b8">#RES-${escapeHtml(t.id)}</td>
+      <td class="bold upper">${escapeHtml(t.student_name || '')}</td>
+      <td>${escapeHtml(t.house_name || '')}</td>
+      <td class="text-center"><span class="badge ${t.status === 'confirmed' ? 'badge-green' : 'badge-blue'}">${escapeHtml(t.status || '')}</span></td>
+      <td class="text-center"><span class="badge ${t.payment_status === 'paid' ? 'badge-green' : 'badge-amber'}">${escapeHtml(t.payment_status || '')}</span></td>
       <td class="text-center">${t.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash'}</td>
       <td class="text-right bold">&#8369;${parseFloat(t.room_price || 0).toLocaleString()}</td>
     </tr>`).join('');
@@ -346,7 +348,7 @@ export function printTransactions(transactions, reportDate) {
           <div class="school-sub">Office of Student Affairs and Services (SASO)</div>
         </div>
       </div>
-      <div class="report-date"><div class="label">Report Date</div><div class="value">${reportDate || getReportDate()}</div></div>
+      <div class="report-date"><div class="label">Report Date</div><div class="value">${escapeHtml(reportDate || getReportDate())}</div></div>
     </div>
     <div class="title-section"><h2>Student Reservation History</h2></div>
     <table>

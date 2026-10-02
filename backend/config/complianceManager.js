@@ -138,7 +138,6 @@ export async function evaluateHouseCompliance(houseId) {
 export async function runComplianceCheck() {
     try {
         const [houses] = await pool.query("SELECT id FROM boarding_houses WHERE house_status != 'archived'");
-        const now = new Date();
 
         for (const house of houses) {
             await evaluateHouseCompliance(house.id);
@@ -148,7 +147,8 @@ export async function runComplianceCheck() {
         // Notifies owner and student exactly twice: at 7 days before end, and on the end date.
         // Uses DAY() comparison to fire only on the specific day, not every day for 7 days.
         const [expiringBookings] = await pool.query(`
-            SELECT b.*, bh.name as house_name, bh.owner_id, u.name as student_name
+            SELECT b.*, bh.name as house_name, bh.owner_id, u.name as student_name,
+                DATEDIFF(DATE_ADD(b.check_in_date, INTERVAL b.months MONTH), CURDATE()) AS stay_days_left
             FROM bookings b
             JOIN boarding_houses bh ON b.house_id = bh.id
             JOIN users u ON b.student_id = u.id
@@ -160,10 +160,7 @@ export async function runComplianceCheck() {
         `, []);
 
         for (const booking of expiringBookings) {
-            const endDate = new Date(booking.check_in_date);
-            endDate.setMonth(endDate.getMonth() + booking.months);
-
-            const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
+            const daysLeft = Number(booking.stay_days_left);
 
             let ownerMsg, studentMsg;
             if (daysLeft <= 0) {

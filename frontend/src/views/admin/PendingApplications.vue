@@ -83,7 +83,7 @@ const syncChecklistState = () => {
       const isVerified = checklistResults.value.some(
         r => r.house_id === activeApp.value.id && r.criteria_id === c.id && r.is_verified === 1
       );
-      checkedChecklist.value[c.id] = isVerified;
+      checkedChecklist.value[c.id] = isVerified && !(activeApp.value.document_update_pending && isDocumentItemUpdated(c));
     }
   });
 };
@@ -131,7 +131,7 @@ const openChecklistModal = (app) => {
     );
     checkedChecklist.value[c.id] = isVerified;
 
-    if (app.document_update_pending && app.last_updated_document === c.permit_key) {
+    if (app.document_update_pending && isDocumentItemUpdated(c)) {
       checkedChecklist.value[c.id] = false;
     }
   });

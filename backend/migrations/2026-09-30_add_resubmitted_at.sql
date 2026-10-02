@@ -1,8 +1,14 @@
--- Migration: Add resubmitted_at column to boarding_houses
--- Tracks the exact timestamp when an owner uploads a document while
--- document_update_pending = 1, so admins see the real resubmission date
--- instead of the original created_at of the boarding house.
-
-ALTER TABLE boarding_houses
-  ADD COLUMN IF NOT EXISTS resubmitted_at DATETIME DEFAULT NULL
-    COMMENT 'Set to NOW() each time owner uploads a doc triggering document_update_pending=1. Used in admin Pending Applications date column.';
+-- Track document resubmission time without changing existing records.
+-- Safe to rerun on MySQL 8.0; existing timestamps are preserved.
+SET @resubmitted_at_migration_sql = (
+    SELECT IF(COUNT(*) = 0,
+        'ALTER TABLE boarding_houses ADD COLUMN resubmitted_at DATETIME NULL DEFAULT NULL',
+        'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'boarding_houses'
+      AND COLUMN_NAME = 'resubmitted_at'
+);
+PREPARE resubmitted_at_migration FROM @resubmitted_at_migration_sql;
+EXECUTE resubmitted_at_migration;
+DEALLOCATE PREPARE resubmitted_at_migration;

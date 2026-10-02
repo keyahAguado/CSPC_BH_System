@@ -105,6 +105,12 @@ const openSuppModal = (status) => {
   showSuppModal.value = true;
 };
 
+const canReactivateListing = (house) => house.house_status === 'archived'
+  && house.archived_by === 'owner'
+  && house.status_before_archive === 'accredited'
+  && house.compliance !== 'expired'
+  && !house.admin_comments;
+
 // Reactivation confirmation modal
 const showReactivateConfirmModal = ref(false);
 const pendingReactivateHouseId = ref(null);
@@ -449,18 +455,21 @@ onUnmounted(() => {
               </div>
 
               <!-- Unlist / Reactivate — full-width row below the main action buttons -->
-              <div v-if="house.house_status === 'accredited' || house.house_status === 'pending'" class="mt-2 pt-2 border-t border-slate-200">
+              <div v-if="house.house_status === 'accredited'" class="mt-2 pt-2 border-t border-slate-200">
                 <button @click="openPauseModal(house.id)"
                         class="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50 text-slate-500 hover:text-amber-700 text-[10px] font-black py-2 px-4 rounded-lg uppercase tracking-widest transition cursor-pointer">
                   <i class="fa-solid fa-eye-slash text-[10px]"></i> Pause / Unlist Listing
                 </button>
               </div>
-              <div v-else-if="house.house_status === 'archived' && house.archived_by !== 'admin'" class="mt-2 pt-2 border-t border-slate-200">
+              <div v-else-if="canReactivateListing(house)" class="mt-2 pt-2 border-t border-slate-200">
                 <button @click="openReactivateConfirm(house.id)"
                         class="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black py-2 px-4 rounded-lg uppercase tracking-widest transition shadow-sm cursor-pointer">
                   <i class="fa-solid fa-play text-[9px]"></i> Reactivate Listing
                 </button>
               </div>
+              <p v-else-if="house.house_status === 'archived'" class="mt-2 text-center text-[10px] font-semibold text-slate-500">
+                Contact SASO for review before reactivation.
+              </p>
             </div>
           </div>
 

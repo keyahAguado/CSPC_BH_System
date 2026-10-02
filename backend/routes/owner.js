@@ -214,6 +214,15 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
     try {
         await connection.beginTransaction();
 
+        const [ownedHouse] = await connection.query(
+            'SELECT id FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE',
+            [req.params.id, req.user.id]
+        );
+        if (ownedHouse.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Property not found or access denied.' });
+        }
+
         const {
             house_name, location, price, contact_number, map_link, description,
             latitude, longitude, advance_months, deposit_months, deposit_type,
@@ -311,7 +320,7 @@ router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, async (req
         const reason = req.body?.reason || 'Paused by Landlord';
 
         const [houseRows] = await pool.query(
-            'SELECT id, name FROM boarding_houses WHERE id = ? AND owner_id = ?',
+            'SELECT id, name, house_status FROM boarding_houses WHERE id = ? AND owner_id = ?',
             [houseId, req.user.id]
         );
 
@@ -319,12 +328,20 @@ router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, async (req
             return res.status(404).json({ success: false, message: 'Boarding house record not found or unauthorized.' });
         }
 
-        await pool.query(
+        if (houseRows[0].house_status !== 'accredited') {
+            return res.status(403).json({ success: false, message: 'Only accredited listings can be paused by their owner. Pending or rejected applications require SASO review.' });
+        }
+
+        const [result] = await pool.query(
             `UPDATE boarding_houses 
-             SET house_status = 'archived', archived_by = 'owner', archive_reason = ?, archived_at = NOW() 
-             WHERE id = ? AND owner_id = ?`,
+             SET status_before_archive = house_status, house_status = 'archived', archived_by = 'owner', archive_reason = ?, archived_at = NOW()
+             WHERE id = ? AND owner_id = ? AND house_status = 'accredited'`,
             [reason, houseId, req.user.id]
         );
+
+        if (result.affectedRows === 0) {
+            return res.status(409).json({ success: false, message: 'The listing status has changed. Please refresh your dashboard.' });
+        }
 
         res.json({
             success: true,
@@ -352,12 +369,20 @@ router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, a
 
         const house = houseRows[0];
 
+        // Ownership alone is not permission to accredit a property.
+        if (house.house_status !== 'archived' || house.archived_by !== 'owner' || house.status_before_archive !== 'accredited') {
+            return res.status(403).json({ success: false, message: 'Only previously accredited listings paused by their owner can be reactivated. This property requires SASO review.' });
+        }
+
         // 1. Run compliance evaluation to sync compliance_status column in DB
         await evaluateHouseCompliance(houseId);
 
         // Fetch fresh house record after evaluation
-        const [freshRows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ?', [houseId]);
-        const currentHouse = freshRows.length > 0 ? freshRows[0] : house;
+        const [freshRows] = await pool.query('SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ?', [houseId, req.user.id]);
+        if (freshRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Boarding house record not found or unauthorized.' });
+        }
+        const currentHouse = freshRows[0];
 
         const liveCompliance = getComplianceStatus(currentHouse);
         if (currentHouse.compliance_status === 'expired' || liveCompliance === 'expired') {
@@ -367,7 +392,12 @@ router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, a
             });
         }
 
-        // 2. If archived by admin with explicit admin comments
+        // Evaluation or a concurrent admin action may have changed the archive authority.
+        if (currentHouse.house_status !== 'archived' || currentHouse.archived_by !== 'owner' || currentHouse.status_before_archive !== 'accredited') {
+            return res.status(403).json({ success: false, message: 'This property requires SASO review before reactivation.' });
+        }
+
+        // 2. Preserve existing administrative restrictions
         if (currentHouse.archived_by === 'admin' || currentHouse.admin_comments) {
             return res.status(403).json({
                 success: false,
@@ -377,12 +407,21 @@ router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, a
             });
         }
 
-        await pool.query(
+        const [result] = await pool.query(
             `UPDATE boarding_houses 
-             SET house_status = 'accredited', compliance_status = 'active', archived_by = NULL, archive_reason = NULL, archived_at = NULL 
-             WHERE id = ? AND owner_id = ?`,
-            [houseId, req.user.id]
+             SET house_status = 'accredited', compliance_status = 'active', archived_by = NULL, archive_reason = NULL, archived_at = NULL, status_before_archive = NULL
+             WHERE id = ? AND owner_id = ? AND house_status = 'archived' AND archived_by = 'owner'
+               AND status_before_archive = 'accredited' AND compliance_status != 'expired'
+               AND (admin_comments IS NULL OR admin_comments = '')
+               AND expiry_permit_business_form <=> ? AND expiry_permit_barangay <=> ?
+               AND expiry_permit_sanitary <=> ? AND expiry_permit_fire <=> ?`,
+            [houseId, req.user.id, currentHouse.expiry_permit_business_form, currentHouse.expiry_permit_barangay,
+                currentHouse.expiry_permit_sanitary, currentHouse.expiry_permit_fire]
         );
+
+        if (result.affectedRows === 0) {
+            return res.status(409).json({ success: false, message: 'The listing status or permits have changed. Please refresh your dashboard.' });
+        }
 
         res.json({
             success: true,
@@ -436,11 +475,16 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 
 // F. POST - Add a new room
 router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionOpen = true;
         const { room_number, gender_type, capacity, price } = req.body;
 
-        const [houseRows] = await pool.query(
-            'SELECT price FROM boarding_houses WHERE id = ? AND owner_id = ?',
+        const [houseRows] = await connection.query(
+            'SELECT price FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE',
             [req.params.houseId, req.user.id]
         );
 
@@ -448,31 +492,87 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, r
             return res.status(404).json({ success: false, message: 'Unauthorized action.' });
         }
 
+        const input = parseRoomInput(room_number, capacity);
+        if (input.error) return res.status(400).json({ success: false, message: input.error });
+
+        // The house lock serializes room additions and edits without changing the schema.
+        const [duplicates] = await connection.query(
+            'SELECT id FROM rooms WHERE house_id = ? AND TRIM(room_number) = ?',
+            [req.params.houseId, input.roomNumber]
+        );
+        if (duplicates.length > 0) {
+            return res.status(409).json({ success: false, message: 'This room number already exists in this property, including archived rooms. Please use a different number or restore the existing room.' });
+        }
+
         const basePrice = houseRows[0].price || 0;
         const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : basePrice;
 
-        await pool.query(
+        await connection.query(
             "INSERT INTO rooms (house_id, room_number, gender_type, capacity, price, status) VALUES (?, ?, ?, ?, ?, 'available')",
-            [req.params.houseId, room_number, gender_type || 'female', parseInt(capacity) || 1, roomPrice]
+            [req.params.houseId, input.roomNumber, gender_type || 'female', input.capacity, roomPrice]
         );
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Room created successfully.' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
+// Occupants and approved online reservations both consume a room's capacity.
+async function getRoomCapacityUsage(connection, roomId) {
+    const [occupants] = await connection.query(
+        'SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())',
+        [roomId]
+    );
+    const [reservations] = await connection.query(
+        `SELECT COUNT(*) AS count FROM bookings b
+         WHERE b.room_id = ? AND b.status = 'confirmed' AND b.payment_method = 'paymongo' AND b.payment_status != 'paid'
+         AND NOT EXISTS (SELECT 1 FROM occupants o
+             WHERE o.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id))
+             AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()))`,
+        [roomId]
+    );
+    return { occupants: Number(occupants[0].count), reserved: Number(reservations[0].count) };
+}
+
+function parseRoomInput(roomNumber, capacity) {
+    const validNumberType = typeof roomNumber === 'string' || (typeof roomNumber === 'number' && Number.isFinite(roomNumber));
+    const normalized = validNumberType ? String(roomNumber).trim() : '';
+    if (!normalized) return { error: 'Room number is required.' };
+    if (Array.from(normalized).length > 50) return { error: 'Room number must be 50 characters or fewer.' };
+    if (!['string', 'number'].includes(typeof capacity)) {
+        return { error: 'Capacity must be a whole number of at least 1 within the supported range.' };
+    }
+    const parsedCapacity = Number(capacity);
+    if (!Number.isInteger(parsedCapacity) || parsedCapacity < 1 || parsedCapacity > 2147483647) {
+        return { error: 'Capacity must be a whole number of at least 1 within the supported range.' };
+    }
+    return { roomNumber: normalized, capacity: parsedCapacity };
+}
+
 // F1. PUT - Edit an existing room
 router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionOpen = true;
         const { room_number, gender_type, capacity, price } = req.body;
 
         // Verify room belongs to owner's house
-        const [roomRows] = await pool.query(
-            `SELECT r.id, r.house_id, r.price 
+        const [roomRows] = await connection.query(
+            `SELECT r.id, r.house_id, r.price, r.room_number
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
-             WHERE r.id = ? AND bh.owner_id = ?`,
+             WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [req.params.roomId, req.user.id]
         );
 
@@ -480,42 +580,67 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
-        const parsedCapacity = parseInt(capacity) || 1;
         const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : roomRows[0].price;
 
-        // Guard: new capacity cannot be less than current active occupant count
-        const [occupantCount] = await pool.query(
-            `SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
-            [req.params.roomId]
-        );
-        if (parsedCapacity < occupantCount[0].count) {
+        const input = parseRoomInput(room_number, capacity);
+        if (input.error) return res.status(400).json({ success: false, message: input.error });
+        const parsedCapacity = input.capacity;
+
+        // Keep non-name edits available for existing records; validate additions/renames.
+        if (input.roomNumber !== String(roomRows[0].room_number ?? '').trim()) {
+            const [duplicates] = await connection.query(
+                'SELECT id FROM rooms WHERE house_id = ? AND TRIM(room_number) = ? AND id != ?',
+                [roomRows[0].house_id, input.roomNumber, req.params.roomId]
+            );
+            if (duplicates.length > 0) {
+                return res.status(409).json({ success: false, message: 'This room number already exists in this property, including archived rooms. Please use a different number.' });
+            }
+        }
+
+        // Read after the room lock so concurrent additions/approvals cannot take these places.
+        const usage = await getRoomCapacityUsage(connection, req.params.roomId);
+        if (parsedCapacity < usage.occupants + usage.reserved) {
             return res.status(400).json({
                 success: false,
-                message: `Cannot set capacity to ${parsedCapacity}. This room currently has ${occupantCount[0].count} active occupant(s).`
+                message: usage.reserved > 0
+                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved online reservation(s) awaiting payment.`
+                    : `Cannot set capacity to ${parsedCapacity}. This room currently has ${usage.occupants} active occupant(s).`
             });
         }
 
-        await pool.query(
+        await connection.query(
             `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ?, price = ? WHERE id = ?`,
-            [room_number, gender_type || 'female', parsedCapacity, roomPrice, req.params.roomId]
+            [input.roomNumber, gender_type || 'female', parsedCapacity, roomPrice, req.params.roomId]
         );
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Room details updated successfully.' });
     } catch (err) {
         console.error('Edit room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
 // F2. DELETE - Delete a room (Guarded against rooms with active boarders)
 router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionOpen = true;
         // Verify ownership
-        const [roomRows] = await pool.query(
+        const [roomRows] = await connection.query(
             `SELECT r.id, r.house_id 
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
-             WHERE r.id = ? AND bh.owner_id = ?`,
+             WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [req.params.roomId, req.user.id]
         );
 
@@ -523,25 +648,27 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
-        // Check if active occupants exist
-        const [occupantRows] = await pool.query(
-            `SELECT COUNT(*) as count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
-            [req.params.roomId]
-        );
-
-        if (occupantRows[0].count > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.'
-            });
+        const usage = await getRoomCapacityUsage(connection, req.params.roomId);
+        if (usage.occupants > 0) {
+            return res.status(400).json({ success: false, message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.' });
+        }
+        if (usage.reserved > 0) {
+            return res.status(400).json({ success: false, message: 'Cannot archive room with approved online reservations awaiting payment. Resolve those reservations first.' });
         }
 
-        await pool.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
+        await connection.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Room soft-deleted successfully.' });
     } catch (err) {
         console.error('Delete room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
@@ -623,25 +750,21 @@ router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, async
 
 // F1. PUT - Edit an existing room
 router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionOpen = true;
         const { room_number, gender_type, capacity } = req.body;
         const roomId = parseInt(req.params.roomId);
 
-        if (!room_number || !room_number.toString().trim()) {
-            return res.status(400).json({ success: false, message: 'Room number is required.' });
-        }
-
-        const parsedCapacity = parseInt(capacity);
-        if (!parsedCapacity || parsedCapacity < 1) {
-            return res.status(400).json({ success: false, message: 'Capacity must be at least 1.' });
-        }
-
         // Verify room belongs to owner's house
-        const [roomRows] = await pool.query(
-            `SELECT r.id, r.house_id 
+        const [roomRows] = await connection.query(
+            `SELECT r.id, r.house_id, r.room_number
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
-             WHERE r.id = ? AND bh.owner_id = ?`,
+             WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [roomId, req.user.id]
         );
 
@@ -649,51 +772,65 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
-        const houseId = roomRows[0].house_id;
+        const input = parseRoomInput(room_number, capacity);
+        if (input.error) return res.status(400).json({ success: false, message: input.error });
+        const parsedCapacity = input.capacity;
 
-        // Guard: prevent duplicate room number within the same house (excluding this room itself)
-        const [duplicateRows] = await pool.query(
-            `SELECT id FROM rooms WHERE house_id = ? AND room_number = ? AND id != ?`,
-            [houseId, room_number.toString().trim(), roomId]
-        );
-
-        if (duplicateRows.length > 0) {
-            return res.status(409).json({ success: false, message: `Room number "${room_number}" already exists in this property. Please use a different number.` });
+        // Keep non-name edits available for existing records; validate additions/renames.
+        if (input.roomNumber !== String(roomRows[0].room_number ?? '').trim()) {
+            const [duplicates] = await connection.query(
+                'SELECT id FROM rooms WHERE house_id = ? AND TRIM(room_number) = ? AND id != ?',
+                [roomRows[0].house_id, input.roomNumber, roomId]
+            );
+            if (duplicates.length > 0) {
+                return res.status(409).json({ success: false, message: 'This room number already exists in this property, including archived rooms. Please use a different number.' });
+            }
         }
 
-        // Guard: new capacity cannot be less than current active occupant count
-        const [occupantCount] = await pool.query(
-            `SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
-            [roomId]
-        );
-        if (parsedCapacity < occupantCount[0].count) {
+        // Read after the room lock so concurrent additions/approvals cannot take these places.
+        const usage = await getRoomCapacityUsage(connection, roomId);
+        if (parsedCapacity < usage.occupants + usage.reserved) {
             return res.status(400).json({
                 success: false,
-                message: `Cannot set capacity to ${parsedCapacity}. This room currently has ${occupantCount[0].count} active occupant(s).`
+                message: usage.reserved > 0
+                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved online reservation(s) awaiting payment.`
+                    : `Cannot set capacity to ${parsedCapacity}. This room currently has ${usage.occupants} active occupant(s).`
             });
         }
 
-        await pool.query(
+        await connection.query(
             `UPDATE rooms SET room_number = ?, gender_type = ?, capacity = ? WHERE id = ?`,
-            [room_number.toString().trim(), gender_type || 'female', parsedCapacity, roomId]
+            [input.roomNumber, gender_type || 'female', parsedCapacity, roomId]
         );
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Room details updated successfully.' });
     } catch (err) {
         console.error('Edit room error:', err.message);
         res.status(500).json({ success: false, message: 'Database error while updating room. Please try again.' });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
 // F2. DELETE - Delete a room (Guarded against rooms with active boarders)
 router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionOpen = true;
         // Verify ownership
-        const [roomRows] = await pool.query(
+        const [roomRows] = await connection.query(
             `SELECT r.id, r.house_id 
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
-             WHERE r.id = ? AND bh.owner_id = ?`,
+             WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [req.params.roomId, req.user.id]
         );
 
@@ -701,25 +838,27 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (re
             return res.status(404).json({ success: false, message: 'Room not found or unauthorized action.' });
         }
 
-        // Check if active occupants exist
-        const [occupantRows] = await pool.query(
-            `SELECT COUNT(*) as count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())`,
-            [req.params.roomId]
-        );
-
-        if (occupantRows[0].count > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.'
-            });
+        const usage = await getRoomCapacityUsage(connection, req.params.roomId);
+        if (usage.occupants > 0) {
+            return res.status(400).json({ success: false, message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.' });
+        }
+        if (usage.reserved > 0) {
+            return res.status(400).json({ success: false, message: 'Cannot archive room with approved online reservations awaiting payment. Resolve those reservations first.' });
         }
 
-        await pool.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
+        await connection.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Room soft-deleted successfully.' });
     } catch (err) {
         console.error('Delete room error:', err.message);
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
@@ -763,16 +902,19 @@ router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req,
 
 // H. POST - Manually add a non-CSPC occupant
 router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
+    let transactionOpen = false;
     try {
+        connection = await pool.getConnection();
         const { roomId } = req.params;
         const { name, age, contact_number, check_in_date, months, emergency_contact, guardian_name, payment_status, upfront_status, address } = req.body;
 
-        const [roomRows] = await pool.query(
+        const [roomRows] = await connection.query(
             `SELECT r.*, 
                 (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS current_count
              FROM rooms r
              JOIN boarding_houses bh ON r.house_id = bh.id
-             WHERE r.id = ? AND bh.owner_id = ?`,
+             WHERE r.id = ? AND bh.owner_id = ? AND r.deleted_at IS NULL`,
             [roomId, req.user.id]
         );
 
@@ -787,22 +929,41 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
 
         // The existing upfront toggle lazily creates this column. Manual additions
         // also need it so the owner's choice is stored on the first occupant.
-        const [upfrontColumns] = await pool.query("SHOW COLUMNS FROM occupants LIKE 'upfront_status'");
+        const [upfrontColumns] = await connection.query("SHOW COLUMNS FROM occupants LIKE 'upfront_status'");
         if (upfrontColumns.length === 0) {
             try {
-                await pool.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
+                await connection.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
             } catch (err) {
                 if (err.code !== 'ER_DUP_FIELDNAME') throw err;
             }
         }
 
+        // Keep the existing lazy column setup outside the transaction: ALTER TABLE releases locks.
+        await connection.beginTransaction();
+        transactionOpen = true;
+        const [currentRooms] = await connection.query(
+            `SELECT r.* FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id
+             WHERE r.id = ? AND bh.owner_id = ? AND r.deleted_at IS NULL FOR UPDATE`,
+            [roomId, req.user.id]
+        );
+        if (currentRooms.length === 0) {
+            return res.status(404).json({ success: false, message: 'Room is unavailable or access denied.' });
+        }
+        const usage = await getRoomCapacityUsage(connection, roomId);
+        if (usage.occupants >= currentRooms[0].capacity) {
+            return res.status(400).json({ success: false, message: 'Room has reached maximum occupant capacity.' });
+        }
+        if (usage.occupants + usage.reserved >= currentRooms[0].capacity) {
+            return res.status(400).json({ success: false, message: 'Room has no available places. Remaining places are reserved for approved online bookings awaiting payment.' });
+        }
+
         const upfrontStatus = upfront_status === 'Paid' ? 'Paid' : 'Unpaid';
 
         const checkIn = check_in_date || new Date().toISOString().split('T')[0];
-        const monthlyRent = parseFloat(targetRoom.price || 0);
+        const monthlyRent = parseFloat(currentRooms[0].price || 0);
         const totalAmount = monthlyRent * (parseInt(months) || 1);
 
-        await pool.query(
+        await connection.query(
             `INSERT INTO occupants (
                 room_id, student_id, reference_no, name, age, address, 
                 contact_number, emergency_contact, guardian_name, check_in_date, 
@@ -815,32 +976,50 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
             ]
         );
 
+        await connection.commit();
+        transactionOpen = false;
         res.json({ success: true, message: 'Manual non-CSPC boarder added.' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        if (connection) {
+            try { if (transactionOpen) await connection.rollback(); }
+            finally { connection.release(); }
+        }
     }
 });
 
 // I. POST - Toggle occupant payment status (Transaction-safe: Syncs with bookings)
 router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, async (req, res) => {
-    const connection = await pool.getConnection();
+    let connection;
     try {
+        connection = await pool.getConnection();
         await connection.beginTransaction();
 
         const { status } = req.body;
         const targetStatus = status || 'Paid';
 
-        // 1. Update the occupant's payment status in occupants table
+        if (!['Paid', 'Not Paid'].includes(targetStatus)) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'Invalid monthly rent status.' });
+        }
+        const [owned] = await connection.query(
+            `SELECT o.student_id, o.room_id FROM occupants o JOIN rooms r ON r.id = o.room_id
+             JOIN boarding_houses bh ON bh.id = r.house_id WHERE o.id = ? AND bh.owner_id = ?`,
+            [req.params.id, req.user.id]);
+        if (!owned.length) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Occupant not found or access denied.' });
+        }
+
+        // Monthly rent is separate from verified online move-in payment.
         await connection.query(
             'UPDATE occupants SET payment_status = ? WHERE id = ?',
             [targetStatus, req.params.id]
         );
 
         // 2. Fetch occupant details to identify student_id and room_id
-        const [occupantRows] = await connection.query(
-            'SELECT student_id, room_id FROM occupants WHERE id = ?',
-            [req.params.id]
-        );
+        const occupantRows = owned;
 
         if (occupantRows.length > 0 && occupantRows[0].student_id) {
             const { student_id, room_id } = occupantRows[0];
@@ -849,7 +1028,8 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, asyn
             // 3. Synchronize status with the active booking record
             await connection.query(
                 `UPDATE bookings SET payment_status = ? 
-                 WHERE student_id = ? AND room_id = ? AND status = 'confirmed'`,
+                 WHERE student_id = ? AND room_id = ? AND status = 'confirmed'
+                 AND payment_method = 'cash'`,
                 [bookingStatus, student_id, room_id]
             );
         }
@@ -857,11 +1037,11 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, asyn
         await connection.commit();
         res.json({ success: true });
     } catch (err) {
-        await connection.rollback();
+        if (connection) await connection.rollback();
         console.error('[OCCUPANT PAYMENT SYNC ERROR]:', err.message);
         res.status(500).json({ success: false, message: err.message });
     } finally {
-        connection.release();
+        connection?.release();
     }
 });
 
@@ -870,6 +1050,19 @@ router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwn
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Reject missing or other-owner occupants before any update or schema check.
+        const [occupantRows] = await connection.query(
+            `SELECT o.id FROM occupants o
+             JOIN rooms r ON r.id = o.room_id
+             JOIN boarding_houses bh ON bh.id = r.house_id
+             WHERE o.id = ? AND bh.owner_id = ?`,
+            [req.params.id, req.user.id]
+        );
+        if (occupantRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Occupant not found or access denied.' });
+        }
 
         // 0. Ensure upfront_status column exists in occupants table
         try {
@@ -968,7 +1161,10 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
     try {
         const { houseId } = req.query;
         let query = `
-            SELECT b.*, u.name as student_name, u.phone as contact_number, u.profile_pic, u.address, u.guardian_name,
+            SELECT b.*,
+                   (b.payment_method = 'paymongo' AND b.paymongo_payment_id IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM occupants po WHERE po.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id)))) AS payment_requires_review,
+                   u.name as student_name, u.phone as contact_number, u.profile_pic, u.address, u.guardian_name,
                    r.room_number, r.gender_type as room_gender,
                    bh.name as house_name, bh.location as house_location, bh.advance_months, bh.deposit_months, bh.deposit_type
             FROM bookings b
@@ -1034,15 +1230,39 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
 
         const b = bookingRows[0];
 
-        const [capacityRows] = await connection.query(
-            `SELECT r.capacity, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS current_count
-             FROM rooms r WHERE r.id = ?`,
-            [b.room_id]
-        );
+        // Match submission lock order: student first, then booking/room.
+        await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [b.student_id]);
+        const [currentBookings] = await connection.query('SELECT * FROM bookings WHERE id = ? FOR UPDATE', [bookingId]);
+        const currentBooking = currentBookings[0];
+        if (!currentBooking) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Reservation request no longer exists.' });
+        }
+        if (currentBooking.status === 'confirmed') {
+            await connection.rollback();
+            return res.json({ success: true, message: 'This reservation is already approved.' });
+        }
+        if (currentBooking.status !== 'pending') {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This reservation is no longer pending. Please refresh the booking list.' });
+        }
+        const [otherStays] = await connection.query("SELECT id FROM bookings WHERE student_id = ? AND id != ? AND status = 'confirmed' FOR UPDATE", [b.student_id, bookingId]);
+        const [activeOccupancy] = await connection.query('SELECT id FROM occupants WHERE student_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.student_id]);
+        if (otherStays.length > 0 || activeOccupancy.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This student already has a confirmed booking or active stay. Please refresh the booking list.' });
+        }
+        const [eligibleRooms] = await connection.query("SELECT r.id, r.capacity FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id WHERE r.id = ? AND bh.owner_id = ? AND r.deleted_at IS NULL AND bh.house_status = 'accredited' FOR UPDATE", [b.room_id, req.user.id]);
+        if (eligibleRooms.length === 0) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This room or boarding house is no longer available for booking.' });
+        }
 
-        const roomConfig = capacityRows[0];
-        if (roomConfig.current_count >= roomConfig.capacity) {
+        const roomConfig = eligibleRooms[0];
+        // Current reads after the room lock include prior approved online reservations.
+        const [reservedBookings] = await connection.query("SELECT b.id FROM bookings b WHERE b.room_id = ? AND b.status = 'confirmed' AND b.payment_method = 'paymongo' AND b.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM occupants o WHERE o.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id)) AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) FOR UPDATE", [b.room_id]);
+        const [currentOccupants] = await connection.query('SELECT id FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.room_id]);
+        if (currentOccupants.length + reservedBookings.length >= roomConfig.capacity) {
             await connection.rollback();
             return res.status(400).json({ success: false, message: 'The target room has reached full capacity.', errorCode: 'capacity_full' });
         }
@@ -1110,7 +1330,10 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, 
             return res.status(404).json({ success: false, message: 'Record not found or access denied.' });
         }
 
-        await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ?", [req.params.id]);
+        const [rejectResult] = await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ? AND status = 'pending'", [req.params.id]);
+        if (rejectResult.affectedRows === 0) {
+            return res.status(409).json({ success: false, message: 'Only a pending reservation can be rejected. Please refresh the booking list.' });
+        }
 
         const rejectMsg = `RESERVATION UPDATE: Your booking request REF-${bookingRows[0].id.toString().padStart(4, '0')} was not approved by the landlord.`;
         await pool.query(
@@ -1136,16 +1359,25 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
-             WHERE b.id = ? AND bh.owner_id = ?`,
+             WHERE b.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [bookingId, req.user.id]
         );
         if (booking.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Booking not found or access denied.' });
         }
 
         const b = booking[0];
-        const extraMonths = b.extension_months || 0;
-        const newTotalMonths = b.months + extraMonths;
+        const extraMonths = Number(b.extension_months);
+        const newTotalMonths = Number(b.months) + extraMonths;
+        if (b.status !== 'confirmed' || !b.is_extension_requested) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This booking has no eligible pending extension. Please refresh the booking list.' });
+        }
+        if (!Number.isInteger(extraMonths) || extraMonths < 1 || !Number.isInteger(newTotalMonths) || newTotalMonths < 1 || newTotalMonths > 2147483647) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'Invalid extension duration.' });
+        }
         const rentRate = parseFloat(b.monthly_rent || 0);
         const addedCost = rentRate * extraMonths;
         const newTotalAmount = parseFloat(b.amount) + addedCost;
@@ -1182,40 +1414,54 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
 
 // O. POST - Reject Stay Extension
 router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, async (req, res) => {
+    let connection;
     try {
-        const [booking] = await pool.query(
-            `SELECT b.student_id 
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [booking] = await connection.query(
+            `SELECT b.student_id, b.status, b.is_extension_requested
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
-             WHERE b.id = ? AND bh.owner_id = ?`,
+             WHERE b.id = ? AND bh.owner_id = ? FOR UPDATE`,
             [req.params.id, req.user.id]
         );
         if (booking.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ success: false, message: 'Record not found or access denied.' });
         }
 
-        await pool.query(
+        if (booking[0].status !== 'confirmed' || !booking[0].is_extension_requested) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This booking has no eligible pending extension. Please refresh the booking list.' });
+        }
+
+        await connection.query(
             'UPDATE bookings SET is_extension_requested = 0, extension_months = 0 WHERE id = ?',
             [req.params.id]
         );
 
         const extDeclinedMsg = 'EXTENSION UPDATE: Your stay extension request was declined by the landlord.';
-        await pool.query(
+        await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [booking[0].student_id, extDeclinedMsg]
         );
 
+        await connection.commit();
         res.json({ success: true });
     } catch (err) {
+        if (connection) await connection.rollback();
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        connection?.release();
     }
 });
 
 // P. POST - Update booking billing status directly (Transaction-safe: Syncs with occupants)
 router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req, res) => {
-    const connection = await pool.getConnection();
+    let connection;
     try {
+        connection = await pool.getConnection();
         await connection.beginTransaction();
 
         const { status } = req.body;
@@ -1223,7 +1469,7 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req,
 
         // 1. Pre-verify ownership of booking before mutating
         const [bookingRows] = await connection.query(
-            `SELECT b.student_id, b.room_id 
+            `SELECT b.student_id, b.room_id, b.payment_method
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
@@ -1236,7 +1482,16 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req,
             return res.status(404).json({ success: false, message: 'Booking not found or access denied.' });
         }
 
-        // 2. Update the booking's payment status in bookings table
+        if (!['paid', 'unpaid'].includes(targetStatus)) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'Invalid payment status.' });
+        }
+        if (bookingRows[0].payment_method === 'paymongo') {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'Online upfront payments are verified through PayMongo. Update monthly rent from the occupant record.' });
+        }
+
+        // 2. Update the cash booking's payment status in bookings table
         await connection.query(
             'UPDATE bookings SET payment_status = ? WHERE id = ?',
             [targetStatus, req.params.id]
@@ -1257,11 +1512,11 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req,
         await connection.commit();
         res.json({ success: true });
     } catch (err) {
-        await connection.rollback();
+        if (connection) await connection.rollback();
         console.error('[BOOKING PAYMENT SYNC ERROR]:', err.message);
         res.status(500).json({ success: false, message: err.message });
     } finally {
-        connection.release();
+        connection?.release();
     }
 });
 

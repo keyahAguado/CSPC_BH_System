@@ -1,4 +1,5 @@
 <script setup>
+import { escapeHtml } from '../../utils/htmlHelper.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
@@ -116,8 +117,7 @@ const formatDate = (dateStr) => {
 const getCheckoutDateDisplay = (booking) => {
   const checkIn = booking.occupant_check_in || booking.check_in_date;
   if (!checkIn) return '—';
-  const extMonths = booking.is_extension_requested ? (parseInt(booking.extension_months) || 0) : 0;
-  const computedDate = computeCheckoutDate(checkIn, booking.months, extMonths);
+  const computedDate = computeCheckoutDate(checkIn, booking.months);
   return formatCheckoutDateString(computedDate);
 };
 
@@ -141,13 +141,16 @@ const requestExtension = async (bookingId) => {
     showSystemAlert('Stay extension request submitted successfully.', 'success');
   } catch (e) {
     console.error('Extension failed', e);
-    showSystemAlert('Unable to submit extension. Please check your connection and try again.', 'error');
+    showSystemAlert(e.response?.data?.message || 'Unable to submit extension. Please check your connection and try again.', 'error');
   }
 };
 
 const isPaying = ref({});
 
+const paymentNeedsReview = (booking) => booking.payment_method === 'paymongo' && !!booking.paymongo_payment_id && !booking.occupant_check_in;
+
 const triggerPayment = async (booking) => {
+  if (isPaying.value[booking.id]) return;
   try {
     isPaying.value[booking.id] = true;
     
@@ -161,10 +164,13 @@ const triggerPayment = async (booking) => {
     if (response.data.success && response.data.checkoutUrl) {
       // Redirect student to PayMongo Hosted Checkout Page
       window.location.href = response.data.checkoutUrl;
+    } else if (response.data.success) {
+      showSystemAlert(response.data.message || 'Payment verified.', response.data.requiresReview ? 'error' : 'success');
+      await fetchBookings();
     }
   } catch (error) {
     console.error('[PAYMENT ERROR] Failed to initialize checkout:', error);
-    showSystemAlert('Unable to start payment. Please check your connection and try again.', 'error');
+    showSystemAlert(error.response?.data?.message || 'Unable to start payment. Please check your connection and try again.', 'error');
   } finally {
     isPaying.value[booking.id] = false;
   }
@@ -187,12 +193,12 @@ const checkUrlQueryOnMount = async () => {
 
       if (response.data.success) {
         window.history.replaceState({}, document.title, window.location.pathname);
-        showSystemAlert('Payment Settled successfully! Your stay configuration has updated.', 'success');
+        showSystemAlert(response.data.message || 'Payment verified successfully.', response.data.requiresReview ? 'error' : 'success');
         await fetchBookings();
       }
     } catch (err) {
       console.error('Failed to settle payment:', err);
-      showSystemAlert('Payment verification could not be completed. Please contact your landlord to confirm.', 'error');
+      showSystemAlert(err.response?.data?.message || 'Payment verification is temporarily unavailable. Please refresh your bookings shortly.', 'error');
     }
   }
 };
@@ -203,18 +209,32 @@ const viewReceipt = (booking) => {
   showReceiptModal.value = true;
 };
 
+const getReceiptPaymentMethod = (booking) => {
+  if (booking.payment_method === 'paymongo') return 'PayMongo';
+  if (booking.payment_method === 'cash') return 'Cash';
+  return 'Not recorded';
+};
+
+const getReceiptRentLabel = (booking) => {
+  const months = parseInt(booking.advance_months || 0);
+  return months > 0 ? `Advance Rent (${months} Mo)` : 'First Month Rent';
+};
+
+const getReceiptRentAmount = (booking) =>
+  Math.max(1, parseInt(booking.advance_months || 0)) * parseFloat(booking.monthly_rent || 0);
+
 // Triggers a compact receipt print window instead of printing the whole page
 const printReceipt = () => {
   if (!activeReceipt.value) return;
   const r = activeReceipt.value;
 
-  const advanceAmt = (parseInt(r.advance_months || 1) * parseFloat(r.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const advanceAmt = getReceiptRentAmount(r).toLocaleString('en-US', { minimumFractionDigits: 2 });
   const depositAmt = (parseInt(r.deposit_months || 0) * parseFloat(r.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 });
   const totalAmt = parseFloat(r.initial_payment || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
   const refNo = `REF-${r.id.toString().padStart(4, '0')}`;
   const printDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const depositLine = parseInt(r.deposit_months) > 0
-    ? `<tr><td>Security Deposit (${r.deposit_months} Mo)</td><td class="amt">&#8369;${depositAmt}</td></tr>`
+    ? `<tr><td>Security Deposit (${escapeHtml(r.deposit_months)} Mo)</td><td class="amt">&#8369;${depositAmt}</td></tr>`
     : '';
 
   // Compute check-in and check-out
@@ -234,7 +254,7 @@ const printReceipt = () => {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Receipt ${refNo}</title>
+  <title>Receipt ${escapeHtml(refNo)}</title>
   <style>
     @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -280,17 +300,17 @@ const printReceipt = () => {
   <hr class="divider-solid" />
 
   <div class="center title">Payment Receipt</div>
-  <div class="center ref">${refNo}</div>
-  <div class="center" style="margin-top:3px"><span class="status-badge">Paid via PayMongo</span></div>
+  <div class="center ref">${escapeHtml(refNo)}</div>
+  <div class="center" style="margin-top:3px"><span class="status-badge">Paid &mdash; ${getReceiptPaymentMethod(r)}</span></div>
 
   <hr class="divider" />
 
   <table>
-    <tr><td class="label">Date</td><td class="value">${printDate}</td></tr>
-    <tr><td class="label">Resident</td><td class="value upper">${r.resident_name || ''}</td></tr>
-    <tr><td class="label">Boarding House</td><td class="value upper">${r.house_name || ''}</td></tr>
-    <tr><td class="label">Room</td><td class="value">Room ${r.room_number || 'N/A'}</td></tr>
-    <tr><td class="label">Duration</td><td class="value">${r.months || 0} Month(s)</td></tr>
+    <tr><td class="label">Printed On</td><td class="value">${printDate}</td></tr>
+    <tr><td class="label">Resident</td><td class="value upper">${escapeHtml(r.resident_name || '')}</td></tr>
+    <tr><td class="label">Boarding House</td><td class="value upper">${escapeHtml(r.house_name || '')}</td></tr>
+    <tr><td class="label">Room</td><td class="value">Room ${escapeHtml(r.room_number || 'N/A')}</td></tr>
+    <tr><td class="label">Duration</td><td class="value">${escapeHtml(r.months || 0)} Month(s)</td></tr>
     <tr><td class="label">Check-In</td><td class="value">${checkInDisplay}</td></tr>
     <tr><td class="label">Check-Out</td><td class="value" style="color:#2563eb">${checkOutDisplay}</td></tr>
     <tr><td class="label">Monthly Rent</td><td class="value">&#8369;${parseFloat(r.monthly_rent || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
@@ -304,7 +324,7 @@ const printReceipt = () => {
         Move-in Cost Breakdown
       </td>
     </tr>
-    <tr><td>Advance Rent (${r.advance_months || 1} Mo)</td><td class="amt">&#8369;${advanceAmt}</td></tr>
+    <tr><td>${escapeHtml(getReceiptRentLabel(r))}</td><td class="amt">&#8369;${advanceAmt}</td></tr>
     ${depositLine}
     <tr class="total-row">
       <td class="bold upper">Total Paid</td>
@@ -485,7 +505,10 @@ onMounted(() => {
                   <!-- Status -->
                   <td class="px-5 py-5 align-top text-center">
                     <!-- Pending -->
-                    <div v-if="booking.status === 'pending'" class="flex flex-col items-center gap-3">
+                    <div v-if="paymentNeedsReview(booking)" class="text-amber-700 text-xs font-semibold">
+                      Payment received: owner review needed. Please contact your property owner.
+                    </div>
+                    <div v-else-if="booking.status === 'pending'" class="flex flex-col items-center gap-3">
                       <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
                       <span v-if="booking.check_in_date" class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
                         Requested Check-in: {{ formatDate(booking.check_in_date) }}
@@ -676,7 +699,10 @@ onMounted(() => {
               </div>
               <div class="p-5 text-center flex flex-col items-center justify-center gap-2">
                 <!-- Pending -->
-                <div v-if="booking.status === 'pending'" class="flex flex-col items-center gap-2.5">
+                <div v-if="paymentNeedsReview(booking)" class="text-amber-700 text-xs font-semibold">
+                  Payment received: owner review needed. Please contact your property owner.
+                </div>
+                <div v-else-if="booking.status === 'pending'" class="flex flex-col items-center gap-2.5">
                   <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
                   <button
                     @click="cancelReservation(booking.id)"
@@ -823,7 +849,7 @@ onMounted(() => {
       <div class="text-center border-b-2 border-dashed border-slate-200 pb-6 mb-6">
         <h2 class="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mb-1">CSPC Boarding House System</h2>
         <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight">Official Payment Receipt</h3>
-        <p class="text-[9px] text-slate-400 font-bold uppercase mt-1">Transaction Completed Via PayMongo</p>
+        <p class="text-[9px] text-slate-400 font-bold uppercase mt-1">Payment Method: {{ getReceiptPaymentMethod(activeReceipt) }}</p>
       </div>
 
       <!-- Receipt Body Details -->
@@ -833,7 +859,7 @@ onMounted(() => {
           <span class="font-mono text-slate-900 font-bold">REF-{{ activeReceipt.id.toString().padStart(4, '0') }}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-slate-400">Payment Date:</span>
+          <span class="text-slate-400">Receipt Generated:</span>
           <span class="text-slate-900">{{ new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</span>
         </div>
         <div class="flex justify-between">
@@ -856,8 +882,8 @@ onMounted(() => {
             <span>Amount</span>
           </div>
           <div class="flex justify-between text-slate-700">
-            <span>Advance Rent ({{ activeReceipt.advance_months }} Mo)</span>
-            <span>₱{{ formatMoney(parseInt(activeReceipt.advance_months || 1) * parseFloat(activeReceipt.monthly_rent)) }}</span>
+            <span>{{ getReceiptRentLabel(activeReceipt) }}</span>
+            <span>₱{{ formatMoney(getReceiptRentAmount(activeReceipt)) }}</span>
           </div>
           <div v-if="parseInt(activeReceipt.deposit_months) > 0" class="flex justify-between text-slate-700">
             <span>Security Deposit ({{ activeReceipt.deposit_months }} Mo)</span>

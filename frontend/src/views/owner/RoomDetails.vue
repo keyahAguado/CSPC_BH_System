@@ -82,7 +82,10 @@ const showSystemAlert = (message, type = 'error') => {
   }
 };
 
+const isProcessingDecision = ref(false);
+
 const triggerConfirm = (title, message, action) => {
+  if (isProcessingDecision.value) return;
   confirmTitle.value = title;
   confirmMessage.value = message;
   confirmAction.value = action;
@@ -90,10 +93,15 @@ const triggerConfirm = (title, message, action) => {
 };
 
 const executeConfirm = async () => {
+  if (isProcessingDecision.value || !confirmAction.value) return;
+  const action = confirmAction.value;
+  confirmAction.value = null;
+  isProcessingDecision.value = true;
   showConfirmModal.value = false;
-  if (confirmAction.value) {
-    await confirmAction.value();
-    confirmAction.value = null;
+  try {
+    await action();
+  } finally {
+    isProcessingDecision.value = false;
   }
 };
 
@@ -123,12 +131,13 @@ const handleApproveBooking = async (bookingId) => {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (response.data.success) {
-      showSystemAlert('Reservation request approved successfully!', 'success');
-      fetchRoomDetails();
+      showSystemAlert(response.data.message || 'Reservation request approved successfully!', 'success');
+      await fetchRoomDetails();
     }
   } catch (error) {
     console.error('Approve failed:', error);
     showSystemAlert(error.response?.data?.message || 'Failed to approve booking.', 'error');
+    if ([404, 409].includes(error.response?.status)) await fetchRoomDetails();
   }
 };
 
@@ -823,7 +832,7 @@ onMounted(() => {
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
         
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="executeConfirm" :disabled="isProcessingDecision" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
             Confirm
           </button>
           <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">

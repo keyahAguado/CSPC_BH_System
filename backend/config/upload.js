@@ -98,6 +98,9 @@ export async function cleanupOrphanedUploads(pool) {
 
     const [rows] = await pool.query(`
         SELECT img AS path FROM boarding_houses WHERE img IS NOT NULL
+        UNION SELECT img_1 FROM boarding_houses WHERE img_1 IS NOT NULL
+        UNION SELECT img_2 FROM boarding_houses WHERE img_2 IS NOT NULL
+        UNION SELECT img_3 FROM boarding_houses WHERE img_3 IS NOT NULL
         UNION SELECT permit_business_form FROM boarding_houses WHERE permit_business_form IS NOT NULL
         UNION SELECT permit_cedula FROM boarding_houses WHERE permit_cedula IS NOT NULL
         UNION SELECT permit_dti FROM boarding_houses WHERE permit_dti IS NOT NULL
@@ -108,6 +111,7 @@ export async function cleanupOrphanedUploads(pool) {
         UNION SELECT permit_fire FROM boarding_houses WHERE permit_fire IS NOT NULL
         UNION SELECT profile_pic FROM users WHERE profile_pic IS NOT NULL
         UNION SELECT photo_url FROM house_photos WHERE photo_url IS NOT NULL
+        UNION SELECT file_path FROM house_documents WHERE file_path IS NOT NULL
     `);
 
     const referenced = new Set(rows.map(r => path.basename(String(r.path))));

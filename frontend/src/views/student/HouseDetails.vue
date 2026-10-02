@@ -82,6 +82,26 @@ const routeDuration = ref('Calculating...');
 const campusDistText = ref('Loading...');
 const showCampusBadge = ref(false);
 const isGpsChecking = ref(false);
+const mapNotice = ref('');
+const gpsNotice = ref('');
+const houseCoordinates = computed(() => {
+  const latitude = house.value.latitude;
+  const longitude = house.value.longitude;
+  if (latitude === null || latitude === undefined || longitude === null || longitude === undefined ||
+      String(latitude).trim() === '' || String(longitude).trim() === '') return null;
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat === 0 || lng === 0 ||
+      Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+});
+
+const showMapUnavailable = (message = 'The map is currently unavailable. Please use the address above or try again.') => {
+  mapNotice.value = message;
+  routeDistance.value = '--';
+  routeDuration.value = houseCoordinates.value ? 'Route unavailable' : 'Location unavailable';
+  showCampusBadge.value = false;
+};
 
 const cspcGate = { lat: 13.4059565, lng: 123.3753135 };
 let googleInstance = null;
@@ -98,19 +118,21 @@ const initGoogleMap = async () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     mapContainerEl = document.getElementById("bhMap");
   }
-  if (!mapContainerEl) return;
+  if (!mapContainerEl) { showMapUnavailable(); return; }
 
-  const rawLat = parseFloat(house.value.latitude);
-  const rawLng = parseFloat(house.value.longitude);
-  const bhLat = (!isNaN(rawLat) && rawLat !== 0) ? rawLat : 13.4079;
-  const bhLng = (!isNaN(rawLng) && rawLng !== 0) ? rawLng : 123.3751;
-  const bhLocation = { lat: bhLat, lng: bhLng };
+  const bhLocation = houseCoordinates.value;
+  if (!bhLocation) {
+    showMapUnavailable('This property has no verified map location. Please refer to its address or contact the owner.');
+    return;
+  }
+  mapNotice.value = '';
 
   try {
     const mapsLib = (googleInstance?.maps?.importLibrary) ? await googleInstance.maps.importLibrary("maps") : googleInstance?.maps;
     const MapClass = mapsLib?.Map || googleInstance?.maps?.Map;
 
     if (!MapClass) {
+      showMapUnavailable();
       console.error("Google Maps Map class is unavailable.");
       return;
     }
@@ -178,16 +200,19 @@ const initGoogleMap = async () => {
     // 2. Pre-detect User GPS silently in background
     detectGPS(false);
   } catch (err) {
+    showMapUnavailable();
     console.error("Map initialization failed:", err);
   }
 };
 
 const detectGPS = (forceMode = false) => {
   if (!navigator.geolocation) {
+    gpsNotice.value = 'Your browser does not provide location access. Showing directions from CSPC instead.';
     setMapMode('cspc');
     return;
   }
 
+  gpsNotice.value = '';
   isGpsChecking.value = true;
   navigator.geolocation.getCurrentPosition(
     (position) => {
@@ -204,7 +229,7 @@ const detectGPS = (forceMode = false) => {
       console.warn("GPS Access Denied or Unavailable:", error.message);
       isGpsChecking.value = false;
       if (forceMode === 'user' || forceMode === true) {
-        alert("GPS Signal Mismatched. Please ensure location permissions are enabled in your browser.");
+        gpsNotice.value = 'Your current location is unavailable. Allow location access to use From Me. Showing directions from CSPC instead.';
       }
       setMapMode('cspc');
     },
@@ -226,38 +251,43 @@ const setMapMode = (mode) => {
 };
 
 const calculateRoute = (origin, mode, callback) => {
-  if (!directionsService || !directionsRenderer) return;
-
-  const rawLat = parseFloat(house.value.latitude);
-  const rawLng = parseFloat(house.value.longitude);
-  const bhLat = (!isNaN(rawLat) && rawLat !== 0) ? rawLat : 13.4079;
-  const bhLng = (!isNaN(rawLng) && rawLng !== 0) ? rawLng : 123.3751;
-  const bhLocation = { lat: bhLat, lng: bhLng };
-
-  directionsService.route({
-    origin: origin,
-    destination: bhLocation,
-    travelMode: googleInstance.maps.TravelMode.WALKING
-  }, (result, status) => {
-    if (status === 'OK') {
-      if (mode === mapMode.value || callback) {
+  const bhLocation = houseCoordinates.value;
+  if (!bhLocation) {
+    showMapUnavailable('This property has no verified map location. Please refer to its address or contact the owner.');
+    return;
+  }
+  if (!directionsService || !directionsRenderer) { showMapUnavailable(); return; }
+  routeDistance.value = '--';
+  routeDuration.value = 'Calculating...';
+  directionsRenderer.setMap(null);
+  const onFailure = () => {
+    if (mode !== mapMode.value) return;
+    routeDistance.value = '--';
+    routeDuration.value = 'Route unavailable';
+    if (mode === 'cspc') showCampusBadge.value = false;
+  };
+  try {
+    directionsService.route({
+      origin, destination: bhLocation, travelMode: googleInstance.maps.TravelMode.WALKING
+    }, (result, status) => {
+      const leg = result?.routes?.[0]?.legs?.[0];
+      if (status !== 'OK' || !leg?.distance?.text || !leg?.duration?.text) { onFailure(); return; }
+      if (mode === mapMode.value) {
+        directionsRenderer.setMap(mapInstance);
         directionsRenderer.setDirections(result);
-        const leg = result.routes[0].legs[0];
         routeDistance.value = leg.distance.text;
         routeDuration.value = leg.duration.text;
       }
       if (callback) callback(result);
-    }
-  });
+    });
+  } catch (error) { onFailure(); }
 };
 
 const gpsSyncLink = computed(() => {
-  const rawLat = parseFloat(house.value.latitude);
-  const rawLng = parseFloat(house.value.longitude);
-  const bhLat = (!isNaN(rawLat) && rawLat !== 0) ? rawLat : 13.4079;
-  const bhLng = (!isNaN(rawLng) && rawLng !== 0) ? rawLng : 123.3751;
+  const destination = houseCoordinates.value;
+  if (!destination) return null;
   const origin = mapMode.value === 'user' && userPos.value ? userPos.value : cspcGate;
-  return `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${bhLat},${bhLng}&travelmode=walking`;
+  return `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&travelmode=walking`;
 });
 
 // ================= SUBMIT REVIEW & DATA FETCHING =================
@@ -340,7 +370,12 @@ const fetchData = async () => {
     // Always set the API key before loading - window.google may exist from PWA/cache but without a valid key
     const apiKeyToUse = mapApiKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
+    if (!houseCoordinates.value) {
+      showMapUnavailable('This property has no verified map location. Please refer to its address or contact the owner.');
+      return;
+    }
     if (!apiKeyToUse) {
+      showMapUnavailable();
       console.error('[Maps] No Google Maps API key available. Map will not load.');
       return;
     }
@@ -361,6 +396,7 @@ const fetchData = async () => {
 
     googleInstance = window.google;
     if (!googleInstance) {
+      showMapUnavailable();
       console.error('[Maps] window.google is not available after loading. Check API key restrictions.');
       return;
     }
@@ -527,12 +563,12 @@ onMounted(fetchData);
           
           <!-- Minimalist Map Toggle Selector -->
           <div class="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/60 shadow-inner w-full sm:w-auto">
-            <button @click="setMapMode('user')" :disabled="isGpsChecking"
+            <button @click="setMapMode('user')" :disabled="isGpsChecking || !houseCoordinates || !!mapNotice"
                     class="flex-1 sm:flex-none px-4 sm:px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer"
                     :class="mapMode === 'user' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'">
               <i class="fa-solid fa-person-walking"></i> From Me
             </button>
-            <button @click="setMapMode('cspc')"
+            <button @click="setMapMode('cspc')" :disabled="!houseCoordinates || !!mapNotice"
                     class="flex-1 sm:flex-none px-4 sm:px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer"
                     :class="mapMode === 'cspc' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'">
               <i class="fa-solid fa-graduation-cap"></i> From CSPC
@@ -540,9 +576,18 @@ onMounted(fetchData);
           </div>
         </div>
 
-        <div class="relative group mb-6">
+        <div v-show="houseCoordinates && !mapNotice" class="relative group mb-6">
           <div id="bhMap" class="shadow-md bg-slate-50 rounded-[1.5rem] sm:rounded-[2rem] border border-slate-200/80 h-[320px] sm:h-[380px] w-full relative z-0"></div>
         </div>
+
+        <div v-if="mapNotice" role="status" class="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+          <p class="font-bold text-slate-900 mb-2">{{ houseCoordinates ? 'Map unavailable' : 'Location unavailable' }}</p>
+          <p>{{ mapNotice }}</p>
+          <p class="mt-2">{{ formatAddress(house) || 'Please contact the owner for the address.' }}</p>
+          <button v-if="houseCoordinates" @click="fetchData" class="mt-3 font-semibold text-blue-600 underline">Try Again</button>
+        </div>
+        <p v-if="gpsNotice" role="status" class="mb-4 text-sm text-slate-600">{{ gpsNotice }}</p>
+        <button v-if="routeDuration === 'Route unavailable' && !mapNotice" @click="setMapMode(mapMode)" class="mb-4 text-sm font-semibold text-blue-600 underline">Try Directions Again</button>
 
         <!-- Dynamic Results Bar -->
         <div class="flex flex-col sm:flex-row items-center justify-between bg-slate-50 border border-slate-200/60 p-5 rounded-2xl gap-4 text-left">
@@ -562,7 +607,7 @@ onMounted(fetchData);
             </div>
           </div>
           
-          <a :href="gpsSyncLink" target="_blank"
+          <a v-if="gpsSyncLink" :href="gpsSyncLink" target="_blank" rel="noopener noreferrer"
              class="bg-green-600 text-white text-[10px] font-black px-6 py-4 rounded-xl shadow-md uppercase tracking-widest hover:bg-green-700 transition-all duration-300 active:scale-95 flex items-center gap-2 w-full sm:w-auto justify-center">
              GPS SYNC READY <i class="fa-solid fa-up-right-from-square text-[9px] ml-1"></i>
           </a>
