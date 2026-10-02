@@ -183,8 +183,34 @@ const getActiveHouseDynamicDocs = () => {
 
 // ================= DECISION SUBMISSIONS =================
 
+const REQUIRED_PERMIT_KEYS = ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'];
+
+// Returns true if this checklist item is a required document that hasn't been verified yet
+const isRequiredAndUnchecked = (item) => {
+  if (!item.permit_key) return false;
+  if (!REQUIRED_PERMIT_KEYS.includes(item.permit_key)) return false;
+  return !checkedChecklist.value[item.id];
+};
+
+// Required docs approval gate — shows a dedicated modal instead of flash alert
+const showRequiredDocsModal = ref(false);
+const uncheckedRequiredDocs = ref([]);
+
 const handleApprove = () => {
   if (!activeApp.value) return;
+
+  const requiredCriteria = criteria.value.filter(
+    c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)
+  );
+
+  const unchecked = requiredCriteria.filter(c => !checkedChecklist.value[c.id]);
+
+  if (unchecked.length > 0) {
+    uncheckedRequiredDocs.value = unchecked;
+    showRequiredDocsModal.value = true;
+    return;
+  }
+
   showApproveConfirmModal.value = true;
 };
 
@@ -670,7 +696,10 @@ onMounted(() => {
                   </thead>
                   <tbody class="text-[12px] font-medium">
                     <tr v-for="(item, i) in getFilteredCriteria()" :key="item.id" class="border-b border-slate-50 last:border-0 hover:bg-amber-50/40 transition-colors"
-                        :class="{ 'bg-amber-100/90 border-l-4 border-amber-500 shadow-inner': isDocumentItemUpdated(item) }">
+                        :class="{
+                          'bg-amber-100/90 border-l-4 border-amber-500 shadow-inner': isDocumentItemUpdated(item),
+                          'bg-rose-50/50 border-l-4 border-rose-400': isRequiredAndUnchecked(item) && !isDocumentItemUpdated(item)
+                        }">
                       <td class="p-6 text-center text-slate-300 font-bold text-xs italic">{{ i + 1 }}</td>
                       <td class="p-6">
                         <div class="flex items-center gap-2 flex-wrap">
@@ -766,7 +795,19 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="bg-slate-50 p-4 sm:p-8 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b">
+          <!-- Required docs status bar — only shown when some required docs are still unchecked -->
+          <div v-if="activeApp && criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).some(c => !checkedChecklist[c.id])"
+               class="px-4 sm:px-8 pt-4 sm:pt-6 border-t border-slate-100">
+            <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest mb-4 bg-rose-50 text-rose-700 border border-rose-200">
+              <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
+              <span>
+                {{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).filter(c => checkedChecklist[c.id]).length }}/{{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).length }} Required documents verified — Check all 4 to enable approval
+              </span>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 px-4 sm:px-8 pb-4 sm:pb-8 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b">
+
             <!-- Primary Action Buttons (Approve / Reject) -->
             <div class="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
               <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2 cursor-pointer">
@@ -977,6 +1018,41 @@ onMounted(() => {
           </button>
           <button @click="execDeleteCriteria" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition">
             <i class="fa-solid fa-trash-can mr-2"></i>Delete Permanently
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- Required Documents Not Verified Modal -->
+    <div v-if="showRequiredDocsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
+        <div class="bg-rose-600 px-6 py-5 flex items-center gap-4">
+          <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-triangle-exclamation text-white text-lg"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-black text-white uppercase tracking-tight leading-tight">Cannot Approve Yet</h3>
+            <p class="text-[10px] font-bold text-rose-200 uppercase tracking-widest mt-0.5">Required documents not verified</p>
+          </div>
+        </div>
+        <div class="px-6 py-5">
+          <p class="text-[12px] font-semibold text-slate-600 mb-4 leading-relaxed">
+            The following <strong class="text-slate-800">required document{{ uncheckedRequiredDocs.length > 1 ? 's have' : ' has' }}</strong> not been checked in the verification checklist:
+          </p>
+          <ul class="space-y-2 mb-5">
+            <li v-for="doc in uncheckedRequiredDocs" :key="doc.id"
+                class="flex items-center gap-3 bg-rose-50 border border-rose-100 px-4 py-2.5 rounded-xl">
+              <i class="fa-solid fa-circle-xmark text-rose-500 shrink-0"></i>
+              <span class="text-[11px] font-bold text-rose-800 uppercase tracking-wide">{{ doc.label }}</span>
+            </li>
+          </ul>
+          <p class="text-[10px] font-semibold text-slate-400 leading-relaxed">
+            Review each required document in the checklist and check the verification box before approving.
+          </p>
+        </div>
+        <div class="px-6 pb-5">
+          <button @click="showRequiredDocsModal = false"
+                  class="w-full bg-slate-900 hover:bg-slate-700 text-white text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition cursor-pointer">
+            Back to Checklist
           </button>
         </div>
       </div>
