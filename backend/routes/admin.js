@@ -2,7 +2,6 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
-import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -506,7 +505,6 @@ router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => 
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [ownerId, archiveMsg]
         );
-        sendNotificationEmail(ownerId, 'WARNING: Boarding House Archived by SASO', archiveMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -546,7 +544,6 @@ router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => 
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [ownerId, restoreMsg]
         );
-        sendNotificationEmail(ownerId, 'CONGRATULATIONS: Boarding House Restored', restoreMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -659,7 +656,6 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
         const approveMsg = `CONGRATULATIONS: Your boarding house "${house[0].name}" has been officially ACCREDITED by SASO!`;
         await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [owner_id, approveMsg]);
-        sendNotificationEmail(owner_id, 'CONGRATULATIONS: Boarding House Accreditation Approved!', approveMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -708,7 +704,6 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
             const rejectMsg = `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, rejectMsg]);
-            sendNotificationEmail(owner_id, 'NOTICE: Boarding House Application Status Update', rejectMsg);
         } else {
             // Document-update review on an already-accredited/archived house: preserve house_status.
             await connection.query(
@@ -728,7 +723,6 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
             const docRejectMsg = `ALERT: Your resubmitted document for "${house[0].name}" was not approved by SASO. Reason: ${admin_comments}. ${statusNote}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, docRejectMsg]);
-            sendNotificationEmail(owner_id, 'ALERT: Document Resubmission Status', docRejectMsg);
         }
 
         await connection.commit();
@@ -783,7 +777,7 @@ router.post('/criteria/add', authenticateToken, verifyAdmin, async (req, res) =>
         const newCriteriaId = result.insertId;
         console.log(`[CRITERIA ADD] Inserted criteria id=${newCriteriaId} for house_id=${house_id || 'GLOBAL'}`);
 
-        // 3. If it is a house-specific dynamic criteria, notify the landlord
+        // 3. Dispatch notifications and emails to the affected property owner(s)
         if (house_id) {
             const [houseRows] = await connection.query(
                 'SELECT owner_id, name FROM boarding_houses WHERE id = ?',
@@ -802,6 +796,17 @@ router.post('/criteria/add', authenticateToken, verifyAdmin, async (req, res) =>
             } else {
                 console.warn(`[CRITERIA ADD] WARNING — No house owner found for house_id=${house_id}. No notification sent.`);
             }
+        } else {
+            // Global / Institutional requirement addition — notify all active boarding house owners
+            const [owners] = await connection.query("SELECT id FROM users WHERE role = 'owner'");
+            const globalMsg = `ALERT: SASO Admin has added a new institutional requirement: "${label}". Please review your document checklist.`;
+            for (const owner of owners) {
+                await connection.query(
+                    'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+                    [owner.id, globalMsg]
+                );
+            }
+            console.log(`[CRITERIA ADD] Global institutional notification dispatched to ${owners.length} owners.`);
         }
 
         await connection.commit();

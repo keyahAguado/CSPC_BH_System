@@ -3,7 +3,6 @@ import axios from 'axios';
 import crypto from 'crypto';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
-import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -172,7 +171,6 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [fb.student_id, paymentMsg]
         );
-        sendNotificationEmail(fb.student_id, 'PAYMENT SETTLED: Room Reservation Secured', paymentMsg);
 
         // 5. Notify the owner that payment has cleared and the student is now occupying the room
         if (fb.house_owner_id) {
@@ -181,7 +179,6 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
                 'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [fb.house_owner_id, ownerPaymentMsg]
             );
-            sendNotificationEmail(fb.house_owner_id, 'PAYMENT RECEIVED: Room Now Occupied', ownerPaymentMsg);
         }
 
         await connection.commit();
@@ -310,7 +307,6 @@ router.post('/webhook', async (req, res) => {
                             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                             [fb.student_id, webhookPaymentMsg]
                         );
-                        sendNotificationEmail(fb.student_id, 'PAYMENT SETTLED: Room Reservation Secured', webhookPaymentMsg);
 
                         // 5. Notify the owner that payment cleared via webhook
                         if (fb.house_owner_id) {
@@ -319,7 +315,6 @@ router.post('/webhook', async (req, res) => {
                                 'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                                 [fb.house_owner_id, whOwnerMsg]
                             );
-                            sendNotificationEmail(fb.house_owner_id, 'PAYMENT RECEIVED: Room Now Occupied', whOwnerMsg);
                         }
 
                         await connection.commit();

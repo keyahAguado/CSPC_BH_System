@@ -5,7 +5,6 @@ import { upload, saveUploadedFile } from '../config/upload.js';
 import NABUA_BARANGAYS from '../config/barangays.js';
 import { getComplianceStatus, getSupplementaryStatus } from '../config/complianceHelper.js';
 import { evaluateHouseCompliance } from '../config/complianceManager.js';
-import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -930,7 +929,6 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, asy
                 'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [student_id, checkoutMsg]
             );
-            sendNotificationEmail(student_id, 'NOTICE: Residency Checked Out', checkoutMsg);
             console.log(`[CHECKOUT] Notification dispatched => student_id=${student_id}, house="${house_name}"`);
         } else {
             // Non-CSPC occupant — no student account to notify
@@ -1072,7 +1070,6 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [b.student_id, notificationMsg]
         );
-        sendNotificationEmail(b.student_id, 'RESERVATION APPROVED', notificationMsg);
 
         await connection.commit();
         res.json({ success: true, message: 'Reservation request successfully approved.' });
@@ -1107,7 +1104,6 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, 
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [bookingRows[0].student_id, rejectMsg]
         );
-        sendNotificationEmail(bookingRows[0].student_id, 'RESERVATION UPDATE', rejectMsg);
 
         res.json({ success: true });
     } catch (err) {
@@ -1160,7 +1156,6 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [b.student_id, extApprovedMsg]
         );
-        sendNotificationEmail(b.student_id, 'EXTENSION APPROVED', extApprovedMsg);
 
         await connection.commit();
         res.json({ success: true });
@@ -1197,7 +1192,6 @@ router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, as
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [booking[0].student_id, extDeclinedMsg]
         );
-        sendNotificationEmail(booking[0].student_id, 'EXTENSION UPDATE', extDeclinedMsg);
 
         res.json({ success: true });
     } catch (err) {

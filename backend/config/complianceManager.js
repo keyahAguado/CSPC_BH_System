@@ -1,5 +1,4 @@
 import pool from './db.js';
-import { sendNotificationEmail } from '../utils/emailService.js';
 
 // Critical: required for the boarding house to legally operate. Expiry here
 // drives compliance_status and can auto-archive the listing.
@@ -90,7 +89,6 @@ export async function evaluateHouseCompliance(houseId) {
                 house.owner_id,
                 ownerMsg
             ]);
-            sendNotificationEmail(house.owner_id, 'URGENT: Boarding House Archived Due to Document Expiration', ownerMsg);
 
             const [admins] = await pool.query("SELECT id FROM users WHERE role = 'admin'");
             for (const admin of admins) {
@@ -108,7 +106,6 @@ export async function evaluateHouseCompliance(houseId) {
                     house.owner_id,
                     warnMsg
                 ]);
-                sendNotificationEmail(house.owner_id, 'WARNING: Required Permit Expiring Soon', warnMsg);
             }
         }
     }
@@ -124,14 +121,12 @@ export async function evaluateHouseCompliance(houseId) {
                 house.owner_id,
                 suppExpiredMsg
             ]);
-            sendNotificationEmail(house.owner_id, 'ALERT: Supplementary Document Expired', suppExpiredMsg);
         } else if (supplementary.status === 'warning') {
             const suppWarnMsg = `WARNING: The following supplementary documents for "${house.name}" are expiring soon (within 30 days): ${supplementary.expiringSoon.join(', ')}. Please upload renewed copies before they expire.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
                 suppWarnMsg
             ]);
-            sendNotificationEmail(house.owner_id, 'WARNING: Supplementary Document Expiring Soon', suppWarnMsg);
         }
     }
 }
@@ -181,11 +176,6 @@ export async function runComplianceCheck() {
 
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.owner_id, ownerMsg]);
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [booking.student_id, studentMsg]);
-
-            // Email both parties for stay-end reminders — these only fire once (on the day
-            // itself and 7 days prior), so email isn't spammy.
-            sendNotificationEmail(booking.owner_id, daysLeft <= 0 ? 'STAY ENDED: Action Required' : 'REMINDER: Upcoming Stay End', ownerMsg);
-            sendNotificationEmail(booking.student_id, daysLeft <= 0 ? 'STAY ENDED: Checkout Today' : 'REMINDER: Your Stay Ends Soon', studentMsg);
         }
 
         console.log('[COMPLIANCE] Daily check completed.');

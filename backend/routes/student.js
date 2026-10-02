@@ -2,7 +2,6 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
-import { sendNotificationEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -425,13 +424,11 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [studentId, studentMsg]
         );
-        sendNotificationEmail(studentId, `Reservation Request Submitted (${refNo})`, studentMsg);
 
         await connection.query(
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [ownerId, ownerMsg]
         );
-        sendNotificationEmail(ownerId, `New Booking Request for ${houseRows[0].name} (${refNo})`, ownerMsg);
 
         await connection.commit();
         res.json({ success: true, message: 'Booking request submitted successfully!', bookingId: insertResult.insertId });
@@ -524,7 +521,6 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [booking[0].owner_id, cancelMsg]
         );
-        sendNotificationEmail(booking[0].owner_id, `Reservation Cancelled (${refNo})`, cancelMsg);
 
         res.json({ success: true });
     } catch (err) {
@@ -558,7 +554,6 @@ router.post('/bookings/extend/:id', authenticateToken, async (req, res) => {
             'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [booking[0].owner_id, extensionMsg]
         );
-        sendNotificationEmail(booking[0].owner_id, `Stay Extension Request (${refNo})`, extensionMsg);
 
         res.json({ success: true });
     } catch (err) {

@@ -1,7 +1,6 @@
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
-import { sendRawEmail } from '../utils/emailService.js';
 
 const router = express.Router();
 
@@ -46,27 +45,13 @@ router.get('/unread-count', authenticateToken, async (req, res) => {
     }
 });
 
-// 4. [POST] - Test Email Dispatch Diagnostic Endpoint
+// 4. [POST] - Diagnostic Endpoint for POD Version
 router.post('/test-email', authenticateToken, async (req, res) => {
-    try {
-        const recipientEmail = req.body.email || req.user.email;
-        const recipientName = req.user.name || 'User';
-
-        const result = await sendRawEmail(
-            recipientEmail,
-            recipientName,
-            'CSPC System Email Dispatch Test',
-            'This is a diagnostic test email sent from the CSPC Boarding House Management System to verify email delivery functionality.'
-        );
-
-        res.json({
-            success: result.success !== false,
-            recipient: recipientEmail,
-            detail: result
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+    res.json({
+        success: true,
+        disabled: true,
+        message: 'Email notifications are disabled for the POD defense version.'
+    });
 });
 
 export default router;

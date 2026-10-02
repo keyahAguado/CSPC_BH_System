@@ -86,7 +86,12 @@ const filteredBookings = computed(() => {
   let list = bookings.value;
 
   if (statusFilter.value && statusFilter.value !== 'all') {
-    list = list.filter(b => (b.status || '').toLowerCase() === statusFilter.value.toLowerCase());
+    const filterVal = statusFilter.value.toLowerCase();
+    if (filterVal === 'rejected' || filterVal === 'cancelled') {
+      list = list.filter(b => ['rejected', 'cancelled'].includes((b.status || '').toLowerCase()));
+    } else {
+      list = list.filter(b => (b.status || '').toLowerCase() === filterVal);
+    }
   }
 
   if (!searchQuery.value || !searchQuery.value.trim()) return list;
