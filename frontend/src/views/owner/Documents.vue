@@ -1,5 +1,12 @@
 <!-- Documents.vue (Updated Script Section) -->
 <script setup>
+const isValidPermitDate = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1) return false;
+  const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1];
+};
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -216,6 +223,11 @@ const saveDocumentUpdate = async (p) => {
 
   if (!expiry) {
     showSystemAlert('Please specify the permit expiry date.', 'error');
+    return;
+  }
+
+  if (!isValidPermitDate(expiry)) {
+    showSystemAlert('The document expiry date is invalid. Enter a real date with a four-digit year (1000-9999).', 'error');
     return;
   }
 
@@ -446,7 +458,7 @@ onMounted(async () => {
                 
                 <div class="w-full sm:w-48">
                   <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">New Expiry</label>
-                  <input type="date" v-model="expiryDates[p.permit_key || p.id]" required 
+                  <input type="date" min="1000-01-01" max="9999-12-31" v-model="expiryDates[p.permit_key || p.id]" required
                       class="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-lg text-xs font-bold focus:border-blue-400 outline-none transition" />
                 </div>
 

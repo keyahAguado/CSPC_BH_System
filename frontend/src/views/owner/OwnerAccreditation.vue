@@ -1,4 +1,11 @@
 <script setup>
+const isValidPermitDate = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1) return false;
+  const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1];
+};
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -363,6 +370,9 @@ const validateCurrentStep = () => {
       const hasFile = !!permitFiles.value[p.permit_key] || !!existingFiles.value[p.permit_key];
       const hasExpiry = !!permitExpiries.value[p.permit_key];
 
+      if (hasExpiry && !isValidPermitDate(permitExpiries.value[p.permit_key])) {
+        errors.push(p.label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).');
+      }
       if (p.required && !hasFile) {
         permitFileErrors.value[p.permit_key] = `${p.label} document is required.`;
         errors.push(`${p.label} document is required.`);
@@ -924,6 +934,10 @@ watch(mapLink, (newVal) => {
 // ================= THE RIGOROUS CLIENT-SIDE VALIDATOR =================
 const validateForm = () => {
   const errors = [];
+  criteria.value.forEach(p => {
+    const value = permitExpiries.value[p.permit_key];
+    if (value && !isValidPermitDate(value)) errors.push(p.label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).');
+  });
 
   // 1. Core Profile Details (Step 3)
   if (!houseName.value.trim()) {
@@ -1258,7 +1272,7 @@ const submitApplication = async () => {
                     
                     <div>
                       <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input type="date" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
+                      <input type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
                     </div>
                   </div>
                 </div>
@@ -1310,7 +1324,7 @@ const submitApplication = async () => {
                     
                     <div>
                       <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input type="date" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
+                      <input type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
                     </div>
                   </div>
                 </div>
