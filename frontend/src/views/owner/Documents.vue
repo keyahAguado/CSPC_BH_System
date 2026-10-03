@@ -227,7 +227,7 @@ const saveDocumentUpdate = async (p) => {
   }
 
   if (!isValidPermitDate(expiry)) {
-    showSystemAlert('The document expiry date is invalid. Enter a real date with a four-digit year (1000-9999).', 'error');
+    showSystemAlert('The document expiry date is invalid. Please enter a complete, valid date.', 'error');
     return;
   }
 

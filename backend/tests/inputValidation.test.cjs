@@ -148,10 +148,27 @@ for(const [file,method,route,scope] of wiring) test('Actual '+file+' '+route+' r
     const dispatch=i=>handlers[i](req,res,()=>dispatch(i+1));await dispatch(0);
     assert.equal(res.code,400);assert.equal(calls,0);
 });
-for(const date of ['20226-12-30','0026-12-30','2026-02-30'])test('Booking date change does not silently replace malformed date '+date,async()=>{
+for(const date of ['20226-12-30','0026-12-30','2026-02-30'])test('Booking date blur leaves malformed date for submission validation without alerts '+date,async()=>{
     const [api]=await load;const source=fs.readFileSync(path.join(root,'frontend/src/views/student/Book.vue'),'utf8');
     const start=source.indexOf('const handleCheckInDateChange ='),end=source.indexOf('\n};',start)+3;
     const state={form:{value:{check_in_date:date}},errorMsg:{value:''},minCheckInDate:{value:'2026-10-03'},alertRef:{value:null},validDate:api.validDate};
     vm.runInNewContext(source.slice(start,end)+'\nhandleCheckInDateChange();',state);
-    assert.equal(state.form.value.check_in_date,date);assert.match(state.errorMsg.value,/invalid/);
+    assert.equal(state.form.value.check_in_date,date);assert.equal(state.errorMsg.value,'');
+    assert.match(api.validateInput('booking',{...examples.booking,check_in_date:date},{today:'2026-10-03'}),/valid date/);
+});
+
+for (const blocked of [false, true]) test('Editing booking clears correction notice but preserves reservation block '+blocked, () => {
+    const source=fs.readFileSync(path.join(root,'frontend/src/views/student/Book.vue'),'utf8');
+    const start=source.indexOf('const clearInputError ='),end=source.indexOf('\n};',start)+3;
+    const state={reservationBlocked:{value:blocked},errorMsg:{value:'Existing notice'}};
+    vm.runInNewContext(source.slice(start,end)+'\nclearInputError();',state);
+    assert.equal(state.errorMsg.value,blocked?'Existing notice':'');
+});
+test('Repeated booking correction attempts update one notice without popups', () => {
+    const source=fs.readFileSync(path.join(root,'frontend/src/views/student/Book.vue'),'utf8');
+    const start=source.indexOf('const showBookingError ='),end=source.indexOf('\n};',start)+3;
+    let scrolls=0;
+    const state={errorMsg:{value:''},bookingErrorRef:{value:{scrollIntoView(){scrolls++;}}},nextTick:fn=>fn()};
+    vm.runInNewContext(source.slice(start,end)+'\nshowBookingError("First error");showBookingError("Second error");',state);
+    assert.equal(state.errorMsg.value,'Second error');assert.equal(scrolls,2);
 });

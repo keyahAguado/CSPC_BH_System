@@ -33,7 +33,7 @@ function phone(value, label, required = false) {
 }
 function date(value, label, required = false) {
     if (missing(value)) return required ? `${label} is required.` : null;
-    return validDate(value) ? null : `${label} is invalid. Enter a real date with a four-digit year (1000-9999).`;
+    return validDate(value) ? null : `${label} is invalid. Please enter a complete, valid date.`;
 }
 function choice(value, allowed, label, required = false) {
     if (missing(value)) return required ? `Please select ${label}.` : null;

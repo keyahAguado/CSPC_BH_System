@@ -361,7 +361,7 @@ const handleOwnerPhoneKeypress = (e) => {
 
 const handleOwnerPhoneInput = (e) => {
   contactNumber.value = e.target.value.replace(/[^\d\s\/,\-\+]/g, '');
-  validateField('contactNumber');
+  if (fieldErrors.value.contactNumber) validateField('contactNumber');
 };
 
 const validateCurrentStep = () => {
@@ -372,7 +372,7 @@ const validateCurrentStep = () => {
       const hasExpiry = !!permitExpiries.value[p.permit_key];
 
       if (hasExpiry && !isValidPermitDate(permitExpiries.value[p.permit_key])) {
-        errors.push(p.label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).');
+        errors.push(p.label + ' expiry date is invalid. Please enter a complete, valid date.');
       }
       if (p.required && !hasFile) {
         permitFileErrors.value[p.permit_key] = `${p.label} document is required.`;
@@ -939,7 +939,7 @@ const validateForm = () => {
   if (inputError) errors.push(inputError);
   criteria.value.forEach(p => {
     const value = permitExpiries.value[p.permit_key];
-    if (value && !isValidPermitDate(value)) errors.push(p.label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).');
+    if (value && !isValidPermitDate(value)) errors.push(p.label + ' expiry date is invalid. Please enter a complete, valid date.');
   });
 
   // 1. Core Profile Details (Step 3)
@@ -1075,9 +1075,7 @@ const submitApplication = async () => {
   } catch (err) {
     console.error(err);
     errorMsg.value = err.response?.data?.message || 'Accreditation application failed. Please verify files and try again.';
-    if (alertRef.value) {
-      alertRef.value.showSystemAlert(errorMsg.value, 'error');
-    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } finally {
     isSaving.value = false;
   }
@@ -1423,7 +1421,7 @@ const submitApplication = async () => {
                 type="text" 
                 v-model="houseName" 
                 @blur="validateField('houseName')" 
-                @input="validateField('houseName')"
+                @input="fieldErrors.houseName && validateField('houseName')"
                 class="w-full p-4 rounded-xl text-sm font-bold outline-none transition border" 
                 :class="fieldErrors.houseName ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
                 placeholder="E.g. Nabua Heights Residence" 
@@ -1476,7 +1474,7 @@ const submitApplication = async () => {
                 type="number" min="0.01" max="99999999.99" step="0.01"
                 v-model="price" 
                 @blur="validateField('price')" 
-                @input="validateField('price')"
+                @input="fieldErrors.price && validateField('price')"
                 class="w-full p-4 rounded-xl text-sm font-bold outline-none transition border" 
                 :class="fieldErrors.price ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
                 placeholder="1500" 

@@ -175,7 +175,7 @@ const saveProfile = async () => {
   const validationError = validateForm();
   if (validationError) {
     errorMsg.value = validationError;
-    if (alertRef.value) alertRef.value.showSystemAlert(validationError, 'error');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
 
@@ -205,9 +205,7 @@ const saveProfile = async () => {
     }, 1200);
   } catch (e) {
     errorMsg.value = e.response?.data?.message || 'Failed to save profile. Please try again.';
-    if (alertRef.value) {
-      alertRef.value.showSystemAlert(errorMsg.value, 'error');
-    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     console.error(e);
   } finally {
     isSaving.value = false;
