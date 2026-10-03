@@ -1,3 +1,4 @@
+import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
@@ -192,7 +193,7 @@ router.get('/courses', authenticateToken, verifyAdmin, async (req, res) => {
 const VALID_DEPARTMENTS = ['CAS', 'CCS', 'CEA', 'CHS', 'CTHBM', 'CTDE'];
 
 // POST - Add a new course
-router.post('/courses/add', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/courses/add', authenticateToken, verifyAdmin, validateBody('course'), async (req, res) => {
     try {
         const { course_code, course_name, department } = req.body;
         if (!course_code || !course_name) {
@@ -216,7 +217,7 @@ router.post('/courses/add', authenticateToken, verifyAdmin, async (req, res) => 
 });
 
 // POST - Edit an existing course
-router.post('/courses/update/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/courses/update/:id', authenticateToken, verifyAdmin, validateBody('course'), async (req, res) => {
     try {
         const { course_code, course_name, department } = req.body;
         if (!course_code || !course_name) {
@@ -240,7 +241,7 @@ router.post('/courses/update/:id', authenticateToken, verifyAdmin, async (req, r
 });
 
 // POST - Toggle a course active/inactive (soft delete — keeps historical student records intact)
-router.post('/courses/toggle/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/courses/toggle/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     try {
         await pool.query(
             'UPDATE courses SET is_active = NOT is_active WHERE id = ?',
@@ -256,7 +257,7 @@ router.post('/courses/toggle/:id', authenticateToken, verifyAdmin, async (req, r
 // DELETE - Permanently remove a course. Refuses if any student record still
 // references it (via users.course, a plain string, not a real FK) so deleting
 // never silently orphans a real student's course selection.
-router.post('/courses/delete/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/courses/delete/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     try {
         const [[course]] = await pool.query('SELECT course_code FROM courses WHERE id = ?', [req.params.id]);
         if (!course) {
@@ -430,7 +431,7 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
 // intentionally kept separate from auto-archiving due to expired required documents:
 // it must NOT touch compliance_status, otherwise the owner dashboard can't tell the
 // two apart and always shows "PERMITS EXPIRED" even when that's not why it's archived.
-router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/archive/:id', authenticateToken, verifyAdmin, validateBody('archive'), async (req, res) => {
     const houseId = req.params.id;
     const { reason } = req.body;
     const connection = await pool.getConnection();
@@ -471,7 +472,7 @@ router.post('/archive/:id', authenticateToken, verifyAdmin, async (req, res) => 
 });
 
 // 4A. POST - Restore an archived boarding house — Alerts Owner only
-router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/restore/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     const houseId = req.params.id;
     const connection = await pool.getConnection();
 
@@ -575,7 +576,7 @@ router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (re
 });
 
 // 8. POST - Admin check-out override for an occupant row
-router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     try {
         await pool.query(
             'UPDATE occupants SET check_out_date = CURDATE() WHERE id = ?',
@@ -588,7 +589,7 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyAdmin, asy
 });
 
 // 9. POST - Approve Accreditation Application — Alerts Owner only
-router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approval'), async (req, res) => {
     const houseId = req.params.id;
     const { checklist, admin_comments } = req.body;
 
@@ -602,6 +603,13 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
         const owner_id = house[0].owner_id;
+        if (checklist && checklist.length > 0) {
+            const [applicable] = await connection.query('SELECT id FROM checklist_criteria WHERE id IN (?) AND (house_id IS NULL OR house_id = ?) FOR UPDATE', [checklist, houseId]);
+            if (applicable.length !== checklist.length) {
+                await connection.rollback();
+                return res.status(400).json({ success: false, message: 'Some checklist requirements do not apply to this property. Please refresh the application.' });
+            }
+        }
 
         await connection.query(
             `UPDATE boarding_houses 
@@ -642,7 +650,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, async (req, res) => 
 // as it was (still bookable if accredited), only the flagged document goes back to the
 // owner for correction. Otherwise a single bad renewal doc would fully un-list a live,
 // operating boarding house.
-router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejection'), async (req, res) => {
     const houseId = req.params.id;
     const { admin_comments } = req.body;
 
@@ -708,7 +716,7 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, async (req, res) => {
 // 11. Custom criteria actions (Guarded from modification of global defaults)
 // ===================================================================
 
-router.post('/criteria/add', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/criteria/add', authenticateToken, verifyAdmin, validateBody('criterion'), async (req, res) => {
     const { label, house_id } = req.body;
     const connection = await pool.getConnection();
 
@@ -788,7 +796,7 @@ router.post('/criteria/add', authenticateToken, verifyAdmin, async (req, res) =>
     }
 });
 
-router.post('/criteria/update/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/criteria/update/:id', authenticateToken, verifyAdmin, validateBody('criterion'), async (req, res) => {
     const criteriaId = req.params.id;
     const { label } = req.body;
     const connection = await pool.getConnection();
@@ -850,7 +858,7 @@ router.post('/criteria/update/:id', authenticateToken, verifyAdmin, async (req, 
     }
 });
 
-router.post('/criteria/delete/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/criteria/delete/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     const criteriaId = req.params.id;
     const connection = await pool.getConnection();
 
@@ -929,7 +937,7 @@ router.get('/users', authenticateToken, verifyAdmin, async (req, res) => {
 });
 
 // POST - Update User profile & optional password securely (Handles Email Conflicts)
-router.post('/users/update/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/users/update/:id', authenticateToken, verifyAdmin, validateBody('adminUser'), async (req, res) => {
     const { id } = req.params;
     const { name, email, phone, password } = req.body;
 
@@ -972,7 +980,7 @@ router.post('/users/update/:id', authenticateToken, verifyAdmin, async (req, res
 });
 
 // POST - Reset password back to institutional default
-router.post('/users/reset-password/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/users/reset-password/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     try {
         const saltRounds = 10;
         const defaultHash = await bcrypt.hash('CSPC1234', saltRounds);
@@ -985,7 +993,7 @@ router.post('/users/reset-password/:id', authenticateToken, verifyAdmin, async (
 });
 
 // POST - Toggle account access standardly between active and inactive
-router.post('/users/toggle-status/:id', authenticateToken, verifyAdmin, async (req, res) => {
+router.post('/users/toggle-status/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
     try {
         const [[user]] = await pool.query('SELECT status FROM users WHERE id = ?', [req.params.id]);
         if (!user) {

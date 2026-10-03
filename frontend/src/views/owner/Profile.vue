@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
@@ -141,6 +142,8 @@ const sanitizePhoneInput = () => {
 };
 
 const handleSaveProfile = async () => {
+  const inputError = validateInput('ownerProfile', { name: nameInput.value, phone: phoneInput.value, address: addressInput.value });
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (!isValidPhPhone(phoneInput.value)) {
     showSystemAlert('Contact number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
     return;
@@ -193,6 +196,8 @@ const handleSaveProfile = async () => {
 };
 
 const handleChangePassword = async () => {
+  const inputError = validateInput('password', passwordForm.value);
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
     showSystemAlert('New passwords do not match.', 'error');
     return;

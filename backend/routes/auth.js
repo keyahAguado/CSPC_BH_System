@@ -1,3 +1,4 @@
+import { validateBody } from '../config/inputValidation.js';
 import { getTrustedOAuthOrigin } from '../config/oauthRedirect.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -156,7 +157,7 @@ async function buildUserPayload(user) {
 //    Still needed for owners who registered before Google OAuth,
 //    and as fallback for any user with a local password.
 // =========================================================================
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody('login'), async (req, res) => {
     let { email, password } = req.body;
 
     if (!email || !password) {
@@ -341,7 +342,7 @@ router.post('/register/owner', async (req, res) => {
 //    inserts the new owner record, and returns a JWT so the browser can
 //    log them in immediately.
 // =========================================================================
-router.post('/register/owner-complete', async (req, res) => {
+router.post('/register/owner-complete', validateBody('ownerRegistration'), async (req, res) => {
     const { name, email, phone, address, google_id, profile_pic } = req.body;
 
     if (!name || !email || !phone || !address || !google_id) {
@@ -405,7 +406,7 @@ router.post('/register/owner-complete', async (req, res) => {
 //    Allows both Email users (verifying current password) and
 //    Google SSO users (setting a password for the first time) to set a password.
 // =========================================================================
-router.post('/change-password', authenticateToken, async (req, res) => {
+router.post('/change-password', authenticateToken, validateBody('password'), async (req, res) => {
     const userId = req.user.id;
     const { currentPassword, newPassword } = req.body;
 

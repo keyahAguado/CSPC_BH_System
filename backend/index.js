@@ -1,3 +1,4 @@
+import { uploadErrorHandler } from './config/uploadValidation.js';
 // =========================================================================
 // SECTION 1: GLOBAL IMPORTS & CONFIGURATION
 // =========================================================================
@@ -133,6 +134,9 @@ app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationRouter);
 
 app.use('/api/payment', paymentRoutes);
+
+// Multer validation failures use the same user-facing JSON contract as forms.
+app.use(uploadErrorHandler);
 
 // =========================================================================
 // UTILITY: Resolve Google Maps short URLs server-side

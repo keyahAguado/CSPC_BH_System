@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput, validDate } from '../../utils/inputValidation.js';
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -76,6 +77,11 @@ const minCheckInDate = computed(() => {
 
 // Silently clamp any selected date so past dates are silently prevented without popup alerts
 const handleCheckInDateChange = () => {
+  if (form.value.check_in_date && !validDate(form.value.check_in_date)) {
+    errorMsg.value = 'Check-in date is invalid. Enter a real date with a four-digit year (1000-9999).';
+    if (alertRef.value) alertRef.value.showSystemAlert(errorMsg.value, 'error');
+    return;
+  }
   if (form.value.check_in_date && form.value.check_in_date < minCheckInDate.value) {
     form.value.check_in_date = minCheckInDate.value;
   }
@@ -220,6 +226,12 @@ const openConfirmModal = () => {
     errorMsg.value = 'You must be logged in to book.';
     return;
   }
+  const validationError = validateInput('booking', form.value, { today: minCheckInDate.value });
+  if (validationError) {
+    errorMsg.value = validationError;
+    if (alertRef.value) alertRef.value.showSystemAlert(validationError, 'error');
+    return;
+  }
   if (!isValidPhPhone(form.value.contact_number)) {
     errorMsg.value = 'Contact number must be a valid PH mobile number (11 digits, starting with 09).';
     if (alertRef.value) alertRef.value.showSystemAlert(errorMsg.value, 'error');
@@ -241,6 +253,12 @@ const openConfirmModal = () => {
 const confirmAndSubmit = async () => {
   if (isLoading.value || loadError.value || !house.value.id) return;
   if (reservationBlocked.value) return;
+  const validationError = validateInput('booking', form.value, { today: minCheckInDate.value });
+  if (validationError) {
+    errorMsg.value = validationError;
+    if (alertRef.value) alertRef.value.showSystemAlert(validationError, 'error');
+    return;
+  }
   if (isSaving.value) return; // Hard guard: prevent double-fire
   showConfirmModal.value = false;
   isSaving.value = true;
@@ -350,13 +368,13 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label for="booking-check-in-date" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Check-In Date</label>
-                <input id="booking-check-in-date" type="date" v-model="form.check_in_date" :min="minCheckInDate" @change="handleCheckInDateChange" aria-describedby="booking-check-in-help" required
+                <input id="booking-check-in-date" type="date" max="9999-12-31" v-model="form.check_in_date" :min="minCheckInDate" @change="handleCheckInDateChange" aria-describedby="booking-check-in-help" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
                 <p id="booking-check-in-help" class="mt-2 text-xs text-slate-500">Tap the date field or calendar icon to choose your check-in date.</p>
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Duration of Stay (Months)</label>
-                <input type="number" v-model="form.months" placeholder="Enter months" min="1" required
+                <input type="number" v-model="form.months" placeholder="Enter months" min="1" max="2147483647" step="1" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
             </div>

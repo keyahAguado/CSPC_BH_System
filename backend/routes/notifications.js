@@ -1,3 +1,4 @@
+import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
@@ -25,7 +26,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // 2. [POST] - Mark notification as read
-router.post('/read/:id', authenticateToken, async (req, res) => {
+router.post('/read/:id', authenticateToken, validateBody('ids'), async (req, res) => {
     try {
         await pool.query('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', 
         [req.params.id, req.user.id]);

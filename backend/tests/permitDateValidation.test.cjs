@@ -14,6 +14,7 @@ for (const {file, source} of sources) {
   });
 }
 const source = sources[0].source;
+const validation = vm.runInNewContext(fs.readFileSync(path.join(root,'backend/config/inputValidation.js'),'utf8').replaceAll('export ','') + '\n({validateBody})', {TextEncoder});
 function handler(route) {
  const start = source.indexOf('async (req, res) => {',source.indexOf("router.post('" + route + "'"));
  const end = source.indexOf('\n});',start);
@@ -22,13 +23,13 @@ function handler(route) {
    pool:{query(){calls.database++;throw Error('Unexpected database access');},getConnection(){calls.database++;throw Error('Unexpected connection');}},
    saveUploadedFile(){calls.uploads++;throw Error('Unexpected upload');}, console:{error(){},log(){}}
  });
- return {fn,calls};
+ return {fn: (req,res) => validation.validateBody(route === '/accreditation' ? 'property' : 'document')(req,res,()=>fn(req,res)),calls};
 }
 for (const key of ['business_form','cedula','dti','barangay','building','zoning','sanitary','fire']) {
  for (const date of ['20226-12-30','0026-12-30','2026-02-30']) test('Application rejects ' + key + ' ' + date + ' before side effects',async()=>{
   const {fn,calls}=handler('/accreditation');
   const res={status(code){this.code=code;return this;},json(body){this.body=body;}};
-  await fn({user:{id:1,role:'owner'},body:{house_name:'Test', ['expiry_permit_'+key]:date},files:{}},res);
+  await fn({user:{id:1,role:'owner'},body:{house_name:'Test',location:'Nabua',price:'1000',contact_number:'09123456789',latitude:'13.4',longitude:'123.3', ['expiry_permit_'+key]:date},files:{}},res);
   assert.equal(res.code,400);assert.match(res.body.message,/expiry date is invalid/);assert.deepEqual(calls,{database:0,uploads:0});
  });
 }

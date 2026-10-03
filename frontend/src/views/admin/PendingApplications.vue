@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
@@ -278,6 +279,8 @@ const execReject = async () => {
 };
 
 const submitAddCriteria = async () => {
+  const inputError = validateInput('criterion', { label: newCriteriaLabel.value });
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (!newCriteriaLabel.value.trim() || !activeApp.value) return;
   try {
     const res = await axios.post(`/api/admin/criteria/add`, {
@@ -333,6 +336,8 @@ const startEditCriteria = (id, currentLabel) => {
 };
 
 const submitUpdateCriteria = async () => {
+  const inputError = validateInput('criterion', { label: editCriteriaLabel.value });
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (!editCriteriaLabel.value.trim() || !editCriteriaId.value) return;
   try {
     const res = await axios.post(`/api/admin/criteria/update/${editCriteriaId.value}`, {

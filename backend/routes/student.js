@@ -1,3 +1,5 @@
+import { validateImages } from '../config/uploadValidation.js';
+import { validateBody, validateStudentCourse } from '../config/inputValidation.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { PUBLIC_HOUSE_COLUMNS } from '../config/publicHouseFields.js';
@@ -36,7 +38,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 });
 
 // 3. [POST] - Update Student Profile
-router.post('/update-profile', authenticateToken, upload.single('profile_pic'), async (req, res) => {
+router.post('/update-profile', authenticateToken, upload.single('profile_pic'), validateImages, validateBody('studentProfile'), validateStudentCourse(pool), async (req, res) => {
     try {
         const userId = req.user.id;
         const {
@@ -234,7 +236,7 @@ router.get('/house/:id', async (req, res) => {
 });
 
 // 6. [POST] - Submit a student rating and text review (Rigorously guarded)
-router.post('/review/:id', authenticateToken, async (req, res) => {
+router.post('/review/:id', authenticateToken, validateBody('review'), async (req, res) => {
     try {
         const houseId = req.params.id;
         const studentId = req.user.id;
@@ -278,7 +280,7 @@ router.post('/review/:id', authenticateToken, async (req, res) => {
 // =========================================================================
 
 // 7. [POST] - Submit a student reservation booking request (Rigorously Guarded)
-router.post('/book/:houseId', authenticateToken, async (req, res) => {
+router.post('/book/:houseId', authenticateToken, validateBody('booking'), async (req, res) => {
     if (req.user.role !== 'student') {
         return res.status(403).json({ success: false, message: 'Only students can submit reservation requests.' });
     }
@@ -398,6 +400,10 @@ router.post('/book/:houseId', authenticateToken, async (req, res) => {
 
         const monthlyRent = parseFloat(room.price || 0);
         const totalAmount = monthlyRent * (parseInt(months) || 1);
+        if (!Number.isFinite(totalAmount) || totalAmount < 0 || totalAmount > 99999999.99) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'The total rent exceeds the supported amount. Please reduce the duration or check the room rent.' });
+        }
 
         const [houseRows] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
         const ownerId = houseRows[0].owner_id;
@@ -495,7 +501,7 @@ router.get('/bookings', authenticateToken, async (req, res) => {
 
 
 // 9. [POST] - Cancel student pending booking
-router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
+router.post('/bookings/cancel/:id', authenticateToken, validateBody('ids'), async (req, res) => {
     try {
         const [booking] = await pool.query(
             'SELECT b.*, bh.owner_id, bh.name as house_name FROM bookings b JOIN boarding_houses bh ON b.house_id = bh.id WHERE b.id = ? AND b.student_id = ?',
@@ -546,7 +552,7 @@ router.post('/bookings/cancel/:id', authenticateToken, async (req, res) => {
 });
 
 // 10. [POST] - Request stay extension
-router.post('/bookings/extend/:id', authenticateToken, async (req, res) => {
+router.post('/bookings/extend/:id', authenticateToken, validateBody('ids'), async (req, res) => {
     if (req.user.role !== 'student') {
         return res.status(403).json({ success: false, message: 'Only students can request stay extensions.' });
     }
@@ -572,6 +578,14 @@ router.post('/bookings/extend/:id', authenticateToken, async (req, res) => {
         if (booking[0].status !== 'confirmed' || booking[0].is_extension_requested) {
             await connection.rollback();
             return res.status(409).json({ success: false, message: 'Only a confirmed booking without a pending extension can request an extension.' });
+        }
+
+        const totalMonths = Number(booking[0].months) + months;
+        const startDate = booking[0].check_in_date ? new Date(booking[0].check_in_date) : null;
+        const totalRent = Number(booking[0].amount) + Number(booking[0].monthly_rent || 0) * months;
+        if (!Number.isSafeInteger(totalMonths) || totalMonths > 2147483647 || !Number.isFinite(totalRent) || totalRent < 0 || totalRent > 99999999.99 || (startDate && (isNaN(startDate.getTime()) || startDate.getFullYear() * 12 + startDate.getMonth() + totalMonths > 9999 * 12 + 11))) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'The extension exceeds the supported check-out date or rent amount. Please request fewer months.' });
         }
 
         await connection.query(

@@ -1,3 +1,5 @@
+import { validateImages } from '../config/uploadValidation.js';
+import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
@@ -104,8 +106,8 @@ const updateProfileHandler = async (req, res) => {
 };
 
 // Map both endpoints to the same handler to prevent frontend routing breaks
-router.post('/profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
-router.post('/update-profile', authenticateToken, upload.single('profile_pic'), updateProfileHandler);
+router.post('/profile', authenticateToken, upload.single('profile_pic'), validateImages, validateBody('ownerProfile'), updateProfileHandler);
+router.post('/update-profile', authenticateToken, upload.single('profile_pic'), validateImages, validateBody('ownerProfile'), updateProfileHandler);
 
 // =========================================================================
 // OWNER DASHBOARD & STATISTICS ENDPOINT
@@ -209,7 +211,7 @@ router.get('/edit/:id', authenticateToken, verifyOwner, async (req, res) => {
 });
 
 // D. POST - Save Edited Boarding House details
-router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async (req, res) => {
+router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, validateImages, validateBody('property'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -314,7 +316,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, async
 });
 
 // Soft-Delete / Archive Boarding House by Owner
-router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, validateBody('archive'), async (req, res) => {
     try {
         const houseId = req.params.id;
         const reason = req.body?.reason || 'Paused by Landlord';
@@ -354,7 +356,7 @@ router.delete('/boarding-houses/:id', authenticateToken, verifyOwner, async (req
 });
 
 // Reactivate Boarding House by Owner (with Critical Permit Expiry Check)
-router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/boarding-houses/reactivate/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     try {
         const houseId = req.params.id;
 
@@ -474,7 +476,7 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 });
 
 // F. POST - Add a new room
-router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, validateBody('room'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -558,7 +560,7 @@ function parseRoomInput(roomNumber, capacity) {
 }
 
 // F1. PUT - Edit an existing room
-router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('room'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -628,7 +630,7 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
 });
 
 // F2. DELETE - Delete a room (Guarded against rooms with active boarders)
-router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -673,7 +675,7 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (re
 });
 
 // F3. POST - Restore a soft-deleted room
-router.post('/rooms/restore/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/restore/:roomId', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     try {
         const [roomRows] = await pool.query(
             `SELECT r.id 
@@ -701,7 +703,7 @@ router.post('/rooms/restore/:roomId', authenticateToken, verifyOwner, async (req
 // =========================================================================
 
 // DELETE - Remove a boarding house (Guarded against houses with active occupants)
-router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, async (req, res) => {
+router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -749,7 +751,7 @@ router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, async
 });
 
 // F1. PUT - Edit an existing room
-router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('room'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -818,7 +820,7 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, async (req, re
 });
 
 // F2. DELETE - Delete a room (Guarded against rooms with active boarders)
-router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -901,7 +903,7 @@ router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req,
 });
 
 // H. POST - Manually add a non-CSPC occupant
-router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, validateBody('occupant'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -962,6 +964,9 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
         const checkIn = check_in_date || new Date().toISOString().split('T')[0];
         const monthlyRent = parseFloat(currentRooms[0].price || 0);
         const totalAmount = monthlyRent * (parseInt(months) || 1);
+        if (!Number.isFinite(totalAmount) || totalAmount < 0 || totalAmount > 99999999.99) {
+            return res.status(400).json({ success: false, message: 'The total rent exceeds the supported amount. Please reduce the duration or check the room rent.' });
+        }
 
         await connection.query(
             `INSERT INTO occupants (
@@ -990,7 +995,7 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, asyn
 });
 
 // I. POST - Toggle occupant payment status (Transaction-safe: Syncs with bookings)
-router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, validateBody('monthlyRent'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -1046,7 +1051,7 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, asyn
 });
 
 // I-2. POST - Toggle occupant Move-in Upfront Fee payment status (for cash bookings/manual boarders)
-router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwner, validateBody('upfront'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -1092,7 +1097,7 @@ router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwn
 });
 
 // J. POST - Checkout boarder (Transaction-safe: notifies student on check-out)
-router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -1205,7 +1210,7 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
 });
 
 // L (POST /bookings/approve/:id)
-router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     const bookingId = req.params.id;
     const connection = await pool.getConnection();
 
@@ -1316,7 +1321,7 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, async (req,
 });
 
 // M. POST - Reject Student Reservation Booking Request
-router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/bookings/reject/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     try {
         const [bookingRows] = await pool.query(
             `SELECT b.student_id, b.id 
@@ -1348,7 +1353,7 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, async (req, 
 });
 
 // N. POST - Approve Stay Extension
-router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     const bookingId = req.params.id;
     const connection = await pool.getConnection();
     try {
@@ -1378,9 +1383,18 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
             await connection.rollback();
             return res.status(400).json({ success: false, message: 'Invalid extension duration.' });
         }
+        const startDate = b.check_in_date ? new Date(b.check_in_date) : null;
+        if (startDate && (isNaN(startDate.getTime()) || startDate.getFullYear() * 12 + startDate.getMonth() + newTotalMonths > 9999 * 12 + 11)) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'The extension exceeds the supported check-out date. Please request fewer months.' });
+        }
         const rentRate = parseFloat(b.monthly_rent || 0);
         const addedCost = rentRate * extraMonths;
         const newTotalAmount = parseFloat(b.amount) + addedCost;
+        if (!Number.isFinite(newTotalAmount) || newTotalAmount < 0 || newTotalAmount > 99999999.99) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'The extended rent exceeds the supported amount. Please request fewer months.' });
+        }
 
         await connection.query(
             `UPDATE bookings 
@@ -1413,7 +1427,7 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, a
 });
 
 // O. POST - Reject Stay Extension
-router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -1458,7 +1472,7 @@ router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, as
 });
 
 // P. POST - Update booking billing status directly (Transaction-safe: Syncs with occupants)
-router.post('/bookings/payment/:id', authenticateToken, verifyOwner, async (req, res) => {
+router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBody('bookingPayment'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();

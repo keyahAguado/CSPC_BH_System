@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
@@ -149,6 +150,8 @@ const handleFileChange = (e) => {
 };
 
 const validateForm = () => {
+  const inputError = validateInput('studentProfile', form.value);
+  if (inputError) return inputError;
   if (form.value.dob) {
     if (form.value.dob > maxDobDate) {
       return `Date of birth is invalid — you must be at least ${MIN_STUDENT_AGE} years old.`;
@@ -167,6 +170,8 @@ const validateForm = () => {
 };
 
 const saveProfile = async () => {
+  // Refresh the existing automatic age calculation before validating a saved DOB.
+  onDobChange();
   const validationError = validateForm();
   if (validationError) {
     errorMsg.value = validationError;

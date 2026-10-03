@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
@@ -241,6 +242,9 @@ const sanitizePhoneInput = (fieldKey) => {
 };
 
 const handleAddNonCspc = async () => {
+  if (isSavingNonCspc.value) return;
+  const validationError = validateInput('occupant', newOccupant.value);
+  if (validationError) { showSystemAlert(validationError, 'error'); return; }
   if (!newOccupant.value.name) {
     showSystemAlert('Full name is required.', 'error');
     return;
@@ -745,7 +749,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Age</label>
-            <input v-model="newOccupant.age" type="number" placeholder="20" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newOccupant.age" type="number" min="1" max="120" step="1" placeholder="20" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Contact Number</label>
@@ -753,11 +757,11 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Check-in Date</label>
-            <input v-model="newOccupant.check_in_date" type="date" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newOccupant.check_in_date" type="date" min="1000-01-01" max="9999-12-31" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Duration of Stay (Months)</label>
-            <input v-model="newOccupant.months" type="number" min="1" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newOccupant.months" type="number" min="1" max="2147483647" step="1" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Emergency Contact</label>

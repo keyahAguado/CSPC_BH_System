@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -600,6 +601,9 @@ const loadHouseDetails = async () => {
 };
 
 const handleSubmit = async () => {
+  if (isSubmitting.value) return;
+  const validationError = validateInput('property', { house_name: houseName.value, location: locationAddress.value, price: price.value, contact_number: contactNumber.value, latitude: latitude.value, longitude: longitude.value, advance_months: advanceMonths.value, deposit_months: depositMonths.value, deposit_type: depositType.value, description: description.value, map_link: mapLink.value });
+  if (validationError) { showSystemAlert(validationError, 'error'); return; }
   if (pinNeedsConfirmation.value) {
     showSystemAlert('You edited the address but haven\'t confirmed a new location — pick a suggestion from the dropdown, use GPS, or drag the pin before saving.', 'warning');
     return;
@@ -792,7 +796,7 @@ onMounted(() => {
                 <span class="text-base font-black leading-none shrink-0 mt-[-2px]">₱</span>
                 Monthly Rent Price
               </label>
-              <input type="number" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <input type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
             </div>
 
             <div>

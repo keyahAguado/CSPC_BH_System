@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, watch, computed, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
@@ -90,6 +91,8 @@ const sanitizePhoneInput = () => {
 };
 
 const handleUpdateProfile = async () => {
+  const inputError = validateInput('adminUser', editForm.value);
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (editForm.value.phone && !isValidPhPhone(editForm.value.phone)) {
     showSystemAlert('Phone number must be a valid PH mobile number (11 digits, starting with 09).', 'error');
     return;

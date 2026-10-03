@@ -1,3 +1,5 @@
+import { validateImages } from '../config/uploadValidation.js';
+import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import multer from 'multer';
 import pool from '../config/db.js';
@@ -307,19 +309,9 @@ router.get('/documents', authenticateToken, async (req, res) => {
 });
 
 // 6. [POST] - Update a single legal document dynamically (Standard or Custom)
-router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), async (req, res) => {
+router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), validateImages, validateBody('document'), async (req, res) => {
     if (req.user.role !== 'owner') {
         return res.status(403).json({ success: false, message: 'Only owners can update property documents.' });
-    }
-    const isValidPermitDate = (value) => {
-      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-      const [year, month, day] = value.split('-').map(Number);
-      if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1) return false;
-      const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      return day <= days[month - 1];
-    };
-    if (req.body.expiry_date != null && req.body.expiry_date !== '' && !isValidPermitDate(req.body.expiry_date)) {
-        return res.status(400).json({ success: false, message: 'The document expiry date is invalid. Enter a real date with a four-digit year (1000-9999).' });
     }
     const connection = await pool.getConnection();
     try {
@@ -533,7 +525,7 @@ const sanitizeJSONInput = (val) => {
 };
 
 // 7. [POST] - Submit New or Update Existing Boarding House Accreditation Application
-router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async (req, res) => {
+router.post('/accreditation', authenticateToken, uploadAccreditationFiles, validateImages, validateBody('property'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     let submissionStep = 'validation';
@@ -575,22 +567,13 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             amenities_free, amenities_paid, existing_photos
         } = req.body;
 
-        const isValidPermitDate = (value) => {
-          if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-          const [year, month, day] = value.split('-').map(Number);
-          if (year < 1000 || year > 9999 || month < 1 || month > 12 || day < 1) return false;
-          const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-          return day <= days[month - 1];
+        // Safe Date Parser: Ensures empty/invalid strings return NULL rather than NaN Date objects
+        const parseSafeDate = (val) => {
+            if (!val || typeof val !== 'string' || val.trim() === '') return null;
+            const timestamp = Date.parse(val);
+            if (isNaN(timestamp)) return null;
+            return new Date(timestamp);
         };
-        const permitLabels = { business_form: 'Business Permit', cedula: 'Cedula', dti: 'DTI', barangay: 'Barangay Clearance', building: 'Building Permit', zoning: 'Zoning Permit', sanitary: 'Sanitary Permit', fire: 'Fire Safety Permit' };
-        for (const [key, label] of Object.entries(permitLabels)) {
-            const value = req.body['expiry_permit_' + key];
-            if (value != null && value !== '' && !isValidPermitDate(value)) {
-                return res.status(400).json({ success: false, message: label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).' });
-            }
-        }
-        // Valid date-only strings preserve the entered calendar date; absent dates remain NULL.
-        const parseSafeDate = (value) => value || null;
 
         // Upload a field buffer via unified storage provider; returns the URL/path or null if no new file
         const uploadField = async (fieldName, folder) => {

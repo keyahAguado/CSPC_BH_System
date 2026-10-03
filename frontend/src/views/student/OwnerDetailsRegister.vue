@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -45,6 +46,8 @@ const sanitizePhoneInput = () => {
 };
 
 const handleSubmit = async () => {
+  const inputError = validateInput('ownerRegistration', { name: name.value, email: email.value, google_id: googleId.value, phone: phone.value, address: address.value, profile_pic: profilePic.value || '' });
+  if (inputError) { errorMessage.value = inputError; return; }
   if (!phone.value.trim() || !address.value.trim()) {
     errorMessage.value = 'Please fill in both your phone number and residential address.';
     return;

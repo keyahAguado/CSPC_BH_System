@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
@@ -106,6 +107,8 @@ const validateRoomForm = (number, capacity) => {
 };
 
 const handleSaveRoom = async () => {
+  const inputError = validateInput('room', { room_number: String(newRoomNumber.value ?? ''), capacity: newCapacity.value, price: newPrice.value, gender_type: newGenderType.value });
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (isSubmitting.value) return;
   const validationError = validateRoomForm(newRoomNumber.value, newCapacity.value);
   if (validationError) {
@@ -153,6 +156,8 @@ const closeEditModal = () => {
 };
 
 const handleUpdateRoom = async () => {
+  const inputError = validateInput('room', { room_number: String(editRoomNumber.value ?? ''), capacity: editCapacity.value, price: editPrice.value, gender_type: editGenderType.value });
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (isSubmitting.value) return;
   const validationError = validateRoomForm(editRoomNumber.value, editCapacity.value);
   if (validationError) {
@@ -651,7 +656,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
-            <input v-model="newPrice" type="number" step="any" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="newPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
             {{ isSubmitting ? 'Saving Room...' : 'Save Room' }}
@@ -688,7 +693,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
-            <input v-model="editPrice" type="number" step="any" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <input v-model="editPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
             {{ isSubmitting ? 'Updating Room...' : 'Update Room' }}

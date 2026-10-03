@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
@@ -295,6 +296,9 @@ const gpsSyncLink = computed(() => {
 
 // ================= SUBMIT REVIEW & DATA FETCHING =================
 const submitReview = async () => {
+  if (isSubmittingReview.value) return;
+  const inputError = validateInput('review', { rating: selectedRating.value, comment: reviewComment.value });
+  if (inputError) { reviewError.value = inputError; return; }
   if (isGuest) { showLoginModal.value = true; return; }
   if (!selectedRating.value) { reviewError.value = 'Please select a star rating.'; return; }
   

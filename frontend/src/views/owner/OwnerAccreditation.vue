@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 const isValidPermitDate = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -934,6 +935,8 @@ watch(mapLink, (newVal) => {
 // ================= THE RIGOROUS CLIENT-SIDE VALIDATOR =================
 const validateForm = () => {
   const errors = [];
+  const inputError = validateInput('property', { house_name: houseName.value, location: locationAddress.value, price: price.value, contact_number: contactNumber.value, latitude: latitude.value, longitude: longitude.value, advance_months: advanceMonths.value, deposit_months: depositMonths.value, deposit_type: depositType.value, description: description.value, map_link: mapLink.value });
+  if (inputError) errors.push(inputError);
   criteria.value.forEach(p => {
     const value = permitExpiries.value[p.permit_key];
     if (value && !isValidPermitDate(value)) errors.push(p.label + ' expiry date is invalid. Enter a real date with a four-digit year (1000-9999).');
@@ -1470,7 +1473,7 @@ const submitApplication = async () => {
             <div>
               <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.price ? 'text-red-600' : 'text-slate-400'">Monthly Rent Price (₱)</label>
               <input 
-                type="number" 
+                type="number" min="0.01" max="99999999.99" step="0.01"
                 v-model="price" 
                 @blur="validateField('price')" 
                 @input="validateField('price')"

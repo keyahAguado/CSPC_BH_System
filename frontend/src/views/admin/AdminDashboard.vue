@@ -1,4 +1,5 @@
 <script setup>
+import { validateInput } from '../../utils/inputValidation.js';
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
@@ -161,6 +162,8 @@ const resetCourseForm = () => {
 };
 
 const saveCourse = async () => {
+  const inputError = validateInput('course', courseForm.value);
+  if (inputError) { showSystemAlert(inputError, 'error'); return; }
   try {
     const payload = {
       course_code: courseForm.value.course_code.trim(),
