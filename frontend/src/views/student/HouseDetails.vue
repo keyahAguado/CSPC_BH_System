@@ -15,6 +15,9 @@ const reviews = ref([]);
 const housePhotos = ref([]); // gallery photos from house_photos table
 const avgRating = ref(0);
 const isLoading = ref(true);
+const loadError = ref('');
+const loadNotice = ref('');
+const isFetchingHouse = ref(false);
 const showLoginModal = ref(false);
 
 const token = sessionStorage.getItem('cspc_token');
@@ -316,13 +319,20 @@ const submitReview = async () => {
   }
 };
 
+const isMatchingHouseData = (data) => data && data.house && String(data.house.id) === String(houseId);
+
 const fetchData = async () => {
+  if (isFetchingHouse.value) return;
+  isFetchingHouse.value = true;
+  loadError.value = '';
+  loadNotice.value = '';
   let mapApiKey = '';
   // Try initializing from persistent cache first
   try {
     const rawCached = localStorage.getItem(`cspc_cached_house_${houseId}`);
     if (rawCached) {
       const parsed = JSON.parse(rawCached);
+      if (!isMatchingHouseData(parsed)) throw new Error('Invalid cached property');
       house.value = parsed.house || {};
       rooms.value = parsed.rooms || [];
       reviews.value = parsed.reviews || [];
@@ -338,8 +348,10 @@ const fetchData = async () => {
       isLoading.value = true;
     }
     const res = await axios.get(`/api/student/house/${houseId}`, {
+      timeout: 15000,
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
+    if (!isMatchingHouseData(res.data)) throw new Error('Property details missing from response');
     if (res.data && res.data.house) {
       house.value = res.data.house || {};
       rooms.value = res.data.rooms || [];
@@ -347,24 +359,44 @@ const fetchData = async () => {
       avgRating.value = res.data.avgRating || 0;
       housePhotos.value = res.data.photos || [];
       mapApiKey = res.data.googleMapsApiKey;
-      localStorage.setItem(`cspc_cached_house_${houseId}`, JSON.stringify(res.data));
+      try {
+        localStorage.setItem(`cspc_cached_house_${houseId}`, JSON.stringify(res.data));
+      } catch {}
     }
   } catch (e) {
     console.error('Failed to load house data from network', e);
-    try {
-      const cached = localStorage.getItem(`cspc_cached_house_${houseId}`);
-      if (cached) {
-        const cachedData = JSON.parse(cached);
-        house.value = cachedData.house || {};
-        rooms.value = cachedData.rooms || [];
-        reviews.value = cachedData.reviews || [];
-        avgRating.value = cachedData.avgRating || 0;
-        housePhotos.value = cachedData.photos || [];
-        mapApiKey = cachedData.googleMapsApiKey || '';
+    if (e.response?.status === 404) {
+      house.value = {};
+      rooms.value = [];
+      reviews.value = [];
+      housePhotos.value = [];
+      avgRating.value = 0;
+      try { localStorage.removeItem(`cspc_cached_house_${houseId}`); } catch {}
+      loadError.value = 'This property is no longer available for browsing. Please return to the listings.';
+    } else {
+      if (!house.value?.id) {
+        try {
+          const cachedData = JSON.parse(localStorage.getItem(`cspc_cached_house_${houseId}`) || 'null');
+          if (isMatchingHouseData(cachedData)) {
+            house.value = cachedData.house;
+            rooms.value = cachedData.rooms || [];
+            reviews.value = cachedData.reviews || [];
+            avgRating.value = cachedData.avgRating || 0;
+            housePhotos.value = cachedData.photos || [];
+            mapApiKey = cachedData.googleMapsApiKey || '';
+          }
+        } catch {}
       }
-    } catch (err) {}
+      if (house.value?.id) {
+        loadNotice.value = 'We could not refresh this property. Showing previously saved details; availability and prices may have changed.';
+      } else {
+        loadError.value = 'We could not load the property details. Please check your connection and try again.';
+      }
+    }
   } finally {
     isLoading.value = false;
+    isFetchingHouse.value = false;
+    if (!house.value?.id || loadError.value) return;
     await nextTick();
 
     // Always set the API key before loading - window.google may exist from PWA/cache but without a valid key
@@ -476,7 +508,22 @@ onMounted(fetchData);
       <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
+    <section v-else-if="loadError" role="alert" class="max-w-2xl mx-auto my-12 px-6">
+      <div class="bg-white border border-slate-200 rounded-3xl p-8 text-center">
+        <h1 class="text-xl font-bold text-slate-900 mb-3">Property details unavailable</h1>
+        <p class="text-slate-600 mb-6">{{ loadError }}</p>
+        <div class="flex flex-wrap justify-center gap-4">
+          <button @click="fetchData" :disabled="isFetchingHouse" class="bg-blue-600 text-white rounded-xl px-6 py-3 font-bold disabled:opacity-50">Try Again</button>
+          <button @click="router.push(isGuest ? '/' : '/student/dashboard')" class="text-blue-700 font-bold px-6 py-3">Back to Listings</button>
+        </div>
+      </div>
+    </section>
+
     <main v-else class="max-w-5xl mx-auto py-12 px-6">
+      <div v-if="loadNotice" role="status" class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-slate-700">
+        <p>{{ loadNotice }}</p>
+        <button @click="fetchData" :disabled="isFetchingHouse" class="mt-2 text-blue-700 font-bold underline disabled:opacity-50">{{ isFetchingHouse ? 'Refreshing...' : 'Try Again' }}</button>
+      </div>
 
       <!-- TOP HEADER & ACTIONS -->
       <div class="flex flex-col md:flex-row justify-between items-start gap-8 mb-10">

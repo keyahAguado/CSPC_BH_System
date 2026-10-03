@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
+import { getComplianceStatus } from '../config/complianceHelper.js';
 
 const router = express.Router();
 
@@ -478,17 +479,29 @@ router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => 
         await connection.beginTransaction();
 
         // Fetch house and owner details
-        const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
+        const [house] = await connection.query('SELECT * FROM boarding_houses WHERE id = ? FOR UPDATE', [houseId]);
         if (house.length === 0) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
+        }
+        if (house[0].house_status !== 'archived') {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This property is no longer archived. Please refresh the list.' });
+        }
+        const liveCompliance = getComplianceStatus(house[0]);
+        if (liveCompliance === 'expired') {
+            await connection.rollback();
+            return res.status(409).json({
+                success: false,
+                message: 'This property cannot be restored while required permits are expired. The owner must submit updated documents for review first.'
+            });
         }
         const ownerId = house[0].owner_id;
 
         // 1. Restore Boarding House status
         await connection.query(
-            "UPDATE boarding_houses SET house_status = 'accredited', compliance_status = 'active' WHERE id = ?",
-            [houseId]
+            "UPDATE boarding_houses SET house_status = 'accredited', compliance_status = ? WHERE id = ?",
+            [liveCompliance, houseId]
         );
 
         // 2. Insert Approved notification for the Owner ONLY
@@ -503,7 +516,7 @@ router.post('/restore/:id', authenticateToken, verifyAdmin, async (req, res) => 
     } catch (err) {
         await connection.rollback();
         console.error('Manual Restore Error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: 'We could not restore this property. Please try again.' });
     } finally {
         connection.release();
     }

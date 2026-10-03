@@ -372,7 +372,7 @@ const getDocRecheckBadge = (app) => {
   }
   
   if (app.house_status === 'archived' || ['owner', 'system', 'admin'].includes(app.archived_by)) {
-    return { label: 'DOCUMENT RECHECK — ALREADY ARCHIVED', color: 'text-amber-600' };
+    return { label: 'DOCUMENT RECHECK — PREVIOUSLY ARCHIVED', color: 'text-amber-600' };
   }
   
   return { label: 'DOCUMENT RECHECK', color: 'text-amber-600' };

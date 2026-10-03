@@ -36,7 +36,7 @@ function fixture(options={}) {
                 assert(q.includes("AND archived_by = 'owner'"));assert(q.includes("AND status_before_archive = 'accredited'"));assert(q.includes('expiry_permit_fire <=> ?'));
                 update=()=>{const h=find(id);h.house_status='accredited';h.compliance_status='active';h.status_before_archive=null;h.archived_by=null;h.archive_reason=null;h.archived_at=null;};
             } else if(q.includes("house_status = 'accredited'")) {
-                id=args[0];canWrite=!!find(id);update=()=>{const h=find(id);h.house_status='accredited';h.compliance_status='active';};
+                id=args[1];canWrite=!!find(id);update=()=>{const h=find(id);h.house_status='accredited';h.compliance_status=args[0];};
             } else throw Error('Unexpected update '+q);
             if(!canWrite)return [{affectedRows:0}];const work=()=>{update();state.writes++;};if(writes)writes.push(work);else work();return [{affectedRows:1}];
         }

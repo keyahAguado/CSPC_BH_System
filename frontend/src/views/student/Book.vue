@@ -15,6 +15,8 @@ const houseId = route.params.id;
 const house = ref({});
 const rooms = ref([]);
 const isLoading = ref(true);
+const loadError = ref('');
+const isFetchingHouse = ref(false);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
@@ -82,16 +84,25 @@ const handleCheckInDateChange = () => {
 const isAutoFilledFromProfile = ref(false);
 
 const fetchData = async () => {
+  if (isFetchingHouse.value) return;
+  isFetchingHouse.value = true;
+  isLoading.value = true;
+  loadError.value = '';
   if (!navigator.onLine) {
-    errorMsg.value = 'You are currently offline. Please connect to the internet to make a booking.';
+    loadError.value = 'You are currently offline. Please connect to the internet to load the booking form.';
+    isFetchingHouse.value = false;
     isLoading.value = false;
     return;
   }
   try {
     const res = await axios.get(`/api/student/house/${houseId}`, {
+      timeout: 15000,
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
-    house.value = res.data.house || {};
+    if (!res.data?.house || String(res.data.house.id) !== String(houseId) || !Array.isArray(res.data.rooms)) {
+      throw new Error('Incomplete booking property response');
+    }
+    house.value = res.data.house;
     rooms.value = res.data.rooms || [];
 
     // 1. Initial pre-fill from cached local session
@@ -110,6 +121,7 @@ const fetchData = async () => {
     if (token) {
       try {
         const profileRes = await axios.get('/api/student/profile', {
+          timeout: 15000,
           headers: { Authorization: `Bearer ${token}` }
         });
         if (profileRes.data.success && profileRes.data.user) {
@@ -131,8 +143,13 @@ const fetchData = async () => {
     }
   } catch (e) {
     console.error('Failed to load house data', e);
-    errorMsg.value = 'Unable to load house details. Please check your connection.';
+    house.value = {};
+    rooms.value = [];
+    loadError.value = e.response?.status === 404
+      ? 'This property is no longer available for booking. Please return to the listings.'
+      : 'We could not load the booking form. Please check your connection and try again.';
   } finally {
+    isFetchingHouse.value = false;
     isLoading.value = false;
   }
 };
@@ -197,6 +214,7 @@ const sanitizePhoneInput = (fieldKey) => {
 
 // Step 1: Form submit opens the review/confirmation modal — nothing is sent yet
 const openConfirmModal = () => {
+  if (isLoading.value || loadError.value || !house.value.id) return;
   if (reservationBlocked.value) return;
   if (isGuest) {
     errorMsg.value = 'You must be logged in to book.';
@@ -221,6 +239,7 @@ const openConfirmModal = () => {
 
 // Step 2: "Ok, Submit Booking" in the confirm modal — this is where the booking is actually sent
 const confirmAndSubmit = async () => {
+  if (isLoading.value || loadError.value || !house.value.id) return;
   if (reservationBlocked.value) return;
   if (isSaving.value) return; // Hard guard: prevent double-fire
   showConfirmModal.value = false;
@@ -291,6 +310,15 @@ onMounted(async () => {
         <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
         <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Loading booking form...</p>
       </div>
+
+      <section v-else-if="loadError" role="alert" class="bg-white border border-slate-200 rounded-3xl p-8 text-center my-8">
+        <h1 class="text-xl font-bold text-slate-900 mb-3">Booking form unavailable</h1>
+        <p class="text-slate-600 mb-6">{{ loadError }}</p>
+        <div class="flex flex-wrap justify-center gap-4">
+          <button @click="fetchData" :disabled="isFetchingHouse" class="bg-blue-600 text-white rounded-xl px-6 py-3 font-bold disabled:opacity-50">Try Again</button>
+          <button @click="router.push('/student/dashboard')" class="text-blue-700 font-bold px-6 py-3">Back to Listings</button>
+        </div>
+      </section>
 
       <template v-else>
         <!-- HEADER -->

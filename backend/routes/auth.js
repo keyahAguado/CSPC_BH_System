@@ -1,3 +1,4 @@
+import { getTrustedOAuthOrigin } from '../config/oauthRedirect.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -225,7 +226,7 @@ router.post('/login', async (req, res) => {
 // =========================================================================
 router.get('/google', (req, res, next) => {
     const rawOrigin = req.query.origin || req.headers.referer || process.env.FRONTEND_URL || 'http://localhost';
-    const cleanOrigin = rawOrigin.replace(/\/+$/, '');
+    const cleanOrigin = getTrustedOAuthOrigin(rawOrigin);
 
     passport.authenticate('google', {
         scope: ['profile', 'email'],
@@ -240,9 +241,7 @@ router.get('/google', (req, res, next) => {
 // =========================================================================
 router.get('/google/callback',
     (req, res, next) => {
-        const targetOrigin = req.query.state
-            ? decodeURIComponent(req.query.state)
-            : (process.env.FRONTEND_URL || 'http://localhost');
+        const targetOrigin = getTrustedOAuthOrigin(req.query.state);
 
         passport.authenticate('google', { session: false }, (err, user, info) => {
             if (err) {
@@ -257,9 +256,7 @@ router.get('/google/callback',
         })(req, res, next);
     },
     async (req, res) => {
-        const targetOrigin = req.query.state
-            ? decodeURIComponent(req.query.state)
-            : (process.env.FRONTEND_URL || 'http://localhost');
+        const targetOrigin = getTrustedOAuthOrigin(req.query.state);
 
         try {
             const user = req.user;

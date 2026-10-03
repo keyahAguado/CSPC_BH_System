@@ -1,0 +1,24 @@
+﻿const fs=require('node:fs');const vm=require('node:vm');const test=require('node:test');const assert=require('node:assert/strict');const path=require('node:path');
+const src=fs.readFileSync(path.join(__dirname,'../routes/boardingHouses.js'),'utf8');const a=src.indexOf('async (req, res) => {',src.indexOf("router.post('/accreditation'"));const b=src.indexOf('\n});',a);
+function fixture({edit=false,fail='',zero=false}={}){
+ const original={house:edit?{name:'Original',permit:'/original.pdf'}:null,photos:edit?['/original-gallery.jpg']:[]};
+ const state={db:structuredClone(original),original,begin:0,commit:0,rollback:0,release:0,uploads:0,write:0,events:[]};let draft;
+ const conn={async beginTransaction(){state.begin++;state.events.push('begin');if(fail==='begin')throw Error('internal begin detail');draft=structuredClone(state.db);},async commit(){state.events.push('commit');if(fail==='commit')throw Error('internal commit detail');state.db=draft;state.commit++;},async rollback(){state.rollback++;draft=null;},release(){state.release++;state.events.push('release');},async query(sql,args){assert(draft,'write must occur in transaction');const q=sql.replace(/\s+/g,' ').trim();state.write++;
+  if(q.startsWith('INSERT INTO boarding_houses')||q.startsWith('UPDATE boarding_houses')){if(fail==='house')throw Error('internal house detail');if(zero)return [{affectedRows:0}];draft.house={name:'Updated',permit:'preserved'};return [{affectedRows:1,insertId:8}];}
+  if(q.startsWith('DELETE FROM house_photos')){if(fail==='delete')throw Error('internal delete detail');draft.photos=[];return [{}];}
+  if(q.startsWith('INSERT INTO house_photos')){if(fail==='photo'&&draft.photos.length===1)throw Error('internal photo detail');draft.photos.push(args[1]);return [{}];}
+  throw Error('Unexpected transaction query');
+ }};
+ const pool={async getConnection(){if(fail==='acquire')throw Error('internal acquire detail');return conn;},async query(sql){if(sql.startsWith('SELECT id FROM boarding_houses'))return [[]];if(sql.startsWith('SELECT * FROM boarding_houses'))return [[{id:7,img:'/old.jpg',permit_fire:'/original.pdf'}]];if(sql.startsWith('SELECT id FROM users')){assert(state.commit===1);if(fail==='notification')throw Error('notification');return [[]];}throw Error('Write outside transaction');}};
+ const handler=vm.runInNewContext('('+src.slice(a,b+2)+')',{pool,saveUploadedFile:async()=>{assert(state.begin===0,'uploads precede transaction');state.uploads++;if(fail==='upload')throw Error('private storage path');return '/new.jpg';},sanitizeJSONInput:()=>null,evaluateHouseCompliance:async()=>{assert(state.commit===1);assert(state.release===1);state.events.push('evaluate');},console:{log(){},warn(){},error(){}}});
+ const req={user:{id:10},body:{house_name:'New',existing_photos:'["/retained.jpg"]',...(edit?{house_id:'7'}:{})},files:{house_photos:[{buffer:Buffer.from('test'),originalname:'photo.jpg'}]}};
+ const res={code:200,status(n){this.code=n;return this;},json(body){this.body=body;return this;}};
+ return {state,handler,req,res};
+}
+for(const edit of [false,true]){
+ test((edit?'Update':'New')+' success commits property and complete gallery before follow-up work',async()=>{const f=fixture({edit});await f.handler(f.req,f.res);assert.equal(f.res.code,edit?200:201);assert.equal(f.state.commit,1);assert.equal(f.state.rollback,0);assert.equal(f.state.release,1);assert.deepEqual(f.state.db.photos,['/retained.jpg','/new.jpg']);});
+ for(const fail of ['upload','acquire','begin','house','photo','commit',...(edit?['delete']:[])])test((edit?'Update':'New')+' '+fail+' failure preserves database and gives safe message',async()=>{const f=fixture({edit,fail});await f.handler(f.req,f.res);assert.equal(f.res.code,500);assert.equal(f.state.commit,0);assert.deepEqual(f.state.db,f.state.original);assert(!f.res.body.message.includes('internal'));assert(!f.res.body.message.includes('private'));assert.match(f.res.body.message,/Please try again/);assert.equal(f.state.release,['upload','acquire'].includes(fail)?0:1);assert.equal(f.state.rollback,['upload','acquire','begin'].includes(fail)?0:1);});
+}
+test('Zero-row update rolls back and releases before returning validation',async()=>{const f=fixture({edit:true,zero:true});await f.handler(f.req,f.res);assert.equal(f.res.code,403);assert.equal(f.state.rollback,1);assert.equal(f.state.release,1);assert.deepEqual(f.state.db,f.state.original);});
+test('Notification failure does not undo a committed new application',async()=>{const f=fixture({fail:'notification'});await f.handler(f.req,f.res);assert.equal(f.res.code,201);assert.equal(f.state.commit,1);assert.equal(f.state.rollback,0);});
+for(const photos of ['{broken','{}','[null]'])test('Invalid gallery input rejected before upload '+photos,async()=>{const f=fixture();f.req.body.existing_photos=photos;await f.handler(f.req,f.res);assert.equal(f.res.code,400);assert.equal(f.state.uploads,0);assert.equal(f.state.begin,0);});

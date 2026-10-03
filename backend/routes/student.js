@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../config/db.js';
+import { PUBLIC_HOUSE_COLUMNS } from '../config/publicHouseFields.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 
@@ -87,7 +88,7 @@ router.get('/houses', async (req, res) => {
         let houses;
         if (terms.length === 0) {
             [houses] = await pool.query(`
-                SELECT bh.*,
+                SELECT ${PUBLIC_HOUSE_COLUMNS},
                        (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
                        (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
                        (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
@@ -111,7 +112,7 @@ router.get('/houses', async (req, res) => {
 
             const queryParams = [...params, ...params];
             const sql = `
-                SELECT bh.*,
+                SELECT ${PUBLIC_HOUSE_COLUMNS},
                        (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) AS avg_rating,
                        (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
                        (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
@@ -158,7 +159,7 @@ router.get('/house/:id', async (req, res) => {
         const houseId = req.params.id;
 
         const [houseRows] = await pool.query(`
-            SELECT bh.*, u.name as owner_name, u.email as owner_email,
+            SELECT ${PUBLIC_HOUSE_COLUMNS}, u.name as owner_name, u.email as owner_email,
                    (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
                    (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price
             FROM boarding_houses bh
