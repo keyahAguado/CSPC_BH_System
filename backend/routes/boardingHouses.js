@@ -526,12 +526,30 @@ const sanitizeJSONInput = (val) => {
 router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async (req, res) => {
     let connection;
     let transactionOpen = false;
+    let submissionStep = 'validation';
+    const safeDiagnostic = (error) => {
+        const databaseError = error?.cause || error;
+        const rawCode = databaseError?.code || databaseError?.name || 'UNKNOWN';
+        const code = typeof rawCode === 'string' && /^(?:[A-Z][A-Z0-9_]{0,63}|Error|TypeError|RangeError)$/.test(rawCode) ? rawCode : 'UNKNOWN';
+        const match = String(databaseError?.sqlMessage || databaseError?.message || '').match(/(?:for column|column) ['`]([a-z_]+)['`]/i);
+        const allowedColumns = new Set([
+            'owner_id', 'name', 'price', 'phone_contact', 'latitude', 'longitude',
+            'advance_months', 'deposit_months', 'deposit_type', 'house_status',
+            'house_id', 'photo_url', 'sort_order', 'barangay', 'location', 'map_link',
+            'amenities_free', 'amenities_paid', 'description', 'img', 'img_1', 'img_2', 'img_3',
+            ...['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire'].flatMap(key => ['permit_' + key, 'expiry_permit_' + key])
+        ]);
+        return { step: submissionStep, code, column: match && allowedColumns.has(match[1]) ? match[1] : 'unknown' };
+    };
     const beginApplicationTransaction = async () => {
+        submissionStep = 'database-connection';
         connection = await pool.getConnection();
+        submissionStep = 'transaction-start';
         await connection.beginTransaction();
         transactionOpen = true;
     };
     const commitApplicationTransaction = async () => {
+        submissionStep = 'commit';
         await connection.commit();
         transactionOpen = false;
         connection.release();
@@ -559,11 +577,11 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         const uploadField = async (fieldName, folder) => {
             if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
                 try {
+                    submissionStep = 'upload:' + fieldName;
                     const f = req.files[fieldName][0];
                     return await saveUploadedFile(f.buffer, f.originalname, folder);
                 } catch (uploadErr) {
-                    console.error(`[UPLOAD ERROR] Field "${fieldName}":`, uploadErr.message);
-                    throw new Error(`File upload failed for ${fieldName}: ${uploadErr.message}`);
+                    throw new Error('File upload failed.', { cause: uploadErr });
                 }
             }
             return null;
@@ -577,6 +595,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             if (typeof house_name !== 'string' || !house_name.trim()) {
                 return res.status(400).json({ success: false, message: 'Please enter a boarding house name.' });
             }
+            submissionStep = 'duplicate-check';
             const [existingOwnerHouse] = await pool.query(
                 'SELECT id FROM boarding_houses WHERE owner_id = ? AND LOWER(TRIM(name)) = LOWER(?) LIMIT 1',
                 [ownerId, house_name.trim()]
@@ -589,6 +608,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             }
         }
 
+        submissionStep = 'photo-list-validation';
         let parsedExistingPhotos;
         try {
             parsedExistingPhotos = existing_photos ? JSON.parse(existing_photos) : [];
@@ -603,6 +623,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         let uploadedPhotoUrls = [];
         if (req.files && req.files['house_photos'] && req.files['house_photos'].length > 0) {
             console.log(`[ACCREDITATION PHOTOS] Received ${req.files['house_photos'].length} new photo file(s)`);
+            submissionStep = 'gallery-upload';
             const photoPromises = req.files['house_photos'].map(f => saveUploadedFile(f.buffer, f.originalname, 'house_photos'));
             uploadedPhotoUrls = await Promise.all(photoPromises);
             console.log(`[ACCREDITATION PHOTOS] Uploaded: ${JSON.stringify(uploadedPhotoUrls)}`);
@@ -616,6 +637,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
 
         // ================= CASE A: UPDATE EXISTING RECORD =================
         if (house_id) {
+            submissionStep = 'property-lookup';
             const [existingRows] = await pool.query(
                 'SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ?',
                 [house_id, ownerId]
@@ -651,6 +673,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             const expiry_permit_fire          = getExpiry('fire')          ? parseSafeDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
             await beginApplicationTransaction();
+            submissionStep = 'property-update';
             const [updateResult] = await connection.query(
                 `UPDATE boarding_houses 
                  SET name = ?, img = ?, img_1 = ?, img_2 = ?, img_3 = ?, location = ?, barangay = ?, map_link = ?, price = ?, phone_contact = ?, description = ?,
@@ -684,6 +707,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             }
 
             // Save the property and its complete gallery as one database transaction.
+            submissionStep = 'gallery-save';
             await connection.query('DELETE FROM house_photos WHERE house_id = ?', [house_id]);
             for (let i = 0; i < combinedPhotos.length; i++) {
                 await connection.query(
@@ -724,6 +748,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
         const img_3 = combinedPhotos[2] || null;
 
         await beginApplicationTransaction();
+        submissionStep = 'property-insert';
         const [result] = await connection.query(
             `INSERT INTO boarding_houses (
                 owner_id, name, img, img_1, img_2, img_3,
@@ -754,6 +779,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
             ]
         );
 
+        submissionStep = 'gallery-save';
         const newHouseId = result.insertId;
         for (let i = 0; i < combinedPhotos.length; i++) {
             await connection.query(
@@ -789,7 +815,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, async
                 console.error('Accreditation rollback failed:', rollbackErr.code || rollbackErr.name);
             }
         }
-        console.error('Accreditation Submission Error:', err.code || err.name);
+        console.error('Accreditation Submission Error:', safeDiagnostic(err));
         res.status(500).json({ success: false, message: 'We could not save your application. Please try again. If the problem continues, contact SASO.' });
     } finally {
         if (connection) connection.release();
