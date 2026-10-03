@@ -13,4 +13,3 @@ SET @h2_archive_migration_sql = (
 PREPARE h2_archive_migration FROM @h2_archive_migration_sql;
 EXECUTE h2_archive_migration;
 DEALLOCATE PREPARE h2_archive_migration;
-m

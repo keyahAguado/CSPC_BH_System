@@ -331,9 +331,12 @@ onMounted(async () => {
         <div v-if="successMsg" class="mb-6 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold p-5 rounded-2xl flex items-center gap-3 animate-fade-in">
           <i class="fa-solid fa-circle-check text-emerald-500"></i> {{ successMsg }}
         </div>
-        <div v-if="errorMsg" class="mb-6 bg-rose-50 border border-rose-200 text-rose-800 text-[13px] font-semibold p-5 rounded-2xl flex items-center gap-3 animate-fade-in">
-          <i class="fa-solid fa-circle-info text-rose-500"></i> {{ errorMsg }}
-          <router-link v-if="reservationBlocked" to="/student/bookings" class="font-bold underline shrink-0">My Bookings</router-link>
+        <div v-if="errorMsg" role="alert" class="mb-6 bg-rose-50 border border-rose-200 text-rose-800 text-[13px] font-semibold p-4 sm:p-5 rounded-2xl flex items-start gap-3 animate-fade-in">
+          <i class="fa-solid fa-circle-info text-rose-500 shrink-0 mt-1" aria-hidden="true"></i>
+          <div class="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
+            <p class="min-w-0 flex-1 break-words leading-relaxed">{{ errorMsg }}</p>
+            <router-link v-if="reservationBlocked" to="/student/bookings" class="self-start sm:self-auto font-bold underline shrink-0">My Bookings</router-link>
+          </div>
         </div>
 
         <form @submit.prevent="openConfirmModal" class="space-y-6 text-left">
@@ -346,9 +349,10 @@ onMounted(async () => {
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Check-In Date</label>
-                <input type="date" v-model="form.check_in_date" :min="minCheckInDate" @change="handleCheckInDateChange" required
+                <label for="booking-check-in-date" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Check-In Date</label>
+                <input id="booking-check-in-date" type="date" v-model="form.check_in_date" :min="minCheckInDate" @change="handleCheckInDateChange" aria-describedby="booking-check-in-help" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+                <p id="booking-check-in-help" class="mt-2 text-xs text-slate-500">Tap the date field or calendar icon to choose your check-in date.</p>
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Duration of Stay (Months)</label>
