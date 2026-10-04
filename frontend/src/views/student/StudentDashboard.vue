@@ -50,7 +50,7 @@ const fetchHouses = async () => {
     isOfflineFlag.value = false;
     const res = await axios.get('/api/student/houses');
     const fetched = res.data?.houses || res.data?.data || (Array.isArray(res.data) ? res.data : null);
-    if (fetched && Array.isArray(fetched) && fetched.length > 0) {
+    if (Array.isArray(fetched)) {
       houses.value = fetched;
       localStorage.setItem('cspc_cached_student_houses', JSON.stringify(fetched));
     }

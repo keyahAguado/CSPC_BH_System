@@ -139,7 +139,7 @@ for(const [file,method,route,scope] of wiring) test('Actual '+file+' '+route+' r
     const start=source.indexOf(`router.${method}('${route}'`),end=source.indexOf('\n});',start)+4;
     let handlers,calls=0;const pass=(req,res,next)=>next();
     const router={[method](name,...list){handlers=list;}};
-    const sandbox={router,authenticateToken:pass,verifyOwner:pass,verifyAdmin:pass,upload:{single:()=>pass},uploadOwnerMedia:pass,uploadAccreditationFiles:pass,validateBody:api.validateBody,validateStudentCourse:api.validateStudentCourse,validateImages:uploads.validateImages,updateProfileHandler:()=>{calls++;},pool:{query(){calls++;throw Error('Unexpected DB');},getConnection(){calls++;throw Error('Unexpected DB');}},console:{error(){},log(){}}};
+    const sandbox={router,authenticateToken:pass,verifyOwner:pass,verifyAdmin:pass,upload:{single:()=>pass},uploadOwnerMedia:pass,uploadAccreditationFiles:pass,verifyOwnerOnboarding:pass,validateBody:api.validateBody,validateStudentCourse:api.validateStudentCourse,validateImages:uploads.validateImages,updateProfileHandler:()=>{calls++;},pool:{query(){calls++;throw Error('Unexpected DB');},getConnection(){calls++;throw Error('Unexpected DB');}},console:{error(){},log(){}}};
     if(route.endsWith('/update-profile')&&file==='owner.js') vm.runInNewContext(source.slice(start,source.indexOf('\n',start)),sandbox);
     else vm.runInNewContext(source.slice(start,end),sandbox);
     const invalid=cases.find(c=>c.scope===scope);assert(invalid);

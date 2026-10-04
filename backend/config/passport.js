@@ -53,30 +53,18 @@ passport.use(new GoogleStrategy({
 
             // ─── PATH B: ADMIN / EMPLOYEE ──────────────────────────────────
             if (isAdmin) {
-                // 1. Try to find by Google ID
-                let [rows] = await pool.query('SELECT * FROM users WHERE google_id = ?', [profile.id]);
-                if (rows.length > 0) {
-                    if (profilePic && rows[0].profile_pic !== profilePic) {
-                        await pool.query('UPDATE users SET profile_pic = ? WHERE id = ?', [profilePic, rows[0].id]);
-                    }
-                    return done(null, { ...rows[0], profile_pic: profilePic || rows[0].profile_pic });
-                }
-
-                // 2. Try to find by email
-                [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-                if (rows.length > 0) {
-                    await pool.query('UPDATE users SET google_id = ?, profile_pic = COALESCE(NULLIF(?, \'\'), profile_pic) WHERE email = ?', [profile.id, profilePic, email]);
-                    const [updated] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-                    return done(null, updated[0]);
-                }
-
-                // 3. Auto-register new admin
-                const [result] = await pool.query(
-                    'INSERT INTO users (google_id, name, email, role, status, profile_pic) VALUES (?, ?, ?, ?, ?, ?)',
-                    [profile.id, name, email, 'admin', 'active', profilePic]
+                // Institutional domain alone does not grant SASO privileges.
+                const [rows] = await pool.query(
+                    "SELECT * FROM users WHERE email = ? AND role = 'admin'",
+                    [email]
                 );
-                const [created] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
-                return done(null, created[0]);
+                if (!rows.length) return done(null, false, { message: 'Administrator access requires SASO authorization.' });
+                const account = rows[0];
+                if (account.google_id && account.google_id !== profile.id) {
+                    return done(null, false, { message: 'Google identity does not match this account.' });
+                }
+                await pool.query("UPDATE users SET google_id = ?, profile_pic = COALESCE(NULLIF(?, ''), profile_pic) WHERE id = ?", [profile.id, profilePic, account.id]);
+                return done(null, { ...account, google_id: profile.id, profile_pic: profilePic || account.profile_pic });
             }
 
             // ─── PATH C: OWNER (personal Gmail or other domain) ───────────

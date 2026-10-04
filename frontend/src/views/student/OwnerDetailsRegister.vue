@@ -13,6 +13,7 @@ const router = useRouter();
 const email      = ref('');
 const name       = ref('');
 const googleId   = ref('');
+const onboardingCode = ref('');
 const profilePic = ref('');
 
 const phone   = ref('');
@@ -31,12 +32,13 @@ const successMessage = ref('');
 const isLoading      = ref(false);
 
 onMounted(async () => {
+  onboardingCode.value = route.query.onboarding_code || '';
   email.value      = route.query.email     || '';
   name.value       = route.query.name      || '';
   googleId.value   = route.query.google_id || '';
   profilePic.value = route.query.pic       || '';
 
-  if (!email.value || !googleId.value) {
+  if (!email.value || !googleId.value || !onboardingCode.value) {
     router.replace('/login?error=invalid_payload');
   }
 });
@@ -46,6 +48,7 @@ const sanitizePhoneInput = () => {
 };
 
 const handleSubmit = async () => {
+  if (isLoading.value) return;
   const inputError = validateInput('ownerRegistration', { name: name.value, email: email.value, google_id: googleId.value, phone: phone.value, address: address.value, profile_pic: profilePic.value || '' });
   if (inputError) { errorMessage.value = inputError; return; }
   if (!phone.value.trim() || !address.value.trim()) {
@@ -63,6 +66,7 @@ const handleSubmit = async () => {
 
   try {
     const response = await axios.post('/api/auth/register/owner-complete', {
+      onboarding_code: onboardingCode.value,
       name:        name.value,
       email:       email.value,
       google_id:   googleId.value,

@@ -11,6 +11,33 @@ import '../config/passport.js';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_cspc_token_key';
 
+// Server-held identity proof for new-owner onboarding; never grants API access.
+const ownerOnboardingGrants = new Map();
+const OWNER_ONBOARDING_TTL_MS = 15 * 60 * 1000;
+function issueOwnerOnboardingGrant(user) {
+    const now = Date.now();
+    for (const [key, grant] of ownerOnboardingGrants) {
+        if (grant.expiresAt <= now) ownerOnboardingGrants.delete(key);
+    }
+    const code = crypto.randomBytes(32).toString('hex');
+    ownerOnboardingGrants.set(code, { email: user.email, google_id: user.google_id, profile_pic: user.profilePic || null, expiresAt: now + OWNER_ONBOARDING_TTL_MS });
+    return code;
+}
+function verifyOwnerOnboarding(req, res, next) {
+    const code = req.body?.onboarding_code;
+    const grant = typeof code === 'string' ? ownerOnboardingGrants.get(code) : null;
+    if (!grant || grant.expiresAt <= Date.now()) {
+        if (grant) ownerOnboardingGrants.delete(code);
+        return res.status(401).json({ success: false, message: 'Your registration session has expired. Please continue with Google again.' });
+    }
+    if (req.body.email !== grant.email || req.body.google_id !== grant.google_id) {
+        return res.status(400).json({ success: false, message: 'Your Google account details could not be verified. Please continue with Google again.' });
+    }
+    req.body.profile_pic = grant.profile_pic;
+    req.ownerOnboardingCode = code;
+    next();
+}
+
 // ── One-time OAuth exchange codes ──────────────────────────────────────
 // Keeps the real JWT out of the redirect URL (browser history, server logs,
 // Referer headers). Each code is single-use and expires after 60 seconds.
@@ -265,6 +292,7 @@ router.get('/google/callback',
             // ── A. Brand-new owner → redirect to onboarding form ──────────
             if (user.isNewOwner) {
                 const params = new URLSearchParams({
+                    onboarding_code: issueOwnerOnboardingGrant(user),
                     email: user.email,
                     name: user.name,
                     google_id: user.google_id,
@@ -342,13 +370,16 @@ router.post('/register/owner', async (req, res) => {
 //    inserts the new owner record, and returns a JWT so the browser can
 //    log them in immediately.
 // =========================================================================
-router.post('/register/owner-complete', validateBody('ownerRegistration'), async (req, res) => {
+router.post('/register/owner-complete', verifyOwnerOnboarding, validateBody('ownerRegistration'), async (req, res) => {
     const { name, email, phone, address, google_id, profile_pic } = req.body;
 
     if (!name || !email || !phone || !address || !google_id) {
         return res.status(400).json({ success: false, message: 'All fields are required.' });
     }
 
+    const grant = ownerOnboardingGrants.get(req.ownerOnboardingCode);
+    if (!grant || grant.inProgress) return res.status(409).json({ success: false, message: 'Registration is already being processed. Please wait or continue with Google again.' });
+    grant.inProgress = true;
     try {
         // Guard: make sure this email/google_id doesn't already exist
         const [existing] = await pool.query(
@@ -366,6 +397,8 @@ router.post('/register/owner-complete', validateBody('ownerRegistration'), async
             'INSERT INTO users (google_id, name, email, role, status, phone, address, profile_pic) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [google_id, name, email, 'owner', 'pending', phone, address, profile_pic || null]
         );
+
+        ownerOnboardingGrants.delete(req.ownerOnboardingCode);
 
         const newUser = {
             id: result.insertId,
@@ -396,6 +429,8 @@ router.post('/register/owner-complete', validateBody('ownerRegistration'), async
     } catch (err) {
         console.error('Owner Complete Registration Error:', err.message);
         return res.status(500).json({ success: false, message: 'Server error during registration.' });
+    } finally {
+        grant.inProgress = false;
     }
 });
 
