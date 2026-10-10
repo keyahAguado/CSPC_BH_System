@@ -1,4 +1,8 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
@@ -88,16 +92,62 @@ const executeConfirm = async () => {
 
 // College/department color coding — shared by the report bars and the manage-courses list.
 const DEPARTMENTS = ['CCS', 'CHS', 'CEA', 'CAS', 'CTHBM', 'CTDE'];
+// Fixed categorical order (validated for colour-vision deficiency); a department keeps its hue everywhere.
 const DEPARTMENT_COLORS = {
-  CCS: { bar: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-  CHS: { bar: 'bg-purple-500', badge: 'bg-purple-50 text-purple-700 border-purple-100' },
-  CEA: { bar: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 border-slate-200' },
-  CAS: { bar: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-100' },
-  CTHBM: { bar: 'bg-green-500', badge: 'bg-green-50 text-green-700 border-green-100' },
-  CTDE: { bar: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-100' }
+  CCS: '#D99A1E',
+  CHS: '#8466CC',
+  CEA: '#1F9E8F',
+  CAS: '#C9577E',
+  CTHBM: '#6E9A2C',
+  CTDE: '#2A5FB0'
 };
-const DEFAULT_DEPT_COLOR = { bar: 'bg-slate-300', badge: 'bg-slate-50 text-slate-400 border-slate-100' };
+const DEFAULT_DEPT_COLOR = '#A3B1C4';
 const deptColor = (dept) => DEPARTMENT_COLORS[dept] || DEFAULT_DEPT_COLOR;
+
+// Chart styling shared by both canvases (presentation only).
+const CHART_FONT = "'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif";
+const SERIES_PRIMARY = '#1E4A8D';
+const SERIES_MALE = '#2A5FB0';
+const SERIES_FEMALE = '#D99A1E';
+const INK = '#33475F';
+const INK_MUTED = '#8597AD';
+const GRID = '#EDF2F8';
+const tooltipStyle = {
+  backgroundColor: '#142B4A',
+  titleColor: '#FFFFFF',
+  bodyColor: '#DCE6F4',
+  titleFont: { family: CHART_FONT, weight: '600', size: 12 },
+  bodyFont: { family: CHART_FONT, weight: '500', size: 12 },
+  padding: 10,
+  cornerRadius: 10,
+  boxPadding: 4,
+  usePointStyle: true
+};
+
+const genderTotalCount = computed(() => genderTotals.value.male + genderTotals.value.female);
+const genderShare = (count) => genderTotalCount.value > 0 ? Math.round((count / genderTotalCount.value) * 100) : 0;
+
+// Summary figures derived from the six-month series the API already returns.
+const trendSummary = computed(() => {
+  const trends = stats.value.trends || [];
+  const total = trends.reduce((sum, t) => sum + (parseInt(t.booking_count) || 0), 0);
+  let peak = null;
+  trends.forEach(t => {
+    const count = parseInt(t.booking_count) || 0;
+    if (count > 0 && (!peak || count > peak.count)) peak = { month: t.month, count };
+  });
+  return { total, peak };
+});
+
+// Bar chart height follows the number of properties instead of a fixed 320px box.
+const residencyChartHeight = computed(() => Math.max(180, (stats.value.houses || []).length * 34 + 40));
+
+// Occupancy ring geometry (r = 18).
+const RING_CIRCUMFERENCE = 2 * Math.PI * 18;
+const occupancyDash = computed(() => {
+  const pct = Math.min(100, Math.max(0, Number(stats.value.occupancyRate) || 0));
+  return `${(pct / 100) * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`;
+});
 
 // Chart Canvas Elements Refs
 const residencyCanvas = ref(null);
@@ -222,6 +272,7 @@ const deleteCourse = (course) => {
 };
 
 const fetchDashboardStats = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const response = await axios.get('/api/admin/dashboard', {
@@ -239,6 +290,7 @@ const fetchDashboardStats = async () => {
       };
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load dashboard stats:', error);
     showSystemAlert('Could not load administrative stats.', 'warning');
   } finally {
@@ -257,15 +309,13 @@ const renderCharts = () => {
 
   // A. Student Residency Bar Chart — stacked by sex (SDG 5 / Gender Equality
   // reporting), so each house's bar shows its actual male/female composition
-  // rather than one undifferentiated total.
+  // rather than one undifferentiated total. The backend already orders houses by
+  // resident count, so the busiest property is listed first (top of the chart).
   if (residencyCanvas.value && rawHouses.length > 0) {
-    const barLabels = rawHouses.map(h => h.name.toUpperCase());
+    const barLabels = rawHouses.map(h => h.name);
     const maleData = rawHouses.map(h => parseInt(h.male_count) || 0);
     const femaleData = rawHouses.map(h => parseInt(h.female_count) || 0);
-
-    barLabels.reverse();
-    maleData.reverse();
-    femaleData.reverse();
+    const totalAt = (i) => maleData[i] + femaleData[i];
 
     if (residencyChart) residencyChart.destroy();
 
@@ -278,17 +328,24 @@ const renderCharts = () => {
           {
             label: 'Male',
             data: maleData,
-            backgroundColor: '#3b82f6',
-            borderRadius: 6,
-            barThickness: 14,
+            backgroundColor: SERIES_MALE,
+            hoverBackgroundColor: '#1E4A8D',
+            // 2px surface-coloured gap between the stacked segments.
+            borderColor: '#FFFFFF',
+            borderWidth: { right: 2 },
+            borderSkipped: false,
+            borderRadius: 0,
+            barThickness: 16,
             stack: 'residents'
           },
           {
             label: 'Female',
             data: femaleData,
-            backgroundColor: '#ec4899',
-            borderRadius: 6,
-            barThickness: 14,
+            backgroundColor: SERIES_FEMALE,
+            hoverBackgroundColor: '#C2850F',
+            borderRadius: { topRight: 6, bottomRight: 6 },
+            borderSkipped: false,
+            barThickness: 16,
             stack: 'residents'
           }
         ]
@@ -296,18 +353,51 @@ const renderCharts = () => {
       options: {
         indexAxis: 'y',
         maintainAspectRatio: false,
+        layout: { padding: { right: 32 } },
+        interaction: { mode: 'index', axis: 'y', intersect: false },
         plugins: {
           legend: { display: false },
+          tooltip: {
+            ...tooltipStyle,
+            callbacks: {
+              footer: (items) => `Total: ${totalAt(items[0].dataIndex)} residents`
+            },
+            footerFont: { family: CHART_FONT, weight: '600', size: 12 },
+            footerColor: '#FFFFFF'
+          },
+          // One label per bar: the total at the bar end (segment values live in the tooltip).
           datalabels: {
-            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
-            color: '#fff',
-            font: { family: 'Outfit', weight: 'black', size: 9 },
-            formatter: (value) => value
+            display: (ctx) => ctx.datasetIndex === 1 && totalAt(ctx.dataIndex) > 0,
+            anchor: 'end',
+            align: 'end',
+            offset: 6,
+            clamp: true,
+            color: INK,
+            font: { family: CHART_FONT, weight: '600', size: 12 },
+            formatter: (value, ctx) => totalAt(ctx.dataIndex)
           }
         },
         scales: {
-          x: { stacked: true, beginAtZero: true, grid: { color: '#f8fafc' }, ticks: { font: { family: 'Outfit', weight: 'bold', size: 10 }, precision: 0 } },
-          y: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Outfit', weight: 'black', size: 9 }, color: '#475569' } }
+          x: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: GRID },
+            border: { display: false },
+            ticks: { font: { family: CHART_FONT, size: 11 }, color: INK_MUTED, precision: 0 }
+          },
+          y: {
+            stacked: true,
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              font: { family: CHART_FONT, weight: '500', size: 12 },
+              color: INK,
+              callback: function (value) {
+                const label = this.getLabelForValue(value);
+                return label.length > 24 ? label.slice(0, 23) + '…' : label;
+              }
+            }
+          }
         }
       }
     });
@@ -318,43 +408,63 @@ const renderCharts = () => {
     const lineLabels = rawTrends.map(t => t.month);
     const lineData = rawTrends.map(t => t.booking_count);
 
+    // Emphasis: the busiest month is solid navy, the rest a light tint. Only the
+    // peak and the latest month carry a value label; the tooltip covers the rest.
+    const numeric = lineData.map(v => parseInt(v) || 0);
+    const maxValue = Math.max(...numeric);
+    const peakIndex = maxValue > 0 ? numeric.indexOf(maxValue) : -1;
+    const lastIndex = numeric.length - 1;
+    const isLabelled = (i) => (i === peakIndex || i === lastIndex) && numeric[i] > 0;
+
     if (trendChart) trendChart.destroy();
 
-    const ctxTrend = trendCanvas.value.getContext('2d');
-    const gradient = ctxTrend.createLinearGradient(0, 0, 0, 300);
-    gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
-    gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
-
-    trendChart = new Chart(ctxTrend, {
-      type: 'line',
+    trendChart = new Chart(trendCanvas.value.getContext('2d'), {
+      type: 'bar',
+      plugins: [ChartDataLabels],
       data: {
         labels: lineLabels,
         datasets: [{
-          label: 'Monthly Bookings',
+          label: 'Bookings',
           data: lineData,
-          borderColor: '#10b981',
-          borderWidth: 3,
-          backgroundColor: gradient,
-          fill: true,
-          tension: 0.4,
-          pointBackgroundColor: '#fff',
-          pointBorderColor: '#10b981',
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6
+          backgroundColor: numeric.map((_, i) => (i === peakIndex ? SERIES_PRIMARY : '#C9D7EC')),
+          hoverBackgroundColor: numeric.map((_, i) => (i === peakIndex ? '#163870' : '#9FB6D9')),
+          borderRadius: { topLeft: 6, topRight: 6 },
+          borderSkipped: false,
+          maxBarThickness: 24,
+          categoryPercentage: 0.7
         }]
       },
       options: {
         maintainAspectRatio: false,
+        layout: { padding: { top: 22, left: 2, right: 6 } },
         plugins: {
-          legend: { display: false }
+          legend: { display: false },
+          tooltip: {
+            ...tooltipStyle,
+            displayColors: false,
+            callbacks: { label: (ctx) => `${ctx.parsed.y} booking${ctx.parsed.y === 1 ? '' : 's'}` }
+          },
+          datalabels: {
+            display: (ctx) => isLabelled(ctx.dataIndex),
+            anchor: 'end',
+            align: 'end',
+            offset: 2,
+            color: '#142B4A',
+            font: { family: CHART_FONT, weight: '700', size: 12 },
+            formatter: (value) => value
+          }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { family: 'Outfit', weight: 'bold', size: 10 }, color: '#475569' } },
-          y: { 
-            beginAtZero: true, 
-            grid: { color: '#f8fafc' }, 
-            ticks: { font: { family: 'Outfit', weight: 'bold', size: 10 }, color: '#94a3b8' } 
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { font: { family: CHART_FONT, weight: '500', size: 12 }, color: INK }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: GRID },
+            border: { display: false },
+            ticks: { font: { family: CHART_FONT, size: 11 }, color: INK_MUTED, precision: 0, maxTicksLimit: 5 }
           }
         }
       }
@@ -376,297 +486,268 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('popstate', preventBackNavigation);
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-[#eef6ff] min-h-screen font-sans text-slate-800 flex flex-col">
+  <div class="admin-shell">
     <AdminNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main class="flex-1 max-w-6xl mx-auto w-full py-8 px-4 sm:px-6 text-left">
-      <!-- Dashboard Header -->
-      <div class="text-center mb-6">
-        <p class="text-base font-black text-slate-500 uppercase tracking-widest mb-1.5">Hello, {{ adminName }}!</p>
-        <h1 class="text-2xl font-black text-slate-800 uppercase tracking-tight">
-          Home
-        </h1>
-        <div class="w-12 h-1 bg-[#1d70f5] mx-auto rounded-full mt-1.5"></div>
-      </div>
+    <main id="management-content" tabindex="-1">
+      <LoadError :message="loadError" />
 
-      <!-- Loading State Indicator -->
-      <div v-if="isLoading" class="py-16 flex flex-col items-center justify-center gap-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md mx-auto text-center">
-        <svg class="animate-spin h-8 w-8 text-[#1e4a8d] mb-2 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading stats details...</p>
-      </div>
-
-      <div v-else class="space-y-6 animate-in fade-in duration-300">
-        <!-- Summary Stats Cards -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <!-- Accredited Houses -->
-          <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
-            <div class="w-9 h-9 sm:w-11 sm:h-11 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-2.5 sm:mb-4 transition group-hover:bg-[#2a528a] group-hover:text-white shadow-sm flex-shrink-0">
-              <i class="fa-solid fa-house-circle-check text-base sm:text-lg"></i>
-            </div>
-            <div>
-              <p class="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1 truncate">Accredited Houses</p>
-              <div class="flex items-baseline flex-wrap gap-1 sm:gap-2">
-                <p class="text-2xl sm:text-3xl font-black text-slate-900 leading-none">{{ stats.totalHouses || 0 }}</p>
-                <span class="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-tight">Active Units</span>
-              </div>
-            </div>
-          </router-link>
-
-          <!-- Student Residents -->
-          <router-link to="/admin/emergency-monitoring" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
-            <div class="w-9 h-9 sm:w-11 sm:h-11 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 mb-2.5 sm:mb-4 transition group-hover:bg-emerald-600 group-hover:text-white shadow-sm flex-shrink-0">
-              <i class="fa-solid fa-users text-base sm:text-lg"></i>
-            </div>
-            <div>
-              <p class="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1 truncate">Active Residents</p>
-              <div class="flex items-baseline flex-wrap gap-1 sm:gap-2">
-                <p class="text-2xl sm:text-3xl font-black text-slate-900 leading-none">{{ stats.totalStudents || 0 }}</p>
-                <span class="text-[8px] sm:text-[9px] font-black text-emerald-500 uppercase tracking-tight">Confirmed Stays</span>
-              </div>
-            </div>
-          </router-link>
-
-          <!-- Occupancy Rate -->
-          <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
-            <div class="w-9 h-9 sm:w-11 sm:h-11 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 mb-2.5 sm:mb-4 transition group-hover:bg-purple-600 group-hover:text-white shadow-sm flex-shrink-0">
-              <i class="fa-solid fa-chart-pie text-base sm:text-lg"></i>
-            </div>
-            <div>
-              <p class="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1 truncate">Occupancy Rate</p>
-              <div class="flex items-baseline flex-wrap gap-1 sm:gap-2">
-                <p class="text-2xl sm:text-3xl font-black text-slate-900 leading-none">{{ stats.occupancyRate || 0 }}%</p>
-                <span class="text-[8px] sm:text-[9px] font-black text-purple-500 uppercase tracking-tight">Current Load</span>
-              </div>
-            </div>
-          </router-link>
-
-          <!-- Pending Applications -->
-          <router-link to="/admin/pending-applications" class="cursor-pointer bg-white rounded-2xl p-3.5 sm:p-5 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden transition hover:shadow-md hover:scale-[1.02] group">
-            <div class="w-9 h-9 sm:w-11 sm:h-11 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 mb-2.5 sm:mb-4 transition group-hover:bg-amber-500 group-hover:text-white shadow-sm flex-shrink-0">
-              <i class="fa-solid fa-hourglass-half text-base sm:text-lg"></i>
-            </div>
-            <div>
-              <p class="text-[9px] sm:text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1 truncate">Pending Applications</p>
-              <div class="flex items-baseline flex-wrap gap-1 sm:gap-2">
-                <p class="text-2xl sm:text-3xl font-black text-slate-900 leading-none">{{ stats.pendingApps || 0 }}</p>
-                <span class="text-[8px] sm:text-[9px] font-black text-amber-500 uppercase tracking-tight">In Queue</span>
-              </div>
-            </div>
-          </router-link>
+      <header class="admin-page-head no-print">
+        <div>
+          <h1>Welcome back, {{ adminName }}</h1>
+          <p>Accreditation, student residency, and booking activity across CSPC-accredited boarding houses.</p>
         </div>
+      </header>
 
-        <!-- Top Rated Highlight Card -->
-        <router-link to="/admin/registered" class="cursor-pointer bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 transition hover:shadow-md hover:scale-[1.01] group">
-          <div class="flex items-center gap-5">
-            <div class="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-colors flex-shrink-0">
-              <i class="fa-solid fa-star text-xl"></i>
+      <!-- Loading skeleton (keeps the final layout so nothing jumps when data arrives) -->
+      <div v-if="isLoading" aria-busy="true" aria-label="Loading dashboard statistics">
+        <div class="admin-kpis">
+          <div v-for="n in 4" :key="n" class="admin-skeleton" style="height: 112px;"></div>
+        </div>
+        <div class="admin-grid admin-grid-main">
+          <div class="admin-skeleton" style="height: 420px;"></div>
+          <div class="admin-skeleton" style="height: 420px;"></div>
+        </div>
+      </div>
+
+      <div v-else class="space-y-5">
+        <!-- KPI tiles -->
+        <section class="admin-kpis" style="margin-bottom: 0;" aria-label="Key figures">
+          <router-link to="/admin/registered" class="admin-kpi">
+            <div class="admin-kpi-top">
+              <span class="admin-kpi-icon" aria-hidden="true"><i class="fa-solid fa-building-circle-check"></i></span>
+              <span class="admin-kpi-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
             </div>
             <div>
-              <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Top-Rated Boarding House</p>
-              <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">{{ stats.mostRated || 'N/A' }}</h2>
-              <p class="text-[10px] font-bold text-amber-500 mt-0.5 uppercase tracking-wider">Highest rated based on student reviews</p>
+              <p class="admin-kpi-label">Accredited properties</p>
+              <p class="admin-kpi-value">{{ stats.totalHouses || 0 }}</p>
+              <p class="admin-kpi-note">Currently accredited boarding houses</p>
             </div>
-          </div>
-          <div class="flex flex-col items-center md:items-end gap-1 bg-slate-50 px-5 py-3 rounded-xl border border-slate-100 flex-shrink-0">
-            <div class="flex gap-1">
-              <i class="fa-solid fa-star text-amber-400 text-sm"></i>
-              <i class="fa-solid fa-star text-amber-400 text-sm"></i>
-              <i class="fa-solid fa-star text-amber-400 text-sm"></i>
-              <i class="fa-solid fa-star text-amber-400 text-sm"></i>
-              <i class="fa-solid fa-star text-amber-400 text-sm"></i>
-            </div>
-            <span class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Student Verified Rating</span>
-          </div>
-        </router-link>
+          </router-link>
 
-        <!-- Main Chart Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <!-- Student Residency Bar Chart -->
-          <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <div class="flex items-start justify-between gap-3 mb-4 flex-wrap">
-              <div class="flex items-center gap-3">
-                <div class="w-1 h-5 bg-[#2a528a] rounded-full"></div>
-                <div>
-                  <h2 class="text-xs font-black tracking-wider uppercase text-slate-800">Student Residency Overview</h2>
+          <router-link to="/admin/emergency-monitoring" class="admin-kpi">
+            <div class="admin-kpi-top">
+              <span class="admin-kpi-icon" aria-hidden="true"><i class="fa-solid fa-user-graduate"></i></span>
+              <span class="admin-kpi-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+            <div>
+              <p class="admin-kpi-label">CSPC student residents</p>
+              <p class="admin-kpi-value">{{ stats.totalStudents || 0 }}</p>
+              <p class="admin-kpi-note">Active residents in accredited properties</p>
+            </div>
+          </router-link>
+
+          <router-link to="/admin/registered" class="admin-kpi">
+            <div class="admin-kpi-top">
+              <svg class="admin-ring" viewBox="0 0 44 44" aria-hidden="true">
+                <circle class="track" cx="22" cy="22" r="18" />
+                <circle class="fill" cx="22" cy="22" r="18" :stroke-dasharray="occupancyDash" />
+              </svg>
+              <span class="admin-kpi-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+            <div>
+              <p class="admin-kpi-label">Occupancy rate</p>
+              <p class="admin-kpi-value">{{ stats.occupancyRate || 0 }}%</p>
+              <p class="admin-kpi-note">Active occupants against accredited room capacity</p>
+            </div>
+          </router-link>
+
+          <router-link to="/admin/pending-applications" class="admin-kpi">
+            <div class="admin-kpi-top">
+              <span class="admin-kpi-icon" :class="{ 'is-warm': stats.pendingApps > 0 }" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
+              <span v-if="stats.pendingApps > 0" class="admin-badge is-warning"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Needs review</span>
+              <span v-else class="admin-badge is-success"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Queue clear</span>
+            </div>
+            <div>
+              <p class="admin-kpi-label">Awaiting review</p>
+              <p class="admin-kpi-value">{{ stats.pendingApps || 0 }}</p>
+              <p class="admin-kpi-note">Applications and pending document updates</p>
+            </div>
+          </router-link>
+        </section>
+
+        <!-- Residency + booking activity -->
+        <div class="admin-grid admin-grid-main">
+          <section class="admin-card" aria-labelledby="residency-title">
+            <div class="admin-card-head">
+              <div>
+                <h2 id="residency-title">Student residency by property</h2>
+                <p>Accredited properties ranked by active CSPC residents, split by sex</p>
+              </div>
+              <span class="admin-badge is-neutral">Top 10</span>
+            </div>
+
+            <template v-if="stats.houses && stats.houses.length > 0">
+              <div v-if="genderTotalCount > 0" class="admin-split-summary">
+                <div class="admin-split" role="img" :aria-label="`Male ${genderTotals.male} (${genderShare(genderTotals.male)}%), female ${genderTotals.female} (${genderShare(genderTotals.female)}%)`">
+                  <span :style="{ width: genderShare(genderTotals.male) + '%', background: SERIES_MALE }"></span>
+                  <span :style="{ width: genderShare(genderTotals.female) + '%', background: SERIES_FEMALE }"></span>
+                </div>
+                <div class="admin-legend">
+                  <span><i class="admin-swatch" :style="{ background: SERIES_MALE }"></i>Male <strong>{{ genderTotals.male }}</strong> · {{ genderShare(genderTotals.male) }}%</span>
+                  <span><i class="admin-swatch" :style="{ background: SERIES_FEMALE }"></i>Female <strong>{{ genderTotals.female }}</strong> · {{ genderShare(genderTotals.female) }}%</span>
+                  <span class="text-[12px]" style="color: var(--a-muted); margin-left: auto;">Totals for the properties shown</span>
                 </div>
               </div>
-              <div v-if="stats.houses && stats.houses.length > 0" class="flex items-center gap-3 shrink-0">
-                <span class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
-                  <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>Boys: {{ genderTotals.male }}
-                </span>
-                <span class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
-                  <span class="w-2.5 h-2.5 rounded-full bg-pink-500"></span>Girls: {{ genderTotals.female }}
-                </span>
-              </div>
-            </div>
-            <div class="w-full relative" style="height: 260px;">
-              <div v-if="!stats.houses || stats.houses.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">
+            </template>
+
+            <div class="admin-chart" :style="{ height: (stats.houses && stats.houses.length > 0 ? residencyChartHeight : 220) + 'px' }">
+              <div v-if="!stats.houses || stats.houses.length === 0" class="admin-empty">
+                <i class="fa-solid fa-chart-bar" aria-hidden="true"></i>
                 No active boarding house statistics available
               </div>
-              <canvas v-else ref="residencyCanvas" id="boardingHouseChart"></canvas>
+              <canvas v-else ref="residencyCanvas" id="boardingHouseChart" role="img" aria-label="Active CSPC residents by property and sex. The legend shows totals for the displayed properties."></canvas>
             </div>
-          </div>
+          </section>
 
-          <!-- Booking Activity Trend Line Chart -->
-          <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-1 h-5 bg-emerald-500 rounded-full"></div>
-              <h2 class="text-xs font-black tracking-wider uppercase text-slate-800">System-Wide Booking Trend</h2>
-            </div>
-            <div class="w-full relative" style="height: 260px;">
-              <div v-if="!stats.trends || stats.trends.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">
-                No booking activity records available
+          <div class="admin-stack">
+            <section class="admin-card" aria-labelledby="bookings-title">
+              <div class="admin-card-head" style="margin-bottom: 10px;">
+                <div>
+                  <h2 id="bookings-title">Booking activity</h2>
+                  <p>Reservations made per month, system-wide</p>
+                </div>
+                <span class="admin-badge is-neutral">Last 6 months</span>
               </div>
-              <canvas v-else ref="trendCanvas" id="bookingTrendChart"></canvas>
-            </div>
+              <div v-if="stats.trends && stats.trends.length > 0" class="admin-stat-inline">
+                <div><small>Total bookings</small><strong>{{ trendSummary.total }}</strong></div>
+                <div v-if="trendSummary.peak"><small>Busiest month</small><strong>{{ trendSummary.peak.month }} · {{ trendSummary.peak.count }}</strong></div>
+              </div>
+              <div class="admin-chart" style="height: 220px;">
+                <div v-if="!stats.trends || stats.trends.length === 0" class="admin-empty">
+                  <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                  No booking activity records available
+                </div>
+                <canvas v-else ref="trendCanvas" id="bookingTrendChart" role="img" aria-label="System-wide monthly booking counts over the last six months."></canvas>
+              </div>
+            </section>
+
+            <router-link to="/admin/registered" class="admin-card admin-feature" style="text-decoration: none;" aria-label="Top-rated boarding house, view registered properties">
+              <span class="admin-feature-icon" aria-hidden="true"><i class="fa-solid fa-award"></i></span>
+              <div class="min-w-0">
+                <p>Top-rated boarding house</p>
+                <h3>{{ stats.mostRated || 'N/A' }}</h3>
+                <p class="mt-1">Highest average student review among accredited properties</p>
+              </div>
+            </router-link>
           </div>
         </div>
 
-        <!-- Residents by Course Breakdown -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <div class="flex items-center justify-between gap-3 mb-4">
-            <div class="flex items-center gap-3">
-              <div class="w-1 h-5 bg-purple-500 rounded-full"></div>
-              <h2 class="text-xs font-black tracking-wider uppercase text-slate-800">Active Residents by Course</h2>
-            </div>
-            <button @click="openCourseModal" class="text-[9px] font-black uppercase tracking-widest text-purple-600 hover:text-purple-800 transition flex items-center gap-1.5 cursor-pointer">
-              <i class="fa-solid fa-gear"></i> Manage Courses
-            </button>
-          </div>
-
-          <div v-if="coursesWithResidents.length === 0" class="py-10 flex items-center justify-center text-slate-400 font-bold uppercase tracking-wider text-xs text-center">
-            No active residents matched to a course yet
-          </div>
-          <template v-else>
-            <div class="space-y-2.5" :class="{ 'max-h-80 overflow-y-auto pr-1': showAllCourses }">
-              <button v-for="c in displayedCourses" :key="c.course_code"
-                @click="router.push({ path: '/admin/emergency-monitoring', query: { course: c.course_code } })"
-                class="w-full flex items-center gap-3 group cursor-pointer text-left"
-                :title="`View ${c.resident_count} active resident${c.resident_count === 1 ? '' : 's'} in ${c.course_code}`">
-                <span class="text-[10px] font-black text-slate-500 uppercase w-16 shrink-0 group-hover:text-slate-900 transition">{{ c.course_code }}</span>
-                <div class="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div class="h-full rounded-full transition-opacity group-hover:opacity-75" :class="deptColor(c.department).bar"
-                    :style="{ width: (c.resident_count / maxCourseResidentCount * 100) + '%' }"></div>
-                </div>
-                <span class="text-xs font-black text-slate-800 w-6 text-right shrink-0">{{ c.resident_count }}</span>
+        <!-- Courses + reports -->
+        <div class="admin-grid admin-grid-main">
+          <section class="admin-card" aria-labelledby="courses-title">
+            <div class="admin-card-head">
+              <div>
+                <h2 id="courses-title">Active residents by course</h2>
+                <p>Select a course to open its residents in the residency registry</p>
+              </div>
+              <button type="button" @click="openCourseModal" class="admin-btn admin-btn-secondary">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i> Manage courses
               </button>
             </div>
 
-            <button v-if="coursesWithResidents.length > COURSE_PREVIEW_COUNT" @click="showAllCourses = !showAllCourses"
-              class="w-full mt-3 text-center text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-purple-600 transition cursor-pointer">
-              {{ showAllCourses ? 'Show Less' : `Show All ${coursesWithResidents.length} Courses` }}
-              <i class="fa-solid ml-1" :class="showAllCourses ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-            </button>
+            <div v-if="coursesWithResidents.length === 0" class="admin-empty">
+              <i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>
+              No active residents matched to a course yet
+            </div>
+            <template v-else>
+              <div class="admin-course-list" :class="{ 'max-h-80 overflow-y-auto pr-1': showAllCourses }">
+                <button v-for="c in displayedCourses" :key="c.course_code" type="button"
+                  @click="router.push({ path: '/admin/emergency-monitoring', query: { course: c.course_code } })"
+                  class="admin-course-row"
+                  :title="`View ${c.resident_count} active resident${c.resident_count === 1 ? '' : 's'} in ${c.course_code}`">
+                  <span class="admin-course-code"><strong>{{ c.course_code }}</strong><small>{{ c.department || 'No dept.' }}</small></span>
+                  <span class="admin-course-track"><span :style="{ width: (c.resident_count / maxCourseResidentCount * 100) + '%', background: deptColor(c.department) }"></span></span>
+                  <span class="admin-course-value">{{ c.resident_count }}</span>
+                </button>
+              </div>
 
-            <!-- Department color legend -->
-            <div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-5 pt-4 border-t border-slate-100">
-              <div v-for="dept in DEPARTMENTS" :key="dept" class="flex items-center gap-1.5">
-                <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="deptColor(dept).bar"></span>
-                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{{ dept }}</span>
+              <div class="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4" style="border-top: 1px solid var(--a-track);">
+                <div class="admin-legend" aria-label="Department colours">
+                  <span v-for="dept in DEPARTMENTS" :key="dept"><i class="admin-swatch" :style="{ background: deptColor(dept) }"></i>{{ dept }}</span>
+                </div>
+                <button v-if="coursesWithResidents.length > COURSE_PREVIEW_COUNT" type="button" @click="showAllCourses = !showAllCourses" class="admin-link">
+                  {{ showAllCourses ? 'Show fewer' : `Show all ${coursesWithResidents.length} courses` }}
+                  <i class="fa-solid text-[11px]" :class="showAllCourses ? 'fa-chevron-up' : 'fa-chevron-down'" aria-hidden="true"></i>
+                </button>
+              </div>
+            </template>
+          </section>
+
+          <section class="admin-card" aria-labelledby="reports-title">
+            <div class="admin-card-head">
+              <div>
+                <h2 id="reports-title">Reports &amp; registries</h2>
+                <p>Printable institutional records</p>
               </div>
             </div>
-          </template>
-        </div>
-
-        <!-- Report Management Section -->
-        <div>
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-1 h-6 bg-[#2a528a] rounded-full"></div>
-            <h2 class="text-base font-black text-slate-800 uppercase tracking-wider">Report Management</h2>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Accredited Masterlist -->
-            <router-link to="/admin/reports/masterlist" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
-              <div class="flex justify-between items-start mb-4">
-                <div class="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 group-hover:bg-[#2a528a] group-hover:text-white transition-colors">
-                  <i class="fa-solid fa-file-contract text-lg"></i>
-                </div>
-                <span class="text-[9px] font-black text-slate-300 uppercase tracking-wider">Institutional</span>
-              </div>
-              <h3 class="text-base font-black text-slate-800 uppercase mb-2">Accredited Masterlist</h3>
-              <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Generate an official list of all boarding houses currently accredited by SASO.</p>
-              <div class="text-blue-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
-                Generate Report <i class="fa-solid fa-arrow-right"></i>
-              </div>
-            </router-link>
-
-            <!-- Emergency Student Registry -->
-            <router-link to="/admin/emergency-monitoring" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
-              <div class="flex justify-between items-start mb-4">
-                <div class="w-11 h-11 bg-red-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors">
-                  <i class="fa-solid fa-house-medical text-lg"></i>
-                </div>
-                <span class="text-[9px] font-black text-slate-300 uppercase tracking-wider">Safety Module</span>
-              </div>
-              <h3 class="text-base font-black text-slate-800 uppercase mb-2">Emergency Student Registry</h3>
-              <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Export student residency lists filtered by geographic risk areas (Monitoring Page).</p>
-              <div class="text-red-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
-                Open Monitoring <i class="fa-solid fa-arrow-right"></i>
-              </div>
-            </router-link>
-
-            <!-- Accreditation & Expiry -->
-            <router-link to="/admin/reports/compliance" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 group transition hover:-translate-y-1 hover:shadow-md flex flex-col cursor-pointer">
-              <div class="flex justify-between items-start mb-4">
-                <div class="w-11 h-11 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-colors">
-                  <i class="fa-solid fa-file-invoice text-lg"></i>
-                </div>
-                <span class="text-[9px] font-black text-slate-300 uppercase tracking-wider">Compliance</span>
-              </div>
-              <h3 class="text-base font-black text-slate-800 uppercase mb-2">Accreditation & Expiry</h3>
-              <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed flex-grow">Monitor legal document statuses and expiry dates for compliance reports.</p>
-              <div class="text-orange-600 font-bold text-xs uppercase tracking-wider flex items-center gap-2 group-hover:gap-3 transition-all">
-                Generate Report <i class="fa-solid fa-arrow-right"></i>
-              </div>
-            </router-link>
-          </div>
+            <nav class="admin-links" aria-labelledby="reports-title">
+              <router-link to="/admin/reports/masterlist">
+                <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-file-contract"></i></span>
+                <span><strong>Accredited masterlist</strong><small>Official list of SASO-accredited boarding houses</small></span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </router-link>
+              <router-link to="/admin/reports/compliance">
+                <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-file-circle-check"></i></span>
+                <span><strong>Compliance &amp; expiry</strong><small>Legal document status and permit expiry dates</small></span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </router-link>
+              <router-link to="/admin/reports/transactions">
+                <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                <span><strong>Reservation history</strong><small>Reservation transactions across properties</small></span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </router-link>
+              <router-link to="/admin/emergency-monitoring">
+                <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-house-medical"></i></span>
+                <span><strong>Emergency residency registry</strong><small>Residents and emergency contacts by area</small></span>
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </router-link>
+            </nav>
+          </section>
         </div>
       </div>
     </main>
 
     <!-- Manage Courses Modal -->
-    <div v-if="showCourseModal" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100 text-left animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div class="bg-slate-900 text-white px-8 py-6 flex justify-between items-center shrink-0">
+    <div v-management-dialog="{ close: () => showCourseModal = false }" v-if="showCourseModal" class="admin-dialog-backdrop z-[100]">
+      <div class="admin-dialog max-w-2xl">
+        <div class="admin-dialog-head">
           <div>
-            <h3 class="font-black text-xl uppercase tracking-tight">Manage Courses</h3>
-            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">Drives the student profile dropdown &amp; course reports</p>
+            <h3>Manage courses</h3>
+            <p>Courses populate the student profile dropdown and course reports.</p>
           </div>
-          <button @click="showCourseModal = false" class="text-white hover:text-slate-300 transition h-10 w-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer">
-            <i class="fa-solid fa-xmark text-xl"></i>
+          <button type="button" aria-label="Close dialog" @click="showCourseModal = false" class="admin-icon-btn">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
 
-        <div class="p-8 overflow-y-auto" ref="courseFormRef">
+        <div class="admin-dialog-body" ref="courseFormRef">
           <!-- Editing indicator — makes it obvious the form above just got populated -->
-          <div v-if="courseForm.id" class="mb-3 flex items-center gap-2 bg-purple-50 border border-purple-100 text-purple-700 text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl">
-            <i class="fa-solid fa-pen-to-square"></i> Editing "{{ courseForm.course_code }}" — update the fields below and Save
+          <div v-if="courseForm.id" class="admin-notice">
+            <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Editing “{{ courseForm.course_code }}”. Update the fields and select Save.
           </div>
 
           <!-- Add / Edit Form -->
-          <form @submit.prevent="saveCourse" class="flex flex-col sm:flex-row gap-3 mb-6 pb-6 border-b border-slate-100">
-            <input ref="courseCodeInputRef" v-model="courseForm.course_code" type="text" placeholder="Code (e.g. BSIT)" required
-              class="w-full sm:w-32 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-purple-500 focus:bg-white transition" />
-            <input v-model="courseForm.course_name" type="text" placeholder="Full name (e.g. BS Information Technology)" required
-              class="w-full flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-purple-500 focus:bg-white transition" />
-            <select v-model="courseForm.department"
-              class="w-full sm:w-32 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-purple-500 focus:bg-white transition appearance-none">
-              <option value="">No Dept.</option>
+          <form @submit.prevent="saveCourse" class="flex flex-col sm:flex-row gap-3 mb-5 pb-5" style="border-bottom: 1px solid var(--a-border);">
+            <input aria-label="Code (e.g. BSIT)" ref="courseCodeInputRef" v-model="courseForm.course_code" type="text" placeholder="Code (e.g. BSIT)" required
+              class="admin-field sm:w-32" />
+            <input aria-label="Full name (e.g. BS Information Technology)" v-model="courseForm.course_name" type="text" placeholder="Full name (e.g. BS Information Technology)" required
+              class="admin-field flex-1" />
+            <select aria-label="department" v-model="courseForm.department" class="admin-field sm:w-32">
+              <option value="">No dept.</option>
               <option v-for="dept in DEPARTMENTS" :key="dept" :value="dept">{{ dept }}</option>
             </select>
             <div class="flex gap-2 shrink-0">
-              <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition active:scale-95 cursor-pointer">
+              <button type="submit" class="admin-btn admin-btn-primary">
                 {{ courseForm.id ? 'Save' : 'Add' }}
               </button>
-              <button v-if="courseForm.id" type="button" @click="resetCourseForm" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition cursor-pointer">
+              <button v-if="courseForm.id" type="button" @click="resetCourseForm" class="admin-btn admin-btn-ghost">
                 Cancel
               </button>
             </div>
@@ -674,26 +755,25 @@ onUnmounted(() => {
 
           <!-- Course List -->
           <div v-if="isLoadingCourses" class="py-10 flex justify-center">
-            <div class="w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+            <div class="admin-spinner" role="status" aria-label="Loading courses"></div>
           </div>
           <div v-else class="space-y-2">
-            <div v-for="c in courseList" :key="c.id" class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-100 hover:bg-slate-50/60 transition"
-              :class="{ 'opacity-50': !c.is_active }">
-              <div class="min-w-0 flex items-center flex-wrap gap-x-2 gap-y-1">
-                <span class="font-black text-slate-900 uppercase text-sm">{{ c.course_code }}</span>
-                <span class="text-slate-500 text-xs font-semibold truncate">{{ c.course_name }}</span>
-                <span v-if="c.department" class="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border" :class="deptColor(c.department).badge">{{ c.department }}</span>
-                <span v-if="!c.is_active" class="text-[8px] font-black uppercase tracking-widest text-rose-500 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md">Inactive</span>
+            <div v-for="c in courseList" :key="c.id" class="admin-row-item" :class="{ 'is-inactive': !c.is_active }">
+              <div class="min-w-0 flex items-center flex-wrap gap-x-2.5 gap-y-1">
+                <span class="admin-row-title">{{ c.course_code }}</span>
+                <span class="admin-row-sub truncate">{{ c.course_name }}</span>
+                <span v-if="c.department" class="admin-badge is-neutral"><i class="admin-swatch" :style="{ background: deptColor(c.department) }"></i>{{ c.department }}</span>
+                <span v-if="!c.is_active" class="admin-badge is-warning">Inactive</span>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <button @click="editCourse(c)" class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white hover:bg-blue-500 hover:text-white rounded-lg transition cursor-pointer" title="Edit">
-                  <i class="fa-solid fa-pen-to-square text-xs"></i>
+                <button type="button" aria-label="Edit" @click="editCourse(c)" class="admin-icon-btn" title="Edit">
+                  <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
                 </button>
-                <button @click="toggleCourse(c)" class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white hover:bg-rose-500 hover:text-white rounded-lg transition cursor-pointer" :title="c.is_active ? 'Deactivate' : 'Activate'">
-                  <i class="fa-solid" :class="c.is_active ? 'fa-toggle-on' : 'fa-toggle-off'"></i>
+                <button type="button" aria-label="toggle Course" @click="toggleCourse(c)" class="admin-icon-btn" :title="c.is_active ? 'Deactivate' : 'Activate'">
+                  <i class="fa-solid" :class="c.is_active ? 'fa-toggle-on' : 'fa-toggle-off'" aria-hidden="true"></i>
                 </button>
-                <button @click="deleteCourse(c)" class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white hover:bg-red-600 hover:text-white rounded-lg transition cursor-pointer" title="Delete permanently">
-                  <i class="fa-solid fa-trash text-xs"></i>
+                <button type="button" aria-label="Delete permanently" @click="deleteCourse(c)" class="admin-icon-btn is-danger" title="Delete permanently">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
                 </button>
               </div>
             </div>
@@ -703,22 +783,17 @@ onUnmounted(() => {
     </div>
 
     <!-- Custom Confirmation Modal (consistent with the rest of the admin UI) -->
-    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
-        <div class="text-[#2a528a] mb-4 flex justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
-        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
-
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="admin-dialog-backdrop z-[250]">
+      <div class="admin-dialog max-w-sm" style="padding: 28px; text-align: center;">
+        <div class="admin-confirm-icon" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <h3 class="text-lg font-bold mb-2" style="color: var(--a-heading);">{{ confirmTitle }}</h3>
+        <p class="text-[13px] leading-relaxed mb-6" style="color: var(--a-muted);">{{ confirmMessage }}</p>
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
-            Confirm
-          </button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button type="button" @click="showConfirmModal = false" class="admin-btn admin-btn-secondary flex-1">
             Cancel
+          </button>
+          <button type="button" @click="executeConfirm" class="admin-btn admin-btn-danger flex-1">
+            Confirm
           </button>
         </div>
       </div>

@@ -1,4 +1,8 @@
 <script setup>
+import OwnerNav from '../../components/partials/OwnerNav.vue';
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 const isValidPermitDate = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -1084,34 +1088,26 @@ const submitApplication = async () => {
 
 
 <template>
-  <div class="bg-[#eef6ff] min-h-screen font-sans pb-24">
-    <FlashAlert ref="alertRef" />
+  <div class="management-page management-form-page bg-[#eef6ff] min-h-screen font-sans pb-24">
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
     <!-- Navbar -->
-    <nav class="bg-[#2a528a] px-10 py-5 flex justify-between items-center text-white shadow-md">
-      <div class="flex items-center gap-3">
-        <img src="/img/CSPC_logo.png" alt="Logo" class="w-9 h-9 object-contain bg-white rounded-full p-0.5" />
-        <span class="font-bold text-[13px] tracking-tight uppercase">CSPC'S BOARDING HOUSE SELECTION</span>
-      </div>
-      <div class="text-[11px] font-black uppercase tracking-[0.2em] text-blue-200">
-        Owner Onboarding
-      </div>
-    </nav>
+    <OwnerNav />
 
     <!-- Fullscreen Large Map Verification Modal -->
-    <div v-if="showFullscreenMap" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex flex-col p-6 md:p-10 animate-fade-in">
+    <div v-management-dialog="{ close: () => toggleFullscreenMap() }" v-if="showFullscreenMap" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex flex-col p-6 md:p-10 animate-fade-in">
       <div class="max-w-6xl mx-auto w-full h-full flex flex-col bg-white rounded-[3rem] overflow-hidden shadow-2xl relative">
         <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div>
-            <h3 class="text-xl font-black text-slate-900 uppercase tracking-tight">Pin Your Location</h3>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Click exactly where your boarding house is located</p>
+            <h3 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Pin Your Location</h3>
+            <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Click exactly where your boarding house is located</p>
           </div>
-          <button type="button" @click="toggleFullscreenMap" class="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center transition-all">
+          <button aria-label="Close dialog" type="button" @click="toggleFullscreenMap" class="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center transition-all management-button">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
         <div ref="largeMapContainer" class="flex-1 bg-slate-100"></div>
         <div class="p-6 bg-white border-t border-slate-100 flex justify-center">
-          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-black px-12 py-4 rounded-2xl uppercase text-[11px] tracking-[0.2em] shadow-xl hover:bg-black transition-all">
+          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-semibold px-12 py-4 rounded-2xl uppercase text-[12px] tracking-normal shadow-xl hover:bg-black transition-all management-button management-button-primary">
             Save &amp; Confirm Location
           </button>
         </div>
@@ -1119,7 +1115,7 @@ const submitApplication = async () => {
     </div>
 
     <!-- Main Workspace container -->
-    <main class="max-w-4xl mx-auto py-16 px-6">
+    <main id="management-content" tabindex="-1" class="max-w-4xl mx-auto py-16 px-6">
       
       <!-- Stepper Progress Indicator -->
       <div class="mb-12 flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm max-w-xl mx-auto">
@@ -1151,8 +1147,8 @@ const submitApplication = async () => {
       </div>
 
       <div class="text-center mb-12">
-        <h1 class="text-4xl font-black text-slate-900 tracking-tight uppercase">Accreditation Process</h1>
-        <p class="text-slate-500 font-bold uppercase text-[11px] tracking-[0.3em] mt-3">
+        <PageHeader title="Property accreditation" description="Complete the existing four steps to submit your boarding house for review." />
+        <p class="text-slate-500 font-bold uppercase text-[12px] tracking-normal mt-3">
           {{ activeStep === 1 ? 'Step 1: Legal Compliance' : activeStep === 2 ? 'Step 2: Property Photos' : activeStep === 3 ? 'Step 3: Property Details & Map' : 'Step 4: Amenities Center' }}
         </p>
       </div>
@@ -1164,8 +1160,8 @@ const submitApplication = async () => {
             <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
           </div>
           <div>
-            <h3 class="text-amber-800 font-black uppercase text-lg tracking-tight mb-2">Incomplete Details Detected</h3>
-            <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-4">Please fix the following problems to proceed with submission:</p>
+            <h3 class="text-amber-800 font-semibold uppercase text-lg tracking-tight mb-2">Incomplete Details Detected</h3>
+            <p class="text-slate-500 text-[12px] font-bold uppercase tracking-wide mb-4">Please fix the following problems to proceed with submission:</p>
             <ul class="list-disc list-inside space-y-2 text-slate-700 text-[13px] font-bold">
               <li v-for="err in validationErrors" :key="err" class="leading-relaxed">{{ err }}</li>
             </ul>
@@ -1190,14 +1186,14 @@ const submitApplication = async () => {
             <i class="fa-solid fa-circle-exclamation text-2xl"></i>
           </div>
           <div class="grow">
-            <h3 class="text-[#991b1b] font-black uppercase text-xl tracking-tight mb-1">Application Rejected</h3>
-            <p class="text-[#ef4444] text-[10px] font-bold uppercase tracking-[0.2em] mb-6">Please review the comments from SASO Admin below:</p>
+            <h3 class="text-[#991b1b] font-semibold uppercase text-xl tracking-tight mb-1">Application Rejected</h3>
+            <p class="text-[#ef4444] text-[12px] font-bold uppercase tracking-normal mb-6">Please review the comments from SASO Admin below:</p>
             <div class="bg-white/90 border-2 border-[#fee2e2] rounded-[1.8rem] p-8 text-slate-700 text-sm font-medium italic shadow-inner mb-6">
               "{{ adminComments || 'No comments left.' }}"
             </div>
             <div class="flex items-center gap-3 text-[#ef4444]">
               <div class="w-2 h-2 bg-[#ef4444] rounded-full animate-ping"></div>
-              <p class="text-[10px] font-black uppercase tracking-widest leading-relaxed">
+              <p class="text-[12px] font-semibold uppercase tracking-wide leading-relaxed">
                 <i class="fa-solid fa-info-circle mr-1"></i> Correct the details and resubmit below.
               </p>
             </div>
@@ -1211,7 +1207,7 @@ const submitApplication = async () => {
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading application config details...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading application config details...</p>
       </div>
 
       <!-- Use v-show so that map Container and input are instantly available on mount -->
@@ -1220,9 +1216,9 @@ const submitApplication = async () => {
         <!-- ================= STEP 1: MANDATORY PERMITS ================= -->
         <div v-show="activeStep === 1" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
-            <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-black shadow-sm">1</div>
+            <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-semibold shadow-sm">1</div>
             <div>
-              <h2 class="text-sm font-black text-slate-900 uppercase tracking-wider">Legal Permits &amp; Clearances</h2>
+              <h2 class="text-sm font-semibold text-slate-900 uppercase tracking-wider">Legal Permits &amp; Clearances</h2>
               <p class="text-xs text-slate-500 font-medium mt-0.5">Please provide the 4 mandatory permits and any additional supporting documents.</p>
             </div>
           </div>
@@ -1231,10 +1227,10 @@ const submitApplication = async () => {
             <!-- SECTION A: MANDATORY REQUIRED DOCUMENTS -->
             <div>
               <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
-                <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide flex items-center gap-2">
                   <i class="fa-solid fa-shield-halved text-blue-600"></i> Mandatory Documents
                 </h3>
-                <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Required (Items 1-4)</span>
+                <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Required (Items 1-4)</span>
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1246,34 +1242,34 @@ const submitApplication = async () => {
                 >
                   <div class="flex items-center justify-between mb-4 gap-2">
                     <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
-                      <span class="text-blue-600 font-black mr-1">{{ idx + 1 }}.</span> {{ p.label }}
+                      <span class="text-blue-600 font-semibold mr-1">{{ idx + 1 }}.</span> {{ p.label }}
                     </label>
-                    <span class="bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Required</span>
+                    <span class="bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Required</span>
                   </div>
                   
                   <div class="space-y-4">
                     <div>
-                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
-                      <input 
+                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
+                      <input aria-label="Scanned File" 
                         type="file" 
                         accept="image/*"
                         @change="(e) => handlePermitFile(p.permit_key, e)"
-                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
+                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
                       />
-                      <p v-if="permitFileErrors[p.permit_key]" class="text-[11px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
+                      <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
                         <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
                       </p>
                       <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
                         <div class="flex items-center gap-2">
-                          <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
-                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+                          <span class="text-[12px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
+                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[12px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
                         </div>
                       </div>
                     </div>
                     
                     <div>
-                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
+                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
+                      <input aria-label="Expiration Date" type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
                     </div>
                   </div>
                 </div>
@@ -1283,10 +1279,10 @@ const submitApplication = async () => {
             <!-- SECTION B: ADDITIONAL SUPPORTING DOCUMENTS -->
             <div>
               <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
-                <h3 class="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide flex items-center gap-2">
                   <i class="fa-solid fa-folder-open text-slate-400"></i> Additional Documents
                 </h3>
-                <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Optional (Items 5-8)</span>
+                <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Optional (Items 5-8)</span>
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1300,59 +1296,59 @@ const submitApplication = async () => {
                     <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
                       <span class="text-slate-400 font-bold mr-1">{{ idx + 5 }}.</span> {{ p.label }}
                     </label>
-                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Optional</span>
+                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Optional</span>
                   </div>
                   
                   <div class="space-y-4">
                     <div>
-                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
-                      <input 
+                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
+                      <input aria-label="Scanned File" 
                         type="file" 
                         accept="image/*"
                         @change="(e) => handlePermitFile(p.permit_key, e)"
-                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer" 
+                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer" 
                       />
-                      <p v-if="permitFileErrors[p.permit_key]" class="text-[11px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
+                      <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
                         <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
                       </p>
                       <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
                         <div class="flex items-center gap-2">
-                          <span class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
-                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+                          <span class="text-[12px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
+                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[12px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
                         </div>
                       </div>
                     </div>
                     
                     <div>
-                      <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
+                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
+                      <input aria-label="Expiration Date" type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <p class="mt-8 text-[10px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC up to 10MB.</p>
+          <p class="mt-8 text-[12px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC up to 10MB.</p>
         </div>
 
         <!-- ================= STEP 2: DYNAMIC PROPERTY PHOTOS ================= -->
         <div v-show="activeStep === 2" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-green-100 text-green-600 w-10 h-10 rounded-full flex items-center justify-center font-black">2</div>
-            <h2 class="text-xs font-black text-slate-900 uppercase tracking-[0.2em]">Property Photos</h2>
+            <div class="bg-green-100 text-green-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">2</div>
+            <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Property Photos</h2>
           </div>
           
           <div class="space-y-8">
             <!-- Main Featured Image -->
             <div>
-              <label class="block text-[10px] font-black uppercase mb-3 ml-1" :class="mainImgError ? 'text-red-600' : 'text-slate-400'">Featured Main Image (Facade/Exterior)</label>
+              <label class="block text-[12px] font-semibold uppercase mb-3 ml-1" :class="mainImgError ? 'text-red-600' : 'text-slate-400'">Featured Main Image (Facade/Exterior)</label>
               <div 
                 class="border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer relative"
                 :class="mainImgError ? 'bg-red-50/50 border-red-400' : 'bg-slate-50 border-slate-200 hover:border-green-400'"
               >
-                <input type="file" accept="image/*" @change="handleMainImg" class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-green-600 file:text-white hover:file:bg-black transition cursor-pointer" />
+                <input aria-label="Field" type="file" accept="image/*" @change="handleMainImg" class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-green-600 file:text-white hover:file:bg-black transition cursor-pointer" />
                 
-                <p v-if="mainImgError" class="text-[10px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
+                <p v-if="mainImgError" class="text-[12px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
                   <i class="fa-solid fa-circle-exclamation"></i> {{ mainImgError }}
                 </p>
 
@@ -1360,7 +1356,7 @@ const submitApplication = async () => {
                 <div v-if="mainHouseImgPreview" class="mt-4 max-w-xs mx-auto rounded-xl overflow-hidden border border-slate-200 shadow-sm relative group">
                   <img :src="mainHouseImgPreview" class="w-full h-48 object-cover" alt="Featured Exterior" />
                   <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                    <span class="text-white text-[9px] font-black uppercase tracking-widest bg-black/60 px-3 py-1.5 rounded-full">Change Photo</span>
+                    <span class="text-white text-[12px] font-semibold uppercase tracking-wide bg-black/60 px-3 py-1.5 rounded-full">Change Photo</span>
                   </div>
                 </div>
               </div>
@@ -1368,20 +1364,20 @@ const submitApplication = async () => {
             
             <!-- Dynamic Interior / Extra Photos Uploader -->
             <div class="border-t border-slate-100 pt-6">
-              <label class="block text-[10px] font-black uppercase mb-3 ml-1" :class="photosError ? 'text-red-600' : 'text-slate-400'">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
+              <label class="block text-[12px] font-semibold uppercase mb-3 ml-1" :class="photosError ? 'text-red-600' : 'text-slate-400'">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
               
               <div 
                 class="flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-6 transition cursor-pointer mb-6"
                 :class="photosError ? 'bg-red-50/50 border-red-400' : 'bg-slate-50 border-slate-200 hover:border-blue-400'"
               >
-                <input 
+                <input aria-label="Field" 
                   type="file" 
                   multiple 
                   accept="image/*"
                   @change="handlePhotosSelected" 
-                  class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer"
+                  class="w-full text-xs font-bold text-slate-500 file:mr-4 file:py-2 file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer"
                 />
-                <p v-if="photosError" class="text-[10px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
+                <p v-if="photosError" class="text-[12px] font-bold text-red-600 mt-2 flex items-center justify-center gap-1">
                   <i class="fa-solid fa-circle-exclamation"></i> {{ photosError }}
                 </p>
               </div>
@@ -1394,10 +1390,10 @@ const submitApplication = async () => {
                   class="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group"
                 >
                   <img :src="photo.previewUrl" class="w-full h-full object-cover" alt="Interior Preview" />
-                  <button 
+                  <button aria-label="remove Photo" 
                     type="button" 
                     @click="removePhoto(index)" 
-                    class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-700"
+                    class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-700 management-button"
                   >
                     <i class="fa-solid fa-trash text-xs" />
                   </button>
@@ -1410,14 +1406,14 @@ const submitApplication = async () => {
         <!-- ================= STEP 3: CORE INFO & 3-WAY MAP ================= -->
         <div v-show="activeStep === 3" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-purple-100 text-purple-600 w-10 h-10 rounded-full flex items-center justify-center font-black">3</div>
-            <h2 class="text-xs font-black text-slate-900 uppercase tracking-[0.2em]">Boarding House Details</h2>
+            <div class="bg-purple-100 text-purple-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">3</div>
+            <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Boarding House Details</h2>
           </div>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="md:col-span-2">
-              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.houseName ? 'text-red-600' : 'text-slate-400'">Boarding House Name</label>
-              <input 
+              <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.houseName ? 'text-red-600' : 'text-slate-400'">Boarding House Name</label>
+              <input aria-label="Boarding House Name" 
                 type="text" 
                 v-model="houseName" 
                 @blur="validateField('houseName')" 
@@ -1426,14 +1422,14 @@ const submitApplication = async () => {
                 :class="fieldErrors.houseName ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
                 placeholder="E.g. Nabua Heights Residence" 
               />
-              <p v-if="fieldErrors.houseName" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+              <p v-if="fieldErrors.houseName" class="text-[12px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.houseName }}
               </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.contactNumber ? 'text-red-600' : 'text-slate-400'">Contact Number</label>
-              <input 
+              <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.contactNumber ? 'text-red-600' : 'text-slate-400'">Contact Number</label>
+              <input aria-label="Contact Number" 
                 type="text" 
                 inputmode="tel"
                 v-model="contactNumber" 
@@ -1444,17 +1440,17 @@ const submitApplication = async () => {
                 :class="fieldErrors.contactNumber ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
                 placeholder="e.g. 09123456789 / 09987654321" 
               />
-              <p v-if="fieldErrors.contactNumber" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+              <p v-if="fieldErrors.contactNumber" class="text-[12px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.contactNumber }}
               </p>
-              <p v-else class="text-[10px] text-slate-400 font-bold mt-1.5 ml-1">
+              <p v-else class="text-[12px] text-slate-400 font-bold mt-1.5 ml-1">
                 <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
               </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.selectedBarangay ? 'text-red-600' : 'text-slate-400'">Official Barangay (Nabua)</label>
-              <select 
+              <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.selectedBarangay ? 'text-red-600' : 'text-slate-400'">Official Barangay (Nabua)</label>
+              <select aria-label="Official Barangay (Nabua)" 
                 v-model="selectedBarangay" 
                 @change="validateField('selectedBarangay')"
                 class="w-full p-4 rounded-xl text-sm font-bold outline-none transition cursor-pointer border" 
@@ -1463,14 +1459,14 @@ const submitApplication = async () => {
                 <option value="">Select Barangay</option>
                 <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
               </select>
-              <p v-if="fieldErrors.selectedBarangay" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+              <p v-if="fieldErrors.selectedBarangay" class="text-[12px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.selectedBarangay }}
               </p>
             </div>
 
             <div>
-              <label class="block text-[10px] font-black uppercase mb-2 ml-1" :class="fieldErrors.price ? 'text-red-600' : 'text-slate-400'">Monthly Rent Price (₱)</label>
-              <input 
+              <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.price ? 'text-red-600' : 'text-slate-400'">Monthly Rent Price (₱)</label>
+              <input aria-label="Monthly Rent Price (₱)" 
                 type="number" min="0.01" max="99999999.99" step="0.01"
                 v-model="price" 
                 @blur="validateField('price')" 
@@ -1479,20 +1475,20 @@ const submitApplication = async () => {
                 :class="fieldErrors.price ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'" 
                 placeholder="1500" 
               />
-              <p v-if="fieldErrors.price" class="text-[10px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
+              <p v-if="fieldErrors.price" class="text-[12px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.price }}
               </p>
             </div>
 
             <!-- Advance & Deposit Policy -->
             <div class="md:col-span-2 border-t border-slate-100 pt-6 mt-2">
-              <h3 class="text-xs font-black text-[#1e4a8d] uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+              <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-coins" /> Advance &amp; Deposit Policy
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Advance Rent</label>
-                  <select v-model="advanceMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Advance Rent</label>
+                  <select aria-label="Advance Rent" v-model="advanceMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
                     <option value="0">No Advance</option>
                     <option value="1">1 Month</option>
                     <option value="2">2 Months</option>
@@ -1500,8 +1496,8 @@ const submitApplication = async () => {
                 </div>
 
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Deposit Duration</label>
-                  <select v-model="depositMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Deposit Duration</label>
+                  <select aria-label="Deposit Duration" v-model="depositMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
                     <option value="0">No Deposit</option>
                     <option value="1">1 Month</option>
                     <option value="2">2 Months</option>
@@ -1509,8 +1505,8 @@ const submitApplication = async () => {
                 </div>
 
                 <div v-if="parseInt(depositMonths) > 0">
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Rent Deposit Type</label>
-                  <select v-model="depositType" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Rent Deposit Type</label>
+                  <select aria-label="Rent Deposit Type" v-model="depositType" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
                     <option value="consumable">Consumable (Last Month)</option>
                     <option value="refundable">Refundable (Cash)</option>
                   </select>
@@ -1520,7 +1516,7 @@ const submitApplication = async () => {
 
             <!-- 3-Way Location -->
             <div class="md:col-span-2 border-t border-slate-100 pt-6 mt-4">
-              <h3 class="text-xs font-black text-[#1e4a8d] uppercase tracking-[0.2em] mb-6">
+              <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-6">
                 <i class="fa-solid fa-map-location-dot" /> High-Precision Location Setup
               </h3>
               
@@ -1528,8 +1524,8 @@ const submitApplication = async () => {
                 <!-- STEP A: ADDRESS SEARCH -->
                 <div>
                   <div class="flex items-center gap-3 mb-4">
-                    <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
-                    <label class="text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
+                    <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">A</div>
+                    <label class="text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Type your Property Address</label>
                   </div>
                   <div id="autocomplete-wrapper" class="w-full"></div>
                 </div>
@@ -1538,15 +1534,15 @@ const submitApplication = async () => {
                 <div>
                   <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                     <div class="flex items-center gap-3">
-                      <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">B</div>
-                      <label class="text-[11px] font-black text-slate-900 uppercase tracking-widest">Verify or Pin Exactly on Map</label>
+                      <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">B</div>
+                      <label class="text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Verify or Pin Exactly on Map</label>
                     </div>
                     <div class="flex gap-2">
                       <button 
                         type="button" 
                         @click="detectMyLocation" 
                         :disabled="isGpsLoading"
-                        class="bg-white border border-slate-200 text-slate-600 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2"
+                        class="bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold uppercase tracking-wide px-4 py-2 rounded-full shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 management-button management-button-secondary"
                       >
                         <i v-if="isGpsLoading" class="fa-solid fa-spinner fa-spin" />
                         <i v-else class="fa-solid fa-location-crosshairs" /> Use My Current GPS
@@ -1554,7 +1550,7 @@ const submitApplication = async () => {
                       <button 
                         type="button" 
                         @click="toggleFullscreenMap" 
-                        class="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2"
+                        class="bg-slate-900 text-white text-[12px] font-semibold uppercase tracking-wide px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2 management-button"
                       >
                         <i class="fa-solid fa-expand" /> Open Large Map
                       </button>
@@ -1566,7 +1562,7 @@ const submitApplication = async () => {
                   >
                     <div ref="mapContainer" class="w-full h-full"></div>
                     <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
-                      <span class="bg-white/90 backdrop-blur-md px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                      <span class="bg-white/90 backdrop-blur-md px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
                         <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin
                       </span>
                     </div>
@@ -1574,7 +1570,7 @@ const submitApplication = async () => {
 
                   <div v-if="pinNeedsConfirmation" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                     <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
-                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                    <p class="text-[12px] font-bold text-amber-800 leading-snug">
                       Address text changed but the map pin hasn't moved yet. Select a suggestion from the dropdown, use GPS, or drag the pin — this is required before submitting.
                     </p>
                   </div>
@@ -1590,8 +1586,8 @@ const submitApplication = async () => {
             <input type="hidden" v-model="longitude" />
 
             <div class="md:col-span-2">
-              <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Property Description &amp; Rules</label>
-              <textarea v-model="description" rows="4" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Describe your rooms, house rules (curfews), and environment..."></textarea>
+              <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Property Description &amp; Rules</label>
+              <textarea aria-label="Property Description &amp;amp; Rules" v-model="description" rows="4" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Describe your rooms, house rules (curfews), and environment..."></textarea>
             </div>
           </div>
         </div>
@@ -1599,29 +1595,29 @@ const submitApplication = async () => {
         <!-- ================= STEP 4: AMENITIES CENTER ================= -->
         <div v-show="activeStep === 4" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-orange-100 text-orange-600 w-10 h-10 rounded-full flex items-center justify-center font-black">4</div>
-            <h2 class="text-xs font-black text-slate-900 uppercase tracking-[0.2em]">Amenities &amp; Services</h2>
+            <div class="bg-orange-100 text-orange-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">4</div>
+            <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Amenities &amp; Services</h2>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
             <!-- Free Amenities -->
             <div>
               <div class="flex items-center justify-between mb-6">
-                <p class="text-[11px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                <p class="text-[12px] font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                   <i class="fa-solid fa-gift text-green-500"></i> Free Amenities
                 </p>
                 <div class="flex gap-2">
-                  <input 
+                  <input aria-label="Add custom..." 
                     type="text" 
                     v-model="newFreeText" 
                     placeholder="Add custom..." 
-                    class="w-32 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-bold focus:border-green-400 outline-none"
+                    class="w-32 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[12px] font-bold focus:border-green-400 outline-none"
                     @keyup.enter="addCustomAmenity('free')"
                   />
                   <button 
                     type="button" 
                     @click="addCustomAmenity('free')" 
-                    class="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition"
+                    class="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition management-button"
                   >
                     Add
                   </button>
@@ -1633,8 +1629,8 @@ const submitApplication = async () => {
                   :key="item"
                   class="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 cursor-pointer hover:bg-white hover:border-blue-400 transition group"
                 >
-                  <input type="checkbox" :value="item" v-model="selectedFree" class="w-4 h-4 rounded border-slate-300 accent-blue-600" />
-                  <span class="text-[10px] font-bold text-slate-600 group-hover:text-blue-600">{{ item }}</span>
+                  <input aria-label="selected Free" type="checkbox" :value="item" v-model="selectedFree" class="w-4 h-4 rounded border-slate-300 accent-blue-600" />
+                  <span class="text-[12px] font-bold text-slate-600 group-hover:text-blue-600">{{ item }}</span>
                 </label>
                 <!-- Custom Free items -->
                 <label 
@@ -1642,8 +1638,8 @@ const submitApplication = async () => {
                   :key="item"
                   class="flex items-center gap-3 bg-white p-3 rounded-xl border border-blue-400 cursor-pointer transition group"
                 >
-                  <input type="checkbox" :value="item" v-model="selectedFree" class="w-4 h-4 rounded border-slate-300 accent-blue-600" />
-                  <span class="text-[10px] font-bold text-slate-600 group-hover:text-blue-600">{{ item }}</span>
+                  <input aria-label="selected Free" type="checkbox" :value="item" v-model="selectedFree" class="w-4 h-4 rounded border-slate-300 accent-blue-600" />
+                  <span class="text-[12px] font-bold text-slate-600 group-hover:text-blue-600">{{ item }}</span>
                 </label>
               </div>
             </div>
@@ -1651,21 +1647,21 @@ const submitApplication = async () => {
             <!-- Paid Amenities -->
             <div>
               <div class="flex items-center justify-between mb-6">
-                <p class="text-[11px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                <p class="text-[12px] font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                   <i class="fa-solid fa-coins text-orange-500"></i> Paid (Optional)
                 </p>
                 <div class="flex gap-2">
-                  <input 
+                  <input aria-label="Add custom..." 
                     type="text" 
                     v-model="newPaidText" 
                     placeholder="Add custom..." 
-                    class="w-32 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-bold focus:border-orange-400 outline-none"
+                    class="w-32 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[12px] font-bold focus:border-orange-400 outline-none"
                     @keyup.enter="addCustomAmenity('paid')"
                   />
                   <button 
                     type="button" 
                     @click="addCustomAmenity('paid')" 
-                    class="bg-orange-100 text-orange-700 hover:bg-orange-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition"
+                    class="bg-orange-100 text-orange-700 hover:bg-orange-200 px-3 py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition management-button"
                   >
                     Add
                   </button>
@@ -1677,8 +1673,8 @@ const submitApplication = async () => {
                   :key="item"
                   class="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 cursor-pointer hover:bg-white hover:border-orange-400 transition group"
                 >
-                  <input type="checkbox" :value="item" v-model="selectedPaid" class="w-4 h-4 rounded border-slate-300 accent-orange-500" />
-                  <span class="text-[10px] font-bold text-slate-600 group-hover:text-orange-600">{{ item }}</span>
+                  <input aria-label="selected Paid" type="checkbox" :value="item" v-model="selectedPaid" class="w-4 h-4 rounded border-slate-300 accent-orange-500" />
+                  <span class="text-[12px] font-bold text-slate-600 group-hover:text-orange-600">{{ item }}</span>
                 </label>
                 <!-- Custom Paid items -->
                 <label 
@@ -1686,8 +1682,8 @@ const submitApplication = async () => {
                   :key="item"
                   class="flex items-center gap-3 bg-white p-3 rounded-xl border border-orange-400 cursor-pointer transition group"
                 >
-                  <input type="checkbox" :value="item" v-model="selectedPaid" class="w-4 h-4 rounded border-slate-300 accent-orange-500" />
-                  <span class="text-[10px] font-bold text-slate-600 group-hover:text-orange-600">{{ item }}</span>
+                  <input aria-label="selected Paid" type="checkbox" :value="item" v-model="selectedPaid" class="w-4 h-4 rounded border-slate-300 accent-orange-500" />
+                  <span class="text-[12px] font-bold text-slate-600 group-hover:text-orange-600">{{ item }}</span>
                 </label>
               </div>
             </div>
@@ -1700,7 +1696,7 @@ const submitApplication = async () => {
             v-if="activeStep > 1" 
             type="button" 
             @click="prevStep" 
-            class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-black py-4 px-8 rounded-2xl text-xs uppercase tracking-widest transition"
+            class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-4 px-8 rounded-2xl text-xs uppercase tracking-wide transition management-button"
           >
             Back
           </button>
@@ -1710,7 +1706,7 @@ const submitApplication = async () => {
             v-if="activeStep < 4" 
             type="button" 
             @click="nextStep" 
-            class="bg-[#1e4a8d] hover:bg-black text-white font-black py-4 px-10 rounded-2xl text-xs uppercase tracking-widest transition"
+            class="bg-[#1e4a8d] hover:bg-black text-white font-semibold py-4 px-10 rounded-2xl text-xs uppercase tracking-wide transition management-button management-button-primary"
           >
             Next Step
           </button>
@@ -1719,7 +1715,7 @@ const submitApplication = async () => {
             v-else 
             type="submit" 
             :disabled="isSaving"
-            class="bg-green-600 hover:bg-black text-white font-black py-4 px-10 rounded-2xl text-xs uppercase tracking-widest transition disabled:opacity-50"
+            class="bg-green-600 hover:bg-black text-white font-semibold py-4 px-10 rounded-2xl text-xs uppercase tracking-wide transition disabled:opacity-50 management-button"
           >
             {{ isSaving ? 'Submitting...' : 'Submit Application' }}
           </button>

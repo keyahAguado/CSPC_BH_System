@@ -1,4 +1,8 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
@@ -85,6 +89,7 @@ const transcodeHeicFile = async (file) => {
 };
 
 const fetchProfile = async (retries = 2) => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const response = await axios.get(`/api/owner/profile`, {
@@ -116,6 +121,7 @@ const fetchProfile = async (retries = 2) => {
       };
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load profile details:', error);
     if (retries > 0) {
       // Retry once after 3s — handles Render cold start delays
@@ -244,35 +250,34 @@ const initAddressAutocomplete = (el) => {
 onMounted(() => {
   fetchProfile();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page management-form-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main class="flex-1 max-w-4xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
+    <main id="management-content" tabindex="-1" class="flex-1 max-w-4xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
+      <LoadError :message="loadError" />
       <!-- Header -->
       <div class="mb-12">
         <router-link to="/owner/dashboard"
-           class="text-[#2a528a] font-black text-[11px] uppercase tracking-widest hover:text-blue-800 transition inline-flex items-center gap-2 mb-8">
+           class="text-[#2a528a] font-semibold text-[12px] uppercase tracking-wide hover:text-blue-800 transition inline-flex items-center gap-2 mb-8">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
             <path d="m15 18-6-6 6-6" />
           </svg>
           BACK TO DASHBOARD
         </router-link>
         
-        <div class="space-y-1">
-          <h1 class="text-[38px] font-black text-[#1e293b] uppercase tracking-tight leading-none">MY PROFILE</h1>
-          <p class="text-blue-600 font-black text-[13px] uppercase tracking-[0.3em] py-1">LANDLORD ACCOUNT DETAILS</p>
-          <div class="w-32 h-1.5 bg-blue-600 rounded-full mt-4"></div>
-        </div>
+        <PageHeader title="Profile & security" description="Keep your personal information and account credentials up to date." />
       </div>
 
       <!-- Loading State -->
       <div v-if="isLoading" class="p-20 text-center bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Compiling Account Profile...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Compiling Account Profile...</p>
       </div>
 
       <div v-else-if="user" class="space-y-8 animate-in fade-in duration-300">
@@ -290,38 +295,38 @@ onMounted(() => {
                        alt="Profile Picture" />
                 </div>
                 <div class="grow text-center md:text-left space-y-4">
-                  <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Account Photo</h3>
-                  <input type="file" @change="handleFileChange" accept="image/*" class="text-xs font-bold text-slate-500 file:mr-4 file:py-2.5 file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-[#2a528a] hover:file:bg-blue-100 transition cursor-pointer" />
-                  <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none">JPEG and PNG formats accepted.</p>
+                  <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Account Photo</h3>
+                  <input aria-label="Field" type="file" @change="handleFileChange" accept="image/*" class="text-xs font-bold text-slate-500 file:mr-4 file:py-2.5 file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-blue-50 file:text-[#2a528a] hover:file:bg-blue-100 transition cursor-pointer" />
+                  <p class="text-[12px] text-slate-400 font-bold uppercase tracking-wide leading-none">JPEG and PNG formats accepted.</p>
                 </div>
               </div>
 
               <!-- Profile Fields -->
               <div class="grid grid-cols-1 gap-8">
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Full Name</label>
-                  <input v-model="nameInput" type="text" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Juan Dela Cruz" />
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Full Name</label>
+                  <input aria-label="Full Name" v-model="nameInput" type="text" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Juan Dela Cruz" />
                 </div>
 
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Email Address (Read Only)</label>
-                  <input :value="user.email" type="email" disabled class="w-full bg-slate-100 border border-slate-200 p-4 rounded-xl text-sm font-bold text-slate-400 outline-none cursor-not-allowed select-none" />
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Email Address (Read Only)</label>
+                  <input aria-label="Email Address (Read Only)" :value="user.email" type="email" disabled class="w-full bg-slate-100 border border-slate-200 p-4 rounded-xl text-sm font-bold text-slate-400 outline-none cursor-not-allowed select-none" />
                 </div>
 
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Contact Phone Number</label>
-                  <input v-model="phoneInput" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Contact Phone Number</label>
+                  <input aria-label="Contact Phone Number" v-model="phoneInput" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
                 </div>
 
                 <div>
-                  <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Residential / Contact Address</label>
-                  <input :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Residential / Contact Address</label>
+                  <input aria-label="Residential / Contact Address" :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
                 </div>
               </div>
 
               <!-- Action buttons -->
               <div class="pt-8 border-t border-slate-100 flex justify-center">
-                <button type="submit" :disabled="isSaving" class="bg-blue-600 hover:bg-black text-white font-black py-4 px-16 rounded-xl text-[11px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer">
+                <button type="submit" :disabled="isSaving" class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
                   {{ isSaving ? 'Saving Changes...' : 'Save Changes' }}
                 </button>
               </div>
@@ -334,7 +339,7 @@ onMounted(() => {
           <div class="p-8 md:p-12">
             <div class="flex items-center gap-4 mb-8">
               <div class="bg-blue-600 w-2 h-8 rounded-full"></div>
-              <h2 class="text-2xl font-black text-[#1e293b] uppercase tracking-tight">Security Credentials</h2>
+              <h2 class="text-2xl font-semibold text-[#1e293b] uppercase tracking-tight">Security Credentials</h2>
             </div>
 
             <!-- Google SSO Info Banner -->
@@ -347,41 +352,41 @@ onMounted(() => {
 
             <form @submit.prevent="handleChangePassword" autocomplete="off" class="space-y-6 max-w-lg">
               <!-- Dummy fields to trap browser password manager autofill -->
-              <input type="text" name="prevent_autofill_user" class="hidden" tabindex="-1" autocomplete="off" />
-              <input type="password" name="prevent_autofill_pass" class="hidden" tabindex="-1" autocomplete="new-password" />
+              <input aria-label="Field" type="text" name="prevent_autofill_user" class="hidden" tabindex="-1" autocomplete="off" />
+              <input aria-label="Field" type="password" name="prevent_autofill_pass" class="hidden" tabindex="-1" autocomplete="new-password" />
 
               <!-- Current Password (Required whenever a password already exists) -->
               <div v-if="user.hasPassword">
-                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Current Password</label>
+                <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Current Password</label>
                 <div class="relative">
-                  <input v-model="passwordForm.currentPassword" :type="showCurrentPassword ? 'text' : 'password'" required 
+                  <input aria-label="Enter your current password" v-model="passwordForm.currentPassword" :type="showCurrentPassword ? 'text' : 'password'" required 
                     name="current_password_field" autocomplete="new-password" placeholder="Enter your current password"
                     class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
-                  <button type="button" @click="showCurrentPassword = !showCurrentPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                  <button aria-label="Toggle password visibility" type="button" @click="showCurrentPassword = !showCurrentPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showCurrentPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
                 </div>
               </div>
 
               <div>
-                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">New Password</label>
+                <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">New Password</label>
                 <div class="relative">
-                  <input v-model="passwordForm.newPassword" :type="showNewPassword ? 'text' : 'password'" required 
+                  <input aria-label="At least 6 characters" v-model="passwordForm.newPassword" :type="showNewPassword ? 'text' : 'password'" required 
                     name="new_password_field" autocomplete="new-password" placeholder="At least 6 characters"
                     class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
-                  <button type="button" @click="showNewPassword = !showNewPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                  <button aria-label="Toggle password visibility" type="button" @click="showNewPassword = !showNewPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showNewPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
                 </div>
               </div>
 
               <div>
-                <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Confirm New Password</label>
+                <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Confirm New Password</label>
                 <div class="relative">
-                  <input v-model="passwordForm.confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" required 
+                  <input aria-label="Repeat new password" v-model="passwordForm.confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" required 
                     name="confirm_password_field" autocomplete="new-password" placeholder="Repeat new password"
                     class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
-                  <button type="button" @click="showConfirmPassword = !showConfirmPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
+                  <button aria-label="Toggle password visibility" type="button" @click="showConfirmPassword = !showConfirmPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showConfirmPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
                 </div>
@@ -389,7 +394,7 @@ onMounted(() => {
 
               <div class="pt-6 flex justify-center">
                 <button type="submit" :disabled="isUpdatingPassword" 
-                  class="bg-blue-600 hover:bg-black text-white font-black py-4 px-16 rounded-xl text-[11px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer">
+                  class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
                   <div v-if="isUpdatingPassword" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   {{ isUpdatingPassword ? 'Saving Password...' : (user.hasPassword ? 'Update Password' : 'Create Account Password') }}
                 </button>

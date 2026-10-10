@@ -1,4 +1,7 @@
 <script setup>
+import PageHeader from '../components/management/PageHeader.vue';
+import LoadError from '../components/management/LoadError.vue';
+import '../styles/management.css';
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
@@ -9,6 +12,7 @@ import { useOfflineStatus } from '../utils/offlineHelper.js';
 
 const router = useRouter();
 const notifications = ref([]);
+const loadError = ref('');
 const isLoading = ref(true);
 const token = sessionStorage.getItem('cspc_token');
 const user = JSON.parse(sessionStorage.getItem('cspc_user') || '{}');
@@ -17,6 +21,7 @@ const API = import.meta.env.VITE_API_URL;
 const { isOffline } = useOfflineStatus();
 
 const fetchNotifications = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const res = await axios.get(`/api/notifications`, {
@@ -26,6 +31,7 @@ const fetchNotifications = async () => {
       notifications.value = res.data.notifications || [];
     }
   } catch (err) {
+    loadError.value = 'The server did not return notifications. Refresh the page to try again.';
     console.error('Failed to fetch notifications:', err);
   } finally {
     isLoading.value = false;
@@ -207,14 +213,16 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen flex flex-col font-sans text-left" 
-       :class="user.role === 'student' ? 'bg-[#bae1ff] text-slate-900 pb-20' : 'bg-[#eef6ff] text-slate-900 pb-12'">
+       :class="[user.role === 'student' ? 'bg-[#bae1ff] text-slate-900 pb-20' : 'bg-[#eef6ff] text-slate-900 pb-12', { 'management-page': user.role === 'admin' || user.role === 'owner' }]">
     
     <component :is="user.role === 'admin' ? AdminNav : (user.role === 'owner' ? OwnerNav : StudentNav)" />
 
-    <main class="flex-1 max-w-5xl mx-auto w-full py-12 px-6 lg:px-12">
+    <main :id="user.role !== 'student' ? 'management-content' : undefined" class="flex-1 max-w-5xl mx-auto w-full py-12 px-6 lg:px-12">
 
       <!-- Header Section -->
-      <div class="mb-14 text-center">
+      <LoadError v-if="user.role !== 'student'" :message="loadError" />
+      <PageHeader v-if="user.role !== 'student'" title="Notifications" description="Review system updates, requests, and compliance notices." />
+      <div v-else class="mb-14 text-center">
         <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight mb-2">
           {{ user.role === 'admin' ? 'Admin Inbox' : (user.role === 'owner' ? 'Owner Inbox' : 'Student Inbox') }}
         </h1>
@@ -290,45 +298,45 @@ onMounted(() => {
         <template v-else>
           <div v-for="notif in notifications" :key="notif.id" 
                @click="handleContainerClick(notif, $event)"
-               class="bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-blue-300 cursor-pointer group"
-               :class="notif.is_read ? 'opacity-60' : ''">
+               tabindex="0" role="link" aria-label="Open notification" @keydown.enter.prevent="handleContainerClick(notif, $event)" class="management-notification-item bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-blue-300 cursor-pointer group"
+               :class="notif.is_read ? 'management-notification-read' : ''">
             
             <!-- Header Bar -->
-            <div v-if="getNotifType(notif.message) === 'booking'" class="bg-[#1e40af] px-8 py-5 flex items-center justify-between">
+            <div v-if="getNotifType(notif.message) === 'booking'" class="bg-[#1e40af] px-5 py-3 flex items-center justify-between">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-calendar-check text-white text-lg"></i>
-                <h2 class="text-white font-black uppercase text-[13px] tracking-widest">Reservation Request</h2>
+                <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">Reservation Request</h2>
               </div>
-              <span class="text-[10px] font-extrabold text-blue-100 uppercase tracking-widest bg-blue-900/40 px-3 py-1 rounded-full">Bookings</span>
+              <span class="text-[12px] font-extrabold text-blue-100 uppercase tracking-widest bg-blue-900/40 px-3 py-1 rounded-full">Bookings</span>
             </div>
-            <div v-else-if="getNotifType(notif.message) === 'approved'" class="bg-[#7ab495] px-8 py-5 flex items-center gap-3">
+            <div v-else-if="getNotifType(notif.message) === 'approved'" class="bg-[#7ab495] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-circle-check text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">Accreditation Approved</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">Accreditation Approved</h2>
             </div>
-            <div v-else-if="getNotifType(notif.message) === 'document_update'" class="bg-[#1e40af] px-8 py-5 flex items-center gap-3">
+            <div v-else-if="getNotifType(notif.message) === 'document_update'" class="bg-[#1e40af] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-file-shield text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">Document Update Review</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">Document Update Review</h2>
             </div>
-            <div v-else-if="getNotifType(notif.message) === 'issue'" class="bg-[#e11d48] px-8 py-5 flex items-center gap-3">
+            <div v-else-if="getNotifType(notif.message) === 'issue'" class="bg-[#e11d48] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-circle-exclamation text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">System Alert</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">System Alert</h2>
             </div>
-            <div v-else-if="getNotifType(notif.message) === 'rejected'" class="bg-[#e11d48] px-8 py-5 flex items-center gap-3">
+            <div v-else-if="getNotifType(notif.message) === 'rejected'" class="bg-[#e11d48] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-circle-exclamation text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">Accreditation Rejected</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">Accreditation Rejected</h2>
             </div>
-            <div v-else-if="getNotifType(notif.message) === 'expiry'" class="bg-[#f59e0b] px-8 py-5 flex items-center gap-3">
+            <div v-else-if="getNotifType(notif.message) === 'expiry'" class="bg-[#f59e0b] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-triangle-exclamation text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">Permit Expiry Warning</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">Permit Expiry Warning</h2>
             </div>
-            <div v-else class="bg-[#2563eb] px-8 py-5 flex items-center gap-3">
+            <div v-else class="bg-[#2563eb] px-5 py-3 flex items-center gap-3">
               <i class="fa-solid fa-bell text-white text-lg"></i>
-              <h2 class="text-white font-black uppercase text-[13px] tracking-widest">System Update</h2>
+              <h2 class="text-white font-semibold uppercase text-[13px] tracking-widest">System Update</h2>
             </div>
 
             <!-- Card Body -->
-            <div class="p-10">
-              <div class="flex items-start gap-4 mb-8">
+            <div class="p-5">
+              <div class="flex items-start gap-4 mb-4">
                 <span v-if="!notif.is_read" class="w-2.5 h-2.5 mt-2 bg-blue-500 rounded-full flex-shrink-0 animate-pulse"></span>
                 <p class="text-slate-500 font-medium leading-relaxed text-[15px]">
                   {{ cleanMessage(notif.message) }}
@@ -336,36 +344,36 @@ onMounted(() => {
               </div>
 
               <!-- Context Blocks -->
-              <div v-if="getNotifType(notif.message) === 'booking' && user.role === 'owner'" class="bg-[#eff6ff] border-l-[6px] border-[#1e40af] p-7 rounded-r-3xl mb-8">
-                <p class="text-[#1e40af] font-black text-[12px] uppercase tracking-widest mb-2">Reservation Request Action Required:</p>
+              <div v-if="getNotifType(notif.message) === 'booking' && user.role === 'owner'" class="bg-[#eff6ff] border-l-[6px] border-[#1e40af] p-4 rounded-r-xl mb-4">
+                <p class="text-[#1e40af] font-semibold text-[12px] uppercase tracking-widest mb-2">Reservation Request Action Required:</p>
                 <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">"A student has submitted a room reservation request or payment update. Click anywhere on this notification or below to view and manage your reservation requests."</p>
-                <router-link to="/owner/bookings" class="inline-flex items-center gap-3 bg-[#1e40af] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
-                  Manage Reservations <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                <router-link to="/owner/bookings" class="inline-flex items-center gap-3 bg-[#1e40af] text-white px-6 py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  Manage Reservations <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </router-link>
               </div>
 
-              <div v-else-if="getNotifType(notif.message) === 'approved'" class="bg-[#f0f9f4] border-l-[6px] border-[#7ab495] p-7 rounded-r-3xl mb-8">
+              <div v-else-if="getNotifType(notif.message) === 'approved'" class="bg-[#f0f9f4] border-l-[6px] border-[#7ab495] p-4 rounded-r-xl mb-4">
                 <div class="flex items-center gap-6">
                   <div class="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-sm border border-emerald-100 overflow-hidden shrink-0">
                     <img src="/img/seal%20of%20approval.png" alt="CSPC Accredited" class="w-full h-full object-contain" @error="e => e.target.src = '/img/cspc_logo.png'" />
                   </div>
                   <div>
-                    <p class="text-[#065f46] font-black uppercase text-[11px] tracking-widest mb-1">Status: Approved</p>
-                    <p class="text-[#065f46] text-[14px] font-black uppercase tracking-tight">Accredited Boarding House Owner</p>
+                    <p class="text-[#065f46] font-semibold uppercase text-[12px] tracking-widest mb-1">Status: Approved</p>
+                    <p class="text-[#065f46] text-[14px] font-semibold uppercase tracking-tight">Accredited Boarding House Owner</p>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="getNotifType(notif.message) === 'document_update' && user.role === 'admin'" class="bg-[#eff6ff] border-l-[6px] border-[#1e40af] p-7 rounded-r-3xl mb-8">
-                <p class="text-[#1e40af] font-black text-[12px] uppercase tracking-widest mb-2">Verification Action Required:</p>
+              <div v-else-if="getNotifType(notif.message) === 'document_update' && user.role === 'admin'" class="bg-[#eff6ff] border-l-[6px] border-[#1e40af] p-4 rounded-r-xl mb-4">
+                <p class="text-[#1e40af] font-semibold text-[12px] uppercase tracking-widest mb-2">Verification Action Required:</p>
                 <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">"An owner has uploaded updated files or resubmitted an application. Click anywhere on this card to inspect the requirement checklist."</p>
-                <router-link to="/admin/pending-applications" class="inline-flex items-center gap-3 bg-[#1e40af] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
-                  Review Checklist <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                <router-link to="/admin/pending-applications" class="inline-flex items-center gap-3 bg-[#1e40af] text-white px-6 py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  Review Checklist <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </router-link>
               </div>
 
-              <div v-else-if="getNotifType(notif.message) === 'expiry'" class="bg-[#fffbeb] border-l-[6px] border-[#f59e0b] p-7 rounded-r-3xl mb-8">
-                <p class="text-[#92400e] font-black text-[12px] uppercase tracking-widest mb-2">Action Required:</p>
+              <div v-else-if="getNotifType(notif.message) === 'expiry'" class="bg-[#fffbeb] border-l-[6px] border-[#f59e0b] p-4 rounded-r-xl mb-4">
+                <p class="text-[#92400e] font-semibold text-[12px] uppercase tracking-widest mb-2">Action Required:</p>
                 <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">
                   <template v-if="notif.message.toLowerCase().includes('supplementary')">
                     "Please navigate to your Legal Documents page to upload a renewed copy. Your listing remains active and bookable in the meantime — this is a reminder, not a suspension."
@@ -374,43 +382,43 @@ onMounted(() => {
                     "Please navigate to your Legal Documents page to upload the corresponding files or updated permits. Failure to renew before the expiry date will automatically hide your listing from students."
                   </template>
                 </p>
-                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#f59e0b] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
-                  Update Documents <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#f59e0b] text-white px-6 py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  Update Documents <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </router-link>
               </div>
 
-             <div v-else-if="getNotifType(notif.message) === 'rejected'" class="bg-[#fff1f2] border-l-[6px] border-[#e11d48] p-7 rounded-r-3xl mb-8">
-                <p class="text-[#9f1239] font-black text-[12px] uppercase tracking-widest mb-2">Action Required:</p>
+             <div v-else-if="getNotifType(notif.message) === 'rejected'" class="bg-[#fff1f2] border-l-[6px] border-[#e11d48] p-4 rounded-r-xl mb-4">
+                <p class="text-[#9f1239] font-semibold text-[12px] uppercase tracking-widest mb-2">Action Required:</p>
                 <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">"Your application was not approved. Please review the specific feedback provided by the administration and update your property details or legal documents to proceed."</p>
                 <!-- SYSTEM FALLBACK RESOLVES OWNER BOARDING HOUSE DYNAMICALLY -->
-                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#e11d48] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
-                  Review & Resubmit <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-[#e11d48] text-white px-6 py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  Review & Resubmit <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </router-link>
               </div>
 
-              <div v-else-if="getNotifType(notif.message) === 'issue' && user.role === 'owner'" class="bg-slate-50 border-l-[6px] border-slate-500 p-7 rounded-r-3xl mb-8">
-                <p class="text-slate-700 font-black text-[12px] uppercase tracking-widest mb-2">Listing Archived:</p>
+              <div v-else-if="getNotifType(notif.message) === 'issue' && user.role === 'owner'" class="bg-slate-50 border-l-[6px] border-slate-500 p-4 rounded-r-xl mb-4">
+                <p class="text-slate-700 font-semibold text-[12px] uppercase tracking-widest mb-2">Listing Archived:</p>
                 <p class="text-slate-600 text-[14px] leading-relaxed italic mb-6">"Your listing is currently hidden from students. If this was due to expired required permits, renew and resubmit them below. If SASO archived it manually, contact the office to discuss reactivation."</p>
-                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-slate-600 text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
-                  View Documents <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                <router-link to="/owner/documents" class="inline-flex items-center gap-3 bg-slate-600 text-white px-6 py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest hover:opacity-90 transition shadow-lg active:scale-95">
+                  View Documents <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </router-link>
               </div>
 
               <!-- Action buttons & timestamps -->
               <div class="flex items-end justify-between">
-                <button v-if="!notif.is_read" @click.stop="markRead(notif.id)" class="bg-[#0f172a] hover:bg-black text-white px-7 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
+                <button v-if="!notif.is_read" @click.stop="markRead(notif.id)" class="bg-[#0f172a] hover:bg-black text-white px-7 py-3.5 rounded-2xl font-semibold text-[12px] uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
                   <i class="fa-solid fa-check text-[12px]"></i> Mark Read
                 </button>
                 <div v-else class="text-xs font-bold text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                   <span>Click container to view</span>
-                  <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                  <i class="fa-solid fa-arrow-right text-[12px]"></i>
                 </div>
 
                 <div class="text-right">
-                  <p class="text-slate-300 font-bold text-[10px] uppercase tracking-[0.2em] mb-1">
+                  <p class="text-slate-300 font-bold text-[12px] uppercase tracking-[0.2em] mb-1">
                     {{ getNotifType(notif.message) === 'general' && user.role === 'admin' ? 'Message from Boarding House Owner' : 'Message from SASO Admin' }}
                   </p>
-                  <p class="text-slate-400 font-black text-[13px]">
+                  <p class="text-slate-400 font-semibold text-[13px]">
                     {{ notif.created_at ? new Date(notif.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A' }}
                   </p>
                 </div>
@@ -429,7 +437,7 @@ onMounted(() => {
 
       </div>
 
-      <p class="mt-16 text-center text-blue-700/40 font-black uppercase text-[9px] tracking-[0.4em]">End of Your Notifications</p>
+      <p class="mt-16 text-center text-blue-700/40 font-semibold uppercase text-[12px] tracking-[0.4em]">End of Your Notifications</p>
     </main>
   </div>
 </template>

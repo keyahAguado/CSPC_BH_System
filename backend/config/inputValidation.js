@@ -151,6 +151,20 @@ export function validateInput(scope, data, context = {}) {
         add(text(data.label,'Requirement name',255,true));
         whole('house_id','Property ID',1,2147483647);
     }
+    if (scope === 'siteFeature') {
+        add(text(data.title,'Feature title',120,true));
+        add(text(data.description,'Feature description',500,true));
+        add(choice(data.icon,['shield-halved','magnifying-glass','camera','mobile-screen','map-location-dot','house-circle-check','building-circle-check','calendar-check','bell','credit-card','star','user-shield','comments','file-shield','wifi','graduation-cap','location-dot','hand-holding-heart','lock','headset'],'feature icon',true));
+    }
+    if (scope === 'featureMove') add(choice(data.direction,['up','down'],'move direction',true));
+    if (scope === 'siteSettings') {
+        for (const [key,label,max,required] of [['features_eyebrow','Section label',60],['features_heading','Section heading',80,true],['footer_title','Footer title',120,true],['footer_tagline','Footer tagline',255],['footer_office','Office name',120],['footer_address','Office address',255],['footer_email','Contact email',255],['footer_phone','Contact number',60],['footer_hours','Office hours',120],['footer_facebook','Facebook page link',255],['footer_website','Website link',255],['footer_copyright','Copyright notice',255]]) add(text(data[key],label,max,required));
+        if (typeof data.footer_email === 'string' && data.footer_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.footer_email.trim())) add('Please enter a valid contact email address.');
+        if (typeof data.footer_phone === 'string' && data.footer_phone.trim() && !/^[\d\s/,\-+()]{7,60}$/.test(data.footer_phone.trim())) add('Please enter a valid contact number or list of numbers.');
+        for (const [key,label] of [['footer_facebook','Facebook page link'],['footer_website','Website link']]) {
+            if (typeof data[key] === 'string' && data[key].trim() && !/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(data[key].trim())) add(`${label} must be a full web address starting with http:// or https://.`);
+        }
+    }
     if (scope === 'approval') {
         add(text(data.admin_comments,'Administrative comments',16000));
         if (!missing(data.checklist) && (!Array.isArray(data.checklist) || data.checklist.length > 1000 || data.checklist.some(id => !validWhole(id,1,2147483647)) || new Set(data.checklist.map(Number)).size !== data.checklist.length)) add('The selected checklist is invalid. Please refresh the application and select the requirements again.');

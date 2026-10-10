@@ -1,4 +1,10 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import MetricCard from '../../components/management/MetricCard.vue';
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
@@ -42,6 +48,7 @@ const closeAlert = (id) => {
 };
 
 const fetchDashboardData = async () => {
+  loadError.value = '';
   if (!token) return;
   try {
     isLoading.value = true;
@@ -55,6 +62,7 @@ const fetchDashboardData = async () => {
       user.value = response.data.user || (savedUser ? JSON.parse(savedUser).name : 'Owner');
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load dashboard data:', error);
     showSystemAlert('Could not load dashboard records. Connecting to backend...', 'warning');
   } finally {
@@ -222,10 +230,12 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('popstate', preventBackNavigation);
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-[#eef6ff] min-h-screen flex flex-col font-sans">
+  <div class="management-page bg-[#eef6ff] min-h-screen flex flex-col font-sans">
     <OwnerNav />
 
     <!-- Alert Panel -->
@@ -237,70 +247,73 @@ onUnmounted(() => {
           <i class="fa-solid text-xl" :class="[alert.iconClass, alert.iconColorClass]"></i>
         </div>
         <div class="flex-1 p-5 pr-8 text-left">
-          <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{{ alert.title }}</h4>
+          <h4 class="text-[12px] font-semibold uppercase tracking-normal text-slate-400 mb-1">{{ alert.title }}</h4>
           <p class="text-[13px] font-bold text-slate-700 leading-relaxed">{{ alert.message }}</p>
         </div>
-        <button @click="closeAlert(alert.id)" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
+        <button aria-label="Close dialog" @click="closeAlert(alert.id)" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
           <i class="fa-solid fa-xmark text-xs"></i>
         </button>
       </div>
     </div>
 
     <!-- Main Content -->
-    <main class="flex-1 w-full max-w-7xl mx-auto px-6 lg:px-12 py-10 text-center">
-      <h2 class="text-3xl font-black text-slate-900 mb-6 tracking-tight uppercase">Welcome, {{ user }}</h2>
+    <main id="management-content" tabindex="-1" class="flex-1 w-full max-w-7xl mx-auto px-6 lg:px-12 py-10 text-center">
+      <LoadError :message="loadError" />
+      <PageHeader title="Overview & properties" :eyebrow="'Welcome, ' + user" description="Manage your boarding houses, reservation requests, and compliance." ><router-link to="/owner/accreditation?new=true" class="management-button inline-flex items-center gap-2 px-5 py-3"><i class="fa-solid fa-plus" aria-hidden="true"></i>Register a property</router-link></PageHeader>
 
       <!-- Loading State -->
       <div v-if="isLoading" class="py-20 flex flex-col items-center justify-center gap-3">
         <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading Dashboard data...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading Dashboard data...</p>
       </div>
 
       <div v-else>
+        <div class="management-metrics"><MetricCard label="Total properties" :value="stats.totalListings" description="All registered properties, including archived listings" icon="fa-building" /><MetricCard label="Pending reservations" :value="stats.pendingBookings" description="Requests awaiting your decision" icon="fa-calendar-check" to="/owner/bookings" /></div>
         <!-- Pending Bookings Alert -->
         <div v-if="stats.pendingBookings > 0" class="mb-10 animate-pulse">
-        <router-link to="/owner/bookings" class="inline-flex items-center gap-4 bg-orange-500 text-white px-8 py-4 rounded-2xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition-all group">
+        <router-link to="/owner/bookings" class="inline-flex items-center gap-4 bg-orange-500 text-white px-8 py-4 rounded-2xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition-all group management-button">
             <div class="bg-white/20 p-2 rounded-lg">
               <i class="fa-solid fa-bell text-xl"></i>
             </div>
             <div class="text-left">
-              <p class="text-[10px] font-black uppercase tracking-widest opacity-80">Action Required</p>
-              <p class="text-sm font-black uppercase">You have {{ stats.pendingBookings }} new booking request{{ stats.pendingBookings > 1 ? 's' : '' }}</p>
+              <p class="text-[12px] font-semibold uppercase tracking-wide opacity-80">Action Required</p>
+              <p class="text-sm font-semibold uppercase">You have {{ stats.pendingBookings }} new booking request{{ stats.pendingBookings > 1 ? 's' : '' }}</p>
             </div>
             <i class="fa-solid fa-arrow-right ml-4 group-hover:translate-x-1 transition-transform"></i>
           </router-link>
         </div>
 
+        <h2 class="management-section-title">Your properties</h2>
         <!-- Cards Container -->
         <!-- Filter tabs — centered, 3-way: All / Active / Archived (Permanently visible when houses exist) -->
-        <div v-if="houses.length > 0" class="mb-8 max-w-xl mx-auto px-2">
+        <div v-if="houses.length > 0" class="mb-6 max-w-xl">
           <div class="flex items-center gap-1 bg-white rounded-xl p-1.5 border border-slate-200 shadow-sm w-full">
             <button @click="listingFilter = 'all'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
                     :class="listingFilter === 'all' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'">
-              <i class="fa-solid fa-layer-group text-[9px] shrink-0"></i>
+              <i class="fa-solid fa-layer-group text-[12px] shrink-0"></i>
               <span class="truncate">All</span>
-              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
                     :class="listingFilter === 'all' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
                 {{ houses.length }}
               </span>
             </button>
             <button @click="listingFilter = 'active'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
                     :class="listingFilter === 'active' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'">
-              <i class="fa-solid fa-house-chimney text-[9px] shrink-0"></i>
-              <span class="truncate">Active</span>
-              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+              <i class="fa-solid fa-house-chimney text-[12px] shrink-0"></i>
+              <span class="truncate">Not archived</span>
+              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
                     :class="listingFilter === 'active' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
                 {{ houses.filter(h => h.house_status !== 'archived').length }}
               </span>
             </button>
             <button @click="listingFilter = 'archived'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer min-w-0"
+                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
                     :class="listingFilter === 'archived' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'">
-              <i class="fa-solid fa-box-archive text-[9px] shrink-0"></i>
+              <i class="fa-solid fa-box-archive text-[12px] shrink-0"></i>
               <span class="truncate">Archived</span>
-              <span class="text-[8px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0"
+              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
                     :class="listingFilter === 'archived' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'">
                 {{ archivedCount }}
               </span>
@@ -308,12 +321,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-8 mb-16 justify-center">
+        <div class="management-property-grid">
           
           <div v-for="house in visibleHouses" :key="house.id" 
-               class="bg-white rounded-2xl p-4 shadow-sm border border-white hover:shadow-md transition-all duration-300 w-full max-w-[400px] flex flex-col text-left">
+               class="management-property-card flex flex-col text-left">
             
-            <div class="rounded-xl overflow-hidden mb-4 h-[220px] relative">
+            <div class="management-property-media rounded-xl overflow-hidden mb-4 relative">
               <img :src="getImageUrl(house.img)" :alt="house.name"
                    class="w-full h-full object-cover grayscale-[10%] hover:grayscale-0 transition duration-500"
                    @error="e => e.target.src = '/img/cspc_bg.webp'" />
@@ -323,10 +336,10 @@ onUnmounted(() => {
                    class="absolute inset-0 bg-red-600/70 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div>
                   <i class="fa-solid fa-ban text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
-                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Renew your permits under Docs to reactivate listing.</p>
+                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
+                  <p class="text-white/80 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">Renew your permits under Docs to reactivate listing.</p>
                   <router-link :to="`/owner/documents/${house.id}`" 
-                               class="inline-block mt-3 bg-white text-red-600 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md hover:bg-slate-100 transition">
+                               class="inline-block mt-3 bg-white text-red-600 text-[12px] font-semibold px-4 py-2 rounded-full uppercase tracking-wide shadow-md hover:bg-slate-100 transition management-button">
                     Upload Renewed Permits
                   </router-link>
                 </div>
@@ -337,13 +350,13 @@ onUnmounted(() => {
                    class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div class="flex flex-col items-center">
                   <i class="fa-solid fa-eye-slash text-amber-400 text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">UNLISTED BY OWNER (HIDDEN FROM STUDENTS)</p>
-                  <p v-if="house.archive_reason" class="text-slate-300 text-[9px] font-bold uppercase tracking-wide mt-2 bg-slate-800/70 px-3 py-1 rounded-full">
+                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">UNLISTED BY OWNER (HIDDEN FROM STUDENTS)</p>
+                  <p v-if="house.archive_reason" class="text-slate-300 text-[12px] font-bold uppercase tracking-wide mt-2 bg-slate-800/70 px-3 py-1 rounded-full">
                     Reason: {{ house.archive_reason }}
                   </p>
                   <button @click="openReactivateConfirm(house.id)"
-                          class="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black px-5 py-2.5 rounded-full uppercase tracking-widest shadow-xl transition active:scale-95 cursor-pointer">
-                    <i class="fa-solid fa-play mr-1.5 text-[9px]"></i> Reactivate Listing
+                          class="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold px-5 py-2.5 rounded-full uppercase tracking-wide shadow-xl transition active:scale-95 cursor-pointer management-button">
+                    <i class="fa-solid fa-play mr-1.5 text-[12px]"></i> Reactivate Listing
                   </button>
                 </div>
               </div>
@@ -352,11 +365,11 @@ onUnmounted(() => {
               <div v-else-if="house.house_status === 'archived'" class="absolute inset-0 bg-slate-800/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div>
                   <i class="fa-solid fa-box-archive text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight">SUSPENDED BY SASO ADMIN</p>
-                  <p v-if="house.admin_comments" class="text-amber-300 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">"{{ house.admin_comments }}"</p>
-                  <p class="text-white/80 text-[9px] font-bold uppercase tracking-widest leading-tight mt-2">Contact SASO or upload updated documents to request re-accreditation.</p>
+                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">SUSPENDED BY SASO ADMIN</p>
+                  <p v-if="house.admin_comments" class="text-amber-300 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">"{{ house.admin_comments }}"</p>
+                  <p class="text-white/80 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">Contact SASO or upload updated documents to request re-accreditation.</p>
                   <router-link :to="`/owner/documents/${house.id}`" 
-                               class="inline-block mt-3 bg-amber-400 text-slate-900 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-md hover:bg-amber-300 transition">
+                               class="inline-block mt-3 bg-amber-400 text-slate-900 text-[12px] font-semibold px-4 py-2 rounded-full uppercase tracking-wide shadow-md hover:bg-amber-300 transition management-button">
                     Upload Updated Documents
                   </router-link>
                 </div>
@@ -366,8 +379,8 @@ onUnmounted(() => {
               <div v-else-if="house.house_status === 'rejected'" class="absolute inset-0 bg-red-500/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
                 <div class="flex flex-col items-center">
                   <i class="fa-solid fa-circle-xmark text-white text-3xl mb-3"></i>
-                  <p class="text-white text-[11px] font-black uppercase tracking-widest leading-tight mb-4">REJECTED BY SASO: HIDDEN FROM STUDENTS</p>
-                  <router-link :to="`/owner/documents/${house.id}`" class="bg-white text-red-600 text-[10px] font-black px-6 py-2.5 rounded-full uppercase tracking-widest shadow-xl hover:bg-slate-100 transition active:scale-95 text-center">
+                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight mb-4">REJECTED BY SASO: HIDDEN FROM STUDENTS</p>
+                  <router-link :to="`/owner/documents/${house.id}`" class="bg-white text-red-600 text-[12px] font-semibold px-6 py-2.5 rounded-full uppercase tracking-wide shadow-xl hover:bg-slate-100 transition active:scale-95 text-center management-button">
                     Fix & Resubmit
                   </router-link>
                 </div>
@@ -375,25 +388,25 @@ onUnmounted(() => {
 
               <!-- STATUS BADGES -->
               <div class="absolute top-4 left-4 flex flex-col gap-2">
-                <div v-if="house.house_status === 'pending'" class="bg-yellow-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-if="house.house_status === 'pending'" class="bg-yellow-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Pending Approval
                 </div>
-                <div v-else-if="house.house_status === 'rejected'" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else-if="house.house_status === 'rejected'" class="bg-red-600 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Rejected
                 </div>
-                <div v-else-if="house.house_status === 'archived' && (house.archived_by === 'system' || house.compliance === 'expired' || house.compliance_status === 'expired')" class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else-if="house.house_status === 'archived' && (house.archived_by === 'system' || house.compliance === 'expired' || house.compliance_status === 'expired')" class="bg-red-600 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Inactive: Permits Expired
                 </div>
-                <div v-else-if="house.house_status === 'archived' && house.archived_by === 'owner'" class="bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else-if="house.house_status === 'archived' && house.archived_by === 'owner'" class="bg-amber-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Unlisted by Owner
                 </div>
-                <div v-else-if="house.house_status === 'archived'" class="bg-slate-700 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else-if="house.house_status === 'archived'" class="bg-slate-700 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Suspended by SASO
                 </div>
-                <div v-else-if="house.compliance === 'warning'" class="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else-if="house.compliance === 'warning'" class="bg-orange-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Warning: Renew Permits
                 </div>
-                <div v-else class="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                <div v-else class="bg-green-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
                   Accredited
                 </div>
               </div>
@@ -402,27 +415,27 @@ onUnmounted(() => {
             <!-- Warning Box (Shown on active or unlisted houses if permits expiring) -->
             <div v-if="house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
               <div class="flex items-center gap-2">
-                <i class="fa-solid fa-clock text-orange-600 text-[10px]"></i>
-                <p class="text-[9px] font-black text-orange-700 uppercase tracking-widest">Action Required: Permits expiring soon!</p>
+                <i class="fa-solid fa-clock text-orange-600 text-[12px]"></i>
+                <p class="text-[12px] font-semibold text-orange-700 uppercase tracking-wide">Action Required: Permits expiring soon!</p>
               </div>
             </div>
 
             <!-- Body Details -->
             <div class="mb-4 flex-1 px-1">
-              <h2 class="font-black text-lg text-slate-900 leading-tight mb-1 uppercase tracking-tight">
+              <h2 class="font-semibold text-lg text-slate-900 leading-tight mb-1 uppercase tracking-tight">
                 {{ house.name }}
               </h2>
-              <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{{ formatAddress(house) }}</p>
+              <p class="text-[12px] text-slate-400 font-bold uppercase tracking-wide">{{ formatAddress(house) }}</p>
               <!-- Supplementary Doc Notice — compact chip, click for details -->
               <button v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
                       @click="openSuppModal(house.supplementary_status)"
-                      class="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-400 bg-slate-100 hover:bg-slate-200 hover:text-slate-600 px-2 py-0.5 rounded-full transition cursor-pointer">
-                <i class="fa-solid fa-circle-info text-[8px]"></i>
+                      class="inline-flex items-center gap-1 mt-1.5 text-[12px] font-bold text-slate-400 bg-slate-100 hover:bg-slate-200 hover:text-slate-600 px-2 py-0.5 rounded-full transition cursor-pointer management-button">
+                <i class="fa-solid fa-circle-info text-[12px]"></i>
                 {{ house.supplementary_status === 'expired' ? 'Supplementary doc expired — non-urgent' : 'Supplementary doc expiring soon' }}
               </button>
               <!-- Document Re-Verification Pending chip — shown when owner uploaded a doc awaiting admin review -->
               <span v-if="house.document_update_pending"
-                    class="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    class="inline-flex items-center gap-1 mt-1.5 text-[12px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
                 Document update pending admin review
               </span>
@@ -430,24 +443,24 @@ onUnmounted(() => {
 
             <!-- Actions Panel -->
             <div class="mt-auto bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div class="grid grid-cols-3 gap-2">
+              <div class="management-property-actions">
                 <router-link v-if="house.house_status === 'rejected'" :to="`/owner/documents/${house.id}`" 
-                   class="col-span-3 bg-red-600 text-white text-[10px] font-black px-4 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                  <i class="fa-solid fa-wrench text-[9px]"></i> Fix Application
+                   class="col-span-3 bg-red-600 text-white text-[12px] font-semibold px-4 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
+                  <i class="fa-solid fa-wrench text-[12px]"></i> Fix Application
                 </router-link>
                 <template v-else>
                   <router-link :to="`/owner/edit/${house.id}`" 
-                     class="bg-orange-400 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                    <i class="fa-solid fa-pen text-[9px]"></i> Edit
+                     class="management-button-secondary bg-white text-blue-700 text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
+                    <i class="fa-solid fa-pen text-[12px]"></i> Edit
                   </router-link>
                   <router-link :to="`/owner/documents/${house.id}`" 
-                     class="bg-blue-500 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                    <i class="fa-solid fa-file-lines text-[9px]"></i> Docs
+                     class="management-button-secondary bg-white text-blue-700 text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
+                    <i class="fa-solid fa-file-lines text-[12px]"></i> Docs
                   </router-link>
                   <router-link :to="`/owner/rooms/${house.id}`" 
-                     class="relative bg-green-500 text-white text-[10px] font-black px-2 py-2 rounded-md uppercase tracking-widest transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5">
-                    <i class="fa-solid fa-door-open text-[9px]"></i> Rooms
-                    <span v-if="house.pending_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                     class="relative bg-blue-600 text-white text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button management-button-primary">
+                    <i class="fa-solid fa-door-open text-[12px]"></i> Rooms
+                    <span v-if="house.pending_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
                       {{ house.pending_count }}
                     </span>
                   </router-link>
@@ -457,17 +470,17 @@ onUnmounted(() => {
               <!-- Unlist / Reactivate — full-width row below the main action buttons -->
               <div v-if="house.house_status === 'accredited'" class="mt-2 pt-2 border-t border-slate-200">
                 <button @click="openPauseModal(house.id)"
-                        class="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50 text-slate-500 hover:text-amber-700 text-[10px] font-black py-2 px-4 rounded-lg uppercase tracking-widest transition cursor-pointer">
-                  <i class="fa-solid fa-eye-slash text-[10px]"></i> Pause / Unlist Listing
+                        class="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50 text-slate-500 hover:text-amber-700 text-[12px] font-semibold py-2 px-4 rounded-lg uppercase tracking-wide transition cursor-pointer management-button management-button-secondary">
+                  <i class="fa-solid fa-eye-slash text-[12px]"></i> Pause / Unlist Listing
                 </button>
               </div>
               <div v-else-if="canReactivateListing(house)" class="mt-2 pt-2 border-t border-slate-200">
                 <button @click="openReactivateConfirm(house.id)"
-                        class="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-black py-2 px-4 rounded-lg uppercase tracking-widest transition shadow-sm cursor-pointer">
-                  <i class="fa-solid fa-play text-[9px]"></i> Reactivate Listing
+                        class="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold py-2 px-4 rounded-lg uppercase tracking-wide transition shadow-sm cursor-pointer management-button">
+                  <i class="fa-solid fa-play text-[12px]"></i> Reactivate Listing
                 </button>
               </div>
-              <p v-else-if="house.house_status === 'archived'" class="mt-2 text-center text-[10px] font-semibold text-slate-500">
+              <p v-else-if="house.house_status === 'archived'" class="mt-2 text-center text-[12px] font-semibold text-slate-500">
                 Contact SASO for review before reactivation.
               </p>
             </div>
@@ -479,7 +492,7 @@ onUnmounted(() => {
               {{ houses.length === 0 ? 'No properties listed yet.' : 'No listings in this category.' }}
             </p>
             <button v-if="houses.length > 0 && listingFilter !== 'all'" @click="listingFilter = 'all'"
-                    class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest px-6 py-2.5 rounded-full shadow-md transition active:scale-95 cursor-pointer">
+                    class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[12px] uppercase tracking-wide px-6 py-2.5 rounded-full shadow-md transition active:scale-95 cursor-pointer management-button management-button-primary">
               Show All Listings ({{ houses.length }})
             </button>
           </div>
@@ -489,24 +502,24 @@ onUnmounted(() => {
         <!-- Add Boarding House Button -->
         <div class="flex justify-center pb-12">
           <router-link to="/owner/accreditation?new=true"
-             class="bg-blue-600 hover:bg-black text-white font-black py-4 px-10 rounded-xl text-[12px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 transition active:scale-95 w-full max-w-[350px]">
-            <span class="text-xl leading-none font-black mt-[-2px]">+</span> Add boarding house
+             class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-10 rounded-xl text-[12px] uppercase tracking-wide shadow-md flex items-center justify-center gap-2 transition active:scale-95 w-full max-w-[350px] management-button management-button-primary">
+            <span class="text-xl leading-none font-semibold mt-[-2px]">+</span> Add boarding house
           </router-link>
         </div>
       </div>
     </main>
 
     <!-- Supplementary Document Info Modal -->
-    <div v-if="showSuppModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[250] flex items-center justify-center p-4" @click.self="showSuppModal = false">
+    <div v-management-dialog="{ close: () => showSuppModal = false }" v-if="showSuppModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[250] flex items-center justify-center p-4" @click.self="showSuppModal = false">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
               <i class="fa-solid fa-circle-info text-slate-500"></i>
             </div>
-            <h3 class="text-[11px] font-black text-slate-700 uppercase tracking-widest">Supplementary Document</h3>
+            <h3 class="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">Supplementary Document</h3>
           </div>
-          <button @click="showSuppModal = false" class="text-slate-300 hover:text-slate-600 transition cursor-pointer">
+          <button aria-label="Close dialog" @click="showSuppModal = false" class="text-slate-300 hover:text-slate-600 transition cursor-pointer">
             <i class="fa-solid fa-xmark text-lg"></i>
           </button>
         </div>
@@ -522,7 +535,7 @@ onUnmounted(() => {
         </div>
         <div class="px-6 pb-5">
           <button @click="showSuppModal = false"
-                  class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black py-2.5 rounded-xl uppercase tracking-widest transition cursor-pointer">
+                  class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
             Got it
           </button>
         </div>
@@ -530,7 +543,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Pause / Unlist Listing Modal -->
-    <div v-if="showPauseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => closePauseModal() }" v-if="showPauseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
 
         <!-- Modal Header -->
@@ -539,8 +552,8 @@ onUnmounted(() => {
             <i class="fa-solid fa-eye-slash text-amber-500 text-lg"></i>
           </div>
           <div>
-            <h3 class="text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">Pause / Unlist Boarding House</h3>
-            <p class="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">Listing will be hidden from students</p>
+            <h3 class="text-sm font-semibold text-slate-900 uppercase tracking-tight leading-tight">Pause / Unlist Boarding House</h3>
+            <p class="text-[12px] font-bold text-amber-600 uppercase tracking-wide mt-0.5">Listing will be hidden from students</p>
           </div>
         </div>
 
@@ -549,17 +562,17 @@ onUnmounted(() => {
           <!-- Info notice -->
           <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
             <i class="fa-solid fa-circle-info text-slate-400 text-sm mt-0.5 shrink-0"></i>
-            <p class="text-[11px] font-semibold text-slate-500 leading-relaxed">
+            <p class="text-[12px] font-semibold text-slate-500 leading-relaxed">
               Your listing will be hidden from student search. Active boarders remain tracked and unaffected. You can reactivate any time.
             </p>
           </div>
 
           <!-- Reason Select -->
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
               Reason for Pausing <span class="text-red-500">*</span>
             </label>
-            <select v-model="pauseReason" class="w-full bg-white border border-slate-200 hover:border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 p-3 rounded-xl text-[12px] font-bold text-slate-700 outline-none cursor-pointer transition">
+            <select aria-label="Reason for Pausing" v-model="pauseReason" class="w-full bg-white border border-slate-200 hover:border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 p-3 rounded-xl text-[12px] font-bold text-slate-700 outline-none cursor-pointer transition">
               <option value="Fully Booked / At Capacity">Fully Booked / At Capacity</option>
               <option value="Renovation & Upgrades">Renovation &amp; Upgrades</option>
               <option value="End of Semester / Vacation Break">End of Semester / Vacation Break</option>
@@ -570,8 +583,8 @@ onUnmounted(() => {
 
           <!-- Custom reason input -->
           <div v-if="pauseReason === 'Other'">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Specify Reason</label>
-            <input v-model="customPauseReason" type="text" placeholder="e.g. Temporary structural repair"
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Specify Reason</label>
+            <input aria-label="Specify Reason" v-model="customPauseReason" type="text" placeholder="e.g. Temporary structural repair"
                    class="w-full bg-white border border-slate-200 hover:border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 p-3 rounded-xl text-[12px] font-bold text-slate-700 outline-none transition" />
           </div>
         </div>
@@ -579,12 +592,12 @@ onUnmounted(() => {
         <!-- Modal Footer -->
         <div class="px-7 pb-6 flex gap-3">
           <button @click="handlePauseListing" :disabled="isArchiving"
-                  class="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition shadow-sm cursor-pointer flex items-center justify-center gap-2">
-            <i class="fa-solid fa-eye-slash text-[10px]"></i>
+                  class="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition shadow-sm cursor-pointer flex items-center justify-center gap-2 management-button">
+            <i class="fa-solid fa-eye-slash text-[12px]"></i>
             {{ isArchiving ? 'Pausing...' : 'Confirm Pause' }}
           </button>
           <button @click="closePauseModal"
-                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition cursor-pointer">
+                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
             Cancel
           </button>
         </div>
@@ -592,7 +605,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Reactivate Listing Confirmation Modal -->
-    <div v-if="showReactivateConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => closeReactivateConfirmModal() }" v-if="showReactivateConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
 
         <!-- Modal Header -->
@@ -601,8 +614,8 @@ onUnmounted(() => {
             <i class="fa-solid fa-play text-emerald-600 text-lg"></i>
           </div>
           <div>
-            <h3 class="text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">Reactivate Listing</h3>
-            <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">Make listing visible to students again</p>
+            <h3 class="text-sm font-semibold text-slate-900 uppercase tracking-tight leading-tight">Reactivate Listing</h3>
+            <p class="text-[12px] font-bold text-emerald-600 uppercase tracking-wide mt-0.5">Make listing visible to students again</p>
           </div>
         </div>
 
@@ -610,7 +623,7 @@ onUnmounted(() => {
         <div class="px-7 py-6">
           <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
             <i class="fa-solid fa-circle-info text-slate-400 text-sm mt-0.5 shrink-0"></i>
-            <p class="text-[11px] font-semibold text-slate-500 leading-relaxed">
+            <p class="text-[12px] font-semibold text-slate-500 leading-relaxed">
               This will make your boarding house visible to students again in the public listing. The system will verify your permits before reactivation — if any required permits have expired, you will be notified.
             </p>
           </div>
@@ -619,11 +632,11 @@ onUnmounted(() => {
         <!-- Modal Footer -->
         <div class="px-7 pb-6 flex gap-3">
           <button @click="execReactivateHouse"
-                  class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition shadow-sm cursor-pointer flex items-center justify-center gap-2">
-            <i class="fa-solid fa-play text-[10px]"></i> Confirm Reactivate
+                  class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition shadow-sm cursor-pointer flex items-center justify-center gap-2 management-button">
+            <i class="fa-solid fa-play text-[12px]"></i> Confirm Reactivate
           </button>
           <button @click="closeReactivateConfirmModal"
-                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition cursor-pointer">
+                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
             Cancel
           </button>
         </div>
@@ -631,21 +644,21 @@ onUnmounted(() => {
     </div>
 
     <!-- Reactivation Blocked (Expired Permits) Pop-Up Modal -->
-    <div v-if="showReactivateBlockedModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => closeReactivateBlockedModal() }" v-if="showReactivateBlockedModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
           <i class="fa-solid fa-triangle-exclamation"></i>
         </div>
-        <h3 class="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Cannot Reactivate Listing</h3>
+        <h3 class="text-xl font-semibold text-slate-900 uppercase tracking-tight mb-2">Cannot Reactivate Listing</h3>
         <p class="text-slate-600 text-xs font-bold leading-relaxed mb-6 bg-red-50/80 border border-red-100 p-4 rounded-xl text-left">
           {{ blockedErrorMessage }}
         </p>
         <div class="flex flex-col gap-3">
           <router-link v-if="blockedHouseId" :to="`/owner/documents/${blockedHouseId}`" 
-                       class="w-full bg-red-600 hover:bg-slate-900 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition shadow-md text-center">
+                       class="w-full bg-red-600 hover:bg-slate-900 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition shadow-md text-center management-button">
             Upload Renewed Permits
           </router-link>
-          <button @click="closeReactivateBlockedModal" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition cursor-pointer">
+          <button @click="closeReactivateBlockedModal" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
             Close
           </button>
         </div>
@@ -653,16 +666,16 @@ onUnmounted(() => {
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
           <i class="fa-solid fa-triangle-exclamation"></i>
         </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
+        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
         <p class="text-slate-500 text-xs font-bold leading-relaxed mb-6">{{ confirmMessage }}</p>
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-red-600 hover:bg-slate-900 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition shadow-md cursor-pointer">Remove</button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition cursor-pointer">Cancel</button>
+          <button @click="executeConfirm" class="flex-1 bg-red-600 hover:bg-slate-900 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition shadow-md cursor-pointer management-button">Remove</button>
+          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">Cancel</button>
         </div>
       </div>
     </div>

@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import FlashAlert from './FlashAlert.vue';
+import ManagementNavigation from '../management/ManagementNavigation.vue';
+import { vManagementDialog } from '../management/dialogAccessibility.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -82,170 +84,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <FlashAlert ref="alertRef" />
-
-  <!-- ===================== DESKTOP NAV (hidden on mobile) ===================== -->
-  <nav class="hidden md:flex bg-[#1e4a8d] px-4 sm:px-6 md:px-10 py-4 flex-wrap sm:flex-nowrap justify-between items-center text-white shadow-md sticky top-0 z-50 gap-3 border-b border-blue-900/40">
-    <router-link to="/" class="flex items-center gap-3 group focus:outline-none">
-      <!-- CSPC Logo Image -->
-      <img 
-        src="/img/CSPC_logo.png" 
-        alt="CSPC Logo" 
-        class="w-10 h-10 object-contain transition-transform group-hover:scale-105"
-      />
-      <!-- Vertical Divider Line -->
-      <div class="h-8 w-[1px] bg-slate-200/40"></div>
-      <!-- Brand Identity Text -->
-      <div class="text-left">
-        <span class="block text-xs font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
-        <span class="block text-[8px] text-blue-200/80 font-bold uppercase tracking-wider mt-1">College of Computer Studies</span>
-      </div>
-    </router-link>
-    <div class="flex gap-4 sm:gap-6 md:gap-10 text-xs sm:text-[13px] font-semibold items-center w-full sm:w-auto py-1 sm:py-0">
-      <router-link to="/owner/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Home</router-link>
-      <router-link to="/owner/bookings" class="hover:text-blue-200 transition whitespace-nowrap">Bookings</router-link>
-      <router-link to="/owner/profile" class="hover:text-blue-200 transition whitespace-nowrap">Profile</router-link>
-      <router-link to="/owner/notifications" class="hover:text-blue-200 transition relative whitespace-nowrap">
-        Notification
-        <span v-if="unreadNotifCount > 0" class="absolute -top-1 -right-3 bg-red-500 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border border-white shadow-sm">
-          {{ unreadNotifCount }}
-        </span>
-      </router-link>
-      <button @click="triggerLogoutConfirm" class="hover:text-red-300 transition focus:outline-none cursor-pointer bg-transparent border-0 whitespace-nowrap">Logout</button>
-    </div>
-  </nav>
-
-  <!-- ===================== MOBILE HEADER (visible only on mobile) ===================== -->
-  <header class="mobile-header md:hidden fixed top-0 left-0 right-0 z-50 bg-[#1e4a8d] shadow-lg">
-    <div class="flex items-center gap-3 px-4 py-3">
-      <!-- Hamburger Button -->
-      <button
-        class="hamburger-btn flex items-center justify-center w-9 h-9 rounded-lg text-white hover:bg-white/10 transition-colors flex-shrink-0 focus:outline-none"
-        @click.stop="sidebarOpen = !sidebarOpen"
-        aria-label="Toggle menu"
-      >
-        <svg v-if="!sidebarOpen" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-
-      <!-- Logo & Title -->
-      <router-link to="/" class="flex items-center gap-2.5 group focus:outline-none">
-        <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-8 h-8 object-contain transition-transform group-hover:scale-105 flex-shrink-0" />
-        <div class="h-6 w-[1px] bg-slate-200/40"></div>
-        <div class="text-left">
-          <span class="block text-[11px] font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
-          <span class="block text-[7.5px] text-blue-200/80 font-bold uppercase tracking-wider mt-0.5">College of Computer Studies</span>
-        </div>
-      </router-link>
-    </div>
-  </header>
-
-  <!-- Spacer so content doesn't go under fixed mobile header -->
-  <div class="md:hidden h-[56px]"></div>
-
-  <!-- ===================== MOBILE SIDEBAR OVERLAY ===================== -->
-  <transition name="fade-overlay">
-    <div
-      v-if="sidebarOpen"
-      class="md:hidden fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm"
-      @click="closeSidebar"
-    ></div>
-  </transition>
-
-  <!-- ===================== MOBILE SIDEBAR PANEL ===================== -->
-  <transition name="slide-sidebar">
-    <nav
-      v-if="sidebarOpen"
-      class="mobile-sidebar md:hidden fixed top-0 left-0 h-full w-72 bg-[#1a3f7a] z-[70] shadow-2xl flex flex-col overflow-y-auto"
-    >
-      <!-- Sidebar Header -->
-      <div class="flex items-center gap-3 px-5 py-4 bg-[#1e4a8d] border-b border-white/10">
-        <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-9 h-9 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0" />
-        <div class="min-w-0">
-          <p class="text-white font-black text-xs uppercase tracking-tight leading-tight">CSPC'S BOARDING HOUSE SELECTION</p>
-          <p class="text-blue-200 text-[10px] mt-0.5">Owner Portal</p>
-        </div>
-      </div>
-
-      <!-- Nav Items -->
-      <div class="flex flex-col flex-1 px-3 py-4 gap-1">
-
-        <button
-          @click="navigateTo('/owner/dashboard')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/owner/dashboard'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-house w-5 text-center text-base"></i>
-          <span>Home</span>
-        </button>
-
-        <button
-          @click="navigateTo('/owner/bookings')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/owner/bookings'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-calendar-check w-5 text-center text-base"></i>
-          <span>Bookings</span>
-        </button>
-
-        <button
-          @click="navigateTo('/owner/profile')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/owner/profile'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-user w-5 text-center text-base"></i>
-          <span>Profile</span>
-        </button>
-
-        <button
-          @click="navigateTo('/owner/notifications')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 relative',
-            route.path === '/owner/notifications'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-bell w-5 text-center text-base"></i>
-          <span>Notification</span>
-          <span v-if="unreadNotifCount > 0" class="ml-auto bg-red-500 text-white text-[9px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border border-white/30 shadow-sm">
-            {{ unreadNotifCount }}
-          </span>
-        </button>
-
-      </div>
-
-      <!-- Divider + Logout -->
-      <div class="px-3 pb-6 border-t border-white/10 pt-3">
-        <button
-          @click="triggerLogoutConfirm"
-          class="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all duration-200"
-        >
-          <i class="fa-solid fa-right-from-bracket w-5 text-center text-base"></i>
-          <span>Logout</span>
-        </button>
-      </div>
-    </nav>
-  </transition>
-
+  <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
+  <ManagementNavigation role="owner" :open="sidebarOpen" :unread-count="unreadNotifCount" @toggle="sidebarOpen = !sidebarOpen" @close="closeSidebar" @logout="triggerLogoutConfirm" />
   <!-- Secure Logout Confirm Modal Overlay -->
-  <div v-if="showConfirmModal" class="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in text-left">
+  <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in text-left">
     <div class="bg-[#f8fafc] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100 animate-in zoom-in duration-300">
       <div class="text-[#d9534f] mb-4 flex justify-center">
         <i class="fa-solid fa-circle-exclamation text-5xl text-red-500"></i>
@@ -264,41 +106,3 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
-
-<style>
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.animate-fade-in {
-  animation: fadeIn 0.25s ease-out forwards;
-}
-
-/* Sidebar slide-in/out animation */
-.slide-sidebar-enter-active,
-.slide-sidebar-leave-active {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slide-sidebar-enter-from,
-.slide-sidebar-leave-to {
-  transform: translateX(-100%);
-}
-.slide-sidebar-enter-to,
-.slide-sidebar-leave-from {
-  transform: translateX(0);
-}
-
-/* Overlay fade animation */
-.fade-overlay-enter-active,
-.fade-overlay-leave-active {
-  transition: opacity 0.25s ease;
-}
-.fade-overlay-enter-from,
-.fade-overlay-leave-to {
-  opacity: 0;
-}
-.fade-overlay-enter-to,
-.fade-overlay-leave-from {
-  opacity: 1;
-}
-</style>

@@ -1,4 +1,5 @@
 import mysql from 'mysql2/promise';
+import { DEFAULT_FEATURES, SITE_SETTING_DEFAULTS } from './siteContent.js';
 
 let dbHost = process.env.DB_HOST || '127.0.0.1';
 
@@ -70,6 +71,50 @@ async function ensureSchemaColumns() {
         }
     } catch (err) {
         console.warn("⚠️ Auto-migration check warning:", err.message);
+    }
+    await ensureSiteContentTables();
+}
+
+// Landing page content (Admin > Landing page). Defaults are seeded only when the
+// features table is first created, so an admin who removes every card is not overridden
+// on the next restart. Missing setting keys are filled without touching edited ones.
+async function ensureSiteContentTables() {
+    try {
+        const [featureTables] = await pool.query("SHOW TABLES LIKE 'site_features'");
+        if (featureTables.length === 0) {
+            await pool.query(`CREATE TABLE IF NOT EXISTS site_features (
+                id INT NOT NULL AUTO_INCREMENT,
+                title VARCHAR(120) NOT NULL,
+                description VARCHAR(500) NOT NULL,
+                icon VARCHAR(50) NOT NULL DEFAULT 'shield-halved',
+                sort_order INT NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+            const [[{ count }]] = await pool.query('SELECT COUNT(*) AS count FROM site_features');
+            if (count === 0) {
+                await pool.query(
+                    'INSERT INTO site_features (title, description, icon, sort_order) VALUES ?',
+                    [DEFAULT_FEATURES.map((f, i) => [f.title, f.description, f.icon, i + 1])]
+                );
+            }
+            console.log("✅ Auto-migrated: Created site_features with the default landing page features.");
+        }
+
+        await pool.query(`CREATE TABLE IF NOT EXISTS site_settings (
+            setting_key VARCHAR(64) NOT NULL,
+            setting_value TEXT NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (setting_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+        await pool.query(
+            'INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES ?',
+            [Object.entries(SITE_SETTING_DEFAULTS)]
+        );
+    } catch (err) {
+        console.warn("⚠️ Landing page content tables check warning:", err.message);
     }
 }
 

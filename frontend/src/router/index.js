@@ -37,6 +37,7 @@ import ReportTransactions from '../views/admin/ReportTransactions.vue';
 import AdminRegistered from '../views/admin/Registered.vue';
 import AdminArchived from '../views/admin/Archived.vue';
 import AdminUsers from '../views/admin/Users.vue';
+import AdminSiteContent from '../views/admin/SiteContent.vue';
 
 // 5. Shared Views
 import Notifications from '../views/Notifications.vue';
@@ -258,6 +259,12 @@ const routes = [
         name: 'AdminUsers',
         component: AdminUsers,
         meta: { role: 'admin', title: 'User Account Management' }
+    },
+    {
+        path: '/admin/site-content',
+        name: 'AdminSiteContent',
+        component: AdminSiteContent,
+        meta: { role: 'admin', title: 'Landing Page Content' }
     },
 
     // Dynamic Printable Reports Routes

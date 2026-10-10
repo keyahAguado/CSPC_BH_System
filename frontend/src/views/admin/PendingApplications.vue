@@ -1,4 +1,9 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
@@ -90,6 +95,7 @@ const syncChecklistState = () => {
 };
 
 const fetchPendingApplications = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const response = await axios.get(`/api/admin/pending-applications`, {
@@ -104,6 +110,7 @@ const fetchPendingApplications = async () => {
       syncChecklistState();
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error(error);
     showSystemAlert('Could not load pending applications records.', 'warning');
   } finally {
@@ -386,17 +393,18 @@ const getDocRecheckBadge = (app) => {
 onMounted(() => {
   fetchPendingApplications();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
+  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
     <AdminNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main class="max-w-[1450px] mx-auto py-10 px-4 sm:px-6 flex-1 w-full text-left">
-      <div class="text-center mb-10 mt-6">
-        <h1 class="text-[28px] sm:text-[32px] text-slate-700 tracking-tight font-black uppercase">List of New Boarding House Applications</h1>
-      </div>
+    <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-10 px-4 sm:px-6 flex-1 w-full text-left">
+      <LoadError :message="loadError" />
+      <PageHeader title="Accreditation applications" description="Review new submissions, resubmissions, and updated documents." />
 
       <!-- Loading State -->
       <div v-show="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
@@ -404,7 +412,7 @@ onMounted(() => {
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading pending submissions...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading pending submissions...</p>
       </div>
 
       <!-- Responsive Container: Table for Laptop (md+), Cards for Mobile (<md) -->
@@ -413,9 +421,9 @@ onMounted(() => {
         <!-- 💻 LAPTOP / TABLET VIEW (Standard Table) -->
         <div class="hidden md:block bg-white shadow-xl border border-slate-200 overflow-hidden rounded-lg">
           <div class="overflow-x-auto custom-scrollbar">
-            <table class="w-full text-center border-collapse whitespace-nowrap">
+            <table class="management-review-table w-full border-collapse">
               <thead>
-                <tr class="bg-[#222831] text-white text-[13px] font-bold tracking-wide uppercase">
+                <tr class="bg-slate-50 text-slate-700 text-[13px] font-bold tracking-wide uppercase">
                   <th class="py-5 px-6 w-16 border-r border-slate-600">#</th>
                   <th class="py-5 px-6 border-r border-slate-600">Owner Name</th>
                   <th class="py-5 px-6 border-r border-slate-600">Boarding House</th>
@@ -429,7 +437,7 @@ onMounted(() => {
                   <tr v-for="(app, index) in applications" :key="app.id" class="border-b border-slate-200 hover:bg-slate-50 transition">
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-500 font-bold">{{ index + 1 }}</td>
                     <td class="py-6 px-6 border-r border-slate-200 font-semibold">{{ app.owner_name }}</td>
-                    <td class="py-6 px-6 border-r border-slate-200 font-black text-slate-900">
+                    <td class="py-6 px-6 border-r border-slate-200 font-semibold text-slate-900">
                       {{ app.name }}
                       <template v-if="getDocRecheckBadge(app)">
                         <span :class="['block mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
@@ -440,17 +448,17 @@ onMounted(() => {
                     <td class="py-6 px-6 border-r border-slate-200 text-slate-400 font-bold">
                       <span class="block">{{ formatDate(app.resubmitted_at || app.created_at) }}</span>
                       <span v-if="app.resubmitted_at && app.document_update_pending"
-                            class="block text-[9px] font-black text-blue-500 uppercase tracking-widest mt-0.5">
+                            class="block text-[12px] font-semibold text-blue-500 uppercase tracking-wide mt-0.5">
                         Resubmitted
                       </span>
                     </td>
                     <td class="py-6 px-6 border-r border-slate-200">
-                      <button @click="openDocumentModal(app)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition text-[11px] font-black uppercase tracking-widest shadow-sm">
+                      <button @click="openDocumentModal(app)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition text-[12px] font-semibold uppercase tracking-wide shadow-sm management-button management-button-secondary">
                         <i class="fa-solid fa-folder-open"></i> View Docs
                       </button>
                     </td>
                     <td class="py-6 px-6">
-                      <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition shadow-md text-[11px] font-black uppercase tracking-widest">
+                      <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition shadow-md text-[12px] font-semibold uppercase tracking-wide management-button management-button-primary">
                         <i class="fa-solid fa-list-check"></i> Requirement Checklist
                       </button>
                     </td>
@@ -474,13 +482,13 @@ onMounted(() => {
             <div v-for="(app, index) in applications" :key="app.id" class="bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden p-5 transition">
               
               <div class="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
-                <span class="text-xs font-black text-slate-400 uppercase tracking-widest"># {{ index + 1 }}</span>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wide"># {{ index + 1 }}</span>
                 <div class="text-right">
                   <span class="block text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
                     {{ formatDate(app.resubmitted_at || app.created_at) }}
                   </span>
                   <span v-if="app.resubmitted_at && app.document_update_pending"
-                        class="block text-[8px] font-black text-blue-500 uppercase tracking-widest mt-0.5">
+                        class="block text-[12px] font-semibold text-blue-500 uppercase tracking-wide mt-0.5">
                     Resubmitted
                   </span>
                 </div>
@@ -489,13 +497,13 @@ onMounted(() => {
               <!-- Card Details -->
               <div class="space-y-2 text-sm">
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Owner Name</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Owner Name</span>
                   <span class="font-semibold text-slate-800">{{ app.owner_name }}</span>
                 </div>
 
                 <div class="flex flex-col py-1.5 border-b border-slate-50">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Boarding House</span>
-                  <span class="font-black text-slate-900 text-base">{{ app.name }}</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Boarding House</span>
+                  <span class="font-semibold text-slate-900 text-base">{{ app.name }}</span>
                   <template v-if="getDocRecheckBadge(app)">
                     <span :class="['mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
                       <i class="fa-solid fa-rotate"></i> {{ getDocRecheckBadge(app).label }}
@@ -506,10 +514,10 @@ onMounted(() => {
 
               <!-- Action Buttons -->
               <div class="grid grid-cols-1 gap-2.5 mt-5 pt-3 border-t border-slate-100">
-                <button @click="openDocumentModal(app)" class="text-blue-600 border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition text-[11px] font-black uppercase tracking-widest shadow-sm">
+                <button @click="openDocumentModal(app)" class="text-blue-600 border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition text-[12px] font-semibold uppercase tracking-wide shadow-sm management-button">
                   <i class="fa-solid fa-folder-open"></i> View Docs
                 </button>
-                <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition shadow-md text-[11px] font-black uppercase tracking-widest">
+                <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition shadow-md text-[12px] font-semibold uppercase tracking-wide management-button management-button-primary">
                   <i class="fa-solid fa-list-check"></i> Requirement Checklist
                 </button>
               </div>
@@ -530,18 +538,18 @@ onMounted(() => {
     </main>
 
     <!-- Document Viewer Modal -->
-    <div v-if="showDocModal && activeApp" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex justify-center items-center p-4 sm:p-8">
+    <div v-management-dialog="{ close: () => closeDocumentModal() }" v-if="showDocModal && activeApp" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex justify-center items-center p-4 sm:p-8">
       <div class="bg-white w-full max-w-6xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         <div class="bg-[#2563eb] text-white px-6 sm:px-8 py-5 flex justify-between items-center shrink-0 gap-4">
           <div class="flex items-center gap-3 overflow-hidden">
             <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center shrink-0"><i class="fa-regular fa-folder-open text-xl"></i></div>
-            <h2 class="text-xs sm:text-lg font-black uppercase tracking-tight truncate">{{ activeApp.name }} - Legal Documents</h2>
+            <h2 class="text-xs sm:text-lg font-semibold uppercase tracking-tight truncate">{{ activeApp.name }} - Legal Documents</h2>
           </div>
-          <button @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <button aria-label="Close dialog" @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0 management-button"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left">
           <!-- Section label for required docs -->
-          <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <p class="text-[12px] font-semibold text-rose-500 uppercase tracking-wide mb-3 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Required Documents
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 mb-8">
@@ -550,21 +558,21 @@ onMounted(() => {
               <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
+                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
                 </div>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
-                <h3 class="font-black text-[11px] text-rose-400 uppercase tracking-widest">Missing</h3>
+                <h3 class="font-semibold text-[12px] text-rose-400 uppercase tracking-wide">Missing</h3>
               </div>
               <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
+                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
               </div>
             </div>
           </div>
 
           <!-- Section label for optional docs -->
-          <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> Optional Documents
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
@@ -573,15 +581,15 @@ onMounted(() => {
               <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
+                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
                 </div>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
-                <h3 class="font-black text-[11px] text-slate-400 uppercase tracking-widest">Not Submitted</h3>
+                <h3 class="font-semibold text-[12px] text-slate-400 uppercase tracking-wide">Not Submitted</h3>
               </div>
               <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
+                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
               </div>
             </div>
 
@@ -590,14 +598,14 @@ onMounted(() => {
               <div v-if="activeApp.img" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(activeApp.img)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(activeApp.img))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
+                  <button @click="openPreview(getImageUrl(activeApp.img))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
                 </div>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
                 <i class="fa-solid fa-image text-4xl text-slate-300 mb-4"></i>
               </div>
               <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight">Facade Photo</h3>
+                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight">Facade Photo</h3>
               </div>
             </div>
 
@@ -606,11 +614,11 @@ onMounted(() => {
               <div class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
                 <img :src="getImageUrl(doc.file_path)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(doc.file_path))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg">Preview</button>
+                  <button @click="openPreview(getImageUrl(doc.file_path))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
                 </div>
               </div>
               <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-black text-[11px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.criteria_label || 'Additional Doc' }}</h3>
+                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.criteria_label || 'Additional Doc' }}</h3>
               </div>
             </div>
           </div>
@@ -619,17 +627,17 @@ onMounted(() => {
     </div>
 
     <!-- Verification Checklist -->
-    <div v-if="showChecklistModal && activeApp" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4 sm:p-8">
+    <div v-management-dialog="{ close: () => closeChecklistModal() }" v-if="showChecklistModal && activeApp" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4 sm:p-8">
       <div class="bg-[#f8fafc] w-full max-w-6xl rounded shadow-2xl flex flex-col max-h-[95vh] overflow-hidden text-left">
         <!-- Inadjust din ang padding at gap para sa Header nito -->
         <div class="bg-[#2563eb] text-white px-6 sm:px-8 py-5 flex justify-between items-center shrink-0 gap-4">
           <div class="flex items-center gap-3 overflow-hidden">
             <i class="fa-solid fa-rectangle-list text-xl shrink-0"></i>
             <h2 class="text-xs sm:text-lg font-bold tracking-tight uppercase truncate">
-              Requirements Verification - <span class="text-yellow-300 font-black">{{ activeApp.name }}</span>
+              Requirements Verification - <span class="text-yellow-300 font-semibold">{{ activeApp.name }}</span>
             </h2>
           </div>
-          <button @click="closeChecklistModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <button aria-label="Close dialog" @click="closeChecklistModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0 management-button"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
 
         <form @submit.prevent="handleApprove" class="flex flex-col h-full overflow-hidden">
@@ -641,7 +649,7 @@ onMounted(() => {
                   <i class="fa-solid fa-circle-exclamation text-amber-600 text-lg"></i>
                 </div>
                 <div>
-                  <h4 class="text-[11px] font-bold text-amber-800 uppercase tracking-widest mb-1">Institutional Re-Verification</h4>
+                  <h4 class="text-[12px] font-bold text-amber-800 uppercase tracking-wide mb-1">Institutional Re-Verification</h4>
                   <p class="text-[13px] font-medium text-amber-700 leading-tight">
                     <template v-if="activeApp.house_status === 'accredited'">
                       This is an <strong>already-accredited</strong> boarding house. The owner has uploaded a renewed/updated document. Review the flagged item below and approve or reject the document re-check.
@@ -667,8 +675,8 @@ onMounted(() => {
               <div class="flex items-start gap-3">
                 <i class="fa-solid fa-rotate text-blue-500 mt-1 text-lg"></i>
                 <div class="w-full">
-                  <h4 class="text-[11px] font-bold text-blue-900 uppercase tracking-widest mb-1">Resubmission Alert</h4>
-                  <p class="text-[10px] text-blue-700 leading-relaxed font-medium">
+                  <h4 class="text-[12px] font-bold text-blue-900 uppercase tracking-wide mb-1">Resubmission Alert</h4>
+                  <p class="text-[12px] text-blue-700 leading-relaxed font-medium">
                     <template v-if="activeApp.archived_by === 'owner'">
                       This property was <strong class="text-amber-600 font-bold">UNLISTED BY OWNER</strong>. The owner has uploaded new documents while unlisted, queuing this property for re-accreditation review.
                     </template>
@@ -691,7 +699,7 @@ onMounted(() => {
               <div class="overflow-x-auto custom-scrollbar">
                 <table class="w-full text-slate-800 border-collapse whitespace-nowrap">
                   <thead>
-                    <tr class="bg-slate-50/80 text-[10px] font-bold text-left uppercase text-slate-400 tracking-widest border-b border-slate-100">
+                    <tr class="bg-slate-50/80 text-[12px] font-bold text-left uppercase text-slate-400 tracking-wide border-b border-slate-100">
                       <th class="p-5 w-16 text-center">#</th>
                       <th class="p-5">Checklist Item</th>
                       <th class="p-5 text-center">File Evidence</th>
@@ -709,31 +717,31 @@ onMounted(() => {
                         <div class="flex items-center gap-2 flex-wrap">
                           <span class="text-slate-800 font-semibold text-[14px]">{{ item.label }}</span>
                           <span v-if="isDocumentItemUpdated(item)"
-                                class="inline-flex items-center gap-1 bg-amber-500 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
-                            <i class="fa-solid fa-clock-rotate-left text-[9px]"></i> UPDATED
+                                class="inline-flex items-center gap-1 bg-amber-500 text-white text-[12px] font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
+                            <i class="fa-solid fa-clock-rotate-left text-[12px]"></i> UPDATED
                           </span>
                           <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
-                                class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                                class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                             Required
                           </span>
                           <span v-else-if="item.permit_key"
-                                class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                                class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                             Optional
                           </span>
                         </div>
                       </td>
                       <td class="p-6 text-center">
-                        <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 hover:text-blue-800 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 mx-auto">
+                        <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
                         </button>
-                        <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 hover:text-blue-800 font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 mx-auto">
+                        <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
                         </button>
-                        <span v-else class="text-slate-200 italic text-[10px] font-bold uppercase">No File Attached</span>
+                        <span v-else class="text-slate-200 italic text-[12px] font-bold uppercase">No File Attached</span>
                       </td>
                       <td class="p-6">
                         <div class="flex justify-center">
-                          <input type="checkbox" v-model="checkedChecklist[item.id]" class="w-6 h-6 rounded-md border-slate-300 text-[#2563eb] focus:ring-0 cursor-pointer" />
+                          <input aria-label="id]" type="checkbox" v-model="checkedChecklist[item.id]" class="w-6 h-6 rounded-md border-slate-300 text-[#2563eb] focus:ring-0 cursor-pointer" />
                         </div>
                       </td>
                     </tr>
@@ -750,43 +758,43 @@ onMounted(() => {
                 
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
                   <div class="flex items-center gap-2">
-                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item # {{ i + 1 }}</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Item # {{ i + 1 }}</span>
                     <span v-if="isDocumentItemUpdated(item)"
-                          class="inline-flex items-center gap-1 bg-amber-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
-                      <i class="fa-solid fa-clock-rotate-left text-[8px]"></i> UPDATED
+                          class="inline-flex items-center gap-1 bg-amber-500 text-white text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
+                      <i class="fa-solid fa-clock-rotate-left text-[12px]"></i> UPDATED
                     </span>
                   </div>
                   <div class="flex items-center gap-2">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase">Verify:</span>
-                    <input type="checkbox" v-model="checkedChecklist[item.id]" class="w-5 h-5 rounded-md border-slate-300 text-[#2563eb] focus:ring-0 cursor-pointer" />
+                    <span class="text-[12px] font-bold text-slate-500 uppercase">Verify:</span>
+                    <input aria-label="id]" type="checkbox" v-model="checkedChecklist[item.id]" class="w-5 h-5 rounded-md border-slate-300 text-[#2563eb] focus:ring-0 cursor-pointer" />
                   </div>
                 </div>
 
                 <div class="py-1">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Requirement</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Requirement</span>
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="text-slate-900 font-bold text-sm leading-snug">{{ item.label }}</span>
                     <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
-                          class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                          class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                       Required
                     </span>
                     <span v-else-if="item.permit_key"
-                          class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0">
+                          class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                       Optional
                     </span>
                   </div>
                 </div>
 
                 <div class="pt-2 border-t border-slate-100 flex justify-between items-center">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider">File Evidence</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">File Evidence</span>
                   <div class="text-right">
-                    <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5 transition">
+                    <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
                       <i class="fa-solid fa-eye"></i> Preview
                     </button>
-                    <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5 transition">
+                    <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
                       <i class="fa-solid fa-eye"></i> Preview
                     </button>
-                    <span v-else class="text-slate-400 italic text-[10px] font-semibold uppercase">No File Attached</span>
+                    <span v-else class="text-slate-400 italic text-[12px] font-semibold uppercase">No File Attached</span>
                   </div>
                 </div>
 
@@ -794,15 +802,15 @@ onMounted(() => {
             </div>
 
             <div class="mt-8">
-              <label class="block text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-[0.2em]">Administrative Remarks / Rejection Feedback</label>
-              <textarea v-model="adminCommentsInput" rows="4" class="w-full bg-slate-50 border-2 border-slate-100 p-6 rounded-3xl text-sm font-semibold text-slate-700 outline-none transition custom-scrollbar" placeholder="Provide constructive feedback for the owner..."></textarea>
+              <label class="block text-[12px] font-bold text-slate-400 uppercase mb-4 tracking-normal">Administrative Remarks / Rejection Feedback</label>
+              <textarea aria-label="Administrative Remarks / Rejection Feedback" v-model="adminCommentsInput" rows="4" class="w-full bg-slate-50 border-2 border-slate-100 p-6 rounded-3xl text-sm font-semibold text-slate-700 outline-none transition custom-scrollbar" placeholder="Provide constructive feedback for the owner..."></textarea>
             </div>
           </div>
 
           <!-- Required docs status bar — only shown when some required docs are still unchecked -->
           <div v-if="activeApp && criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).some(c => !checkedChecklist[c.id])"
                class="px-4 sm:px-8 pt-4 sm:pt-6 border-t border-slate-100">
-            <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest mb-4 bg-rose-50 text-rose-700 border border-rose-200">
+            <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl text-[12px] font-semibold uppercase tracking-wide mb-4 bg-rose-50 text-rose-700 border border-rose-200">
               <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
               <span>
                 {{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).filter(c => checkedChecklist[c.id]).length }}/{{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).length }} Required documents verified — Check all 4 to enable approval
@@ -814,24 +822,24 @@ onMounted(() => {
 
             <!-- Primary Action Buttons (Approve / Reject) -->
             <div class="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
-              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-2 cursor-pointer">
+              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-2 cursor-pointer management-button management-button-secondary">
                 <i class="fa-solid fa-circle-xmark"></i> Reject
               </button>
-              <button type="submit" :disabled="isSubmitting" class="w-full bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-5 py-3 font-bold text-[11px] uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
+              <button type="submit" :disabled="isSubmitting" class="w-full bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-md flex items-center justify-center gap-2 cursor-pointer management-button management-button-primary">
                 <i class="fa-solid fa-circle-check"></i> {{ isSubmitting ? 'Confirming...' : 'Confirm' }}
               </button>
             </div>
 
             <!-- Secondary Criteria Management Buttons (Add / Update / Delete) -->
             <div class="grid grid-cols-3 gap-2 w-full sm:w-auto">
-              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
-                <i class="fa-solid fa-plus text-[10px]"></i> Add
+              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+                <i class="fa-solid fa-plus text-[12px]"></i> Add
               </button>
-              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
-                <i class="fa-solid fa-pen-to-square text-[10px]"></i> Edit
+              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+                <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
               </button>
-              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-3 py-2.5 font-bold text-[10px] uppercase tracking-widest transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
-                <i class="fa-solid fa-trash-can text-[10px]"></i> Delete
+              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+                <i class="fa-solid fa-trash-can text-[12px]"></i> Delete
               </button>
             </div>
           </div>
@@ -840,16 +848,16 @@ onMounted(() => {
     </div>
 
     <!-- Lightbox Preview Modal -->
-    <div v-if="showPreviewModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4 animate-fade-in" @click="closePreview">
+    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4 animate-fade-in" @click="closePreview">
       <div class="relative max-w-4xl max-h-[85vh] overflow-hidden bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center" @click.stop>
-        <button @click="closePreview" class="absolute top-4 right-4 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center transition">
+        <button aria-label="Previous photo" @click="closePreview" class="absolute top-4 right-4 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center transition management-button">
           <i class="fa-solid fa-xmark text-lg"></i>
         </button>
         <img :src="previewImageUrl" class="max-w-full max-h-[70vh] object-contain rounded-2xl mb-4 shadow-sm" alt="Document Preview" />
         <button 
           @click="downloadOriginal" 
           :disabled="isDownloading" 
-          class="bg-blue-600 hover:bg-black text-white px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition flex items-center gap-2"
+          class="bg-blue-600 hover:bg-black text-white px-8 py-3 rounded-xl text-[12px] font-semibold uppercase tracking-wide transition flex items-center gap-2 management-button management-button-primary"
         >
           <i v-if="isDownloading" class="fa-solid fa-spinner animate-spin"></i>
           <i v-else class="fa-solid fa-download"></i>
@@ -859,88 +867,88 @@ onMounted(() => {
     </div>
 
     <!-- Management Modals -->
-    <div v-if="showAddCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
+    <div v-management-dialog="{ close: () => showAddCriteriaModal = false }" v-if="showAddCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
       <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#10b981] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-black text-lg uppercase tracking-tight">Add New Criteria</h3>
-          <button @click="showAddCriteriaModal = false" class="text-white hover:text-emerald-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">Add New Criteria</h3>
+          <button aria-label="Close dialog" @click="showAddCriteriaModal = false" class="text-white hover:text-emerald-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10">
           <div class="mb-8">
-            <label class="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">Criteria Label</label>
-            <input type="text" v-model="newCriteriaLabel" required placeholder="e.g. Health Certificate" class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-emerald-500 outline-none transition font-bold text-slate-700">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Criteria Label</label>
+            <input aria-label="Criteria Label" type="text" v-model="newCriteriaLabel" required placeholder="e.g. Health Certificate" class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-emerald-500 outline-none transition font-bold text-slate-700">
           </div>
           <div class="flex justify-end gap-4">
-            <button @click="showAddCriteriaModal = false" class="px-8 py-3 text-slate-400 font-black text-[11px] uppercase tracking-widest hover:text-slate-600">Cancel</button>
-            <button @click="submitAddCriteria" class="bg-[#10b981] hover:bg-emerald-600 text-white px-10 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg transition">Add Item</button>
+            <button @click="showAddCriteriaModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
+            <button @click="submitAddCriteria" class="bg-[#10b981] hover:bg-emerald-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Add Item</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="showUpdateCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
+    <div v-management-dialog="{ close: () => showUpdateCriteriaModal = false }" v-if="showUpdateCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
       <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#f59e0b] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-black text-lg uppercase tracking-tight">Update System Criteria</h3>
-          <button @click="showUpdateCriteriaModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">Update System Criteria</h3>
+          <button aria-label="Close dialog" @click="showUpdateCriteriaModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10 max-h-[60vh] overflow-y-auto custom-scrollbar">
           <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 flex gap-3">
             <i class="fa-solid fa-circle-info mt-1"></i>
-            <p class="text-[10px] font-bold uppercase tracking-widest leading-relaxed">Note: You can only update custom criteria that you have added. The 8 required institutional documents cannot be modified here.</p>
+            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Note: You can only update custom criteria that you have added. The 8 required institutional documents cannot be modified here.</p>
           </div>
           <div class="space-y-4">
             <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
-              <span class="text-sm font-black text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
-              <button @click="startEditCriteria(item.id, item.label)" class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition shadow-sm">Edit</button>
+              <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
+              <button @click="startEditCriteria(item.id, item.label)" class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Edit</button>
             </div>
             <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
-              <p class="text-[10px] font-black uppercase tracking-widest">No custom criteria to manage</p>
+              <p class="text-[12px] font-semibold uppercase tracking-wide">No custom criteria to manage</p>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="showEditItemModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[130] flex justify-center items-center p-4">
+    <div v-management-dialog="{ close: () => showEditItemModal = false }" v-if="showEditItemModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[130] flex justify-center items-center p-4">
       <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#f59e0b] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-black text-lg uppercase tracking-tight">Edit Criteria</h3>
-          <button @click="showEditItemModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">Edit Criteria</h3>
+          <button aria-label="Close dialog" @click="showEditItemModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10">
           <div class="mb-8">
-            <label class="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">Update Label</label>
-            <input type="text" v-model="editCriteriaLabel" required class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-amber-500 outline-none transition font-bold text-slate-700" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Update Label</label>
+            <input aria-label="Update Label" type="text" v-model="editCriteriaLabel" required class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-amber-500 outline-none transition font-bold text-slate-700" />
           </div>
           <div class="flex justify-end gap-4">
-            <button @click="showEditItemModal = false" class="px-8 py-3 text-slate-400 font-black text-[11px] uppercase tracking-widest hover:text-slate-600">Cancel</button>
-            <button @click="submitUpdateCriteria" class="bg-[#f59e0b] hover:bg-amber-600 text-white px-10 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg transition">Save Changes</button>
+            <button @click="showEditItemModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
+            <button @click="submitUpdateCriteria" class="bg-[#f59e0b] hover:bg-amber-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="showDeleteCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
+    <div v-management-dialog="{ close: () => showDeleteCriteriaModal = false }" v-if="showDeleteCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
       <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#ef4444] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-black text-lg uppercase tracking-tight">Remove Criteria</h3>
-          <button @click="showDeleteCriteriaModal = false" class="text-white hover:text-red-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">Remove Criteria</h3>
+          <button aria-label="Close dialog" @click="showDeleteCriteriaModal = false" class="text-white hover:text-red-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10 max-h-[60vh] overflow-y-auto custom-scrollbar">
           <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl mb-6 flex gap-3">
             <i class="fa-solid fa-triangle-exclamation mt-1"></i>
-            <p class="text-[10px] font-bold uppercase tracking-widest leading-relaxed">Note: You can only delete custom criteria that you have added. The 8 required institutional documents are permanent and cannot be deleted.</p>
+            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Note: You can only delete custom criteria that you have added. The 8 required institutional documents are permanent and cannot be deleted.</p>
           </div>
           <div class="space-y-4">
             <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-red-50 border-2 border-red-100 rounded-2xl hover:border-red-400 transition group">
-              <span class="text-sm font-black text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
-              <button @click="submitDeleteCriteria(item.id)" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition shadow-sm">Delete</button>
+              <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
+              <button @click="submitDeleteCriteria(item.id)" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
             </div>
             <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
-              <p class="text-[10px] font-black uppercase tracking-widest">No custom criteria to manage</p>
+              <p class="text-[12px] font-semibold uppercase tracking-wide">No custom criteria to manage</p>
             </div>
           </div>
         </div>
@@ -948,94 +956,94 @@ onMounted(() => {
     </div>
 
     <!-- Confirm Modals -->
-    <div v-if="showApproveConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showApproveConfirmModal = false">
+    <div v-management-dialog="{ close: () => showApproveConfirmModal = false }" v-if="showApproveConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showApproveConfirmModal = false">
       <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-[#2563eb] px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-circle-check text-white text-xl"></i>
           </div>
-          <h3 class="text-white font-black text-base uppercase tracking-tight">Confirm Accreditation</h3>
+          <h3 class="text-white font-semibold text-base uppercase tracking-tight">Confirm Accreditation</h3>
         </div>
         <div class="px-10 py-8">
           <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
             Are you sure you want to <strong class="text-blue-600">approve</strong> this boarding house application with the selected requirements?
           </p>
-          <p class="text-slate-400 font-bold text-[11px] uppercase tracking-widest">
+          <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">
             This action will accredit <span class="text-slate-700">{{ activeApp?.name }}</span> and notify the owner.
           </p>
         </div>
         <div class="px-10 pb-8 flex justify-end gap-4">
-          <button @click="showApproveConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-black text-[11px] uppercase tracking-widest rounded-xl transition">
+          <button @click="showApproveConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
             Cancel
           </button>
-          <button @click="execApprove" class="px-8 py-3 bg-[#2563eb] hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition">
+          <button @click="execApprove" class="px-8 py-3 bg-[#2563eb] hover:bg-blue-700 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button management-button-primary">
             <i class="fa-solid fa-circle-check mr-2"></i>Confirm Approval
           </button>
         </div>
       </div>
     </div>
 
-    <div v-if="showRejectConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showRejectConfirmModal = false">
+    <div v-management-dialog="{ close: () => showRejectConfirmModal = false }" v-if="showRejectConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showRejectConfirmModal = false">
       <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-red-500 px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-circle-xmark text-white text-xl"></i>
           </div>
-          <h3 class="text-white font-black text-base uppercase tracking-tight">Confirm Rejection</h3>
+          <h3 class="text-white font-semibold text-base uppercase tracking-tight">Confirm Rejection</h3>
         </div>
         <div class="px-10 py-8">
           <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
             Are you sure you want to <strong class="text-red-600">reject</strong> this application? The owner will receive your feedback for resubmission.
           </p>
-          <p class="text-slate-400 font-bold text-[11px] uppercase tracking-widest">
+          <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">
             Property: <span class="text-slate-700">{{ activeApp?.name }}</span>
           </p>
         </div>
         <div class="px-10 pb-8 flex justify-end gap-4">
-          <button @click="showRejectConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-black text-[11px] uppercase tracking-widest rounded-xl transition">
+          <button @click="showRejectConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
             Cancel
           </button>
-          <button @click="execReject" class="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition">
+          <button @click="execReject" class="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
             <i class="fa-solid fa-circle-xmark mr-2"></i>Confirm Rejection
           </button>
         </div>
       </div>
     </div>
 
-    <div v-if="showDeleteCriteriaConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showDeleteCriteriaConfirmModal = false">
+    <div v-management-dialog v-if="showDeleteCriteriaConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showDeleteCriteriaConfirmModal = false">
       <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-red-600 px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-trash-can text-white text-xl"></i>
           </div>
-          <h3 class="text-white font-black text-base uppercase tracking-tight">Modal Title</h3>
+          <h3 class="text-white font-semibold text-base uppercase tracking-tight">Modal Title</h3>
         </div>
         <div class="px-10 py-8">
           <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
             Are you sure you want to permanently <strong class="text-red-600">delete</strong> this custom criteria?
           </p>
-          <p class="text-slate-400 font-bold text-[11px] uppercase tracking-widest">This action cannot be undone.</p>
+          <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">This action cannot be undone.</p>
         </div>
         <div class="px-10 pb-8 flex justify-end gap-4">
-          <button @click="showDeleteCriteriaConfirmModal = false; pendingDeleteCriteriaId = null" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-black text-[11px] uppercase tracking-widest rounded-xl transition">
+          <button @click="showDeleteCriteriaConfirmModal = false; pendingDeleteCriteriaId = null" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
             Cancel
           </button>
-          <button @click="execDeleteCriteria" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition">
+          <button @click="execDeleteCriteria" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
             <i class="fa-solid fa-trash-can mr-2"></i>Delete Permanently
           </button>
         </div>
       </div>
     </div>
     <!-- Required Documents Not Verified Modal -->
-    <div v-if="showRequiredDocsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => showRequiredDocsModal = false }" v-if="showRequiredDocsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
         <div class="bg-rose-600 px-6 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-triangle-exclamation text-white text-lg"></i>
           </div>
           <div>
-            <h3 class="text-sm font-black text-white uppercase tracking-tight leading-tight">Cannot Approve Yet</h3>
-            <p class="text-[10px] font-bold text-rose-200 uppercase tracking-widest mt-0.5">Required documents not verified</p>
+            <h3 class="text-sm font-semibold text-white uppercase tracking-tight leading-tight">Cannot Approve Yet</h3>
+            <p class="text-[12px] font-bold text-rose-200 uppercase tracking-wide mt-0.5">Required documents not verified</p>
           </div>
         </div>
         <div class="px-6 py-5">
@@ -1046,16 +1054,16 @@ onMounted(() => {
             <li v-for="doc in uncheckedRequiredDocs" :key="doc.id"
                 class="flex items-center gap-3 bg-rose-50 border border-rose-100 px-4 py-2.5 rounded-xl">
               <i class="fa-solid fa-circle-xmark text-rose-500 shrink-0"></i>
-              <span class="text-[11px] font-bold text-rose-800 uppercase tracking-wide">{{ doc.label }}</span>
+              <span class="text-[12px] font-bold text-rose-800 uppercase tracking-wide">{{ doc.label }}</span>
             </li>
           </ul>
-          <p class="text-[10px] font-semibold text-slate-400 leading-relaxed">
+          <p class="text-[12px] font-semibold text-slate-400 leading-relaxed">
             Review each required document in the checklist and check the verification box before approving.
           </p>
         </div>
         <div class="px-6 pb-5">
           <button @click="showRequiredDocsModal = false"
-                  class="w-full bg-slate-900 hover:bg-slate-700 text-white text-[11px] font-black py-3 rounded-xl uppercase tracking-widest transition cursor-pointer">
+                  class="w-full bg-slate-900 hover:bg-slate-700 text-white text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
             Back to Checklist
           </button>
         </div>

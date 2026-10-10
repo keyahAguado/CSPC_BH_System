@@ -1,4 +1,9 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
@@ -68,6 +73,7 @@ const executeConfirm = async () => {
 };
 
 const fetchBookings = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     let url = `/api/owner/bookings`;
@@ -84,6 +90,7 @@ const fetchBookings = async () => {
       houseName.value = response.data.houseName || '';
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load bookings:', error);
     showSystemAlert('Could not fetch bookings list.', 'warning');
   } finally {
@@ -362,28 +369,30 @@ const getCheckoutDateDisplay = (booking) => {
 onMounted(() => {
   fetchBookings();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <div class="no-print">
       <OwnerNav />
     </div>
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <!-- Confirmation Modal Overlay -->
-    <div v-if="showModal" class="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div v-management-dialog="{ close: () => showModal = false }" v-if="showModal" class="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
       <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100 animate-in zoom-in duration-200">
         <div class="mb-4 flex justify-center" :class="[modalType === 'success' ? 'text-emerald-500' : modalType === 'warning' ? 'text-amber-500' : 'text-blue-500']">
           <i class="fa-solid text-5xl" :class="[modalType === 'success' ? 'fa-circle-check' : modalType === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-info']"></i>
         </div>
-        <h2 class="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">{{ modalTitle }}</h2>
+        <h2 class="text-lg font-semibold text-slate-800 uppercase tracking-tight mb-2">{{ modalTitle }}</h2>
         <p class="text-slate-500 mb-6 text-sm">{{ modalText }}</p>
         <div class="flex gap-3">
-          <button @click="executeConfirm" :disabled="isProcessingDecision" class="bg-black hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1">
+          <button @click="executeConfirm" :disabled="isProcessingDecision" class="bg-black hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-wide flex-1 management-button">
             Confirm
           </button>
-          <button @click="showModal = false" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1">
+          <button @click="showModal = false" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-wide flex-1 management-button">
             Cancel
           </button>
         </div>
@@ -391,10 +400,11 @@ onMounted(() => {
     </div>
 
     <!-- Main Content -->
-    <main class="flex-1 max-w-[1700px] mx-auto w-[96%] py-12 px-2 lg:px-6">
+    <main id="management-content" tabindex="-1" class="flex-1 max-w-[1700px] mx-auto w-[96%] py-12 px-2 lg:px-6">
+      <LoadError :message="loadError" />
 
       <!-- Header Section -->
-      <div class="mb-12 text-center">
+      <div class="mb-6 text-left">
         <!-- Hidden Template for PDF Direct Download & Print -->
         <div id="pdf-report-template" class="hidden print:block">
           <!-- Print Only Header -->
@@ -402,12 +412,12 @@ onMounted(() => {
             <div class="flex items-center gap-6">
               <img src="/img/CSPC_logo.png" class="w-16 h-16 object-contain" />
               <div>
-                <h1 class="text-xl font-black text-slate-900 uppercase tracking-tight">CSPC Boarding House Management System</h1>
-                <p class="text-sm font-black text-[#2a528a] uppercase tracking-wider mt-0.5">Property Booking Monitoring Report</p>
+                <h1 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">CSPC Boarding House Management System</h1>
+                <p class="text-sm font-semibold text-[#2a528a] uppercase tracking-wider mt-0.5">Property Booking Monitoring Report</p>
               </div>
             </div>
             <div class="text-right">
-              <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">REPORT DATE</p>
+              <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">REPORT DATE</p>
               <p class="font-bold text-slate-900 text-base">{{ reportDate }}</p>
             </div>
           </div>
@@ -520,26 +530,20 @@ onMounted(() => {
           </div>
         </div>
 
-        <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight mb-2 no-print">
-          {{ houseName ? `Bookings for ${houseName}` : 'Bookings Monitoring' }}
-        </h1>
-        <p class="text-blue-600 font-bold uppercase text-[12px] tracking-[0.2em] mb-4 text-center tracking-widest no-print">
-          {{ houseName ? 'Property-Scoped Reservation View' : 'Comprehensive Reservation Overview' }}
-        </p>
-        <div class="w-20 h-1.5 bg-blue-600 mx-auto rounded-full no-print"></div>
+        <PageHeader title="Reservations" :eyebrow="houseName || 'All properties'" description="Review requests, stay extensions, and existing payment records." />
       </div>
 
       <!-- Main Loader state -->
       <div v-if="isLoading" class="bg-white rounded-[1.5rem] p-20 shadow-xl border border-slate-200 text-center flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading bookings records...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading bookings records...</p>
       </div>
 
       <!-- Main Card Container -->
       <div v-else class="bg-white rounded-[1.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left animate-in fade-in duration-300">
 
         <!-- Control Bar -->
-        <div class="px-6 py-6 bg-slate-50/50 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 control-bar no-print">
+        <div class="px-6 py-6 bg-slate-50/50 border-b border-slate-100 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 control-bar no-print">
           <!-- Left side -->
           <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <!-- Search bar -->
@@ -547,13 +551,13 @@ onMounted(() => {
               <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i>
               </span>
-              <input type="text" v-model="searchQuery" placeholder="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..."
-                  class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold tracking-widest shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
+              <input aria-label="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..." type="text" v-model="searchQuery" placeholder="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..."
+                  class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[12px] font-bold tracking-wide shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
             </div>
 
             <!-- Status Filter -->
             <div class="relative w-full sm:w-44">
-              <select v-model="statusFilter" class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm focus:border-[#2a528a] outline-none cursor-pointer">
+              <select aria-label="status Filter" v-model="statusFilter" class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-[12px] font-semibold uppercase tracking-wider text-slate-700 shadow-sm focus:border-[#2a528a] outline-none cursor-pointer">
                 <option value="all">ALL STATUSES</option>
                 <option value="pending">PENDING REQUESTS</option>
                 <option value="confirmed">CONFIRMED / ACTIVE</option>
@@ -564,14 +568,14 @@ onMounted(() => {
 
             <!-- Print Trigger button -->
             <button @click="handlePrint"
-                class="bg-[#d9454f] hover:bg-black text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn">
+                class="bg-[#d9454f] hover:bg-black text-white px-5 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn management-button management-button-primary">
               <i class="fa-solid fa-print"></i>
               <span class="cb-pdf-label">Print / Save PDF</span>
             </button>
 
             <!-- Back to Dashboard — mobile: shows as '<', desktop: full label -->
             <router-link to="/owner/dashboard"
-                class="cb-back-btn inline-flex items-center gap-2 group text-[11px] font-black text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-widest shadow-sm sm:hidden">
+                class="cb-back-btn inline-flex items-center gap-2 group text-[12px] font-semibold text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-wide shadow-sm sm:hidden management-button management-button-secondary">
               <span class="cb-back-short">&lt;</span>
             </router-link>
           </div>
@@ -579,7 +583,7 @@ onMounted(() => {
           <!-- Right side (desktop only) -->
           <div class="hidden sm:flex items-center gap-3">
             <router-link to="/owner/dashboard"
-                class="inline-flex items-center gap-2 group text-[11px] font-black text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-widest shadow-sm">
+                class="inline-flex items-center gap-2 group text-[12px] font-semibold text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-wide shadow-sm management-button management-button-secondary">
               Back to Dashboard
               <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
             </router-link>
@@ -591,8 +595,8 @@ onMounted(() => {
           <div class="flex items-center gap-4">
             <span>Showing {{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }} to {{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }} of {{ filteredBookings.length }} entries</span>
             <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
-              <select v-model="itemsPerPage" @change="currentPage = 1" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
+              <select aria-label="items Per Page" v-model="itemsPerPage" @change="currentPage = 1" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
                 <option :value="10">10</option>
                 <option :value="25">25</option>
                 <option :value="50">50</option>
@@ -606,20 +610,20 @@ onMounted(() => {
               type="button"
               @click="prevPage" 
               :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
             </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
               {{ currentPage }} / {{ totalPages }}
             </span>
             <button 
               type="button"
               @click="nextPage" 
               :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
             </button>
           </div>
         </div>
@@ -629,67 +633,67 @@ onMounted(() => {
 
         <!-- ===== DESKTOP TABLE (hidden on mobile, hidden on print) ===== -->
         <div class="booking-table-wrapper w-full overflow-x-auto shadow-sm rounded-xl border border-slate-200 print:hidden">
-          <table class="w-full text-left border-collapse min-w-[1250px] divide-y divide-slate-200" id="bookingsTable">
+          <table class="w-full text-left border-collapse min-w-[1050px] divide-y divide-slate-200" id="bookingsTable">
             <thead class="bg-slate-100/80 border-b border-slate-300">
-              <tr class="text-slate-800 uppercase text-[10px] font-black tracking-wider select-none">
+              <tr class="text-slate-800 uppercase text-[12px] font-semibold tracking-wider select-none">
                 <th @click="toggleSort('ref')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center gap-1.5">
                     REF NO.
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('student')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center gap-1.5">
                     STUDENT NAME
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('room')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center justify-center gap-1.5">
                     ROOM (MALE/FEMALE)
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('checkin')" class="px-3 py-3 text-center cursor-pointer hover:bg-slate-200/60 transition" style="min-width:110px">
                   <div class="flex items-center justify-center gap-1.5">
                     CHECK-IN /<br/>CHECK-OUT
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('contact')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center justify-center gap-1.5">
                     EMERGENCY<br/>CONTACT
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('guardian')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center gap-1.5">
                     GUARDIAN<br/>NAME
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('duration')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center justify-center gap-1.5">
                     DURATION<br/>&amp; STAY
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('rent')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center justify-center gap-1.5">
                     RENT /<br/>TOTAL
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('payment')" class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800 cursor-pointer hover:bg-emerald-100/80 transition" style="min-width:160px">
                   <div class="flex items-center gap-1.5">
-                    INITIAL PAYMENT<br/><span class="font-bold normal-case text-[9px] text-emerald-600">DUE (MOVE-IN)</span>
-                    <i class="fa-solid text-[9px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
+                    INITIAL PAYMENT<br/><span class="font-bold normal-case text-[12px] text-emerald-600">DUE (MOVE-IN)</span>
+                    <i class="fa-solid text-[12px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
                   </div>
                 </th>
                 <th @click="toggleSort('status')" class="px-4 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
                   <div class="flex items-center justify-center gap-1.5">
                     ACTION /<br/>STATUS
-                    <i class="fa-solid text-[9px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
                   </div>
                 </th>
               </tr>
@@ -706,13 +710,13 @@ onMounted(() => {
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z"/><path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z"/></svg>
                         </div>
                         <div>
-                          <h3 class="text-xs font-black text-slate-900 uppercase tracking-tight leading-none">{{ hName }}</h3>
-                          <p v-if="getHouseBookings(hName)[0]?.house_location" class="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                          <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-tight leading-none">{{ hName }}</h3>
+                          <p v-if="getHouseBookings(hName)[0]?.house_location" class="text-[12px] font-bold text-slate-400 uppercase tracking-wider mt-1">
                             {{ getHouseBookings(hName)[0]?.house_location }}
                           </p>
                         </div>
                       </div>
-                      <span class="text-[10px] font-black text-[#2a528a] bg-blue-100/70 border border-blue-200/50 px-3 py-1 rounded-full uppercase tracking-wider">
+                      <span class="text-[12px] font-semibold text-[#2a528a] bg-blue-100/70 border border-blue-200/50 px-3 py-1 rounded-full uppercase tracking-wider">
                         {{ getHouseBookings(hName).length }} TOTAL BOOKINGS
                       </span>
                     </div>
@@ -721,9 +725,9 @@ onMounted(() => {
 
                 <!-- Bookings Loop (Matches User Screenshot) -->
                 <tr v-for="booking in getHouseBookings(hName)" :key="booking.id" class="hover:bg-slate-50/40 transition-colors">
-                  <td class="px-4 py-6 font-mono text-[10px] leading-relaxed">
+                  <td class="px-4 py-6 font-mono text-[12px] leading-relaxed">
                     <span class="font-bold text-slate-900 text-xs block">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
-                    <span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest"
+                    <span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wide"
                           :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
                       <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
                       {{ paymentMethodLabel(booking.payment_method) }}
@@ -734,13 +738,13 @@ onMounted(() => {
                   </td>
                   <td class="px-3 py-6 text-center whitespace-nowrap">
                     <span class="font-bold text-slate-900 text-xs block">Room {{ booking.room_number }}</span>
-                    <span class="text-[9px] font-black uppercase tracking-wider block" :class="booking.room_gender === 'female' ? 'text-pink-500' : 'text-blue-500'">
+                    <span class="text-[12px] font-semibold uppercase tracking-wider block" :class="booking.room_gender === 'female' ? 'text-pink-500' : 'text-blue-500'">
                       {{ booking.room_gender }}
                     </span>
                   </td>
                   <td class="px-3 py-6 text-center font-bold text-slate-800 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-800">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' }}</span>
-                    <span class="block text-[9px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
+                    <span class="block text-[12px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
                   </td>
                   <td class="px-3 py-6 text-center font-bold text-slate-700 text-xs whitespace-nowrap">
                     {{ booking.emergency_contact || 'N/A' }}
@@ -749,17 +753,17 @@ onMounted(() => {
                     {{ booking.guardian_name || 'N/A' }}
                   </td>
                   <td class="px-3 py-6 text-center font-bold text-blue-600 text-xs whitespace-nowrap">
-                    <span class="block font-black text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+                    <span class="block font-semibold text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
                   </td>
                   <td class="px-3 py-6 text-center whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-700">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}<span class="text-slate-400">/month</span></span>
-                    <span class="block text-sm font-black text-slate-900 mt-0.5">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span>
+                    <span class="block text-sm font-semibold text-slate-900 mt-0.5">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span>
                   </td>
                   <!-- Move-in Ledger Column -->
                   <td class="px-4 py-6 text-left bg-emerald-50/40 min-w-[180px]">
                     <div v-if="booking.initial_payment > 0">
-                      <span class="block text-sm font-black text-emerald-700">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
-                      <span class="block text-[8px] font-bold text-slate-400 mt-0.5 leading-tight">
+                      <span class="block text-sm font-semibold text-emerald-700">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
+                      <span class="block text-[12px] font-bold text-slate-400 mt-0.5 leading-tight">
                         Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }} +<br />
                         Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
@@ -772,51 +776,51 @@ onMounted(() => {
                     <div class="print:hidden">
                       <!-- Extension actions -->
                       <div v-if="booking.is_extension_requested" class="bg-amber-50 border border-amber-200 p-2 rounded-xl mb-2">
-                        <p class="text-[9px] font-black text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
+                        <p class="text-[12px] font-semibold text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
                         <div class="flex gap-2">
-                          <button type="button" @click="handleApproveExtension(booking)" class="flex-1 bg-amber-500 text-white px-3 py-1.5 rounded-lg font-black text-[8px] hover:bg-black transition shadow-sm uppercase tracking-widest">
+                          <button type="button" @click="handleApproveExtension(booking)" class="flex-1 bg-amber-500 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] hover:bg-black transition shadow-sm uppercase tracking-wide management-button">
                             Approve
                           </button>
-                          <button type="button" @click="handleRejectExtension(booking)" class="flex-1 bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-black text-[8px] hover:bg-red-600 hover:text-white transition shadow-sm uppercase tracking-widest">
+                          <button type="button" @click="handleRejectExtension(booking)" class="flex-1 bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-semibold text-[12px] hover:bg-red-600 hover:text-white transition shadow-sm uppercase tracking-wide management-button">
                             Reject
                           </button>
                         </div>
                       </div>
 
                       <!-- Main status actions -->
-                      <div v-if="booking.payment_requires_review" class="text-amber-700 text-[10px] font-semibold text-center">
+                      <div v-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold text-center">
                         Payment received: review required. No occupancy recorded.
                       </div>
                       <div v-else-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
-                        <button @click="handleApprove(booking)" class="w-24 bg-[#108548] hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-black text-[9px] transition shadow-xs uppercase tracking-widest cursor-pointer">
+                        <button @click="handleApprove(booking)" class="w-24 bg-[#108548] hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
                           APPROVE
                         </button>
-                        <button @click="handleReject(booking)" class="w-24 bg-[#dc2626] hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[9px] transition shadow-xs uppercase tracking-widest cursor-pointer">
+                        <button @click="handleReject(booking)" class="w-24 bg-[#dc2626] hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
                           REJECT
                         </button>
                       </div>
                       <div v-else-if="isAwaitingOnlinePayment(booking)" class="flex flex-col gap-1 items-center justify-center max-w-[170px] mx-auto text-center whitespace-normal">
-                        <span class="bg-amber-100 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider inline-block text-center leading-snug">
+                        <span class="bg-amber-100 text-amber-700 text-[12px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider inline-block text-center leading-snug">
                           Reserved — Awaiting Payment
                         </span>
-                        <p class="text-[9px] font-semibold text-slate-400 leading-tight mt-1 text-center">
+                        <p class="text-[12px] font-semibold text-slate-400 leading-tight mt-1 text-center">
                           Won't count as occupied until student pays online.
                         </p>
                       </div>
                       <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center">
-                        <span class="bg-green-100 text-green-700 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">APPROVED</span>
-                        <button v-if="booking.payment_status !== 'paid'" @click="handleMarkPaid(booking)" class="mt-1.5 w-24 bg-blue-500 text-white px-2 py-1 rounded-lg font-black text-[8px] hover:bg-blue-700 transition shadow-xs uppercase tracking-widest cursor-pointer">
+                        <span class="bg-green-100 text-green-700 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">APPROVED</span>
+                        <button v-if="booking.payment_status !== 'paid'" @click="handleMarkPaid(booking)" class="mt-1.5 w-24 bg-blue-500 text-white px-2 py-1 rounded-lg font-semibold text-[12px] hover:bg-blue-700 transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
                           Mark Paid
                         </button>
-                        <span v-else class="text-emerald-600 text-[9px] font-black uppercase tracking-widest mt-1">PAID</span>
+                        <span v-else class="text-emerald-600 text-[12px] font-semibold uppercase tracking-wide mt-1">PAID</span>
                       </div>
-                      <div v-else-if="booking.status === 'cancelled'" class="text-slate-400 font-black text-[10px] uppercase tracking-wider">
+                      <div v-else-if="booking.status === 'cancelled'" class="text-slate-400 font-semibold text-[12px] uppercase tracking-wider">
                         CANCELLED
                       </div>
-                      <div v-else-if="booking.status === 'rejected'" class="text-rose-500 font-black text-[10px] uppercase tracking-wider">
+                      <div v-else-if="booking.status === 'rejected'" class="text-rose-500 font-semibold text-[12px] uppercase tracking-wider">
                         REJECTED
                       </div>
-                      <span v-else class="text-slate-400 text-[10px] font-black uppercase">{{ booking.status }}</span>
+                      <span v-else class="text-slate-400 text-[12px] font-semibold uppercase">{{ booking.status }}</span>
                     </div>
 
                     <!-- Print handled by separate print-only layout above -->
@@ -827,7 +831,7 @@ onMounted(() => {
               </template>
 
               <tr v-if="filteredBookings.length === 0">
-                <td colspan="13" class="py-20 text-center text-slate-400 font-bold uppercase tracking-widest">
+                <td colspan="13" class="py-20 text-center text-slate-400 font-bold uppercase tracking-wide">
                   No bookings found under search.
                 </td>
               </tr>
@@ -837,7 +841,7 @@ onMounted(() => {
 
         <!-- ===== MOBILE CARD VIEW (shown only on mobile, hidden in print) ===== -->
         <div class="mobile-cards-wrapper print:hidden md:hidden">
-          <div v-if="filteredBookings.length === 0" class="py-16 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+          <div v-if="filteredBookings.length === 0" class="py-16 text-center text-slate-400 font-bold uppercase tracking-wide text-[12px]">
             No bookings found under search.
           </div>
 
@@ -862,7 +866,7 @@ onMounted(() => {
               <div class="m-row">
                 <span class="m-lbl">Payment Method</span>
                 <span class="m-val">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest"
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wide"
                         :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
                     <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
                     {{ paymentMethodLabel(booking.payment_method) }}
@@ -885,7 +889,7 @@ onMounted(() => {
                 <span class="m-val">
                   <span v-if="booking.check_in_date">{{ new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</span>
                   <span v-else style="color:#f97316">Not set</span>
-                  <span class="block text-blue-600 font-bold text-[10px] mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
+                  <span class="block text-blue-600 font-bold text-[12px] mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
                 </span>
               </div>
               <div class="m-row">
@@ -898,11 +902,11 @@ onMounted(() => {
               </div>
               <div class="m-row">
                 <span class="m-lbl">Duration &amp; Stay</span>
-                <span class="m-val font-black text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
+                <span class="m-val font-semibold text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
               </div>
               <div class="m-row">
                 <span class="m-lbl">Rent / Total</span>
-                <span class="m-val">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }} / <span class="font-black text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span></span>
+                <span class="m-val">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }} / <span class="font-semibold text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span></span>
               </div>
 
               <!-- Initial Payment -->
@@ -921,11 +925,11 @@ onMounted(() => {
               <div class="m-row m-row-action">
                 <span class="m-lbl">Status</span>
                 <span class="m-val">
-                  <span v-if="booking.payment_requires_review" class="text-amber-700 text-[10px] font-semibold">Payment received: review required</span>
-                  <span v-else-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-black text-[9px] uppercase border border-emerald-200">Confirmed</span>
-                  <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-black text-[9px] uppercase border border-amber-200">Pending</span>
-                  <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-black text-[9px] uppercase border border-rose-200">{{ booking.status }}</span>
-                  <span v-else class="text-slate-500 font-bold uppercase text-[9px]">{{ booking.status }}</span>
+                  <span v-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold">Payment received: review required</span>
+                  <span v-else-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-semibold text-[12px] uppercase border border-emerald-200">Confirmed</span>
+                  <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-semibold text-[12px] uppercase border border-amber-200">Pending</span>
+                  <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-semibold text-[12px] uppercase border border-rose-200">{{ booking.status }}</span>
+                  <span v-else class="text-slate-500 font-bold uppercase text-[12px]">{{ booking.status }}</span>
                 </span>
               </div>
             </div>
@@ -936,13 +940,13 @@ onMounted(() => {
         <div v-if="filteredBookings.length > 0" class="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 pagination-container no-print print:hidden">
           <div class="flex items-center gap-4">
             <span class="text-xs font-bold text-slate-500">
-              Showing <span class="font-black text-slate-800">{{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }}</span>
-              to <span class="font-black text-slate-800">{{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }}</span>
-              of <span class="font-black text-slate-800">{{ filteredBookings.length }}</span> booking{{ filteredBookings.length > 1 ? 's' : '' }}
+              Showing <span class="font-semibold text-slate-800">{{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }}</span>
+              to <span class="font-semibold text-slate-800">{{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }}</span>
+              of <span class="font-semibold text-slate-800">{{ filteredBookings.length }}</span> booking{{ filteredBookings.length > 1 ? 's' : '' }}
             </span>
             <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
-              <select v-model="itemsPerPage" @change="currentPage = 1" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
+              <select aria-label="items Per Page" v-model="itemsPerPage" @change="currentPage = 1" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
                 <option :value="10">10</option>
                 <option :value="25">25</option>
                 <option :value="50">50</option>
@@ -956,20 +960,20 @@ onMounted(() => {
               type="button"
               @click="prevPage" 
               :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
             </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
               {{ currentPage }} / {{ totalPages }}
             </span>
             <button 
               type="button"
               @click="nextPage" 
               :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
             </button>
           </div>
         </div>

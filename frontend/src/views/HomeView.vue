@@ -1,6 +1,6 @@
 <script setup>
 import { escapeHtml } from '../utils/htmlHelper.js';
-import { ref, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import Header from '../components/partials/Header.vue';
@@ -9,6 +9,7 @@ import PrivacyPolicyModal from '../components/partials/PrivacyPolicyModal.vue';
 import { getImageUrl } from '../config/api';
 import { formatAddress } from '../utils/formatAddress.js';
 import { useOfflineStatus } from '../utils/offlineHelper.js';
+import { DEFAULT_FEATURES, SITE_SETTING_DEFAULTS, safeExternalUrl } from '../constants/siteContent.js';
 
 const { isOffline } = useOfflineStatus();
 
@@ -152,8 +153,55 @@ watch(houses, () => {
   if (mapInstance && window.google) plotMarkers(window.google);
 });
 
+// ─── Landing page content (Core Features + footer), managed in Admin > Landing page ───
+// Start from the last saved copy (or the original defaults) so the page renders instantly
+// and still works offline; then refresh from the server.
+const SITE_CONTENT_CACHE_KEY = 'cspc_cached_site_content';
+const initialSiteContent = (() => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(SITE_CONTENT_CACHE_KEY) || 'null');
+    if (cached && Array.isArray(cached.features) && cached.settings) return cached;
+  } catch (e) {}
+  return { features: DEFAULT_FEATURES, settings: { ...SITE_SETTING_DEFAULTS } };
+})();
+const siteFeatures = ref(initialSiteContent.features);
+const siteSettings = ref({ ...SITE_SETTING_DEFAULTS, ...initialSiteContent.settings });
+
+const fetchSiteContent = async () => {
+  try {
+    const response = await axios.get('/api/site-content');
+    if (response.data?.success && Array.isArray(response.data.features)) {
+      siteFeatures.value = response.data.features;
+      siteSettings.value = { ...SITE_SETTING_DEFAULTS, ...response.data.settings };
+      if (!response.data.fallback) {
+        try {
+          localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify({ features: siteFeatures.value, settings: siteSettings.value }));
+        } catch (e) {}
+      }
+    }
+  } catch (error) {
+    console.warn('Landing page content could not be refreshed; showing the saved copy.');
+  }
+};
+
+const footerContacts = computed(() => {
+  const s = siteSettings.value;
+  return [
+    { icon: 'fa-building-columns', text: s.footer_office },
+    { icon: 'fa-location-dot', text: s.footer_address },
+    { icon: 'fa-envelope', text: s.footer_email, href: s.footer_email ? `mailto:${s.footer_email}` : '' },
+    { icon: 'fa-phone', text: s.footer_phone },
+    { icon: 'fa-clock', text: s.footer_hours }
+  ].filter(item => item.text && item.text.trim());
+});
+const footerLinks = computed(() => [
+  { icon: 'fa-brands fa-facebook', label: 'Facebook page', href: safeExternalUrl(siteSettings.value.footer_facebook) },
+  { icon: 'fa-solid fa-globe', label: 'Official website', href: safeExternalUrl(siteSettings.value.footer_website) }
+].filter(link => link.href));
+
 onMounted(() => {
   fetchHouses();
+  fetchSiteContent();
 });
 </script>
 
@@ -202,36 +250,19 @@ onMounted(() => {
     <!-- 2. FEATURES SECTION -->
     <section id="features" class="py-24 bg-blue-50 px-10 border-b border-blue-100">
       <div class="max-w-5xl mx-auto">
-        <h2 class="text-xs font-black text-blue-600 text-center mb-2 tracking-[0.4em] uppercase">The Platform</h2>
-        <h3 class="text-3xl font-black text-blue-900 text-center mb-16 tracking-tight uppercase">Core Features</h3>
-        
+        <h2 v-if="siteSettings.features_eyebrow" class="text-xs font-black text-blue-600 text-center mb-2 tracking-[0.4em] uppercase">{{ siteSettings.features_eyebrow }}</h2>
+        <h3 class="text-3xl font-black text-blue-900 text-center mb-16 tracking-tight uppercase">{{ siteSettings.features_heading }}</h3>
+
+        <!-- Cards are managed in Admin > Landing page -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
-          <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
-            <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">SASO-Accredited Listings Only</h3>
-            <p class="text-slate-600 text-sm leading-relaxed">
-              All boarding houses are verified and approved by the Student Affairs and Services Office (SASO) to ensure safety, compliance, and quality standards.
-            </p>
-          </div>
-
-          <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
-            <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">Advanced Search & Filters</h3>
-            <p class="text-slate-600 text-sm leading-relaxed">
-              Enables quick and efficient searching of boarding houses near CSPC campus to match students' and parents' specific needs.
-            </p>
-          </div>
-
-          <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
-            <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">Real Photos & Details</h3>
-            <p class="text-slate-600 text-sm leading-relaxed">
-              Actual photos of rooms and facilities plus full details: monthly rates, house rules, exact location, and owner contact information.
-            </p>
-          </div>
-
-          <div class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300">
-            <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">User Friendly & Responsive</h3>
-            <p class="text-slate-600 text-sm leading-relaxed">
-              Accessible on desktop and mobile devices, with an intuitive interface designed for students and parents to use easily anytime, anywhere.
-            </p>
+          <div v-for="feature in siteFeatures" :key="feature.id" class="bg-white p-8 rounded-xl shadow-md border-l-8 border-blue-500 hover:shadow-lg transition duration-300 flex gap-5">
+            <div class="w-11 h-11 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0" aria-hidden="true">
+              <i :class="['fa-solid', 'fa-' + feature.icon, 'text-lg']"></i>
+            </div>
+            <div class="min-w-0">
+              <h3 class="font-bold text-blue-800 text-lg mb-3 uppercase tracking-tight">{{ feature.title }}</h3>
+              <p class="text-slate-600 text-sm leading-relaxed">{{ feature.description }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -345,10 +376,24 @@ onMounted(() => {
 
     <!-- FOOTER WITH HIGH-VISIBILITY DATA PRIVACY ACT COMPLIANCE BADGE -->
     <footer class="bg-slate-900 text-white py-10 px-6 border-t border-slate-800 shrink-0">
-      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
+        <!-- Footer details are managed in Admin > Landing page; empty fields are hidden -->
         <div class="text-center md:text-left">
-          <p class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">CSPC Boarding House Selection System</p>
-          <p class="text-[11px] text-slate-400">Official Student Affairs and Services Office (SASO) Accommodation Portal</p>
+          <p class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">{{ siteSettings.footer_title }}</p>
+          <p v-if="siteSettings.footer_tagline" class="text-[11px] text-slate-400">{{ siteSettings.footer_tagline }}</p>
+          <ul v-if="footerContacts.length" class="mt-4 space-y-1.5 text-[11px] text-slate-300">
+            <li v-for="item in footerContacts" :key="item.icon" class="flex items-start justify-center md:justify-start gap-2">
+              <i :class="['fa-solid', item.icon, 'text-slate-500 mt-0.5 w-3.5 text-center']" aria-hidden="true"></i>
+              <a v-if="item.href" :href="item.href" class="hover:text-white underline-offset-2 hover:underline break-all">{{ item.text }}</a>
+              <span v-else>{{ item.text }}</span>
+            </li>
+          </ul>
+          <div v-if="footerLinks.length" class="mt-4 flex items-center justify-center md:justify-start gap-2">
+            <a v-for="link in footerLinks" :key="link.label" :href="link.href" target="_blank" rel="noopener noreferrer" :aria-label="link.label" :title="link.label"
+               class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition">
+              <i :class="link.icon" aria-hidden="true"></i>
+            </a>
+          </div>
         </div>
 
         <!-- High-Visibility Prominent Data Privacy Badge Button -->
@@ -367,7 +412,7 @@ onMounted(() => {
       </div>
 
       <div class="max-w-7xl mx-auto mt-8 pt-6 border-t border-slate-800/80 text-center text-[10px] text-slate-400 font-medium">
-        <p>© 2026 CSPC Boarding House Selection & Management System. All rights reserved.</p>
+        <p>{{ siteSettings.footer_copyright }}</p>
       </div>
     </footer>
 

@@ -1,0 +1,98 @@
+/* Scoped to management roles. Public and Student views retain their styling. */
+.management-page{--management-navy:#142b4a;--management-blue:#245b99;min-height:100vh;background:#f4f7fb!important;color:#243449;font-family:'Segoe UI',Arial,sans-serif;padding-top:72px;text-align:left}
+.management-page>main,.management-content{width:100%!important;max-width:1600px!important;margin:0 auto;padding:32px clamp(16px,3vw,40px) 48px!important;min-width:0;flex:1;background:transparent!important}
+.management-page.management-form-page>main{max-width:1120px!important}
+.management-page-header{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:0 0 28px;text-align:left}
+.management-page-header h1{font-size:clamp(24px,2.4vw,32px);line-height:1.2;font-weight:700;letter-spacing:-.035em;color:#142b4a;margin:0}
+.management-eyebrow{font-size:12px;font-weight:600;color:#47678c;margin:0 0 8px}
+.management-page-description{font-size:14px;line-height:1.6;color:#586b82;margin:10px 0 0;max-width:700px}
+.management-header-actions{display:flex;gap:12px;flex-wrap:wrap}
+.management-sidebar{width:248px;position:fixed;left:0;top:0;bottom:0;z-index:70;background:#142b4a;color:#d6e2f0;display:flex;flex-direction:column;text-align:left;box-shadow:3px 0 16px #142b4a08}
+.management-brand{display:flex;align-items:center;gap:12px;padding:24px 20px;border-bottom:1px solid #ffffff14;color:white}
+.management-brand img{width:40px;height:40px;object-fit:contain}
+.management-brand strong{display:block;font-size:17px;font-weight:650;letter-spacing:-.02em}
+.management-brand small{display:block;font-size:12px;color:#b2c6df;margin-top:4px}
+.management-nav-groups{padding:12px;overflow:auto;flex:1}
+.management-nav-groups section{margin-bottom:16px}
+.management-nav-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#a5bdd8;margin:12px 12px 7px}
+.management-nav-link{display:flex;align-items:center;gap:11px;padding:11px 12px;min-height:44px;border-radius:7px;color:#d6e2f0;font-size:13px;font-weight:500;text-decoration:none;width:100%;text-align:left;line-height:1.45;transition:background .15s}
+.management-nav-link i{width:18px;text-align:center;color:#a9c2df;flex-shrink:0}
+.management-nav-link:hover{color:white;background:#ffffff0d}
+.management-nav-link.is-active{background:#2a527f;color:white;box-shadow:inset 3px 0 #80b5f1}
+.management-nav-link.is-active i{color:white}
+.management-nav-count{margin-left:auto;min-width:22px;padding:2px 6px;border-radius:6px;background:#ddeafb;color:#1e4a7b;font-size:11px;text-align:center;font-weight:700}
+.management-nav-footer{padding:12px;border-top:1px solid #ffffff14}
+.management-nav-footer p{color:#c1d1e5;font-size:11px;line-height:1.7;padding:0 12px 12px}
+.management-nav-footer p span{color:#a5bdd8;font-size:10px}
+.management-topbar{position:fixed;top:0;right:0;left:248px;height:72px;z-index:50;background:#fff;border-bottom:1px solid #dce4ed;display:flex;align-items:center;justify-content:space-between;padding:0 32px;gap:16px}
+.management-topbar-title{display:flex;align-items:center;min-width:0;gap:12px;font-size:12px;color:#61738b}
+.management-topbar-title>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.management-topbar-title strong{font-weight:600;color:#273c56}
+.management-topbar-separator{padding:0 12px;color:#94a3b8}
+.management-topbar-notifications{display:flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:44px;color:#466080;background:#f4f7fb;border-radius:9px;flex-shrink:0}
+.management-menu-toggle,.management-nav-close{display:none}
+.management-skip{position:fixed;left:260px;top:-100px;z-index:100000;background:white;color:#142b4a;padding:12px 20px;border:2px solid #245b99;border-radius:8px}
+.management-skip:focus{top:10px}
+.management-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0 0 28px}
+.management-metric{display:block;background:white;border:1px solid #dce4ed;padding:22px;border-radius:10px;text-align:left;color:#273c56}
+.management-metric-top{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;font-weight:600;color:#526780}
+.management-metric-top i{background:#edf3fa;color:#245b99;padding:12px;border-radius:8px}
+.management-metric>strong{display:block;font-size:32px;line-height:1.3;font-weight:700;letter-spacing:-.03em;margin-top:14px;color:#142b4a}
+.management-metric>p{font-size:12px;color:#61738b;margin-top:8px;line-height:1.6}
+.management-metric:hover{border-color:#94b4da}
+.management-section-title{font-size:18px;font-weight:650;color:#142b4a;margin:28px 0 16px}
+.management-property-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));align-items:start;gap:20px;margin-bottom:28px}
+.management-property-card{width:100%;max-width:none!important;padding:18px;border:1px solid #dce4ed;border-radius:12px;background:white;height:100%}
+.management-property-card>.management-property-media{height:200px}
+.management-property-card .management-property-media>div.absolute.inset-0{position:relative!important;background:#f1f5f9!important;backdrop-filter:none;padding:16px!important;text-align:left;display:block;border-top:1px solid #dce4ed}
+.management-property-card .management-property-media>div.absolute.inset-0 p{color:#334155!important;line-height:1.6}
+.management-property-card .management-property-media>div.absolute.inset-0 i{color:#526780!important;font-size:18px}
+.management-property-card .management-property-media:has(>div.absolute.inset-0){height:auto}
+.management-property-card .management-property-media:has(>div.absolute.inset-0)>img{height:150px}
+.management-property-card .management-property-media>.absolute.top-4{left:12px;top:12px}
+.management-property-actions{display:flex;flex-wrap:wrap;gap:8px}
+.management-property-actions>a{flex:1;min-width:90px}
+.management-row-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.management-row-actions button{display:inline-flex;flex-direction:row;gap:6px;width:auto;margin:0;padding:8px 10px;font-size:12px;min-height:38px;box-shadow:none}
+.management-row-actions button span{font-size:12px}
+.management-review-table,.management-registry-table{min-width:760px!important;text-align:left}
+.management-registry-table th,.management-registry-table td{text-align:left;border-right:0}
+.management-table-scroll{overflow-x:auto;max-width:100%}
+.management-load-error{background:#fff7ed;color:#8b4513;border:1px solid #fed7aa;border-radius:9px;padding:16px 20px;margin-bottom:20px;font-size:14px;line-height:1.6}
+.management-load-error strong{display:block;margin-bottom:4px}
+.management-page :is(button,a,input,select,textarea,[tabindex]):focus-visible{outline:3px solid #5e99db!important;outline-offset:3px;box-shadow:0 0 0 2px white!important}
+.management-page :is(button,input,select){min-height:40px}
+.management-page :is(input[type=checkbox],input[type=radio]){min-height:0}
+.management-page :is(input,select,textarea){max-width:100%}
+.management-page button:disabled{opacity:.55;cursor:not-allowed}
+.management-page .management-button{font-size:13px;line-height:1.4;font-weight:600;letter-spacing:0;text-transform:none;border-radius:8px;min-height:40px;box-shadow:none}
+.management-page .management-button-primary{background:#245b99!important;color:white!important;border-color:#245b99!important}
+.management-page .management-button-primary:hover{background:#194775!important}
+.management-page .management-button-secondary{background:#fff!important;color:#245b99!important;border:1px solid #cbd9e9!important}
+.management-page .management-button-secondary:hover{background:#edf3fa!important}
+.management-page .management-dialog-panel{max-height:calc(100dvh - 32px);overflow-y:auto;border-radius:12px}
+@media screen{
+.management-page h1:not(.management-page-header h1){font-size:28px;font-weight:700;line-height:1.3;letter-spacing:-.03em;text-transform:none}
+.management-page :is(h2,h3,h4){text-transform:none;letter-spacing:-.015em}
+.management-page [class*='rounded-[2'],.management-page [class*='rounded-[3'],.management-page .rounded-3xl,.management-page .rounded-2xl{border-radius:12px}
+.management-page :is(.shadow-xl,.shadow-2xl,.shadow-lg){box-shadow:0 2px 10px #142b4a0a}
+.management-page table{font-size:13px}
+.management-page table th{font-size:12px;font-weight:600;line-height:1.5;letter-spacing:0;text-transform:none;padding:14px 12px}
+.management-page table td{padding:16px 12px;font-size:13px;font-weight:500;line-height:1.5}
+.management-page table tbody tr:hover{background:#f5f8fc}
+.management-page table .border-r{border-right-width:0}
+.management-page :is(.animate-pulse,.animate-bounce,.animate-ping){animation:none}
+.management-page [class*='hover:scale-']:hover{transform:none}
+.management-page .font-black{font-weight:650}
+.management-page .text-slate-400{color:#61738b}
+.management-page label{font-size:13px;letter-spacing:0;text-transform:none;font-weight:600;line-height:1.5}
+}
+@media(min-width:1180px){.management-page{padding-left:248px}.management-metrics-four{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:1179px){.management-sidebar{transform:translateX(-100%);transition:transform .2s}.management-sidebar.is-open{transform:translateX(0)}.management-nav-backdrop{position:fixed;inset:0;background:#142b4a88;z-index:60}.management-topbar{left:0;padding:0 16px}.management-menu-toggle,.management-nav-close{display:flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;border-radius:8px}.management-nav-close{position:absolute;right:6px;top:4px;color:white;width:28px;height:28px}.management-skip{left:16px}}
+@media(max-width:767px){.management-page-header{align-items:flex-start;flex-direction:column;gap:16px}.management-header-actions{width:100%}.management-header-actions>a{width:100%;justify-content:center}.management-page>main,.management-content{padding-top:24px!important}.management-metric{padding:16px}.management-metric>strong{font-size:28px}.management-metric-top{align-items:flex-start;flex-direction:column-reverse}.management-page .management-dialog-panel{max-height:calc(100dvh - 24px)}.management-page .management-dialog-panel :is(.p-10,.p-12){padding:20px}.management-page .management-button{min-height:44px}.management-page [class*='fixed'][class*='right-8']{right:8px;max-width:calc(100vw - 16px)}}
+@media(prefers-reduced-motion:reduce){.management-page *,.management-sidebar{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media print{.management-page{padding:0!important;min-height:0!important}.management-page>main,.management-content{padding:0!important;max-width:none!important}.management-sidebar,.management-topbar,.management-nav-backdrop,.management-skip,.management-page-header{display:none!important}}
+
+.management-page .management-notification-read{border-left:3px solid #cbd5e1}.management-page .management-notification-item{border-radius:10px}.management-page .management-notification-item>div:first-child{border-bottom:1px solid #dce4ed}.management-page .management-notification-item .bg-\[\#7ab495\]{background:#216346}.management-page .management-notification-item .bg-\[\#f59e0b\]{background:#935b0d}.management-page .management-notification-item .flex.items-end.justify-between{flex-wrap:wrap;gap:16px}
+
+.management-page-header{min-width:0}.management-header-actions{flex-shrink:0}.management-page .management-row-actions .management-button{padding:8px 10px;min-height:38px}.management-page .management-property-actions .management-button{font-size:12px;padding:10px 8px}.management-page .management-property-grid>div:last-child:only-child{grid-column:1/-1}.management-page .management-property-card .bg-yellow-500{background:#fef3c7;color:#78350f}.management-page .management-property-media .bg-green-500{background:#dcfce7;color:#166534}.management-page .management-property-media .bg-orange-500{background:#ffedd5;color:#9a3412}.management-page .management-property-media .bg-amber-500{background:#fef3c7;color:#78350f}

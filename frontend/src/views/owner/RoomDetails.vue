@@ -1,4 +1,9 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
@@ -107,6 +112,7 @@ const executeConfirm = async () => {
 };
 
 const fetchRoomDetails = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const response = await axios.get(`/api/owner/rooms/details/${roomId.value}`, {
@@ -119,6 +125,7 @@ const fetchRoomDetails = async () => {
       pendingBookings.value = response.data.pendingBookings || [];
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load room details:', error);
     showSystemAlert('Could not fetch room and boarders information.', 'warning');
   } finally {
@@ -348,35 +355,34 @@ const getCheckoutDateDisplay = (occ) => {
 onMounted(() => {
   fetchRoomDetails();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main class="flex-1 max-w-[1750px] mx-auto w-[96%] py-12 px-2 lg:px-6 text-left animate-in fade-in duration-300">
+    <main id="management-content" tabindex="-1" class="flex-1 max-w-[1750px] mx-auto w-[96%] py-12 px-2 lg:px-6 text-left animate-in fade-in duration-300">
+      <LoadError :message="loadError" />
       <!-- Header -->
       <div class="mb-12">
         <router-link :to="'/owner/rooms/' + room.house_id"
-           class="text-[#2a528a] font-black text-[11px] uppercase tracking-widest hover:text-blue-800 transition inline-flex items-center gap-2 mb-8">
+           class="text-[#2a528a] font-semibold text-[12px] uppercase tracking-wide hover:text-blue-800 transition inline-flex items-center gap-2 mb-8">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
             <path d="m15 18-6-6 6-6" />
           </svg>
           BACK TO ROOMS
         </router-link>
         
-        <div class="space-y-1">
-          <h1 class="text-[38px] font-black text-[#1e293b] uppercase tracking-tight leading-none">ROOM DETAILS</h1>
-          <p class="text-blue-600 font-black text-[13px] uppercase tracking-[0.3em] py-1">BOARDER INFORMATION</p>
-          <div class="w-32 h-1.5 bg-blue-600 rounded-full mt-4"></div>
-        </div>
+        <PageHeader title="Room details" description="Review reservation requests, occupants, and payment records." />
       </div>
 
       <!-- Loading State -->
       <div v-if="isLoading" class="p-20 text-center bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading Room and Boarders...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading Room and Boarders...</p>
       </div>
 
       <div v-else class="space-y-10">
@@ -384,17 +390,17 @@ onMounted(() => {
         <section v-if="pendingBookings && pendingBookings.length > 0" class="bg-orange-50/50 rounded-3xl border-2 border-dashed border-orange-200 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
           <div class="bg-orange-100/50 px-8 py-5 border-b border-orange-200 flex items-center gap-3">
             <div class="w-2 h-6 bg-orange-500 rounded-full animate-pulse"></div>
-            <h2 class="text-sm font-black text-orange-800 uppercase tracking-widest">
+            <h2 class="text-sm font-semibold text-orange-800 uppercase tracking-wide">
               Pending Reservation Requests
             </h2>
-            <span class="ml-auto bg-orange-500 text-white text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest">
+            <span class="ml-auto bg-orange-500 text-white text-[12px] font-semibold px-2 py-1 rounded-full uppercase tracking-wide">
               Action Required
             </span>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm text-left">
               <thead>
-                <tr class="text-orange-700 uppercase text-[10px] font-black tracking-wider border-b border-orange-100 bg-orange-50/50">
+                <tr class="text-orange-700 uppercase text-[12px] font-semibold tracking-wider border-b border-orange-100 bg-orange-50/50">
                   <th class="px-5 py-4 text-center">Student</th>
                   <th class="px-5 py-4 text-center">Duration of Stay</th>
                   <th class="px-5 py-4 text-center">Total Amount</th>
@@ -410,19 +416,19 @@ onMounted(() => {
                         <img :src="pb.profile_pic ? getImageUrl(pb.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(pb.student_name)}`" class="w-full h-full object-cover" />
                       </div>
                       <div class="text-left">
-                        <p class="font-black text-slate-800 text-[13px] uppercase">{{ pb.student_name }}</p>
-                        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{{ pb.contact_number }}</p>
+                        <p class="font-semibold text-slate-800 text-[13px] uppercase">{{ pb.student_name }}</p>
+                        <p class="text-[12px] font-bold text-slate-500 uppercase tracking-tight">{{ pb.contact_number }}</p>
                       </div>
                     </div>
                   </td>
                   <td class="px-5 py-4 text-center font-bold text-slate-700">
                     {{ pb.months }} Month{{ pb.months > 1 ? 's' : '' }}
                   </td>
-                  <td class="px-5 py-4 text-center font-black text-slate-800">
+                  <td class="px-5 py-4 text-center font-semibold text-slate-800">
                     ₱{{ Number(pb.amount).toLocaleString() }}
                   </td>
                   <td class="px-5 py-4 text-center">
-                    <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest border"
+                    <span class="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-full uppercase tracking-wide border"
                           :class="pb.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
                       <i class="fa-solid" :class="pb.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
                       {{ pb.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
@@ -431,11 +437,11 @@ onMounted(() => {
                   <td class="px-5 py-4">
                     <div class="flex items-center justify-center gap-2">
                       <button @click="triggerConfirm('Approve Request?', `Are you sure you want to approve ${pb.student_name}'s booking request?`, () => handleApproveBooking(pb.id))"
-                              class="bg-green-500 hover:bg-black text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest transition shadow-md shadow-green-100 active:scale-95 cursor-pointer">
+                              class="bg-green-500 hover:bg-black text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide transition shadow-md shadow-green-100 active:scale-95 cursor-pointer management-button">
                         Approve
                       </button>
                       <button @click="triggerConfirm('Reject Request?', `Are you sure you want to reject ${pb.student_name}'s booking request?`, () => handleRejectBooking(pb.id))"
-                              class="bg-red-50 text-red-500 border border-red-100 hover:bg-red-500 hover:text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest transition active:scale-95 cursor-pointer">
+                              class="bg-red-50 text-red-500 border border-red-100 hover:bg-red-500 hover:text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
                         Reject
                       </button>
                     </div>
@@ -451,20 +457,20 @@ onMounted(() => {
           <div class="bg-slate-50/80 px-8 py-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <div class="w-2 h-6 rounded-full" :class="room.gender_type === 'female' ? 'bg-pink-400' : 'bg-blue-400'"></div>
-              <h2 class="text-sm font-black text-slate-800 uppercase tracking-widest">
+              <h2 class="text-sm font-semibold text-slate-800 uppercase tracking-wide">
                 {{ room.room_number }} — Boarder Details
               </h2>
             </div>
             
             <div class="flex items-center gap-3">
               <!-- Occupant Type Filter -->
-              <select v-model="occupantFilter" class="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase text-slate-700 shadow-sm focus:border-blue-600 outline-none cursor-pointer">
+              <select aria-label="occupant Filter" v-model="occupantFilter" class="bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-[12px] font-semibold uppercase text-slate-700 shadow-sm focus:border-blue-600 outline-none cursor-pointer">
                 <option value="all">ALL BOARDERS ({{ occupants.length }})</option>
                 <option value="cspc">CSPC STUDENTS ONLY</option>
                 <option value="non_cspc">NON-CSPC BOARDERS / STUDENTS</option>
               </select>
 
-              <span class="text-[10px] font-black uppercase tracking-widest hidden sm:inline" :class="room.gender_type === 'female' ? 'text-pink-500' : 'text-blue-500'">
+              <span class="text-[12px] font-semibold uppercase tracking-wide hidden sm:inline" :class="room.gender_type === 'female' ? 'text-pink-500' : 'text-blue-500'">
                 {{ room.gender_type === 'female' ? "Female's Room" : "Male's Room" }}
               </span>
             </div>
@@ -472,7 +478,7 @@ onMounted(() => {
 
           <!-- ===== MOBILE ACCORDION (hidden on sm+) ===== -->
           <div class="sm:hidden divide-y divide-slate-100">
-            <div v-if="filteredOccupants.length === 0" class="px-5 py-10 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+            <div v-if="filteredOccupants.length === 0" class="px-5 py-10 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
               No matching boarders found in this room.
             </div>
 
@@ -480,7 +486,7 @@ onMounted(() => {
               <!-- Collapsed header row -->
               <button
                 @click="toggleOccupant(occ.id)"
-                class="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left"
+                class="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left management-button"
               >
                 <!-- Chevron icon -->
                 <span class="w-8 h-8 rounded-full border-2 border-slate-200 flex items-center justify-center flex-shrink-0 text-slate-500 transition-transform"
@@ -491,13 +497,13 @@ onMounted(() => {
                 </span>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
-                    <p class="font-black text-slate-900 uppercase text-sm truncate">{{ occ.name }}</p>
+                    <p class="font-semibold text-slate-900 uppercase text-sm truncate">{{ occ.name }}</p>
                   </div>
-                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{{ occ.contact_number || 'No contact' }}</p>
+                  <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{{ occ.contact_number || 'No contact' }}</p>
                 </div>
                 <!-- Status badge -->
-                <span v-if="occ.payment_status === 'Paid'" class="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0">Paid</span>
-                <span v-else class="bg-orange-50 text-orange-500 border border-orange-100 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex-shrink-0">Unpaid</span>
+                <span v-if="occ.payment_status === 'Paid'" class="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0">Paid</span>
+                <span v-else class="bg-orange-50 text-orange-500 border border-orange-100 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0">Unpaid</span>
               </button>
 
               <!-- Expanded detail panel -->
@@ -506,89 +512,89 @@ onMounted(() => {
 
                   <!-- Row helper -->
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ref No.</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Ref No.</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.reference_no || 'MANUAL' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Age</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Age</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.age || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Check-In</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Check-In</span>
                     <span class="font-bold text-sm text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Check-Out</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Check-Out</span>
                     <span class="font-bold text-sm text-blue-600">{{ getCheckoutDateDisplay(occ) }}</span>
                   </div>
                   <div class="flex items-start justify-between py-2.5 gap-4">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">Address</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Address</span>
                     <span class="font-bold text-sm text-slate-700 text-right">{{ occ.address || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Contact</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Contact</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.contact_number || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Emergency</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Emergency</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.emergency_contact || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guardian</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Guardian</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.guardian_name || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Duration</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Duration</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Rent</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Total Rent</span>
                     <div class="text-right">
                       <span class="font-bold text-sm text-slate-700 block">₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}</span>
-                      <span class="text-[9px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
+                      <span class="text-[12px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
                     </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Monthly Rent Status</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Monthly Rent Status</span>
                     <div class="flex items-center gap-1.5">
-                      <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                      <span class="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
                             :class="occ.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'">
                         <i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'"></i>
                         {{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}
                       </span>
                       <button @click="handleTogglePayment(occ)"
-                              class="text-[8.5px] font-black px-2 py-0.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm"
+                              class="text-[12px] font-semibold px-2 py-0.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm management-button"
                               :class="occ.payment_status === 'Paid' ? 'bg-slate-100 hover:bg-orange-500 hover:text-white text-slate-600 border-slate-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'">
                         {{ occ.payment_status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid' }}
                       </button>
                     </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Move-in Upfront</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Move-in Upfront</span>
                     <div class="flex flex-col items-end gap-0.5">
                       <span class="font-bold text-xs text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
                       <template v-if="occ.payment_method === 'paymongo'">
-                        <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span class="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <i class="fa-solid fa-mobile-screen-button"></i>
                           Upfront Paid (Online)
                         </span>
                       </template>
                       <template v-else>
-                        <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                        <span class="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
                               :class="isUpfrontCollected(occ) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
                           <i class="fa-solid" :class="isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock'"></i>
                           {{ getUpfrontLabel(occ) }}
                         </span>
-                        <button @click="handleToggleUpfront(occ)" class="text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-wider underline cursor-pointer mt-0.5">
+                        <button @click="handleToggleUpfront(occ)" class="text-[12px] font-semibold text-slate-400 hover:text-blue-600 uppercase tracking-wider underline cursor-pointer mt-0.5">
                           {{ getUpfrontActionLabel(occ) }}
                         </button>
                       </template>
                     </div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Action</span>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Action</span>
                     <button @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}?`, () => handleCheckoutOccupant(occ.id))"
-                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[8.5px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer">
+                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[12px] font-semibold px-3 py-1.5 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer management-button">
                       Checkout
                     </button>
                   </div>
@@ -601,9 +607,9 @@ onMounted(() => {
 
           <!-- ===== DESKTOP TABLE (hidden on mobile) ===== -->
           <div class="hidden sm:block overflow-x-auto">
-            <table class="w-full text-[11px] text-left border-collapse min-w-[1200px]">
+            <table class="w-full text-[12px] text-left border-collapse min-w-[1200px]">
               <thead>
-                <tr class="text-slate-500 uppercase text-[9px] font-black tracking-wider border-b border-slate-100 bg-slate-50/50">
+                <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100 bg-slate-50/50">
                   <th class="px-3 py-4 text-center">#</th>
                   <th class="px-3 py-4 text-center">Ref No.</th>
                   <th class="px-3 py-4">Student Name</th>
@@ -622,7 +628,7 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="filteredOccupants.length === 0">
-                  <td colspan="14" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                  <td colspan="14" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                     No matching boarders found in this room.
                   </td>
                 </tr>
@@ -635,7 +641,7 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.age || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
-                    <span class="block text-[9px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(occ) }}</span>
+                    <span class="block text-[12px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(occ) }}</span>
                   </td>
                   <td class="px-3 py-4 font-bold text-slate-700 whitespace-normal min-w-[200px]">{{ occ.address || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.contact_number || '—' }}</td>
@@ -644,41 +650,41 @@ onMounted(() => {
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     ₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}
-                    <span class="block text-[9px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
+                    <span class="block text-[12px] text-slate-400 font-bold uppercase mt-0.5">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/mo)</span>
                   </td>
                   <!-- Move-in Ledger Column -->
                   <td class="px-3 py-4 text-left bg-emerald-50/40">
                     <template v-if="formatMoveInLedger(occ).total > 0">
                       <div class="flex flex-col gap-1">
                         <div class="flex items-center justify-between gap-2">
-                          <span class="font-black text-sm text-emerald-800">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
+                          <span class="font-semibold text-sm text-emerald-800">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
                           <!-- Online badge (PayMongo - Automated) -->
-                          <span v-if="occ.payment_method === 'paymongo'" class="inline-flex items-center gap-1 text-[8.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
+                          <span v-if="occ.payment_method === 'paymongo'" class="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
                             <i class="fa-solid fa-mobile-screen-button"></i>
                             Upfront Paid (Online)
                           </span>
                           <!-- Cash badge -->
-                          <span v-else class="inline-flex items-center gap-1 text-[8.5px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 whitespace-nowrap"
+                          <span v-else class="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 whitespace-nowrap"
                                 :class="isUpfrontCollected(occ) ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-orange-50 text-orange-600 border border-orange-200'">
                             <i class="fa-solid" :class="isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock'"></i>
                             {{ getUpfrontLabel(occ) }}
                           </span>
                         </div>
                         <!-- Cash toggle button -->
-                        <button v-if="occ.payment_method !== 'paymongo'" @click="handleToggleUpfront(occ)" class="self-end text-[8px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer">
+                        <button v-if="occ.payment_method !== 'paymongo'" @click="handleToggleUpfront(occ)" class="self-end text-[12px] font-semibold text-slate-400 hover:text-blue-600 uppercase tracking-tighter underline cursor-pointer">
                           {{ getUpfrontActionLabel(occ) }}
                         </button>
                       </div>
-                      <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight mt-1">
+                      <span v-if="formatMoveInLedger(occ).advM > 0" class="block text-[12px] font-bold text-slate-500 leading-tight mt-1">
                         Advance Rent: ₱{{ formatMoveInLedger(occ).advAmt.toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
-                      <span v-if="formatMoveInLedger(occ).depM > 0" class="block text-[9px] font-bold text-slate-500 leading-tight">
+                      <span v-if="formatMoveInLedger(occ).depM > 0" class="block text-[12px] font-bold text-slate-500 leading-tight">
                         {{ formatMoveInLedger(occ).friendlyType }} Deposit: ₱{{ formatMoveInLedger(occ).depAmt.toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
-                      <span v-if="formatMoveInLedger(occ).depM > 0 && formatMoveInLedger(occ).depositType === 'consumable'" class="block text-[9px] italic text-amber-500 leading-tight mt-0.5">
+                      <span v-if="formatMoveInLedger(occ).depM > 0 && formatMoveInLedger(occ).depositType === 'consumable'" class="block text-[12px] italic text-amber-500 leading-tight mt-0.5">
                         Usable as last month's rent
                       </span>
-                      <span v-else-if="formatMoveInLedger(occ).depM > 0 && formatMoveInLedger(occ).depositType === 'refundable'" class="block text-[9px] italic text-blue-400 leading-tight mt-0.5">
+                      <span v-else-if="formatMoveInLedger(occ).depM > 0 && formatMoveInLedger(occ).depositType === 'refundable'" class="block text-[12px] italic text-blue-400 leading-tight mt-0.5">
                         Return on move-out
                       </span>
                     </template>
@@ -689,13 +695,13 @@ onMounted(() => {
                   <!-- Monthly Rent Status Column -->
                   <td class="px-3 py-4 text-center whitespace-nowrap">
                     <div class="flex flex-col items-center gap-1.5">
-                      <span class="inline-flex items-center gap-1 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                      <span class="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
                             :class="occ.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'">
                         <i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'"></i>
                         {{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}
                       </span>
                       <button @click="handleTogglePayment(occ)"
-                              class="text-[8.5px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm"
+                              class="text-[12px] font-semibold px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 cursor-pointer border shadow-sm management-button"
                               :class="occ.payment_status === 'Paid' ? 'bg-slate-100 hover:bg-orange-500 hover:text-white text-slate-600 border-slate-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'">
                         {{ occ.payment_status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid' }}
                       </button>
@@ -704,7 +710,7 @@ onMounted(() => {
                   <!-- Action Column -->
                   <td class="px-3 py-4 text-center">
                     <button @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}? This will free their slot in this room.`, () => handleCheckoutOccupant(occ.id))"
-                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[8.5px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 shadow-sm active:scale-95 cursor-pointer">
+                            class="hover:bg-red-500 hover:text-white text-slate-400 border border-slate-200 text-[12px] font-semibold px-2.5 py-1 rounded-lg uppercase tracking-wider transition-all duration-200 shadow-sm active:scale-95 cursor-pointer management-button">
                       Checkout
                     </button>
                   </td>
@@ -719,7 +725,7 @@ onMounted(() => {
         <!-- Action Buttons -->
         <div class="mt-8 flex flex-wrap justify-center gap-4 pb-16">
           <button @click="openAddModal"
-                  class="bg-blue-500 hover:bg-blue-600 active:scale-95 text-white px-8 py-3.5 rounded-full font-black text-[13px] uppercase tracking-widest shadow-lg shadow-blue-200 transition-all duration-200 flex items-center gap-3 cursor-pointer">
+                  class="bg-blue-500 hover:bg-blue-600 active:scale-95 text-white px-8 py-3.5 rounded-full font-semibold text-[13px] uppercase tracking-wide shadow-lg shadow-blue-200 transition-all duration-200 flex items-center gap-3 cursor-pointer management-button management-button-primary">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
               <line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" />
@@ -732,65 +738,65 @@ onMounted(() => {
     </main>
 
     <!-- ===== Add Non-CSPC Occupant Modal ===== -->
-    <div v-show="showAddModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] overflow-y-auto flex items-start justify-center p-4 py-8 animate-fade-in">
+    <div v-management-dialog="{ close: () => closeAddModal() }" v-show="showAddModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] overflow-y-auto flex items-start justify-center p-4 py-8 animate-fade-in">
       <div class="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl p-10 relative text-left animate-in zoom-in duration-200">
         <div class="flex justify-between items-center mb-8">
           <div>
-            <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Add Non-CSPC Occupant</h2>
+            <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Add Non-CSPC Occupant</h2>
             <p class="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">Room: {{ room.room_number }}</p>
           </div>
-          <button @click="closeAddModal" class="text-slate-300 hover:text-slate-900 transition text-3xl leading-none focus:outline-none cursor-pointer">&times;</button>
+          <button aria-label="Close dialog" @click="closeAddModal" class="text-slate-300 hover:text-slate-900 transition text-3xl leading-none focus:outline-none cursor-pointer">&times;</button>
         </div>
 
         <form @submit.prevent="handleAddNonCspc" class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div class="md:col-span-2">
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Full Name *</label>
-            <input v-model="newOccupant.name" type="text" required placeholder="e.g. Juan Dela Cruz" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Full Name *</label>
+            <input aria-label="Full Name" v-model="newOccupant.name" type="text" required placeholder="e.g. Juan Dela Cruz" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Age</label>
-            <input v-model="newOccupant.age" type="number" min="1" max="120" step="1" placeholder="20" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Age</label>
+            <input aria-label="Age" v-model="newOccupant.age" type="number" min="1" max="120" step="1" placeholder="20" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Contact Number</label>
-            <input v-model="newOccupant.contact_number" @input="sanitizePhoneInput('contact_number')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Contact Number</label>
+            <input aria-label="Contact Number" v-model="newOccupant.contact_number" @input="sanitizePhoneInput('contact_number')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Check-in Date</label>
-            <input v-model="newOccupant.check_in_date" type="date" min="1000-01-01" max="9999-12-31" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Check-in Date</label>
+            <input aria-label="Check-in Date" v-model="newOccupant.check_in_date" type="date" min="1000-01-01" max="9999-12-31" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Duration of Stay (Months)</label>
-            <input v-model="newOccupant.months" type="number" min="1" max="2147483647" step="1" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Duration of Stay (Months)</label>
+            <input aria-label="Duration of Stay (Months)" v-model="newOccupant.months" type="number" min="1" max="2147483647" step="1" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Emergency Contact</label>
-            <input v-model="newOccupant.emergency_contact" @input="sanitizePhoneInput('emergency_contact')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Emergency Contact</label>
+            <input aria-label="Emergency Contact" v-model="newOccupant.emergency_contact" @input="sanitizePhoneInput('emergency_contact')" type="text" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Guardian Name</label>
-            <input v-model="newOccupant.guardian_name" type="text" placeholder="Guardian's full name" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Guardian Name</label>
+            <input aria-label="Guardian Name" v-model="newOccupant.guardian_name" type="text" placeholder="Guardian's full name" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Monthly Rent Status</label>
-            <select v-model="newOccupant.payment_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Monthly Rent Status</label>
+            <select aria-label="Monthly Rent Status" v-model="newOccupant.payment_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
               <option value="Not Paid">Not Paid</option>
               <option value="Paid">Paid</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Move-In Upfront</label>
-            <select v-model="newOccupant.upfront_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Move-In Upfront</label>
+            <select aria-label="Move-In Upfront" v-model="newOccupant.upfront_status" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
               <option value="Unpaid">Not Collected</option>
               <option value="Paid">Collected</option>
             </select>
           </div>
           <div class="md:col-span-2">
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Address</label>
-            <input v-model="newOccupant.address" type="text" placeholder="Barangay, Municipality, Province" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2">Address</label>
+            <input aria-label="Address" v-model="newOccupant.address" type="text" placeholder="Barangay, Municipality, Province" class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div class="md:col-span-2 pt-4 border-t border-slate-100">
-            <button type="submit" :disabled="isSavingNonCspc" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[11px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
+            <button type="submit" :disabled="isSavingNonCspc" class="w-full bg-blue-600 hover:bg-black text-white font-semibold py-4 rounded-xl text-[12px] uppercase tracking-wide transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer management-button management-button-primary">
               {{ isSavingNonCspc ? 'Saving Occupant...' : 'Save Occupant' }}
             </button>
           </div>
@@ -799,47 +805,47 @@ onMounted(() => {
     </div>
 
     <!-- ===== Checkout Non-CSPC Occupant Modal ===== -->
-    <div v-show="showRemoveModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] overflow-y-auto flex items-center justify-center p-4 animate-fade-in">
+    <div v-management-dialog="{ close: () => closeRemoveModal() }" v-show="showRemoveModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] overflow-y-auto flex items-center justify-center p-4 animate-fade-in">
       <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-10 text-left animate-in zoom-in duration-200">
         <div class="flex justify-between items-center mb-8">
-          <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Checkout Non-CSPC</h2>
-          <button @click="closeRemoveModal" class="text-slate-300 hover:text-slate-900 transition text-3xl leading-none focus:outline-none cursor-pointer">&times;</button>
+          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Checkout Non-CSPC</h2>
+          <button aria-label="Close dialog" @click="closeRemoveModal" class="text-slate-300 hover:text-slate-900 transition text-3xl leading-none focus:outline-none cursor-pointer">&times;</button>
         </div>
         <p class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-6">Select an occupant to checkout from this room:</p>
         <div class="space-y-3">
           <template v-for="occ in occupants" :key="occ.id">
             <div v-if="occ.is_non_cspc" class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-4 animate-fade-in">
               <div>
-                <p class="text-sm font-black text-slate-800">{{ occ.name }}</p>
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{{ occ.reference_no || 'MANUAL' }}</p>
+                <p class="text-sm font-semibold text-slate-800">{{ occ.name }}</p>
+                <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{{ occ.reference_no || 'MANUAL' }}</p>
               </div>
               <button @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}? This will free their slot in this room.`, () => handleCheckoutOccupant(occ.id))"
-                      class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-200 text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-wider transition cursor-pointer">
+                      class="bg-red-50 hover:bg-red-500 hover:text-white text-red-500 border border-red-200 text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wider transition cursor-pointer management-button">
                 Checkout
               </button>
             </div>
           </template>
         </div>
-        <button @click="closeRemoveModal" class="mt-6 w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-3 rounded-xl text-[10px] uppercase tracking-widest transition cursor-pointer">Cancel</button>
+        <button @click="closeRemoveModal" class="mt-6 w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3 rounded-xl text-[12px] uppercase tracking-wide transition cursor-pointer management-button">Cancel</button>
       </div>
     </div>
 
     <!-- =====  Custom Confirmation Modal ===== -->
-    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="text-[#2a528a] mb-4 flex justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
+        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
         
         <div class="flex gap-3">
-          <button @click="executeConfirm" :disabled="isProcessingDecision" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="executeConfirm" :disabled="isProcessingDecision" class="flex-1 bg-blue-600 hover:bg-black text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button management-button-primary">
             Confirm
           </button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
             Cancel
           </button>
         </div>

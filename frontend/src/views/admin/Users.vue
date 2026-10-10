@@ -1,4 +1,9 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, watch, computed, onMounted } from 'vue';
 import axios from 'axios';
@@ -63,6 +68,7 @@ const executeConfirm = async () => {
 };
 
 const fetchUsers = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     diagnosticError.value = '';
@@ -78,6 +84,7 @@ const fetchUsers = async () => {
       users.value = response.data.users || [];
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load user directory:', error);
     diagnosticError.value = error.message + (error.response ? ` (Status: ${error.response.status} - ${error.response.statusText})` : ' (Network Offline)');
     showSystemAlert('Could not fetch database user lists.', 'warning');
@@ -215,39 +222,39 @@ const totalSuspended = computed(() => users.value.filter(u => u.status === 'inac
 onMounted(() => {
   fetchUsers();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
+  <div class="management-page bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
     <AdminNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main class="max-w-[1450px] mx-auto py-12 px-4 sm:px-6 flex-1 w-full text-left">
+    <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-12 px-4 sm:px-6 flex-1 w-full text-left">
+      <LoadError :message="loadError" />
       <!-- Header -->
-      <div class="mb-10 mt-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 animate-fade-in">
-        <div>
-          <h1 class="text-[28px] sm:text-[32px] text-slate-900 tracking-tight font-black uppercase">User Registry</h1>
-          <div class="w-16 h-1.5 bg-[#2563eb] rounded-full mt-2"></div>
-        </div>
+      <div class="mb-6 flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-6 animate-fade-in">
+        <PageHeader title="User registry" description="Manage account details, access, and existing security controls." />
 
         <!-- Metrics Engine Dashboard -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full md:w-auto">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-slate-400 text-[9px] font-black uppercase tracking-widest block">System Users</span>
-            <span class="text-xl font-black text-slate-900">{{ users.length }}</span>
+            <span class="text-slate-400 text-[12px] font-semibold uppercase tracking-wide block">System Users</span>
+            <span class="text-xl font-semibold text-slate-900">{{ users.length }}</span>
           </div>
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-blue-500 text-[9px] font-black uppercase tracking-widest block">Registered Students</span>
-            <span class="text-xl font-black text-blue-600">{{ totalStudents }}</span>
-            <span class="text-slate-400 text-[8px] font-bold block mt-0.5">All accounts, incl. non-boarders</span>
+            <span class="text-blue-500 text-[12px] font-semibold uppercase tracking-wide block">Registered Students</span>
+            <span class="text-xl font-semibold text-blue-600">{{ totalStudents }}</span>
+            <span class="text-slate-400 text-[12px] font-bold block mt-0.5">All accounts, incl. non-boarders</span>
           </div>
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-purple-500 text-[9px] font-black uppercase tracking-widest block">Owners</span>
-            <span class="text-xl font-black text-purple-600">{{ totalOwners }}</span>
+            <span class="text-purple-500 text-[12px] font-semibold uppercase tracking-wide block">Owners</span>
+            <span class="text-xl font-semibold text-purple-600">{{ totalOwners }}</span>
           </div>
           <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-rose-500 text-[9px] font-black uppercase tracking-widest block">Suspended</span>
-            <span class="text-xl font-black text-rose-600">{{ totalSuspended }}</span>
+            <span class="text-rose-500 text-[12px] font-semibold uppercase tracking-wide block">Suspended</span>
+            <span class="text-xl font-semibold text-rose-600">{{ totalSuspended }}</span>
           </div>
         </div>
       </div>
@@ -258,18 +265,18 @@ onMounted(() => {
           <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass"></i>
           </span>
-          <input v-model="searchQuery" type="text" placeholder="Search accounts by name or email query..." 
+          <input aria-label="Search accounts by name or email query..." v-model="searchQuery" type="text" placeholder="Search accounts by name or email query..." 
             class="w-full pl-11 pr-6 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition" />
         </div>
         
         <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto shrink-0">
-          <select v-model="filterRole" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
+          <select aria-label="filter Role" v-model="filterRole" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-semibold uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
             <option value="all">All Roles</option>
             <option value="student">Students</option>
             <option value="owner">Owners</option>
           </select>
           
-          <select v-model="filterStatus" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
+          <select aria-label="filter Status" v-model="filterStatus" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-semibold uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
             <option value="all">All States</option>
             <option value="active">Active</option>
             <option value="inactive">Suspended</option>
@@ -290,8 +297,8 @@ onMounted(() => {
           <div class="flex items-center gap-4">
             <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
             <div class="flex items-center gap-2">
-              <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
-              <select v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
+              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
+              <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
                 <option :value="10">10</option>
                 <option :value="25">25</option>
                 <option :value="50">50</option>
@@ -304,19 +311,19 @@ onMounted(() => {
             <button 
               @click="currentPage > 1 && currentPage--" 
               :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
             </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-black text-xs">
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
               {{ currentPage }} / {{ totalPages }}
             </span>
             <button 
               @click="currentPage < totalPages && currentPage++" 
               :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
             >
-              Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
             </button>
           </div>
         </div>
@@ -324,12 +331,12 @@ onMounted(() => {
         <!-- MOBILE VIEW CONTAINER (Card Layout para sa cp) -->
         <div class="block md:hidden bg-white rounded-[2rem] shadow-sm border border-slate-200/60 p-6 space-y-4">
           <div class="border-b border-slate-100 pb-3 text-center">
-            <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">User Directory Overview</h2>
+            <h2 class="text-xs font-semibold uppercase tracking-normal text-slate-400">User Directory Overview</h2>
           </div>
 
           <!-- Kung walang nahanap na user sa mobile -->
           <div v-if="filteredUsers.length === 0" class="py-12 text-center">
-            <p class="text-slate-400 italic text-xs font-black uppercase tracking-widest">
+            <p class="text-slate-400 italic text-xs font-semibold uppercase tracking-wide">
               No matching user accounts registered.
             </p>
           </div>
@@ -343,9 +350,9 @@ onMounted(() => {
                        class="w-full h-full object-cover" :alt="user.name" />
                 </div>
                 <div class="overflow-hidden flex-1">
-                  <div class="font-black text-slate-900 uppercase tracking-tight text-sm truncate">{{ user.name }}</div>
+                  <div class="font-semibold text-slate-900 uppercase tracking-tight text-sm truncate">{{ user.name }}</div>
                   <div class="flex items-center gap-2 mt-0.5">
-                    <span class="inline-block text-[8px] font-black uppercase px-2.5 py-0.5 rounded-md tracking-widest leading-none border"
+                    <span class="inline-block text-[12px] font-semibold uppercase px-2.5 py-0.5 rounded-md tracking-wide leading-none border"
                       :class="user.role === 'student' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'">
                       {{ user.role }}
                     </span>
@@ -353,7 +360,7 @@ onMounted(() => {
                       <div class="w-2 h-2 rounded-full" 
                         :class="user.status === 'active' ? 'bg-emerald-500' : (user.status === 'pending' ? 'bg-amber-500' : 'bg-rose-500')" 
                         :style="{ backgroundColor: user.status === 'active' ? '#10b981' : (user.status === 'pending' ? '#f59e0b' : '#f43f5e') }"></div>
-                      <span class="text-[9px] font-black uppercase tracking-wider" 
+                      <span class="text-[12px] font-semibold uppercase tracking-wider" 
                         :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
                         {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
                       </span>
@@ -364,29 +371,29 @@ onMounted(() => {
 
               <div class="space-y-1 text-xs">
                 <div class="flex justify-between py-0.5">
-                  <span class="font-black text-slate-400 uppercase tracking-wider text-[10px]">Email:</span>
+                  <span class="font-semibold text-slate-400 uppercase tracking-wider text-[12px]">Email:</span>
                   <span class="font-semibold text-slate-600 text-right truncate ml-4">{{ user.email }}</span>
                 </div>
                 <div class="flex justify-between py-0.5">
-                  <span class="font-black text-slate-400 uppercase tracking-wider text-[10px]">Phone:</span>
+                  <span class="font-semibold text-slate-400 uppercase tracking-wider text-[12px]">Phone:</span>
                   <span class="font-semibold text-slate-600 text-right">{{ user.phone || 'No Phone' }}</span>
                 </div>
               </div>
 
               <!-- Action Buttons para sa Mobile -->
               <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60">
-                <button @click="openEditModal(user)" class="bg-white border border-slate-200 text-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs cursor-pointer">
+                <button @click="openEditModal(user)" class="bg-white border border-slate-200 text-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[12px] font-semibold uppercase tracking-wider shadow-2xs cursor-pointer management-button management-button-secondary">
                   <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
                 </button>
 
                 <template v-if="user.role === 'owner'">
                   <button @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))" 
-                    class="bg-white border border-slate-200 text-slate-700 hover:bg-amber-500 hover:text-white hover:border-amber-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[10px] font-black uppercase tracking-wider shadow-2xs cursor-pointer">
+                    class="bg-white border border-slate-200 text-slate-700 hover:bg-amber-500 hover:text-white hover:border-amber-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[12px] font-semibold uppercase tracking-wider shadow-2xs cursor-pointer management-button management-button-secondary">
                     <i class="fa-solid fa-key text-[12px]"></i> Reset Key
                   </button>
                 </template>
                 <template v-else>
-                  <div class="bg-blue-50 border border-blue-100 text-blue-600 rounded-xl p-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wider">
+                  <div class="bg-blue-50 border border-blue-100 text-blue-600 rounded-xl p-2.5 flex items-center justify-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider">
                     <i class="fa-brands fa-google"></i> Google SSO
                   </div>
                 </template>
@@ -395,13 +402,13 @@ onMounted(() => {
               <!-- Action button for Mobile with Locked state for Pending -->
               <div class="pt-1">
                 <template v-if="user.status === 'pending'">
-                  <div class="bg-amber-50 border border-amber-100 text-amber-600 rounded-xl py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wider">
+                  <div class="bg-amber-50 border border-amber-100 text-amber-600 rounded-xl py-2.5 flex items-center justify-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider">
                     <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
                   </div>
                 </template>
                 <template v-else>
                   <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                          class="w-full rounded-xl py-2.5 font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
+                          class="w-full rounded-xl py-2.5 font-semibold uppercase text-[12px] tracking-wide transition shadow-sm active:scale-95 cursor-pointer border"
                           :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
                     {{ user.status === 'active' ? 'Deactivate Account' : 'Activate Account' }}
                   </button>
@@ -416,7 +423,7 @@ onMounted(() => {
           <div class="overflow-x-auto">
             <table class="w-full text-center border-collapse min-w-[1100px]">
               <thead>
-                <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black tracking-widest uppercase">
+                <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[12px] font-semibold tracking-wide uppercase">
                   <th class="py-6 px-8 text-left w-2/5 border-r border-slate-100">User Profile / Contact info</th>
                   <th class="py-6 px-6 border-r border-slate-100">System Role</th>
                   <th class="py-6 px-6 border-r border-slate-100">Security Access</th>
@@ -425,7 +432,7 @@ onMounted(() => {
               </thead>
               <tbody class="text-[13px] font-bold text-slate-700 divide-y divide-slate-100">
                 <tr v-if="filteredUsers.length === 0">
-                  <td colspan="4" class="py-20 text-slate-400 italic text-sm text-center font-black uppercase tracking-widest">
+                  <td colspan="4" class="py-20 text-slate-400 italic text-sm text-center font-semibold uppercase tracking-wide">
                     No matching user accounts registered.
                   </td>
                 </tr>
@@ -437,8 +444,8 @@ onMounted(() => {
                              class="w-full h-full object-cover" :alt="user.name" />
                       </div>
                       <div>
-                        <div class="font-black text-slate-900 uppercase tracking-tight text-base leading-tight">{{ user.name }}</div>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-slate-400 text-[10px] font-bold uppercase">
+                        <div class="font-semibold text-slate-900 uppercase tracking-tight text-base leading-tight">{{ user.name }}</div>
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-slate-400 text-[12px] font-bold uppercase">
                           <span><i class="fa-solid fa-envelope mr-1.5 text-blue-500"></i>{{ user.email }}</span>
                           <span><i class="fa-solid fa-phone mr-1.5 text-slate-400"></i>{{ user.phone || 'No Phone' }}</span>
                         </div>
@@ -447,7 +454,7 @@ onMounted(() => {
                   </td>
 
                   <td class="py-6 px-6 border-r border-slate-100">
-                    <span class="inline-block text-[9px] font-black uppercase px-3.5 py-1.5 rounded-xl tracking-widest leading-none border"
+                    <span class="inline-block text-[12px] font-semibold uppercase px-3.5 py-1.5 rounded-xl tracking-wide leading-none border"
                       :class="user.role === 'student' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'">
                       {{ user.role }}
                     </span>
@@ -457,7 +464,7 @@ onMounted(() => {
                     <div class="flex items-center justify-center gap-2">
                       <div class="w-2.5 h-2.5 rounded-full" 
                         :class="user.status === 'active' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : (user.status === 'pending' ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]')"></div>
-                      <span class="text-[10px] font-black uppercase tracking-widest leading-none"
+                      <span class="text-[12px] font-semibold uppercase tracking-wide leading-none"
                         :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
                         {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
                       </span>
@@ -466,32 +473,32 @@ onMounted(() => {
 
                   <td class="py-6 px-8 text-right">
                     <div class="flex justify-end items-center gap-3">
-                      <button @click="openEditModal(user)" class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-blue-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer" title="Edit Profile Details">
+                      <button aria-label="Edit Profile Details" @click="openEditModal(user)" class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-blue-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer management-button management-button-secondary" title="Edit Profile Details">
                         <i class="fa-solid fa-pen-to-square text-xs"></i>
                       </button>
                       
                       <!-- DYNAMIC ADAPTATION FOR SSO USERS VS LOCAL USERS -->
                       <template v-if="user.role === 'owner'">
                         <button @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))" 
-                          class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-amber-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer" title="Reset Default Password">
+                          class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-amber-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer management-button management-button-secondary" title="Reset Default Password">
                           <i class="fa-solid fa-key text-xs"></i>
                         </button>
                       </template>
                       <template v-else>
-                        <span class="text-[8px] font-black uppercase tracking-wider text-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="Federated SSO accounts manage passwords via Google Security panels.">
+                        <span class="text-[12px] font-semibold uppercase tracking-wider text-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="Federated SSO accounts manage passwords via Google Security panels.">
                           <i class="fa-brands fa-google"></i> Google SSO
                         </span>
                       </template>
 
                       <!-- SAFEGUARD: Hides manual activation button and replaces with status badge for Pending Landlords -->
                       <template v-if="user.status === 'pending'">
-                        <span class="inline-block text-[8px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-100 px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="This account is currently awaiting boarding house accreditation approval.">
+                        <span class="inline-block text-[12px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-100 px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="This account is currently awaiting boarding house accreditation approval.">
                           <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
                         </span>
                       </template>
                       <template v-else>
                         <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                          class="px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition shadow-sm active:scale-95 cursor-pointer border"
+                          class="px-5 py-2.5 rounded-xl font-semibold uppercase text-[12px] tracking-wide transition shadow-sm active:scale-95 cursor-pointer border"
                           :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
                           {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
                         </button>
@@ -508,8 +515,8 @@ onMounted(() => {
             <div class="flex items-center gap-4">
               <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
               <div class="flex items-center gap-2">
-                <span class="text-[11px] font-bold text-slate-400">Rows per page:</span>
-                <select v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
+                <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
+                <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
                   <option :value="10">10</option>
                   <option :value="25">25</option>
                   <option :value="50">50</option>
@@ -522,19 +529,19 @@ onMounted(() => {
               <button 
                 @click="currentPage > 1 && currentPage--" 
                 :disabled="currentPage === 1"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
               >
-                <i class="fa-solid fa-chevron-left text-[10px]"></i> Prev
+                <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
               </button>
-              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-black text-xs">
+              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-semibold text-xs">
                 {{ currentPage }} / {{ totalPages }}
               </span>
               <button 
                 @click="currentPage < totalPages && currentPage++" 
                 :disabled="currentPage === totalPages"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer"
+                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
               >
-                Next <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
               </button>
             </div>
           </div>
@@ -543,63 +550,63 @@ onMounted(() => {
     </main>
 
     <!-- Administrative Profile Modifications Modal -->
-    <div v-if="showEditModal" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => showEditModal = false }" v-if="showEditModal" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden transform transition-all border border-slate-100 text-left animate-in zoom-in-95 duration-200">
         <div class="bg-slate-900 text-white px-10 py-8 flex justify-between items-center">
           <div>
-            <h3 class="font-black text-2xl uppercase tracking-tight">Edit Profile</h3>
-            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1">Administrator Oversight Mode</p>
+            <h3 class="font-semibold text-2xl uppercase tracking-tight">Edit Profile</h3>
+            <p class="text-slate-400 text-[12px] font-bold uppercase tracking-wide mt-1">Administrator Oversight Mode</p>
           </div>
-          <button @click="showEditModal = false" class="text-white hover:text-slate-300 transition h-10 w-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer">
+          <button aria-label="Close dialog" @click="showEditModal = false" class="text-white hover:text-slate-300 transition h-10 w-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer management-button">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
         
         <form @submit.prevent="handleUpdateProfile" class="p-10 space-y-6">
           <div class="space-y-1.5">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
-            <input v-model="editForm.name" type="text" required class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Full Name</label>
+            <input aria-label="Full Name" v-model="editForm.name" type="text" required class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
           </div>
           <div class="space-y-1.5">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Address</label>
-            <input v-model="editForm.email" type="email" required class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Email Address</label>
+            <input aria-label="Email Address" v-model="editForm.email" type="email" required class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
           </div>
           <div class="space-y-1.5">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phone Number</label>
-            <input v-model="editForm.phone" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Phone Number</label>
+            <input aria-label="Phone Number" v-model="editForm.phone" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
           </div>
 
           <!-- OPTIONAL PASSWORD MODIFICATION (EXCLUSIVELY DISPLAYED FOR MANUAL LOCAL ACCOUNTS / OWNERS) -->
           <div v-if="editForm.role === 'owner'" class="space-y-1.5 pt-4 border-t border-slate-100 animate-fade-in">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Set New Password</label>
-            <input v-model="editForm.password" type="password" placeholder="Leave blank to keep existing password" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
-            <p class="text-[9px] text-slate-400 italic ml-1 font-semibold">Leave empty if you do not want to alter this landlord's password.</p>
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Set New Password</label>
+            <input aria-label="Set New Password" v-model="editForm.password" type="password" placeholder="Leave blank to keep existing password" class="w-full bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-blue-500 focus:bg-white transition" />
+            <p class="text-[12px] text-slate-400 italic ml-1 font-semibold">Leave empty if you do not want to alter this landlord's password.</p>
           </div>
 
           <div class="flex justify-end gap-4 pt-6">
-            <button type="button" @click="showEditModal = false" class="px-8 py-4 text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-slate-900 transition cursor-pointer">Cancel</button>
-            <button type="submit" class="bg-[#1e4a8d] hover:bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition active:scale-95 cursor-pointer">Save Changes</button>
+            <button type="button" @click="showEditModal = false" class="px-8 py-4 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-900 transition cursor-pointer">Cancel</button>
+            <button type="submit" class="bg-[#1e4a8d] hover:bg-slate-900 text-white px-10 py-4 rounded-2xl font-semibold text-[12px] uppercase tracking-wide shadow-xl transition active:scale-95 cursor-pointer management-button management-button-primary">Save Changes</button>
           </div>
         </form>
       </div>
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="text-[#2a528a] mb-4 flex justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
+        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
         
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button management-button-primary">
             Confirm
           </button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
             Cancel
           </button>
         </div>

@@ -4,6 +4,7 @@ import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
 import { getComplianceStatus } from '../config/complianceHelper.js';
+import { MAX_FEATURES, SITE_SETTING_KEYS, settingsFromRows } from '../config/siteContent.js';
 
 const router = express.Router();
 
@@ -280,6 +281,130 @@ router.post('/courses/delete/:id', authenticateToken, verifyAdmin, validateBody(
     } catch (err) {
         console.error('[COURSES] Delete failed:', err.message);
         res.status(500).json({ success: false, message: 'Failed to delete course.' });
+    }
+});
+
+// ─── LANDING PAGE CONTENT (Core Features cards + footer details) ───────────
+// Public visitors read these through GET /api/site-content.
+
+// GET - All features (including hidden ones) and every footer/heading setting
+router.get('/site-content', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const [features] = await pool.query('SELECT * FROM site_features ORDER BY sort_order ASC, id ASC');
+        const [settingRows] = await pool.query('SELECT setting_key, setting_value FROM site_settings');
+        res.json({ success: true, features, settings: settingsFromRows(settingRows), maxFeatures: MAX_FEATURES });
+    } catch (err) {
+        console.error('[SITE CONTENT] Fetch failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to load landing page content.' });
+    }
+});
+
+// POST - Save section heading and footer details (only known keys are stored)
+router.post('/site-content/settings', authenticateToken, verifyAdmin, validateBody('siteSettings'), async (req, res) => {
+    try {
+        const entries = SITE_SETTING_KEYS
+            .filter(key => typeof req.body[key] === 'string')
+            .map(key => [key, req.body[key].trim()]);
+        if (entries.length === 0) {
+            return res.status(400).json({ success: false, message: 'There are no landing page details to save.' });
+        }
+        await pool.query(
+            'INSERT INTO site_settings (setting_key, setting_value) VALUES ? ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)',
+            [entries]
+        );
+        res.json({ success: true, message: 'Landing page details saved.' });
+    } catch (err) {
+        console.error('[SITE CONTENT] Settings save failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to save landing page details.' });
+    }
+});
+
+// POST - Add a feature card (appended to the end of the list)
+router.post('/site-content/features/add', authenticateToken, verifyAdmin, validateBody('siteFeature'), async (req, res) => {
+    try {
+        const [[{ count, maxOrder }]] = await pool.query('SELECT COUNT(*) AS count, COALESCE(MAX(sort_order), 0) AS maxOrder FROM site_features');
+        if (count >= MAX_FEATURES) {
+            return res.status(400).json({ success: false, message: `The landing page supports up to ${MAX_FEATURES} feature cards. Remove one before adding another.` });
+        }
+        const { title, description, icon } = req.body;
+        await pool.query(
+            'INSERT INTO site_features (title, description, icon, sort_order) VALUES (?, ?, ?, ?)',
+            [title.trim(), description.trim(), icon, Number(maxOrder) + 1]
+        );
+        res.json({ success: true, message: 'Feature added to the landing page.' });
+    } catch (err) {
+        console.error('[SITE CONTENT] Feature add failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to add feature.' });
+    }
+});
+
+// POST - Edit a feature card
+router.post('/site-content/features/update/:id', authenticateToken, verifyAdmin, validateBody('siteFeature'), async (req, res) => {
+    try {
+        const { title, description, icon } = req.body;
+        const [result] = await pool.query(
+            'UPDATE site_features SET title = ?, description = ?, icon = ? WHERE id = ?',
+            [title.trim(), description.trim(), icon, req.params.id]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Feature not found. Refresh the page and try again.' });
+        res.json({ success: true, message: 'Feature updated.' });
+    } catch (err) {
+        console.error('[SITE CONTENT] Feature update failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to update feature.' });
+    }
+});
+
+// POST - Show/hide a feature card without deleting it
+router.post('/site-content/features/toggle/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
+    try {
+        const [result] = await pool.query('UPDATE site_features SET is_active = NOT is_active WHERE id = ?', [req.params.id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Feature not found. Refresh the page and try again.' });
+        res.json({ success: true, message: 'Feature visibility updated.' });
+    } catch (err) {
+        console.error('[SITE CONTENT] Feature toggle failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to update feature visibility.' });
+    }
+});
+
+// POST - Move a feature card one position up or down (renumbers the whole list atomically)
+router.post('/site-content/features/move/:id', authenticateToken, verifyAdmin, validateBody('featureMove'), async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [rows] = await connection.query('SELECT id FROM site_features ORDER BY sort_order ASC, id ASC FOR UPDATE');
+        const ids = rows.map(r => r.id);
+        const from = ids.indexOf(Number(req.params.id));
+        if (from === -1) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Feature not found. Refresh the page and try again.' });
+        }
+        const to = req.body.direction === 'up' ? from - 1 : from + 1;
+        if (to >= 0 && to < ids.length) {
+            [ids[from], ids[to]] = [ids[to], ids[from]];
+            for (let i = 0; i < ids.length; i++) {
+                await connection.query('UPDATE site_features SET sort_order = ? WHERE id = ?', [i + 1, ids[i]]);
+            }
+        }
+        await connection.commit();
+        res.json({ success: true, message: 'Feature order updated.' });
+    } catch (err) {
+        await connection.rollback();
+        console.error('[SITE CONTENT] Feature move failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to reorder features.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// POST - Permanently delete a feature card
+router.post('/site-content/features/delete/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
+    try {
+        const [result] = await pool.query('DELETE FROM site_features WHERE id = ?', [req.params.id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Feature not found. Refresh the page and try again.' });
+        res.json({ success: true, message: 'Feature removed from the landing page.' });
+    } catch (err) {
+        console.error('[SITE CONTENT] Feature delete failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to delete feature.' });
     }
 });
 

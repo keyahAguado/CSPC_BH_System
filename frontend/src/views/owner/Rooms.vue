@@ -1,4 +1,9 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
@@ -46,6 +51,7 @@ const showSystemAlert = (message, type = 'error') => {
 };
 
 const fetchRooms = async () => {
+  loadError.value = '';
   try {
     isLoading.value = true;
     const houseId = route.params.id; 
@@ -62,6 +68,7 @@ const fetchRooms = async () => {
       archivedRooms.value = response.data.archivedRooms || [];
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load rooms:', error);
     showSystemAlert('Could not fetch room details.', 'warning');
   } finally {
@@ -228,29 +235,26 @@ const handleDeleteRoom = async () => {
 onMounted(() => {
   fetchRooms();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
-    <FlashAlert ref="alertRef" />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <!-- Main Content -->
-    <main class="flex-1 max-w-6xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
+    <main id="management-content" tabindex="-1" class="flex-1 max-w-6xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
+      <LoadError :message="loadError" />
 
       <!-- Header Section -->
-      <div class="mb-12 text-center">
-        <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight mb-2">Room Status</h1>
-        <p class="text-blue-600 font-bold uppercase text-[13px] tracking-[0.2em] mb-4 text-center">
-          {{ house.name }}
-        </p>
-        <div class="w-20 h-1 bg-blue-600 mx-auto rounded-full"></div>
-      </div>
+      <PageHeader title="Rooms & availability" description="Manage rooms, pricing, and occupants for this property." :eyebrow="house.name" />
 
       <!-- Loading State -->
       <div v-if="isLoading" class="p-20 text-center bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading rooms status...</p>
+        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading rooms status...</p>
       </div>
 
       <div v-else class="space-y-12">
@@ -268,13 +272,13 @@ onMounted(() => {
               </svg>
             </div>
             <div>
-              <h2 class="text-base md:text-xl font-black text-slate-900 uppercase tracking-tight">Bookings Monitoring</h2>
-              <p class="text-slate-500 text-[10px] md:text-[11px] font-bold uppercase tracking-wider">Review and manage boarder reservations</p>
+              <h2 class="text-base md:text-xl font-semibold text-slate-900 uppercase tracking-tight">Bookings Monitoring</h2>
+              <p class="text-slate-500 text-[12px] md:text-[12px] font-bold uppercase tracking-wider">Review and manage boarder reservations</p>
             </div>
           </div>
           
           <!-- Native SPA routing link -->
-          <router-link :to="'/owner/bookings?houseId=' + house.id" class="w-full md:w-auto bg-[#2a528a] text-white px-6 py-3 md:px-8 md:py-4 rounded-2xl font-black text-[11px] md:text-[12px] uppercase tracking-widest hover:bg-black transition-all duration-300 flex items-center justify-center gap-3 shadow-lg shadow-blue-100 active:scale-95">
+          <router-link :to="'/owner/bookings?houseId=' + house.id" class="w-full md:w-auto bg-[#2a528a] text-white px-6 py-3 md:px-8 md:py-4 rounded-2xl font-semibold text-[12px] md:text-[12px] uppercase tracking-wide hover:bg-black transition-all duration-300 flex items-center justify-center gap-3 shadow-lg shadow-blue-100 active:scale-95 management-button management-button-primary">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z" />
               <circle cx="12" cy="12" r="3" />
@@ -288,14 +292,14 @@ onMounted(() => {
           <div class="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:gap-3">
             <button 
               @click="activeTab = 'active'"
-              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-semibold text-[12px] sm:text-[12px] uppercase tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
               :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
             >
               <i class="fa-solid fa-door-open text-xs"></i> Active Rooms ({{ femaleRooms.length + maleRooms.length }})
             </button>
             <button 
               @click="activeTab = 'archived'"
-              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-semibold text-[12px] sm:text-[12px] uppercase tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
               :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
             >
               <i class="fa-solid fa-box-archive text-xs"></i> Archived Rooms ({{ archivedRooms.length }})
@@ -310,46 +314,46 @@ onMounted(() => {
             <div class="bg-slate-50/80 px-5 md:px-8 py-4 md:py-5 border-b border-slate-200 flex items-center gap-3 justify-between">
               <div class="flex items-center gap-3">
                 <div class="w-2 h-6 bg-pink-400 rounded-full"></div>
-                <h2 class="text-sm font-black text-slate-800 uppercase tracking-widest">Female's Room</h2>
+                <h2 class="text-sm font-semibold text-slate-800 uppercase tracking-wide">Female's Room</h2>
               </div>
             </div>
 
             <!-- MOBILE CARD LIST (hidden on sm+) -->
             <div class="sm:hidden divide-y divide-slate-100">
-              <div v-if="femaleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+              <div v-if="femaleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                 No Female Rooms listed
               </div>
               <div v-for="room in femaleRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3">
                 <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</span>
-                  <span class="font-black text-slate-800 text-sm">{{ room.room_number }}</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
+                  <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupancy</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Occupancy</span>
                   <span class="font-bold text-slate-600 text-sm">
                     {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
+                    <span class="text-[12px] text-slate-400 font-semibold uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
                 <div class="flex items-center justify-between flex-wrap gap-2">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
-                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
-                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Full</span>
+                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Vacant</span>
+                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Available</span>
                   </div>
                 </div>
                 <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center flex items-center justify-center">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide hover:bg-black transition shadow-sm text-center flex items-center justify-center management-button management-button-primary">
                     View
-                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
                       {{ room.pending_request_count }}
                     </span>
                   </router-link>
-                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
                     Edit
                   </button>
-                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
                     Archive
                   </button>
                 </div>
@@ -360,7 +364,7 @@ onMounted(() => {
             <div class="hidden sm:block overflow-x-auto">
               <table class="w-full text-sm text-left">
                 <thead>
-                  <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
+                  <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
                     <th class="px-8 py-5 text-center">Monthly Rent</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
@@ -370,38 +374,38 @@ onMounted(() => {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr v-if="femaleRooms.length === 0">
-                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                       No Female Rooms listed
                     </td>
                   </tr>
                   <tr v-for="room in femaleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors group">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
+                    <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
-                      <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
+                      <span class="block text-[12px] text-slate-400 font-semibold uppercase mt-1 tracking-tighter">
                         {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex flex-col items-center gap-1.5">
-                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
-                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
-                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Full</span>
+                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Vacant</span>
+                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Available</span>
                       </div>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-flex items-center">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide hover:bg-black transition shadow-sm inline-flex items-center management-button management-button-primary">
                           Details
-                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
                             {{ room.pending_request_count }}
                           </span>
                         </router-link>
-                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
                           Edit
                         </button>
-                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
                           Archive
                         </button>
                       </div>
@@ -416,45 +420,45 @@ onMounted(() => {
           <section class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
             <div class="bg-slate-50/80 px-5 md:px-8 py-4 md:py-5 border-b border-slate-200 flex items-center gap-3">
               <div class="w-2 h-6 bg-blue-400 rounded-full"></div>
-              <h2 class="text-sm font-black text-slate-800 uppercase tracking-widest">Male's Room</h2>
+              <h2 class="text-sm font-semibold text-slate-800 uppercase tracking-wide">Male's Room</h2>
             </div>
 
             <!-- MOBILE CARD LIST (hidden on sm+) -->
             <div class="sm:hidden divide-y divide-slate-100">
-              <div v-if="maleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+              <div v-if="maleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                 No Male Rooms listed
               </div>
               <div v-for="room in maleRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3">
                 <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</span>
-                  <span class="font-black text-slate-800 text-sm">{{ room.room_number }}</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
+                  <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Occupancy</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Occupancy</span>
                   <span class="font-bold text-slate-600 text-sm">
                     {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[9px] text-slate-400 font-black uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
+                    <span class="text-[12px] text-slate-400 font-semibold uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
                   </span>
                 </div>
                 <div class="flex items-center justify-between flex-wrap gap-2">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
+                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Full</span>
-                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Vacant</span>
-                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Available</span>
+                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Full</span>
+                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Vacant</span>
+                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Available</span>
                   </div>
                 </div>
                 <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest hover:bg-black transition shadow-sm text-center flex items-center justify-center">
+                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide hover:bg-black transition shadow-sm text-center flex items-center justify-center management-button management-button-primary">
                     View
-                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
                       {{ room.pending_request_count }}
                     </span>
                   </router-link>
-                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
                     Edit
                   </button>
-                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2.5 rounded-xl uppercase tracking-widest transition">
+                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
                     Archive
                   </button>
                 </div>
@@ -465,7 +469,7 @@ onMounted(() => {
             <div class="hidden sm:block overflow-x-auto">
               <table class="w-full text-sm text-left">
                 <thead>
-                  <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100">
+                  <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100">
                     <th class="px-8 py-5 text-center">Room No.</th>
                     <th class="px-8 py-5 text-center">Monthly Rent</th>
                     <th class="px-8 py-5 text-center">Occupancy</th>
@@ -475,38 +479,38 @@ onMounted(() => {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr v-if="maleRooms.length === 0">
-                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                       No Male Rooms listed
                     </td>
                   </tr>
                   <tr v-for="room in maleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
                     <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
+                    <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
                     <td class="px-8 py-5 text-center font-bold text-slate-500">
                       {{ room.occupant_count }} / {{ room.capacity }}
-                      <span class="block text-[10px] text-slate-400 font-black uppercase mt-1 tracking-tighter">
+                      <span class="block text-[12px] text-slate-400 font-semibold uppercase mt-1 tracking-tighter">
                         {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
                       </span>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex flex-col items-center gap-1.5">
-                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Full</span>
-                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Vacant</span>
-                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Available</span>
+                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Full</span>
+                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Vacant</span>
+                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Available</span>
                       </div>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest hover:bg-black transition shadow-sm inline-flex items-center">
+                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide hover:bg-black transition shadow-sm inline-flex items-center management-button management-button-primary">
                           Details
-                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
+                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
                             {{ room.pending_request_count }}
                           </span>
                         </router-link>
-                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
                           Edit
                         </button>
-                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[10px] font-black px-3 py-2 rounded-lg uppercase tracking-widest transition cursor-pointer">
+                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
                           Archive
                         </button>
                       </div>
@@ -523,36 +527,36 @@ onMounted(() => {
           <div class="bg-slate-900 text-white px-5 md:px-8 py-4 md:py-5 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <i class="fa-solid fa-box-archive text-amber-400"></i>
-              <h2 class="text-sm font-black uppercase tracking-widest">Archived Rooms</h2>
+              <h2 class="text-sm font-semibold uppercase tracking-wide">Archived Rooms</h2>
             </div>
-            <span class="text-[10px] font-black uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
+            <span class="text-[12px] font-semibold uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
               Retained for Records
             </span>
           </div>
 
           <!-- MOBILE CARD LIST (hidden on sm+) -->
           <div class="sm:hidden divide-y divide-slate-100">
-            <div v-if="archivedRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+            <div v-if="archivedRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
               No archived rooms.
             </div>
             <div v-for="room in archivedRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3 text-left">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</span>
-                <span class="font-black text-slate-800 text-sm">{{ room.room_number }}</span>
+                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
+                <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Wing / Gender</span>
-                <span class="inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
+                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Wing / Gender</span>
+                <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
                   {{ room.gender_type }}'s Wing
                 </span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Rent</span>
-                <span class="font-black text-slate-900 text-sm">₱{{ Number(room.price || 0).toLocaleString() }}</span>
+                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Monthly Rent</span>
+                <span class="font-semibold text-slate-900 text-sm">₱{{ Number(room.price || 0).toLocaleString() }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</span>
-                <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
+                <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">
                   Archived
                 </span>
               </div>
@@ -560,7 +564,7 @@ onMounted(() => {
                 <button 
                   @click="handleRestoreRoom(room.id, room.room_number)"
                   :disabled="isSubmitting"
-                  class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                  class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 management-button"
                 >
                   <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
                 </button>
@@ -572,7 +576,7 @@ onMounted(() => {
           <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm text-left">
               <thead>
-                <tr class="text-slate-500 uppercase text-[10px] font-black tracking-wider border-b border-slate-100 bg-slate-50/50">
+                <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100 bg-slate-50/50">
                   <th class="px-8 py-5 text-center">Room No.</th>
                   <th class="px-8 py-5 text-center">Wing / Gender</th>
                   <th class="px-8 py-5 text-center">Monthly Rent</th>
@@ -582,20 +586,20 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="archivedRooms.length === 0">
-                  <td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                  <td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                     No archived rooms.
                   </td>
                 </tr>
                 <tr v-for="room in archivedRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
                   <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
                   <td class="px-8 py-5 text-center font-bold text-slate-600 capitalize">
-                    <span class="inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
+                    <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
                       {{ room.gender_type }}'s Wing
                     </span>
                   </td>
-                  <td class="px-8 py-5 text-center font-black text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
+                  <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
                   <td class="px-8 py-5 text-center">
-                    <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">
+                    <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">
                       Archived
                     </span>
                   </td>
@@ -603,7 +607,7 @@ onMounted(() => {
                     <button 
                       @click="handleRestoreRoom(room.id, room.room_number)"
                       :disabled="isSubmitting"
-                      class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-5 py-2.5 rounded-xl uppercase tracking-widest transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                      class="bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold px-5 py-2.5 rounded-xl uppercase tracking-wide transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mx-auto management-button"
                     >
                       <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
                     </button>
@@ -616,7 +620,7 @@ onMounted(() => {
 
         <!-- Global Action Buttons -->
         <div class="mt-16 flex flex-wrap justify-center gap-6 pb-20">
-          <button @click="toggleAddModal" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black text-[12px] uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-black hover:shadow-none transition-all duration-300 flex items-center gap-3 active:scale-95 focus:outline-none cursor-pointer">
+          <button @click="toggleAddModal" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-semibold text-[12px] uppercase tracking-wide shadow-lg shadow-blue-200 hover:bg-black hover:shadow-none transition-all duration-300 flex items-center gap-3 active:scale-95 focus:outline-none cursor-pointer management-button management-button-primary">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14" />
               <path d="M12 5v14" />
@@ -629,36 +633,36 @@ onMounted(() => {
     </main>
 
     <!-- ===== Add Room Modal ===== -->
-    <div v-show="showAddModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+    <div v-management-dialog="{ close: () => toggleAddModal() }" v-show="showAddModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
       <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
         <div class="flex justify-between items-center mb-8">
-          <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Add New Room</h2>
-          <button @click="toggleAddModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
+          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Add New Room</h2>
+          <button aria-label="toggle Add Modal" @click="toggleAddModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
 
         <form @submit.prevent="handleSaveRoom" class="space-y-6">
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
-            <input v-model="newRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
+            <input aria-label="Room Number / ID" v-model="newRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gender Specification</label>
-            <select v-model="newGenderType" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Gender Specification</label>
+            <select aria-label="Gender Specification" v-model="newGenderType" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
               <option value="female">Female's Room</option>
               <option value="male">Male's Room</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
-            <input v-model="newCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Capacity</label>
+            <input aria-label="Capacity" v-model="newCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
-            <input v-model="newPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
+            <input aria-label="Monthly Rent (₱)" v-model="newPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
-          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
+          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-semibold py-4 rounded-xl text-[12px] uppercase tracking-wide transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer management-button management-button-primary">
             {{ isSubmitting ? 'Saving Room...' : 'Save Room' }}
           </button>
         </form>
@@ -666,36 +670,36 @@ onMounted(() => {
     </div>
 
     <!-- ===== Edit Room Modal ===== -->
-    <div v-show="showEditModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+    <div v-management-dialog="{ close: () => closeEditModal() }" v-show="showEditModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
       <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
         <div class="flex justify-between items-center mb-8">
-          <h2 class="text-xl font-black text-slate-900 uppercase tracking-tight">Edit Room Details</h2>
-          <button @click="closeEditModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
+          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Edit Room Details</h2>
+          <button aria-label="Close dialog" @click="closeEditModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
 
         <form @submit.prevent="handleUpdateRoom" class="space-y-6">
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
-            <input v-model="editRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
+            <input aria-label="Room Number / ID" v-model="editRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Gender Specification</label>
-            <select v-model="editGenderType" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Gender Specification</label>
+            <select aria-label="Gender Specification" v-model="editGenderType" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
               <option value="female">Female's Room</option>
               <option value="male">Male's Room</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Capacity</label>
-            <input v-model="editCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Capacity</label>
+            <input aria-label="Capacity" v-model="editCapacity" type="number" min="1" step="1" required placeholder="2" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
-            <input v-model="editPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+            <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
+            <input aria-label="Monthly Rent (₱)" v-model="editPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
-          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer">
+          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-semibold py-4 rounded-xl text-[12px] uppercase tracking-wide transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer management-button management-button-primary">
             {{ isSubmitting ? 'Updating Room...' : 'Update Room' }}
           </button>
         </form>
@@ -703,23 +707,23 @@ onMounted(() => {
     </div>
 
     <!-- ===== Archive Room Confirmation Modal ===== -->
-    <div v-if="showDeleteConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
+    <div v-management-dialog="{ close: () => closeDeleteModal() }" v-if="showDeleteConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
       <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="text-amber-500 mb-4 flex justify-center">
           <div class="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center border border-amber-200/60">
             <i class="fa-solid fa-box-archive text-amber-500 text-2xl"></i>
           </div>
         </div>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Archive Room {{ deletingRoomNumber }}?</h3>
+        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">Archive Room {{ deletingRoomNumber }}?</h3>
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
           Are you sure you want to archive this room? It will be safely moved to your Archived Rooms tab and can be restored at any time.
         </p>
         
         <div class="flex gap-3">
-          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 disabled:opacity-50 cursor-pointer">
+          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 disabled:opacity-50 cursor-pointer management-button">
             {{ isSubmitting ? 'Archiving...' : 'Archive Room' }}
           </button>
-          <button @click="closeDeleteModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3.5 rounded-xl uppercase tracking-widest transition active:scale-95 cursor-pointer">
+          <button @click="closeDeleteModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
             Cancel
           </button>
         </div>

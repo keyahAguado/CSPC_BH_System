@@ -1,4 +1,10 @@
 <script setup>
+import LoadError from '../../components/management/LoadError.vue';
+
+import OwnerNav from '../../components/partials/OwnerNav.vue';
+import PageHeader from '../../components/management/PageHeader.vue';
+import '../../styles/management.css';
+import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -530,6 +536,7 @@ const removePhoto = (index) => {
 };
 
 const loadHouseDetails = async () => {
+  loadError.value = '';
   let mapApiKey = '';
   try {
     isLoading.value = true;
@@ -581,6 +588,7 @@ const loadHouseDetails = async () => {
       }
     }
   } catch (error) {
+    loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load edit details:', error);
   } finally {
     isLoading.value = false;
@@ -677,27 +685,33 @@ watch(mapLink, (newVal) => {
 onMounted(() => {
   loadHouseDetails();
 });
+
+const loadError = ref('');
 </script>
 
 <template>
-  <div class="bg-slate-900/65 min-h-screen flex items-center justify-center p-2 sm:p-6 backdrop-blur-sm font-sans overflow-x-hidden">
-    <FlashAlert ref="alertRef" />
+  <div class="management-page management-form-page min-h-screen font-sans flex flex-col">
+    <OwnerNav />
+    <main id="management-content" tabindex="-1" class="management-content">
+      <LoadError :message="loadError" />
+<PageHeader title="Edit property" :eyebrow="houseName" description="Update property information, photos, location, and rent policy." />
+    <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <!-- Fullscreen Verification Map Modal -->
-    <div v-if="showFullscreenMap" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex flex-col p-4 sm:p-10 animate-fade-in">
+    <div v-management-dialog="{ close: () => toggleFullscreenMap() }" v-if="showFullscreenMap" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex flex-col p-4 sm:p-10 animate-fade-in">
       <div class="max-w-6xl mx-auto w-full h-full flex flex-col bg-white rounded-[2rem] sm:rounded-[3rem] overflow-hidden shadow-2xl relative">
         <div class="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div>
-            <h3 class="text-base sm:text-xl font-black text-slate-900 uppercase tracking-tight">Pin Your Location</h3>
-            <p class="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adjust the map pin precisely</p>
+            <h3 class="text-base sm:text-xl font-semibold text-slate-900 uppercase tracking-tight">Pin Your Location</h3>
+            <p class="text-[12px] sm:text-[12px] font-bold text-slate-400 uppercase tracking-wide">Adjust the map pin precisely</p>
           </div>
-          <button type="button" @click="toggleFullscreenMap" class="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center transition-all">
+          <button aria-label="Close dialog" type="button" @click="toggleFullscreenMap" class="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center transition-all management-button">
             <i class="fa-solid fa-xmark text-lg sm:text-xl"></i>
           </button>
         </div>
         <div ref="largeMapContainer" class="flex-1 bg-slate-100"></div>
         <div class="p-4 sm:p-6 bg-white border-t border-slate-100 flex justify-center">
-          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-black px-8 sm:px-12 py-3 sm:py-4 rounded-2xl uppercase text-[10px] sm:text-[11px] tracking-[0.2em] shadow-xl hover:bg-black transition-all">
+          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-semibold px-8 sm:px-12 py-3 sm:py-4 rounded-2xl uppercase text-[12px] sm:text-[12px] tracking-normal shadow-xl hover:bg-black transition-all management-button management-button-primary">
             Save &amp; Confirm Location
           </button>
         </div>
@@ -707,16 +721,16 @@ onMounted(() => {
     <!-- Loading State -->
     <div v-if="isLoading" class="bg-white rounded-2xl w-full max-w-4xl p-12 text-center flex flex-col items-center justify-center">
       <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-      <p class="text-slate-400 font-bold uppercase text-[9px] tracking-widest">Loading details...</p>
+      <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading details...</p>
     </div>
 
     <!-- Modal Content -->
-    <div v-else class="bg-white rounded-2xl w-full max-w-4xl shadow-2xl my-6 overflow-hidden relative text-left animate-in zoom-in duration-300">
+    <div v-else class="bg-white rounded-2xl w-full shadow-sm my-6 overflow-hidden relative text-left animate-in zoom-in duration-300">
       
       <!-- Header -->
       <div class="bg-slate-50 border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-        <h2 class="font-black text-[11px] sm:text-xs tracking-[0.2em] sm:tracking-[0.3em] uppercase text-black">Edit Boarding House</h2>
-        <router-link to="/owner/dashboard" class="text-slate-400 hover:text-black transition focus:outline-none">
+        <h2 class="font-semibold text-[12px] sm:text-xs tracking-normal sm:tracking-normal uppercase text-black">Edit Boarding House</h2>
+        <router-link to="/owner/dashboard" aria-label="Back to properties" class="text-slate-500 hover:text-black transition focus:outline-none inline-flex items-center justify-center w-11 h-11">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -724,7 +738,7 @@ onMounted(() => {
       </div>
 
       <!-- Form Body -->
-      <div class="p-4 sm:p-8 md:p-12 overflow-y-auto max-h-[75vh]">
+      <div class="p-4 sm:p-8 md:p-10">
         
         <div class="mb-8 sm:mb-12 border-b border-slate-100 pb-8 sm:pb-10">
           <div class="flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start">
@@ -736,16 +750,16 @@ onMounted(() => {
             <div class="flex-1 text-center md:text-left py-2 sm:py-4 w-full">
               <div class="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-3 sm:gap-4 mb-3">
                 <i class="fa-solid fa-building-circle-check text-3xl sm:text-4xl text-blue-600"></i>
-                <h2 class="text-2xl sm:text-4xl font-black text-slate-900 uppercase tracking-tighter leading-tight break-all">{{ houseName }}</h2>
+                <h2 class="text-2xl sm:text-4xl font-semibold text-slate-900 uppercase tracking-tighter leading-tight break-all">{{ houseName }}</h2>
               </div>
               <div class="flex items-center justify-center md:justify-start gap-2 text-slate-500 mb-6 sm:mb-8">
                 <i class="fa-solid fa-location-dot text-blue-500 shrink-0"></i>
-                <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] break-all">{{ locationAddress }}</span>
+                <span class="text-[12px] sm:text-[12px] font-bold uppercase tracking-[0.15em] sm:tracking-normal break-all">{{ locationAddress }}</span>
               </div>
               
               <div class="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 sm:px-5 py-2 rounded-xl border border-blue-100">
-                <i class="fa-solid fa-pen-to-square text-[10px]"></i>
-                <span class="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-blue-900">Update Property Details</span>
+                <i class="fa-solid fa-pen-to-square text-[12px]"></i>
+                <span class="text-[12px] sm:text-[12px] font-semibold uppercase tracking-wide text-blue-900">Update Property Details</span>
               </div>
             </div>
           </div>
@@ -755,25 +769,25 @@ onMounted(() => {
           
           <!-- Photos Section -->
           <div class="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200">
-            <h3 class="text-xs font-black text-black uppercase tracking-[0.2em] mb-4">Update Photos</h3>
+            <h3 class="text-xs font-semibold text-black uppercase tracking-normal mb-4">Update Photos</h3>
             
             <div>
-              <label class="block text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Main Boarding House Photo</label>
-              <input type="file" @change="handleHouseImgChange" accept="image/*" class="w-full px-3 sm:px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-600 font-semibold file:mr-2 sm:file:mr-4 file:py-2 file:px-3 sm:file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-blue-600 file:text-white hover:file:bg-black transition cursor-pointer" />
+              <label class="block text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Main Boarding House Photo</label>
+              <input aria-label="Main Boarding House Photo" type="file" @change="handleHouseImgChange" accept="image/*" class="w-full px-3 sm:px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-600 font-semibold file:mr-2 sm:file:mr-4 file:py-2 file:px-3 sm:file:px-4 file:rounded-lg file:border-0 file:text-[12px] file:font-bold file:bg-blue-600 file:text-white hover:file:bg-black transition cursor-pointer" />
             </div>
 
             <!-- Dynamic Additional Photo Upload Section -->
             <div class="border-t border-slate-200/60 pt-6">
-              <label class="block text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Additional Interior Photos (Maximum 10 Photos)</label>
+              <label class="block text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Additional Interior Photos (Maximum 10 Photos)</label>
               <div class="flex items-center justify-center bg-white border border-slate-200 rounded-xl p-4 sm:p-6 transition cursor-pointer mb-6">
-                <input type="file" multiple accept="image/*" @change="handlePhotosSelected" class="w-full text-xs font-bold text-slate-500 file:mr-2 sm:file:mr-4 file:py-2 file:px-4 sm:file:px-6 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer" />
+                <input aria-label="Field" type="file" multiple accept="image/*" @change="handlePhotosSelected" class="w-full text-xs font-bold text-slate-500 file:mr-2 sm:file:mr-4 file:py-2 file:px-4 sm:file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer" />
               </div>
 
               <!-- Interactive Previews Grid with Delete option -->
               <div v-if="selectedPhotos.length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
                 <div v-for="(photo, index) in selectedPhotos" :key="index" class="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
                   <img :src="photo.previewUrl" class="w-full h-full object-cover" alt="Interior Preview" />
-                  <button type="button" @click="removePhoto(index)" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-700">
+                  <button aria-label="remove Photo" type="button" @click="removePhoto(index)" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-700 management-button">
                     <i class="fa-solid fa-trash text-xs" />
                   </button>
                 </div>
@@ -784,27 +798,27 @@ onMounted(() => {
           <!-- Basic Details -->
           <div class="space-y-6 sm:space-y-10">
             <div>
-              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                 Boarding House Name
               </label>
-              <input type="text" v-model="houseName" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <input aria-label="Boarding House Name" type="text" v-model="houseName" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
             </div>
 
             <div>
-              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <span class="text-base font-black leading-none shrink-0 mt-[-2px]">₱</span>
+              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+                <span class="text-base font-semibold leading-none shrink-0 mt-[-2px]">₱</span>
                 Monthly Rent Price
               </label>
-              <input type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <input aria-label="₱ Monthly Rent Price" type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
             </div>
 
             <div>
-              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
                 <i class="fa-solid fa-location-dot text-blue-600"></i>
                 Official Barangay (Nabua)
               </label>
-              <select v-model="selectedBarangay" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm cursor-pointer">
+              <select aria-label="Official Barangay (Nabua)" v-model="selectedBarangay" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm cursor-pointer">
                 <option value="">Select Official Barangay</option>
                 <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
               </select>
@@ -812,14 +826,14 @@ onMounted(() => {
             
             <!-- Advance & Deposit Policy -->
             <div class="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200">
-              <h3 class="text-xs font-black text-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+              <h3 class="text-xs font-semibold text-black uppercase tracking-normal mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-coins" />
                 Advance & Deposit Policy
               </h3>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                 <div>
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Advance Rent</label>
-                  <select v-model="advanceMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
+                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Advance Rent</label>
+                  <select aria-label="Advance Rent" v-model="advanceMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
                     <option :value="0">No Advance</option>
                     <option :value="1">1 Month</option>
                     <option :value="2">2 Months</option>
@@ -827,8 +841,8 @@ onMounted(() => {
                 </div>
                 
                 <div>
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Deposit Duration</label>
-                  <select v-model="depositMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
+                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Deposit Duration</label>
+                  <select aria-label="Deposit Duration" v-model="depositMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
                     <option :value="0">No Deposit</option>
                     <option :value="1">1 Month</option>
                     <option :value="2">2 Months</option>
@@ -836,8 +850,8 @@ onMounted(() => {
                 </div>
 
                 <div v-show="depositMonths > 0">
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Rent Deposit Type</label>
-                  <select v-model="depositType" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
+                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Rent Deposit Type</label>
+                  <select aria-label="Rent Deposit Type" v-model="depositType" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
                     <option value="consumable">Consumable (Last Month)</option>
                     <option value="refundable">Refundable (Cash)</option>
                   </select>
@@ -846,19 +860,19 @@ onMounted(() => {
             </div>
 
             <div>
-              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                 Contact Number
               </label>
-              <input type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
-              <p class="text-[10px] text-slate-400 font-bold mt-1.5 ml-0.5">
+              <input aria-label="Contact Number" type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
+              <p class="text-[12px] text-slate-400 font-bold mt-1.5 ml-0.5">
                 <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
               </p>
             </div>
 
             <!-- High-Precision 3-Way Location Registration -->
             <div>
-              <h3 class="text-xs font-black text-[#1e4a8d] uppercase tracking-[0.2em] mb-4 sm:mb-6">
+              <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-4 sm:mb-6">
                 <i class="fa-solid fa-map-location-dot" /> High-Precision Location Setup
               </h3>
               
@@ -866,8 +880,8 @@ onMounted(() => {
                 <!-- STEP A -->
                 <div>
                   <div class="flex items-center gap-3 mb-3 sm:mb-4">
-                    <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">A</div>
-                    <label class="text-[10px] sm:text-[11px] font-black text-slate-900 uppercase tracking-widest">Type your Property Address</label>
+                    <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">A</div>
+                    <label class="text-[12px] sm:text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Type your Property Address</label>
                   </div>
                   <div id="autocomplete-wrapper" class="w-full"></div>
                 </div>
@@ -876,15 +890,15 @@ onMounted(() => {
                 <div>
                   <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4">
                     <div class="flex items-center gap-3">
-                      <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">B</div>
-                      <label class="text-[10px] sm:text-[11px] font-black text-slate-900 uppercase tracking-widest">Verify or Pin Exactly on Map</label>
+                      <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">B</div>
+                      <label class="text-[12px] sm:text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Verify or Pin Exactly on Map</label>
                     </div>
                     <div class="flex flex-wrap gap-2 w-full sm:w-auto">
                       <button 
                         type="button" 
                         @click="detectMyLocation" 
                         :disabled="isGpsLoading"
-                        class="bg-white border border-slate-200 text-slate-600 text-[9px] font-black uppercase tracking-widest px-3 sm:px-4 py-2 rounded-full shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center"
+                        class="bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold uppercase tracking-wide px-3 sm:px-4 py-2 rounded-full shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center management-button management-button-secondary"
                       >
                         <i v-if="isGpsLoading" class="fa-solid fa-spinner fa-spin" />
                         <i v-else class="fa-solid fa-location-crosshairs" /> Use GPS
@@ -892,7 +906,7 @@ onMounted(() => {
                       <button 
                         type="button" 
                         @click="toggleFullscreenMap" 
-                        class="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest px-3 sm:px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center"
+                        class="bg-slate-900 text-white text-[12px] font-semibold uppercase tracking-wide px-3 sm:px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center management-button"
                       >
                         <i class="fa-solid fa-expand" /> Large Map
                       </button>
@@ -902,7 +916,7 @@ onMounted(() => {
                   <div class="rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden border-4 border-white shadow-xl aspect-video relative bg-slate-50 group cursor-pointer">
                     <div id="map" ref="mapContainer" class="w-full h-full min-h-[300px] sm:min-h-[350px]"></div>
                     <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
-                      <span class="bg-white/90 backdrop-blur-md px-4 sm:px-6 py-2 sm:py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                      <span class="bg-white/90 backdrop-blur-md px-4 sm:px-6 py-2 sm:py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
                         <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin
                       </span>
                     </div>
@@ -910,13 +924,13 @@ onMounted(() => {
 
                   <div v-if="!latitude || !longitude" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                     <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
-                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                    <p class="text-[12px] font-bold text-amber-800 leading-snug">
                       No GPS pin set yet. Without a location, this listing won't appear on the public Map View and students can't get walking directions from CSPC. Use "Use GPS" or "Large Map" above to set it.
                     </p>
                   </div>
                   <div v-else-if="pinNeedsConfirmation" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                     <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
-                    <p class="text-[11px] font-bold text-amber-800 leading-snug">
+                    <p class="text-[12px] font-bold text-amber-800 leading-snug">
                       Address text changed but the map pin hasn't moved yet. Select a suggestion from the dropdown, use "Use GPS", or drag the pin — otherwise the old location will be kept when you save.
                     </p>
                   </div>
@@ -932,11 +946,11 @@ onMounted(() => {
             <input type="hidden" v-model="longitude" />
 
             <div>
-              <label class="flex items-center gap-2 text-[10px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
+              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                 Property Description & Rules
               </label>
-              <textarea v-model="description" rows="5" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm"></textarea>
+              <textarea aria-label="Property Description &amp; Rules" v-model="description" rows="5" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm"></textarea>
             </div>
           </div>
 
@@ -945,18 +959,18 @@ onMounted(() => {
             <!-- Free Amenities -->
             <div class="px-1 sm:px-2 py-2 sm:py-4">
               <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8">
-                <p class="flex items-center gap-3 text-[10px] sm:text-[11px] font-black text-black uppercase tracking-[0.2em]">
+                <p class="flex items-center gap-3 text-[12px] sm:text-[12px] font-semibold text-black uppercase tracking-normal">
                   <i class="fa-solid fa-gift text-emerald-500" />
                   Free Amenities
                 </p>
                 <div class="flex gap-2 w-full sm:w-auto">
-                  <input type="text" v-model="newFreeAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[10px] font-bold focus:border-blue-400 outline-none" />
-                  <button type="button" @click="addCustomAmenity('free')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 sm:py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition shrink-0">Add</button>
+                  <input aria-label="Add custom..." type="text" v-model="newFreeAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[12px] font-bold focus:border-blue-400 outline-none" />
+                  <button type="button" @click="addCustomAmenity('free')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 sm:py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition shrink-0 management-button">Add</button>
                 </div>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs text-black font-semibold">
                 <label v-for="item in freeAmenities" :key="item" class="flex items-center gap-3 cursor-pointer bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-black transition">
-                  <input type="checkbox" :value="item" v-model="selectedFreeAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
+                  <input aria-label="selected Free Amenities" type="checkbox" :value="item" v-model="selectedFreeAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
                   <span class="break-words">{{ item }}</span>
                 </label>
               </div>
@@ -965,18 +979,18 @@ onMounted(() => {
             <!-- Paid Amenities -->
             <div class="px-1 sm:px-2 py-2 sm:py-4 border-t border-slate-100">
               <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8 mt-4">
-                <p class="flex items-center gap-3 text-[10px] sm:text-[11px] font-black text-black uppercase tracking-[0.2em]">
+                <p class="flex items-center gap-3 text-[12px] sm:text-[12px] font-semibold text-black uppercase tracking-normal">
                   <i class="fa-solid fa-coins text-rose-500" />
                   Paid Amenities
                 </p>
                 <div class="flex gap-2 w-full sm:w-auto">
-                  <input type="text" v-model="newPaidAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[10px] font-bold focus:border-red-400 outline-none" />
-                  <button type="button" @click="addCustomAmenity('paid')" class="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1.5 sm:py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition shrink-0">Add</button>
+                  <input aria-label="Add custom..." type="text" v-model="newPaidAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[12px] font-bold focus:border-red-400 outline-none" />
+                  <button type="button" @click="addCustomAmenity('paid')" class="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1.5 sm:py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition shrink-0 management-button">Add</button>
                 </div>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs text-black font-semibold">
                 <label v-for="item in paidAmenities" :key="item" class="flex items-center gap-3 cursor-pointer bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-black transition">
-                  <input type="checkbox" :value="item" v-model="selectedPaidAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
+                  <input aria-label="selected Paid Amenities" type="checkbox" :value="item" v-model="selectedPaidAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
                   <span class="break-words">{{ item }}</span>
                 </label>
               </div>
@@ -985,14 +999,16 @@ onMounted(() => {
 
           <!-- Submit Button -->
           <div class="pt-8 sm:pt-10 border-t border-slate-100 flex justify-center">
-            <button type="submit" :disabled="isSubmitting" class="bg-black hover:bg-slate-800 text-white font-black py-4 px-8 sm:px-16 rounded-xl text-[11px] sm:text-[12px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition active:scale-95 w-full max-w-[400px] disabled:opacity-50">
+            <button type="submit" :disabled="isSubmitting" class="bg-black hover:bg-slate-800 text-white font-semibold py-4 px-8 sm:px-16 rounded-xl text-[12px] sm:text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 w-full max-w-[400px] disabled:opacity-50 management-button">
               {{ isSubmitting ? 'Saving Changes...' : 'Save Changes' }}
             </button>
           </div>
         </form>
       </div>
     </div>
-  </div>
+  
+    </main>
+</div>
 </template>
 
 <style>
