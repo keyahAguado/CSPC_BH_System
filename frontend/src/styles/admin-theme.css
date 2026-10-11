@@ -1,7 +1,7 @@
 /* Admin design system: CSPC navy + gold (matches the landing page and student side).
    Scoped to `.is-admin` (shared navigation) and `.admin-shell` (redesigned admin pages)
    so Owner and Student views keep their own styling. */
-.is-admin,.admin-shell{
+.is-admin,.admin-shell,.owner-page{
   --a-font:'Plus Jakarta Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
   --a-sidebar:#173A6B;--a-sidebar-ink:#DCE6F4;--a-sidebar-muted:#A8BEDD;--a-sidebar-hover:rgba(255,255,255,.07);--a-sidebar-line:rgba(255,255,255,.09);
   --a-primary:#1E4A8D;--a-primary-strong:#163870;--a-primary-soft:#E7EEF8;--a-primary-tint:#C9D7EC;
@@ -17,7 +17,8 @@
 /* ---------- Sidebar (admin variant) ---------- */
 .management-sidebar.is-admin{background:var(--a-sidebar);box-shadow:none;border-right:0;width:248px}
 .is-admin .management-brand{padding:18px 18px 16px;border-bottom:1px solid var(--a-sidebar-line);gap:12px}
-.is-admin .management-brand img{width:38px;height:38px;background:#fff;border-radius:12px;padding:4px}
+.is-admin .management-brand img{width:44px;height:44px;object-fit:contain;background:#fff;border-radius:12px;padding:3px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.is-admin.is-owner .management-brand img{background:#fff;padding:3px;border-radius:12px}
 .is-admin .management-brand strong{font-size:15.5px;font-weight:700;letter-spacing:-.01em}
 .is-admin .management-brand small{color:var(--a-sidebar-muted);font-size:12px;font-weight:500;margin-top:2px}
 .is-admin .management-nav-groups{padding:6px 12px 12px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
@@ -32,8 +33,9 @@
 .is-admin .management-nav-link>span:not(.management-nav-count){overflow:hidden;text-overflow:ellipsis}
 .is-admin .management-nav-link i{color:var(--a-sidebar-muted);font-size:14px;width:18px}
 .is-admin .management-nav-link:hover{background:var(--a-sidebar-hover);color:#fff}
-.is-admin .management-nav-link.is-active{background:var(--a-bg);color:var(--a-primary);font-weight:600;box-shadow:inset 3px 0 0 var(--a-gold)}
-.is-admin .management-nav-link.is-active i{color:var(--a-primary)}
+.is-admin .management-nav-link.is-active{background:rgba(255,255,255,.14);color:#fff;font-weight:600;box-shadow:none}
+.is-admin .management-nav-link.is-active i{color:#fff}
+.is-admin .management-nav-link.is-active:hover{background:rgba(255,255,255,.18)}
 .is-admin .management-nav-count{background:var(--a-gold);color:#142B4A;border-radius:999px;font-weight:700}
 
 /* Footer: signed-in identity + sign out */

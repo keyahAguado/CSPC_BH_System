@@ -26,6 +26,7 @@ import adminRouter from './routes/admin.js';                    // SASO Admin da
 import notificationRouter from './routes/notifications.js';    // Real-time unread alerts & inbox manager
 import paymentRoutes from './routes/payment.js';
 import siteContentRouter from './routes/siteContent.js';        // Public landing page content (managed by admin)
+import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -138,6 +139,7 @@ app.use('/api/payment', paymentRoutes);
 
 // B. Public landing page content (Core Features + footer), edited under /api/admin/site-content
 app.use('/api/site-content', siteContentRouter);
+app.use('/api/applications', applicationsRouter);
 
 // Multer validation failures use the same user-facing JSON contract as forms.
 app.use(uploadErrorHandler);

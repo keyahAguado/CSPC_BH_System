@@ -102,7 +102,7 @@ const loadError = ref('');
       <!-- Animated Icon Header -->
       
 
-      <PageHeader title="Application status" description="Review accreditation outcomes and the corrections requested for each property." />
+      <PageHeader title="Application status" />
       <p class="text-slate-500 font-medium text-sm leading-relaxed mb-8 px-4">
         Hello, <span class="text-blue-600 font-bold">{{ currentUser.name }}</span>! Below are your registered boarding house applications and their current accreditation status with the SASO Admin team.
       </p>

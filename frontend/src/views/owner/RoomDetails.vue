@@ -3,6 +3,8 @@ import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, computed } from 'vue';
@@ -360,7 +362,7 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
@@ -376,7 +378,7 @@ const loadError = ref('');
           BACK TO ROOMS
         </router-link>
         
-        <PageHeader title="Room details" description="Review reservation requests, occupants, and payment records." />
+        <PageHeader title="Room details" />
       </div>
 
       <!-- Loading State -->
@@ -516,10 +518,6 @@ const loadError = ref('');
                     <span class="font-bold text-sm text-slate-700">{{ occ.reference_no || 'MANUAL' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Age</span>
-                    <span class="font-bold text-sm text-slate-700">{{ occ.age || '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Check-In</span>
                     <span class="font-bold text-sm text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
                   </div>
@@ -538,10 +536,6 @@ const loadError = ref('');
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Emergency</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.emergency_contact || '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Guardian</span>
-                    <span class="font-bold text-sm text-slate-700">{{ occ.guardian_name || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Duration</span>
@@ -613,12 +607,10 @@ const loadError = ref('');
                   <th class="px-3 py-4 text-center">#</th>
                   <th class="px-3 py-4 text-center">Ref No.</th>
                   <th class="px-3 py-4">Student Name</th>
-                  <th class="px-3 py-4 text-center">Age</th>
                   <th class="px-3 py-4 text-center">Check-In /<br/>Check-Out</th>
                   <th class="px-3 py-4">Address</th>
                   <th class="px-3 py-4 text-center">Contact</th>
                   <th class="px-3 py-4 text-center">Emergency</th>
-                  <th class="px-3 py-4 text-center">Guardian</th>
                   <th class="px-3 py-4 text-center">Duration</th>
                   <th class="px-3 py-4 text-center whitespace-nowrap">Total Rent</th>
                   <th class="px-3 py-4 text-center bg-emerald-50 text-emerald-700 whitespace-nowrap">Move-in Upfront<br/>Fee</th>
@@ -628,7 +620,7 @@ const loadError = ref('');
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="filteredOccupants.length === 0">
-                  <td colspan="14" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
+                  <td colspan="12" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
                     No matching boarders found in this room.
                   </td>
                 </tr>
@@ -638,7 +630,6 @@ const loadError = ref('');
                   <td class="px-3 py-4 font-bold text-slate-800 uppercase whitespace-nowrap">
                     {{ occ.name }}
                   </td>
-                  <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.age || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-700">{{ formatDate(occ.check_in_date) }}</span>
                     <span class="block text-[12px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(occ) }}</span>
@@ -646,7 +637,6 @@ const loadError = ref('');
                   <td class="px-3 py-4 font-bold text-slate-700 whitespace-normal min-w-[200px]">{{ occ.address || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.contact_number || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.emergency_contact || '—' }}</td>
-                  <td class="px-3 py-4 text-center font-bold text-slate-700">{{ occ.guardian_name || '—' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</td>
                   <td class="px-3 py-4 text-center font-bold text-slate-700 whitespace-nowrap">
                     ₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}

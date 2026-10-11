@@ -94,21 +94,21 @@ const executeConfirm = async () => {
 const DEPARTMENTS = ['CCS', 'CHS', 'CEA', 'CAS', 'CTHBM', 'CTDE'];
 // Fixed categorical order (validated for colour-vision deficiency); a department keeps its hue everywhere.
 const DEPARTMENT_COLORS = {
-  CCS: '#D99A1E',
-  CHS: '#8466CC',
-  CEA: '#1F9E8F',
-  CAS: '#C9577E',
-  CTHBM: '#6E9A2C',
-  CTDE: '#2A5FB0'
+  CCS: '#FFD000',
+  CHS: '#A855F7',
+  CEA: '#9CA3AF',
+  CAS: '#FF2D2D',
+  CTHBM: '#16D94F',
+  CTDE: '#2F80FF'
 };
-const DEFAULT_DEPT_COLOR = '#A3B1C4';
+const DEFAULT_DEPT_COLOR = '#CBD5E1';
 const deptColor = (dept) => DEPARTMENT_COLORS[dept] || DEFAULT_DEPT_COLOR;
 
 // Chart styling shared by both canvases (presentation only).
 const CHART_FONT = "'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif";
-const SERIES_PRIMARY = '#1E4A8D';
-const SERIES_MALE = '#2A5FB0';
-const SERIES_FEMALE = '#D99A1E';
+const SERIES_PRIMARY = '#3B82F6';
+const SERIES_MALE = '#3B82F6';
+const SERIES_FEMALE = '#EC4899';
 const INK = '#33475F';
 const INK_MUTED = '#8597AD';
 const GRID = '#EDF2F8';
@@ -329,7 +329,7 @@ const renderCharts = () => {
             label: 'Male',
             data: maleData,
             backgroundColor: SERIES_MALE,
-            hoverBackgroundColor: '#1E4A8D',
+            hoverBackgroundColor: '#2563EB',
             // 2px surface-coloured gap between the stacked segments.
             borderColor: '#FFFFFF',
             borderWidth: { right: 2 },
@@ -342,7 +342,7 @@ const renderCharts = () => {
             label: 'Female',
             data: femaleData,
             backgroundColor: SERIES_FEMALE,
-            hoverBackgroundColor: '#C2850F',
+            hoverBackgroundColor: '#DB2777',
             borderRadius: { topRight: 6, bottomRight: 6 },
             borderSkipped: false,
             barThickness: 16,
@@ -426,8 +426,8 @@ const renderCharts = () => {
         datasets: [{
           label: 'Bookings',
           data: lineData,
-          backgroundColor: numeric.map((_, i) => (i === peakIndex ? SERIES_PRIMARY : '#C9D7EC')),
-          hoverBackgroundColor: numeric.map((_, i) => (i === peakIndex ? '#163870' : '#9FB6D9')),
+          backgroundColor: numeric.map((_, i) => (i === peakIndex ? SERIES_PRIMARY : '#93C5FD')),
+          hoverBackgroundColor: numeric.map((_, i) => (i === peakIndex ? '#2563EB' : '#60A5FA')),
           borderRadius: { topLeft: 6, topRight: 6 },
           borderSkipped: false,
           maxBarThickness: 24,
@@ -645,7 +645,7 @@ const loadError = ref('');
             <div class="admin-card-head">
               <div>
                 <h2 id="courses-title">Active residents by course</h2>
-                <p>Select a course to open its residents in the residency registry</p>
+                <p>Select a course to open its residents in the emergency registry residence report</p>
               </div>
               <button type="button" @click="openCourseModal" class="admin-btn admin-btn-secondary">
                 <i class="fa-solid fa-sliders" aria-hidden="true"></i> Manage courses
@@ -698,14 +698,9 @@ const loadError = ref('');
                 <span><strong>Compliance &amp; expiry</strong><small>Legal document status and permit expiry dates</small></span>
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </router-link>
-              <router-link to="/admin/reports/transactions">
-                <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-clock-rotate-left"></i></span>
-                <span><strong>Reservation history</strong><small>Reservation transactions across properties</small></span>
-                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
-              </router-link>
               <router-link to="/admin/emergency-monitoring">
                 <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-house-medical"></i></span>
-                <span><strong>Emergency residency registry</strong><small>Residents and emergency contacts by area</small></span>
+                <span><strong>Emergency registry residence report</strong><small>Residents and emergency contacts by area</small></span>
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </router-link>
             </nav>
@@ -800,3 +795,14 @@ const loadError = ref('');
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Brighter progress lines */
+.admin-ring .fill { stroke: #3B82F6; }
+.admin-ring .track { stroke: #DBEAFE; }
+.admin-course-track { height: 10px; background: #E2E8F0; }
+
+/* Top-rated card: bright orange badge */
+.admin-feature-icon { background: #ff9f0a !important; color: #fff !important; }
+.admin-course-track { height: 12px; }
+</style>

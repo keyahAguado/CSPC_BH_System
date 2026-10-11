@@ -5,6 +5,10 @@ import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
 import { getComplianceStatus } from '../config/complianceHelper.js';
 import { MAX_FEATURES, SITE_SETTING_KEYS, settingsFromRows } from '../config/siteContent.js';
+import {
+    APPLICATION_STATUS, REVIEWABLE,
+    issueActivationToken, recordStatusChange, ACTIVATION_TTL_DAYS
+} from '../config/applicationWorkflow.js';
 
 const router = express.Router();
 
@@ -434,7 +438,10 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
         const [applications] = await pool.query(`
             SELECT 
                 ${EXPLICIT_BH_COLUMNS},
-                u.name as owner_name, u.email as owner_email 
+                u.name as owner_name, (CASE WHEN u.email LIKE '%@applicant.invalid' THEN NULL ELSE u.email END) as owner_email,
+                u.phone as owner_phone,
+                bh.reference_no, bh.application_status,
+                (u.role = 'owner' AND u.status = 'pending' AND u.password IS NULL AND u.google_id IS NULL) AS awaiting_credentials
             FROM boarding_houses bh 
             JOIN users u ON bh.owner_id = u.id 
             WHERE bh.house_status = 'pending' OR bh.document_update_pending = 1
@@ -472,7 +479,10 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
             permit_key: c.house_id === null ? (standardKeys[c.id] || null) : null
         }));
 
-        res.json({ success: true, applications, criteria, checklistResults, dynamicDocs });
+        // Query 5: every file uploaded per legal document (multiple images / PDF)
+        const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
+
+        res.json({ success: true, applications, criteria, checklistResults, dynamicDocs, permitFiles });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -496,7 +506,7 @@ router.get('/applications/registered', authenticateToken, verifyAdmin, async (re
             SELECT 
                 ${EXPLICIT_BH_COLUMNS},
                 u.name as owner_name, 
-                u.email as owner_email, 
+                (CASE WHEN u.email LIKE '%@applicant.invalid' THEN NULL ELSE u.email END) as owner_email, 
                 u.phone as owner_phone, 
                 u.address as owner_address,
                 u.profile_pic as profile_pic,
@@ -532,7 +542,8 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
         const [houses] = await pool.query(`
             SELECT 
                 ${EXPLICIT_BH_COLUMNS},
-                u.name as owner_name, u.email as owner_email, u.phone as owner_phone, u.address as owner_address,
+                u.name as owner_name, (CASE WHEN u.email LIKE '%@applicant.invalid' THEN NULL ELSE u.email END) as owner_email, u.phone as owner_phone, u.address as owner_address,
+                u.profile_pic as profile_pic, bh.archive_reason, bh.archived_at,
                 (SELECT AVG(rating) FROM reviews WHERE house_id = bh.id) as avg_rating,
                 (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) as review_count
             FROM boarding_houses bh
@@ -722,7 +733,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
     try {
         await connection.beginTransaction();
 
-        const [house] = await connection.query('SELECT owner_id, name FROM boarding_houses WHERE id = ?', [houseId]);
+        const [house] = await connection.query('SELECT owner_id, name, reference_no, application_status FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
@@ -744,7 +755,35 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
             [admin_comments && admin_comments.trim() !== 'Accredited' ? admin_comments.trim() : null, houseId]
         );
 
-        await connection.query('UPDATE users SET status = ? WHERE id = ?', ['active', owner_id]);
+        // Property-first applicant (pending owner, no password, no Google link): the account is
+        // NOT activated here. A one-time activation link lets the applicant set their own password.
+        const [ownerRows] = await connection.query('SELECT id, name, email, role, status, password, google_id FROM users WHERE id = ? FOR UPDATE', [owner_id]);
+        const owner = Array.isArray(ownerRows) ? ownerRows[0] : null;
+        let activation = null;
+        // Repeated approvals (e.g. a later document re-check) never re-issue links or re-record the decision.
+        const alreadyApproved = ['APPROVED', 'ACCOUNT_PENDING', 'ACTIVE'].includes(house[0].application_status);
+        const awaitingActivation = Boolean(owner && owner.role === 'owner' && owner.status === 'pending' && !owner.password && !owner.google_id);
+        if (awaitingActivation && alreadyApproved) {
+            // Activation already issued; the applicant can request a fresh link from Track My Application.
+        } else if (awaitingActivation) {
+            const reference_no = house[0].reference_no || `BH-${new Date().getFullYear()}-${String(houseId).padStart(5, '0')}`;
+            if (!house[0].reference_no) {
+                await connection.query('UPDATE boarding_houses SET reference_no = ? WHERE id = ?', [reference_no, houseId]);
+            }
+            // The owner opens the activation link from Track My Application; it is not shown to SASO.
+            await issueActivationToken(connection, owner_id);
+            activation = { name: owner.name, house_name: house[0].name, reference_no, expires_in_days: ACTIVATION_TTL_DAYS };
+        } else {
+            await connection.query('UPDATE users SET status = ? WHERE id = ?', ['active', owner_id]);
+        }
+
+        // Tracked applications move to ACCOUNT_PENDING (awaiting activation) or ACTIVE.
+        if (house[0].application_status && !alreadyApproved) {
+            const next = activation ? APPLICATION_STATUS.ACCOUNT_PENDING : APPLICATION_STATUS.ACTIVE;
+            await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [next, houseId]);
+            await recordStatusChange(connection, { houseId, from: house[0].application_status, to: APPLICATION_STATUS.APPROVED, remarks: admin_comments && admin_comments.trim() !== 'Accredited' ? admin_comments.trim() : 'Application approved', actorType: 'admin', actorId: req.user.id, withSnapshot: true });
+            await recordStatusChange(connection, { houseId, from: APPLICATION_STATUS.APPROVED, to: next, remarks: activation ? 'Owner account activation link issued' : 'Linked to active owner account', actorType: 'system' });
+        }
 
         await connection.query('DELETE FROM checklist_results WHERE house_id = ?', [houseId]);
         if (checklist && checklist.length > 0) {
@@ -758,6 +797,8 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
             [owner_id, approveMsg]);
 
         await connection.commit();
+
+        if (activation) return res.json({ success: true, activation });
         res.json({ success: true });
     } catch (err) {
         await connection.rollback();
@@ -778,6 +819,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
 router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejection'), async (req, res) => {
     const houseId = req.params.id;
     const { admin_comments } = req.body;
+    const finalRejection = req.body.decision === 'reject';
 
     if (!admin_comments || !admin_comments.trim()) {
         return res.status(400).json({ success: false, message: 'Administrative feedback comments are required.' });
@@ -787,7 +829,7 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
     try {
         await connection.beginTransaction();
 
-        const [house] = await connection.query('SELECT owner_id, name, house_status FROM boarding_houses WHERE id = ?', [houseId]);
+        const [house] = await connection.query('SELECT owner_id, name, house_status, application_status, reference_no FROM boarding_houses WHERE id = ?', [houseId]);
         if (house.length === 0) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Record not found.' });
@@ -796,12 +838,19 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
         const isNewApplication = house[0].house_status === 'pending';
 
         if (isNewApplication) {
+            // Tracked applications can be closed for good; everything else keeps the revise-and-resubmit behaviour.
+            const closeApplication = finalRejection && Boolean(house[0].application_status);
             await connection.query(
                 `UPDATE boarding_houses
-                 SET house_status = 'rejected', is_resubmission = 1, document_update_pending = 0, admin_comments = ?
+                 SET house_status = 'rejected', is_resubmission = ?, document_update_pending = 0, admin_comments = ?
                  WHERE id = ?`,
-                [admin_comments, houseId]
+                [closeApplication ? 0 : 1, admin_comments, houseId]
             );
+            if (house[0].application_status) {
+                const next = closeApplication ? APPLICATION_STATUS.REJECTED : APPLICATION_STATUS.REVISION_REQUIRED;
+                await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [next, houseId]);
+                await recordStatusChange(connection, { houseId, from: house[0].application_status, to: next, remarks: admin_comments, actorType: 'admin', actorId: req.user.id });
+            }
             const rejectMsg = `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, rejectMsg]);
@@ -836,6 +885,51 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
     }
 });
 
+
+// 10.5 Application workflow (Track My Application)
+// POST - SASO starts reviewing a submitted/resubmitted application: applicant edits are locked.
+router.post('/applications/:id/start-review', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [rows] = await connection.query('SELECT id, application_status FROM boarding_houses WHERE id = ? FOR UPDATE', [req.params.id]);
+        if (rows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Application not found.' });
+        }
+        const current = rows[0].application_status;
+        if (!REVIEWABLE.has(current)) {
+            await connection.rollback();
+            return res.json({ success: true, status: current, changed: false });
+        }
+        await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [APPLICATION_STATUS.UNDER_REVIEW, req.params.id]);
+        await recordStatusChange(connection, { houseId: rows[0].id, from: current, to: APPLICATION_STATUS.UNDER_REVIEW, remarks: 'SASO started the review', actorType: 'admin', actorId: req.user.id });
+        await connection.commit();
+        res.json({ success: true, status: APPLICATION_STATUS.UNDER_REVIEW, changed: true });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Start review error:', err.code || err.message);
+        res.status(500).json({ success: false, message: 'Could not update the application status.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// GET - Full status history (reviewer remarks, resubmissions) of one application.
+router.get('/applications/:id/history', authenticateToken, verifyAdmin, async (req, res) => {
+    try {
+        const [history] = await pool.query(
+            `SELECT h.from_status, h.to_status, h.remarks, h.actor_type, h.created_at, u.name AS actor_name
+             FROM application_status_history h LEFT JOIN users u ON u.id = h.actor_id AND h.actor_type = 'admin'
+             WHERE h.house_id = ? ORDER BY h.created_at ASC, h.id ASC`,
+            [req.params.id]
+        );
+        res.json({ success: true, history });
+    } catch (err) {
+        console.error('Application history error:', err.code || err.message);
+        res.status(500).json({ success: false, message: 'Could not load the application history.' });
+    }
+});
 
 // ===================================================================
 // 11. Custom criteria actions (Guarded from modification of global defaults)
@@ -1148,9 +1242,23 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                 bh.id,
                 bh.name,
                 bh.location AS address,
+                bh.barangay,
                 bh.house_status,
                 u.name AS owner_name,
                 u.phone AS owner_phone,
+                (
+                    SELECT COUNT(*)
+                    FROM occupants o
+                    INNER JOIN rooms ro ON o.room_id = ro.id
+                    WHERE ro.house_id = bh.id
+                      AND ro.deleted_at IS NULL
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                ) AS occupied_beds,
+                (
+                    SELECT MAX(h.created_at)
+                    FROM application_status_history h
+                    WHERE h.house_id = bh.id AND h.to_status = 'APPROVED'
+                ) AS approved_at,
                 SUM(CASE WHEN r.gender_type = 'male' THEN 1 ELSE 0 END) AS male_rooms,
                 SUM(CASE WHEN r.gender_type = 'female' THEN 1 ELSE 0 END) AS female_rooms,
                 COUNT(r.id) AS total_rooms,
@@ -1188,7 +1296,7 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
             LEFT JOIN users u ON bh.owner_id = u.id
             LEFT JOIN rooms r ON bh.id = r.house_id AND r.deleted_at IS NULL
             WHERE bh.house_status = 'accredited'
-            GROUP BY bh.id, bh.name, bh.location, bh.house_status, u.name, u.phone
+            GROUP BY bh.id, bh.name, bh.location, bh.barangay, bh.house_status, u.name, u.phone
             ORDER BY bh.name ASC
         `);
 
@@ -1285,6 +1393,7 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
                     bh.location AS house_location,
                     bh.barangay AS house_barangay,
                     bh.phone_contact AS house_owner_phone,
+                    (SELECT ou.name FROM users ou WHERE ou.id = bh.owner_id) AS house_owner_name,
                     COALESCE(u.name, o.name, 'N/A') AS resident_name,
                     COALESCE(u.email, 'N/A') AS student_email,
                     COALESCE(u.phone, o.contact_number, 'N/A') AS student_phone,

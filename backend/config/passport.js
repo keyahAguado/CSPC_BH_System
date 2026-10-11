@@ -74,6 +74,10 @@ passport.use(new GoogleStrategy({
 
             // 2. Try to find by email (returning owner with existing account)
             [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+            // Property-first registrant awaiting SASO approval: do not link or sign in yet.
+            if (rows.length > 0 && rows[0].role === 'owner' && rows[0].status === 'pending' && !rows[0].password && !rows[0].google_id) {
+                return done(null, { pendingRegistration: true, email });
+            }
             if (rows.length > 0) {
                 await pool.query('UPDATE users SET google_id = ? WHERE email = ?', [profile.id, email]);
                 const [updated] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);

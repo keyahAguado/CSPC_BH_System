@@ -1,15 +1,21 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 
 const houses = ref([]);
 const reportDate = ref('');
 const searchQuery = ref('');
+
+// Pagination (screen only; the printed copy lists every house)
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+watch(searchQuery, () => { currentPage.value = 1; });
 const isLoading = ref(true);
 
 const filteredHouses = computed(() => {
@@ -53,186 +59,168 @@ onMounted(() => {
 });
 
 const loadError = ref('');
+
+const formatDay = (v) => {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredHouses.value.length / itemsPerPage.value)));
+const startItemIndex = computed(() => (filteredHouses.value.length ? (currentPage.value - 1) * itemsPerPage.value + 1 : 0));
+const endItemIndex = computed(() => Math.min(currentPage.value * itemsPerPage.value, filteredHouses.value.length));
+const onPage = (i) => i + 1 >= startItemIndex.value && i + 1 <= endItemIndex.value;
+
+// Summary tiles (all accredited houses, not just the search results)
+const totals = computed(() => houses.value.reduce((t, h) => {
+  t.rooms += Number(h.total_rooms || 0);
+  t.maleRooms += Number(h.male_rooms || 0);
+  t.femaleRooms += Number(h.female_rooms || 0);
+  t.capacity += Number(h.total_capacity || 0);
+  t.occupants += Number(h.occupied_beds ?? h.current_occupants ?? 0);
+  t.boys += Number(h.male_count || 0);
+  t.girls += Number(h.female_count || 0);
+  return t;
+}, { rooms: 0, maleRooms: 0, femaleRooms: 0, capacity: 0, occupants: 0, boys: 0, girls: 0 }));
 </script>
 
 <template>
-  <div class="management-page min-h-screen bg-slate-100 flex flex-col font-sans">
-    
-    <!-- Admin Navigation / Menu Bar (Mawawala kapag nag-print dahil sa no-print class) -->
-    <div class="no-print">
-      <AdminNav />
-    </div>
+  <div class="management-page bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
+    <div class="no-print"><AdminNav /></div>
 
-    <!-- Main Content / Report Container -->
-    <div id="management-content" tabindex="-1" class="management-content">
-<LoadError :message="loadError" />
-<PageHeader title="Accredited masterlist" description="Review and print institutional records." />
-      <div class="max-w-[1000px] mx-auto bg-white p-4 sm:p-12 shadow-xl rounded-2xl border-t-8 border-[#2a528a] text-left relative">
-        
-        <!-- Header -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b-2 border-slate-100 pb-6 sm:pb-8 mb-6 sm:mb-8 gap-4">
-          <div class="flex items-center gap-4 sm:gap-6">
-            <img src="/img/CSPC_logo.png" class="w-16 h-16 sm:w-20 sm:h-20 object-contain" />
-            <div>
-              <h1 class="text-base sm:text-2xl font-semibold text-slate-800 uppercase tracking-tight">Camarines Sur Polytechnic Colleges</h1>
-              <p class="text-[12px] sm:text-xs font-bold text-slate-500 uppercase tracking-wide">Office of Student Affairs and Services (SASO)</p>
-            </div>
-          </div>
-          <div class="text-left sm:text-right w-full sm:w-auto flex justify-between sm:block border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
-            <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Report Date</p>
-            <p class="font-bold text-slate-800 text-sm sm:text-base">{{ reportDate }}</p>
-          </div>
-        </div>
+    <main id="management-content" tabindex="-1" class="management-content report-wide">
+      <LoadError :message="loadError" />
 
-        <!-- Title & Control Section -->
-        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 sm:mb-8 gap-4 no-print">
-          <h2 class="text-sm sm:text-xl font-semibold text-[#2a528a] uppercase tracking-normal sm:tracking-normal">Accredited Boarding Houses Masterlist</h2>
-          
-          <!-- Single Search Input -->
-          <div class="relative w-full sm:w-64">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
-              <i class="fa-solid fa-magnifying-glass text-xs"></i>
-            </span>
-            <input aria-label="SEARCH MASTERLIST..." type="text" v-model="searchQuery" placeholder="SEARCH MASTERLIST..."
-                class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-bold tracking-wide focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
-          </div>
-        </div>
-
-        <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block print:block overflow-hidden rounded-xl border border-slate-200 table-container mb-12">
-          <table class="w-full text-left" id="masterlistTable">
-            <thead class="bg-slate-50 border-b border-slate-200">
-              <tr class="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">
-                <th class="px-4 py-4">#</th>
-                <th class="px-4 py-4">Boarding House</th>
-                <th class="px-4 py-4">Owner / Contact</th>
-                <th class="px-4 py-4">Rooms (M/F)</th>
-                <th class="px-4 py-4">Capacity</th>
-                <th class="px-4 py-4 text-center">Occupants</th>
-                <th class="px-4 py-4 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody class="text-[12px] text-slate-600">
-              <tr v-if="filteredHouses.length === 0">
-                <td colspan="7" class="px-4 py-12 text-center text-slate-400 font-bold uppercase tracking-wide">No accredited boarding houses found</td>
-              </tr>
-              <tr v-else v-for="(h, i) in filteredHouses" :key="h.id" class="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
-                <td class="px-4 py-4 font-bold text-slate-400">{{ i + 1 }}</td>
-                <td class="px-4 py-4">
-                  <p class="font-semibold text-slate-900 uppercase leading-none">{{ h.name }}</p>
-                  <p class="text-[12px] text-slate-400 italic font-medium mt-1">{{ h.address }}</p>
-                </td>
-                <td class="px-4 py-4 font-bold">
-                  <span class="text-slate-700">{{ h.owner_name }}</span><br />
-                  <span class="text-[12px] text-slate-400">{{ h.owner_phone }}</span>
-                </td>
-                <td class="px-4 py-4">
-                  <div class="flex gap-2">
-                    <span class="text-blue-500 font-semibold">{{ h.male_rooms }}M</span>
-                    <span class="text-pink-500 font-semibold">{{ h.female_rooms }}F</span>
-                  </div>
-                  <p class="text-[12px] text-slate-400 uppercase font-semibold tracking-tighter">{{ h.total_rooms }} Total Rooms</p>
-                </td>
-                <td class="px-4 py-4 font-semibold text-slate-800">{{ h.total_capacity || 0 }} Pax</td>
-                <td class="px-4 py-4 text-center">
-                  <p class="font-semibold text-[#2a528a]">{{ h.current_occupants || 0 }}</p>
-                  <p class="text-[12px] text-slate-400 font-semibold uppercase tracking-tighter">Students</p>
-                  <div class="flex gap-1.5 justify-center mt-1">
-                    <span class="text-blue-500 font-semibold text-[12px]">{{ h.male_count || 0 }}B</span>
-                    <span class="text-pink-500 font-semibold text-[12px]">{{ h.female_count || 0 }}G</span>
-                  </div>
-                </td>
-                <td class="px-4 py-4 text-center">
-                  <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[12px] font-semibold uppercase tracking-wide border border-emerald-100">
-                    {{ h.house_status }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
-        <div class="block md:hidden print:hidden space-y-4 mb-8">
-          <div v-if="filteredHouses.length === 0" class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-400 font-bold uppercase text-xs">
-            No accredited boarding houses found
-          </div>
-          <div v-else v-for="(h, i) in filteredHouses" :key="h.id" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-              <span class="text-xs font-semibold text-slate-400">#{{ i + 1 }}</span>
-              <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[12px] font-semibold uppercase tracking-wide border border-emerald-100">
-                {{ h.house_status }}
-              </span>
-            </div>
-            
-            <div class="divide-y divide-slate-100 text-xs">
-              <div class="px-4 py-2.5 flex justify-between items-center">
-                <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider">Boarding House</span>
-                <div class="text-right">
-                  <p class="font-semibold text-slate-900 uppercase">{{ h.name }}</p>
-                  <p class="text-[12px] text-slate-500 italic">{{ h.address }}</p>
-                </div>
-              </div>
-
-              <div class="px-4 py-2.5 flex justify-between items-center">
-                <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider">Owner / Contact</span>
-                <div class="text-right font-bold">
-                  <p class="text-slate-700">{{ h.owner_name }}</p>
-                  <p class="text-[12px] text-slate-400">{{ h.owner_phone }}</p>
-                </div>
-              </div>
-
-              <div class="px-4 py-2.5 flex justify-between items-center">
-                <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider">Rooms (M/F)</span>
-                <div class="text-right">
-                  <div class="flex gap-2 justify-end">
-                    <span class="text-blue-500 font-semibold">{{ h.male_rooms }}M</span>
-                    <span class="text-pink-500 font-semibold">{{ h.female_rooms }}F</span>
-                  </div>
-                  <p class="text-[12px] text-slate-400 uppercase font-bold">{{ h.total_rooms }} Total Rooms</p>
-                </div>
-              </div>
-
-              <div class="px-4 py-2.5 flex justify-between items-center">
-                <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider">Capacity</span>
-                <span class="font-semibold text-slate-800">{{ h.total_capacity || 0 }} Pax</span>
-              </div>
-
-              <div class="px-4 py-2.5 flex justify-between items-center">
-                <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider">Occupants</span>
-                <div class="text-right">
-                  <span class="font-semibold text-[#2a528a]">{{ h.current_occupants || 0 }} Students</span>
-                  <div class="flex gap-2 justify-end mt-0.5">
-                    <span class="text-blue-500 font-semibold text-[12px]">{{ h.male_count || 0 }} Boys</span>
-                    <span class="text-pink-500 font-semibold text-[12px]">{{ h.female_count || 0 }} Girls</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer / Signatories (Single Line Row Layout with Generous Spacing) -->
-        <div class="grid grid-cols-2 gap-8 mt-16 sm:mt-24 pt-10 sm:pt-12 mt-auto text-center signatories-block">
+      <!-- Printed letterhead (paper copy only) -->
+      <div class="print-letterhead hidden print:flex">
+        <div class="flex items-center gap-4">
+          <img src="/img/CSPC_logo.png" class="w-16 h-16 object-contain" alt="CSPC logo" />
           <div>
-            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
-            <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-600">PREPARED BY: SASO COORDINATOR</p>
-          </div>
-          <div>
-            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
-            <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-600">APPROVED BY: SASO DIRECTOR</p>
+            <p class="text-lg font-bold uppercase">Camarines Sur Polytechnic Colleges</p>
+            <p class="text-xs font-semibold uppercase">Office of Student Affairs and Services (SASO)</p>
+            <p class="text-sm font-bold uppercase mt-1">Accredited Boarding Houses Masterlist</p>
           </div>
         </div>
-
-        <!-- Print Action -->
-        <div class="mt-12 sm:mt-16 flex justify-center no-print">
-          <button @click="handlePrint" class="w-full sm:w-auto bg-[#2a528a] hover:bg-slate-800 text-white font-semibold px-8 sm:px-12 py-4 rounded-xl transition uppercase text-[12px] tracking-wide flex items-center justify-center gap-3 shadow-lg management-button management-button-primary">
-            <i class="fa-solid fa-print"></i> Print / Download PDF
-          </button>
+        <div class="text-right">
+          <p class="text-[11px] font-semibold uppercase">Report date</p>
+          <p class="text-sm font-bold">{{ reportDate }}</p>
         </div>
-
       </div>
-    </div>
+
+      <div class="no-print">
+        <PageHeader title="Accredited masterlist" description="All SASO-accredited boarding houses with rooms, capacity, and current occupants." />
+
+        <!-- Summary tiles -->
+        <dl class="ml-tiles">
+          <div><dt><i class="fa-solid fa-house-circle-check" aria-hidden="true"></i> Accredited houses</dt><dd>{{ isLoading ? '…' : houses.length }}</dd></div>
+          <div><dt><i class="fa-solid fa-door-open" aria-hidden="true"></i> Rooms</dt><dd>{{ isLoading ? '…' : totals.rooms }}</dd><span class="ml-tile-sub"><span class="text-blue-600">{{ totals.maleRooms }} male</span> · <span class="text-pink-600">{{ totals.femaleRooms }} female</span></span></div>
+          <div><dt><i class="fa-solid fa-bed" aria-hidden="true"></i> Bed capacity</dt><dd>{{ isLoading ? '…' : totals.capacity }}</dd></div>
+          <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> Current occupants</dt><dd>{{ isLoading ? '…' : totals.occupants }}</dd><span class="ml-tile-sub"><span class="text-blue-600">{{ totals.boys }} male</span> · <span class="text-pink-600">{{ totals.girls }} female</span></span></div>
+        </dl>
+
+        <!-- Toolbar -->
+        <div class="ml-toolbar">
+          <div class="ml-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input v-model="searchQuery" type="text" aria-label="Search masterlist" placeholder="Search by boarding house, owner, or address..." />
+          </div>
+          <span class="ml-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
+          <button type="button" class="ml-print" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
+        </div>
+      </div>
+
+      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 gap-6 no-print">
+        <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+
+      <div v-else class="masterlist-body">
+        <!-- LAPTOP / DESKTOP + PRINT: table -->
+        <div class="masterlist-card hidden md:flex md:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+
+          <div class="masterlist-scroll overflow-x-auto">
+            <table class="ml-table w-full" id="masterlistTable">
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col" class="text-left">Boarding house<small>Address / barangay</small></th>
+                  <th scope="col" class="text-left">Owner / contact</th>
+                  <th scope="col">Total rooms</th>
+                  <th scope="col">Bed capacity<small>Beds</small></th>
+                  <th scope="col">Current occupants<small>Male / female</small></th>
+                  <th scope="col">Accreditation<small>Approval date</small></th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="filteredHouses.length === 0">
+                  <td colspan="8" class="py-16 text-center text-slate-500 font-semibold text-sm">No accredited boarding houses found.</td>
+                </tr>
+                <tr v-for="(h, i) in filteredHouses" :key="h.id" :class="{ 'ml-off-page': !onPage(i) }">
+                  <td class="text-slate-600">{{ i + 1 }}</td>
+                  <td class="text-left">
+                    <strong class="ml-name">{{ h.name }}</strong>
+                    <span class="block text-slate-500 text-xs mt-0.5 print:hidden">{{ h.address || '—' }}</span>
+                    <span v-if="h.barangay" class="block text-slate-500 text-xs print:hidden">Brgy. {{ h.barangay }}</span>
+                  </td>
+                  <td class="text-left">
+                    <span class="block text-slate-800">{{ h.owner_name }}</span>
+                    <span class="block text-slate-500 text-xs mt-1"><i class="fa-solid fa-phone text-[#1e4a8d] mr-1.5" aria-hidden="true"></i>{{ h.owner_phone || '—' }}</span>
+                  </td>
+                  <td>{{ h.total_rooms || 0 }}</td>
+                  <td>{{ h.total_capacity || 0 }}</td>
+                  <td>
+                    <span class="ml-mf"><span class="text-blue-600">{{ h.male_count || 0 }} M</span><span class="ml-sep">|</span><span class="text-pink-600">{{ h.female_count || 0 }} F</span></span>
+                    <span class="block text-slate-500 text-xs mt-0.5">{{ h.occupied_beds ?? h.current_occupants ?? 0 }} / {{ h.total_capacity || 0 }} total</span>
+                  </td>
+                  <td>{{ h.approved_at ? formatDay(h.approved_at) : '—' }}</td>
+                  <td><span class="ml-status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>{{ h.house_status }}</span></td>
+                </tr>
+              </tbody>
+              <tfoot class="sig-spacer-row" aria-hidden="true"><tr><td colspan="8"></td></tr></tfoot>
+            </table>
+          </div>
+                    <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+
+        </div>
+
+        <!-- PHONE: cards -->
+        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+        </div>
+        <div class="block md:hidden print:hidden space-y-3">
+          <div v-if="filteredHouses.length === 0" class="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 font-semibold text-sm">No accredited boarding houses found.</div>
+          <div v-for="(h, i) in filteredHouses" v-show="onPage(i)" :key="'m-' + h.id" class="ml-card">
+            <div class="flex justify-between items-start gap-3">
+              <div class="min-w-0">
+                <span class="text-[12px] font-semibold text-slate-400">#{{ i + 1 }}</span>
+                <p class="font-semibold text-slate-900 leading-tight">{{ h.name }}</p>
+                <p class="text-xs text-slate-500 mt-0.5">{{ h.address || '—' }}</p>
+              </div>
+              <span class="ml-chip">{{ h.house_status }}</span>
+            </div>
+            <p class="text-xs text-slate-600 mt-2">{{ h.owner_name }}<span v-if="h.owner_phone" class="text-slate-400"> · {{ h.owner_phone }}</span></p>
+            <dl class="ml-card-facts">
+              <div><dt>Rooms</dt><dd>{{ h.total_rooms || 0 }} <small>({{ h.male_rooms || 0 }} M · {{ h.female_rooms || 0 }} F)</small></dd></div>
+              <div><dt>Capacity</dt><dd>{{ h.total_capacity || 0 }} beds</dd></div>
+              <div><dt>Occupants</dt><dd>{{ h.occupied_beds ?? h.current_occupants ?? 0 }} <small>({{ h.male_count || 0 }} M · {{ h.female_count || 0 }} F)</small></dd></div>
+              <div><dt>Approved</dt><dd>{{ h.approved_at ? formatDay(h.approved_at) : '—' }}</dd></div>
+            </dl>
+          </div>
+        </div>
+
+        <!-- Signatories (paper copy only) -->
+        <div class="hidden print:grid grid-cols-2 gap-8 text-center signatories-block">
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[12px] font-semibold uppercase tracking-wide">Prepared by: SASO Coordinator</p>
+          </div>
+          <div>
+            <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
+            <p class="text-[12px] font-semibold uppercase tracking-wide">Approved by: SASO Director</p>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -302,5 +290,98 @@ const loadError = ref('');
     padding-top: 2rem !important;
     page-break-inside: avoid !important;
   }
+}
+</style>
+
+<style scoped>
+/* Same layout as the other admin lists: one screen on laptop, table scrolls inside its card */
+@media screen and (min-width: 768px) {
+  .masterlist-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
+  .masterlist-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
+  .masterlist-fit > main > * { flex-shrink: 0; }
+  .masterlist-fit > main > .masterlist-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .masterlist-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .masterlist-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .masterlist-scroll thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+}
+.ml-off-page { display: none; }
+@media print { .ml-off-page { display: table-row !important; } }
+.masterlist-card { display: flex; flex-direction: column; }
+/* Masterlist table (navy header, grid lines, light striped rows) */
+.ml-table { border-collapse: collapse; min-width: 960px; font-size: 13px; color: #142b4a; }
+.ml-table thead th { position: sticky; top: 0; z-index: 1; padding: 9px 12px; background: #1e4a8d !important; color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.3; border-right: 1px solid rgba(255, 255, 255, .15); text-transform: none; }
+.ml-table thead th small { display: block; font-size: 12px; font-weight: 500; color: #dbe7f7; }
+.ml-table thead th.text-left { text-align: left; }
+.ml-table tbody td { padding: 8px 12px; text-align: center; vertical-align: middle; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+.ml-table tbody td:last-child, .ml-table thead th:last-child { border-right: 0; }
+.ml-table tbody tr:nth-child(even) td { background: #f5f8fd; }
+.ml-table tbody td.text-left { text-align: left; }
+.ml-thumb { width: 64px; height: 48px; flex-shrink: 0; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; }
+.ml-thumb.is-empty { display: flex; align-items: center; justify-content: center; background: #e7eef8; color: #1e4a8d; }
+.ml-name { display: block; font-weight: 700; color: #142b4a; }
+.ml-mf { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; }
+.ml-sep { color: #cbd5e1; font-weight: 400; }
+.ml-status { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: #e3f6ea; color: #15803d; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.ml-status i { font-size: 14px; color: #16a34a; }
+@media print {
+  .ml-table thead th { background: #fff !important; color: #0f172a !important; }
+  .ml-table thead th small { color: #334155 !important; }
+  .ml-thumb { width: 44px; height: 34px; }
+}
+
+.ml-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+@media (min-width: 1024px) { .ml-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ml-tiles > div { padding: 10px 14px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; }
+.ml-tiles dt { font-size: 12px; font-weight: 600; color: #64748b; }
+.ml-tiles dt i { color: #94a3b8; margin-right: 4px; }
+.ml-tiles dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: #142b4a; line-height: 1.2; }
+.ml-tile-sub { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+.ml-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
+.ml-tiles > div.is-primary dd, .ml-tiles > div.is-primary dt i { color: #1e4a8d; }
+
+.ml-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.ml-search { position: relative; flex: 1 1 280px; min-width: 0; }
+.ml-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
+.ml-search input { width: 100%; padding: 12px 16px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; }
+.ml-search input::placeholder { font-weight: 400; color: #94a3b8; }
+.ml-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.ml-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.ml-print { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #dc2626; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ml-print:hover { background: #b91c1c; }
+@media (max-width: 767px) { .ml-print { flex: 1 1 100%; justify-content: center; } }
+
+.ml-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+.ml-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+.ml-card-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
+@media (max-width: 420px) { .ml-card-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ml-card-facts dt { font-size: 11.5px; color: #64748b; }
+.ml-card-facts dd { margin: 1px 0 0; font-size: 13px; font-weight: 700; color: #142b4a; }
+.ml-card-facts small { font-weight: 500; color: #64748b; }
+
+/* Printed letterhead: clear space between the heading rule and the table */
+.print-letterhead { align-items: center; justify-content: space-between; gap: 24px; padding: 4px 0 14px; margin-bottom: 22px; border-bottom: 2px solid #1e293b; }
+@media print {
+  .print-letterhead { display: flex !important; margin-bottom: 22px !important; padding-bottom: 14px !important; }
+}
+
+/* Printed copy / PDF: large, even text in every cell */
+@media print {
+  .ml-table { min-width: 0 !important; width: 100% !important; }
+  .ml-table thead th, .ml-table thead th * { font-size: 9.5pt !important; }
+  .ml-table tbody td, .ml-table tbody td * { font-size: 10.5pt !important; line-height: 1.3 !important; }
+  .ml-table tbody td i { font-size: 9pt !important; }
+  .ml-name { font-weight: 800 !important; }
+  .print-letterhead p { font-size: 10.5pt !important; }
+  .print-letterhead p:first-child { font-size: 14pt !important; }
+  .signatories-block p { font-size: 10pt !important; }
+}
+
+/* Signature lines sit at the bottom of every printed page; the empty table footer
+   (repeated on each page) keeps rows from running underneath them */
+.sig-spacer-row { display: none; }
+@media print {
+  .management-page .signatories-block { position: fixed !important; left: 0 !important; right: 0 !important; bottom: 0 !important; margin: 0 !important; padding: 0 0 4mm !important; background: #fff !important; }
+  .sig-spacer-row { display: table-footer-group !important; }
+  .sig-spacer-row td { height: 26mm !important; border: 0 !important; padding: 0 !important; background: transparent !important; }
 }
 </style>

@@ -13,8 +13,10 @@ RUN npm install
 # 5. Copy the rest of the backend source code
 COPY . .
 
-# 6. Change ownership of application directories to the unprivileged node user
-RUN chown -R node:node /app
+# 6. Change ownership of application directories to the unprivileged node user.
+#    /app/uploads is created here so a fresh media_uploads volume inherits node ownership
+#    (otherwise Docker creates the mount point as root and every upload fails with EACCES).
+RUN mkdir -p /app/uploads && chown -R node:node /app
 
 # 7. Expose the port your Express app listens on
 EXPOSE 3000

@@ -3,6 +3,8 @@ import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
@@ -240,7 +242,7 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
@@ -249,7 +251,7 @@ const loadError = ref('');
       <LoadError :message="loadError" />
 
       <!-- Header Section -->
-      <PageHeader title="Rooms & availability" description="Manage rooms, pricing, and occupants for this property." :eyebrow="house.name" />
+      <PageHeader title="Rooms & availability" :eyebrow="house.name" />
 
       <!-- Loading State -->
       <div v-if="isLoading" class="p-20 text-center bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">

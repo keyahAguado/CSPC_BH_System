@@ -61,7 +61,7 @@ defineExpose({
       </div>
       <div class="flex-1 pr-6 text-left">
         <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-0.5">{{ alert.title }}</h4>
-        <p class="text-[12px] sm:text-[13px] font-bold text-slate-800 leading-snug">{{ alert.message }}</p>
+        <p class="text-[12px] sm:text-[13px] font-bold text-slate-800 leading-snug whitespace-pre-line">{{ alert.message }}</p>
       </div>
       <button @click="closeAlert(alert.id)" class="absolute top-2.5 right-2.5 text-slate-400 hover:text-slate-900 w-6 h-6 rounded-lg flex items-center justify-center hover:bg-slate-100 transition-all">
         <i class="fa-solid fa-xmark text-xs"></i>

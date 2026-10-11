@@ -3,6 +3,8 @@ import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
@@ -72,6 +74,12 @@ const executeConfirm = async () => {
   }
 };
 
+// Rows from manually added non-CSPC boarders share the list with bookings
+const rowKey = (b) => (b.is_non_cspc ? 'nc-' : 'b-') + b.id;
+const refLabel = (b) => (b.is_non_cspc
+  ? (b.reference_no || `NC-${b.id.toString().padStart(4, '0')}`)
+  : `REF-${b.id.toString().padStart(4, '0')}`);
+
 const fetchBookings = async () => {
   loadError.value = '';
   try {
@@ -117,7 +125,8 @@ const filteredBookings = computed(() => {
       b.student_name,
       b.room_number != null ? `Room ${b.room_number}` : '',
       b.room_number != null ? String(b.room_number) : '',
-      b.id != null ? `REF-${b.id.toString().padStart(4, '0')}` : '',
+      b.id != null ? refLabel(b) : '',
+      b.is_non_cspc ? 'non-cspc walk-in' : '',
       b.id != null ? String(b.id) : '',
       b.emergency_contact,
       b.guardian_name,
@@ -374,7 +383,7 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <div class="no-print">
       <OwnerNav />
     </div>
@@ -440,11 +449,11 @@ const loadError = ref('');
               </div>
 
               <!-- Booking Entry Cards -->
-              <div v-for="booking in getAllHouseBookings(hName)" :key="'p-' + booking.id" class="print-booking-card">
+              <div v-for="booking in getAllHouseBookings(hName)" :key="'p-' + rowKey(booking)" class="print-booking-card">
                 <!-- Card Header Row -->
                 <div class="print-card-header">
                   <div class="print-ref-block">
-                    <span class="print-ref-no">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
+                    <span class="print-ref-no">{{ refLabel(booking) }}</span>
                     <span class="print-payment-method">{{ paymentMethodLabel(booking.payment_method) }}</span>
                   </div>
                   <div class="print-status-block">
@@ -530,7 +539,7 @@ const loadError = ref('');
           </div>
         </div>
 
-        <PageHeader title="Reservations" :eyebrow="houseName || 'All properties'" description="Review requests, stay extensions, and existing payment records." />
+        <PageHeader title="Booking" :eyebrow="houseName" />
       </div>
 
       <!-- Main Loader state -->
@@ -566,27 +575,15 @@ const loadError = ref('');
               </select>
             </div>
 
-            <!-- Print Trigger button -->
+          </div>
+
+          <div class="flex items-center gap-3 xl:ml-auto">
+              <!-- Print Trigger button -->
             <button @click="handlePrint"
-                class="bg-[#d9454f] hover:bg-black text-white px-5 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn management-button management-button-primary">
+                class="bg-[#d9454f] hover:bg-[#b8323c] text-white px-5 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn management-button">
               <i class="fa-solid fa-print"></i>
               <span class="cb-pdf-label">Print / Save PDF</span>
             </button>
-
-            <!-- Back to Dashboard — mobile: shows as '<', desktop: full label -->
-            <router-link to="/owner/dashboard"
-                class="cb-back-btn inline-flex items-center gap-2 group text-[12px] font-semibold text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-wide shadow-sm sm:hidden management-button management-button-secondary">
-              <span class="cb-back-short">&lt;</span>
-            </router-link>
-          </div>
-
-          <!-- Right side (desktop only) -->
-          <div class="hidden sm:flex items-center gap-3">
-            <router-link to="/owner/dashboard"
-                class="inline-flex items-center gap-2 group text-[12px] font-semibold text-[#2a528a] bg-white px-4 py-2.5 rounded-xl border border-slate-200 hover:border-[#2a528a] hover:bg-[#2a528a] hover:text-white transition-all duration-300 uppercase tracking-wide shadow-sm management-button management-button-secondary">
-              Back to Dashboard
-              <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
-            </router-link>
           </div>
         </div>
 
@@ -634,70 +631,6 @@ const loadError = ref('');
         <!-- ===== DESKTOP TABLE (hidden on mobile, hidden on print) ===== -->
         <div class="booking-table-wrapper w-full overflow-x-auto shadow-sm rounded-xl border border-slate-200 print:hidden">
           <table class="w-full text-left border-collapse min-w-[1050px] divide-y divide-slate-200" id="bookingsTable">
-            <thead class="bg-slate-100/80 border-b border-slate-300">
-              <tr class="text-slate-800 uppercase text-[12px] font-semibold tracking-wider select-none">
-                <th @click="toggleSort('ref')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center gap-1.5">
-                    REF NO.
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('student')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center gap-1.5">
-                    STUDENT NAME
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('room')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center justify-center gap-1.5">
-                    ROOM (MALE/FEMALE)
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('checkin')" class="px-3 py-3 text-center cursor-pointer hover:bg-slate-200/60 transition" style="min-width:110px">
-                  <div class="flex items-center justify-center gap-1.5">
-                    CHECK-IN /<br/>CHECK-OUT
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('contact')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center justify-center gap-1.5">
-                    EMERGENCY<br/>CONTACT
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('guardian')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center gap-1.5">
-                    GUARDIAN<br/>NAME
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('duration')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center justify-center gap-1.5">
-                    DURATION<br/>&amp; STAY
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('rent')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center justify-center gap-1.5">
-                    RENT /<br/>TOTAL
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('payment')" class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800 cursor-pointer hover:bg-emerald-100/80 transition" style="min-width:160px">
-                  <div class="flex items-center gap-1.5">
-                    INITIAL PAYMENT<br/><span class="font-bold normal-case text-[12px] text-emerald-600">DUE (MOVE-IN)</span>
-                    <i class="fa-solid text-[12px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
-                  </div>
-                </th>
-                <th @click="toggleSort('status')" class="px-4 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                  <div class="flex items-center justify-center gap-1.5">
-                    ACTION /<br/>STATUS
-                    <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                  </div>
-                </th>
-              </tr>
-            </thead>
             <tbody class="text-[12px] font-semibold text-slate-700 divide-y divide-slate-100">
               <template v-for="hName in groupedHouses" :key="hName">
                 
@@ -723,10 +656,74 @@ const loadError = ref('');
                   </td>
                 </tr>
 
+                <!-- Column titles for this boarding house -->
+                <tr class="booking-col-head bg-slate-100/80 border-b border-slate-300 text-slate-800 uppercase text-[12px] font-semibold tracking-wider select-none">
+                  <th @click="toggleSort('ref')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center gap-1.5">
+                      REF NO.
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('student')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center gap-1.5">
+                      STUDENT NAME
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('room')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center justify-center gap-1.5">
+                      ROOM (MALE/FEMALE)
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('checkin')" class="px-3 py-3 text-center cursor-pointer hover:bg-slate-200/60 transition" style="min-width:110px">
+                    <div class="flex items-center justify-center gap-1.5">
+                      CHECK-IN /<br/>CHECK-OUT
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('contact')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center justify-center gap-1.5">
+                      EMERGENCY<br/>CONTACT
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('guardian')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center gap-1.5">
+                      GUARDIAN<br/>NAME
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('duration')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center justify-center gap-1.5">
+                      DURATION<br/>&amp; STAY
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('rent')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center justify-center gap-1.5">
+                      RENT /<br/>TOTAL
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('payment')" class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800 cursor-pointer hover:bg-emerald-100/80 transition" style="min-width:160px">
+                    <div class="flex items-center gap-1.5">
+                      INITIAL PAYMENT<br/><span class="font-bold normal-case text-[12px] text-emerald-600">DUE (MOVE-IN)</span>
+                      <i class="fa-solid text-[12px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                  <th @click="toggleSort('status')" class="px-4 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
+                    <div class="flex items-center justify-center gap-1.5">
+                      ACTION /<br/>STATUS
+                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
+                    </div>
+                  </th>
+                </tr>
+
                 <!-- Bookings Loop (Matches User Screenshot) -->
-                <tr v-for="booking in getHouseBookings(hName)" :key="booking.id" class="hover:bg-slate-50/40 transition-colors">
+                <tr v-for="booking in getHouseBookings(hName)" :key="rowKey(booking)" class="hover:bg-slate-50/40 transition-colors">
                   <td class="px-4 py-6 font-mono text-[12px] leading-relaxed">
-                    <span class="font-bold text-slate-900 text-xs block">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
+                    <span class="font-bold text-slate-900 text-xs block">{{ refLabel(booking) }}</span>
                     <span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wide"
                           :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
                       <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
@@ -735,6 +732,7 @@ const loadError = ref('');
                   </td>
                   <td class="px-4 py-6 font-bold text-slate-900 text-sm whitespace-nowrap">
                     {{ booking.student_name }}
+                    <span v-if="booking.is_non_cspc" class="block mt-1 w-fit px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold">Non-CSPC</span>
                   </td>
                   <td class="px-3 py-6 text-center whitespace-nowrap">
                     <span class="font-bold text-slate-900 text-xs block">Room {{ booking.room_number }}</span>
@@ -788,7 +786,13 @@ const loadError = ref('');
                       </div>
 
                       <!-- Main status actions -->
-                      <div v-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold text-center">
+                      <div v-if="booking.is_non_cspc" class="flex flex-col items-center gap-1">
+                        <span v-if="booking.status === 'completed'" class="bg-slate-100 text-slate-500 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Checked out</span>
+                        <span v-else class="bg-green-100 text-green-700 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Occupying</span>
+                        <span :class="booking.payment_status === 'paid' ? 'text-emerald-600' : 'text-amber-600'" class="text-[12px] font-semibold uppercase tracking-wide">{{ booking.payment_status === 'paid' ? 'Paid' : 'Not paid' }}</span>
+                        <span class="text-[11px] font-semibold text-slate-400 normal-case">Added in room details</span>
+                      </div>
+                      <div v-else-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold text-center">
                         Payment received: review required. No occupancy recorded.
                       </div>
                       <div v-else-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
@@ -857,11 +861,11 @@ const loadError = ref('');
             </div>
 
             <!-- Mobile Booking Cards -->
-            <div v-for="booking in getHouseBookings(hName)" :key="'mc-' + booking.id" class="m-card">
+            <div v-for="booking in getHouseBookings(hName)" :key="'mc-' + rowKey(booking)" class="m-card">
 
               <div class="m-row">
                 <span class="m-lbl">Ref No.</span>
-                <span class="m-val">REF-{{ booking.id.toString().padStart(4, '0') }}</span>
+                <span class="m-val">{{ refLabel(booking) }}</span>
               </div>
               <div class="m-row">
                 <span class="m-lbl">Payment Method</span>
@@ -875,7 +879,7 @@ const loadError = ref('');
               </div>
               <div class="m-row">
                 <span class="m-lbl">Student Name</span>
-                <span class="m-val">{{ booking.student_name }}</span>
+                <span class="m-val">{{ booking.student_name }}<span v-if="booking.is_non_cspc" class="ml-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-semibold">Non-CSPC</span></span>
               </div>
               <div class="m-row">
                 <span class="m-lbl">Room</span>
@@ -925,7 +929,8 @@ const loadError = ref('');
               <div class="m-row m-row-action">
                 <span class="m-lbl">Status</span>
                 <span class="m-val">
-                  <span v-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold">Payment received: review required</span>
+                  <span v-if="booking.is_non_cspc" class="px-2.5 py-1 rounded-full font-semibold text-[12px] uppercase border" :class="booking.status === 'completed' ? 'bg-slate-50 text-slate-500 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'">{{ booking.status === 'completed' ? 'Checked out' : 'Occupying' }} · {{ booking.payment_status === 'paid' ? 'Paid' : 'Not paid' }}</span>
+                  <span v-else-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold">Payment received: review required</span>
                   <span v-else-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-semibold text-[12px] uppercase border border-emerald-200">Confirmed</span>
                   <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-semibold text-[12px] uppercase border border-amber-200">Pending</span>
                   <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-semibold text-[12px] uppercase border border-rose-200">{{ booking.status }}</span>
@@ -936,47 +941,6 @@ const loadError = ref('');
           </template>
         </div>
 
-        <!-- Bottom Pagination Bar — always visible when there are bookings -->
-        <div v-if="filteredBookings.length > 0" class="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 pagination-container no-print print:hidden">
-          <div class="flex items-center gap-4">
-            <span class="text-xs font-bold text-slate-500">
-              Showing <span class="font-semibold text-slate-800">{{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }}</span>
-              to <span class="font-semibold text-slate-800">{{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }}</span>
-              of <span class="font-semibold text-slate-800">{{ filteredBookings.length }}</span> booking{{ filteredBookings.length > 1 ? 's' : '' }}
-            </span>
-            <div class="flex items-center gap-2">
-              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-              <select aria-label="items Per Page" v-model="itemsPerPage" @change="currentPage = 1" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                <option :value="10">10</option>
-                <option :value="25">25</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              type="button"
-              @click="prevPage" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-            </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
-              {{ currentPage }} / {{ totalPages }}
-            </span>
-            <button 
-              type="button"
-              @click="nextPage" 
-              :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-            </button>
-          </div>
-        </div>
       </div>
 
     </main>
@@ -984,6 +948,14 @@ const loadError = ref('');
 </template>
 
 <style>
+/* Column titles under each boarding house */
+.booking-col-head th { background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; border-bottom: 1px solid #dfe7f2; }
+.booking-col-head th * { text-transform: none !important; }
+
+/* Print / Save PDF stays red */
+.cb-pdf-btn { background: #d9454f !important; border-color: #d9454f !important; color: #fff !important; }
+.cb-pdf-btn:hover { background: #b8323c !important; border-color: #b8323c !important; }
+
 /* ======================================================
    MOBILE CARD VIEW — only active below 768 px
 ====================================================== */

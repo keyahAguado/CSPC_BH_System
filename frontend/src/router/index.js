@@ -5,7 +5,6 @@ import { h } from 'vue';
 import HomeView from '../views/HomeView.vue';
 import AccountDeactivated from '../views/AccountDeactivated.vue';
 import Login from '../views/student/Login.vue';
-import Register from '../views/student/Register.vue';
 import AuthSuccess from '../views/student/AuthSuccess.vue';
 import OwnerDetailsRegister from '../views/student/OwnerDetailsRegister.vue';
 
@@ -26,6 +25,8 @@ import OwnerEdit from '../views/owner/EditHouse.vue';
 import OwnerRooms from '../views/owner/Rooms.vue';
 import OwnerProfile from '../views/owner/Profile.vue';
 import OwnerViewDetails from '../views/owner/RoomDetails.vue';
+import TrackApplication from '../views/owner/TrackApplication.vue';
+import ActivateAccount from '../views/owner/ActivateAccount.vue';
 
 // 4. Admin Dashboard Views
 import AdminDashboard from '../views/admin/AdminDashboard.vue';
@@ -33,7 +34,6 @@ import AdminPendingApplications from '../views/admin/PendingApplications.vue';
 import AdminEmergencyMonitoring from '../views/admin/EmergencyMonitoring.vue';
 import ReportMasterlist from '../views/admin/ReportMasterlist.vue';
 import ReportCompliance from '../views/admin/ReportCompliance.vue';
-import ReportTransactions from '../views/admin/ReportTransactions.vue';
 import AdminRegistered from '../views/admin/Registered.vue';
 import AdminArchived from '../views/admin/Archived.vue';
 import AdminUsers from '../views/admin/Users.vue';
@@ -74,8 +74,24 @@ const routes = [
         path: '/register',
         alias: '/users/register',
         name: 'Register',
-        component: Register,
-        meta: { public: true, title: 'Landlord Registration' }
+        // Property-first owner registration: the owner registers the property,
+        // SASO approves it, then SASO issues the reference number, email and password.
+        component: OwnerAccreditation,
+        meta: { public: true, publicRegistration: true, title: 'Register Your Property' }
+    },
+    {
+        // Accountless applicants: reference number only
+        path: '/track',
+        alias: '/track-application',
+        name: 'TrackApplication',
+        component: TrackApplication,
+        meta: { public: true, title: 'Track My Application' }
+    },
+    {
+        path: '/activate-account',
+        name: 'ActivateAccount',
+        component: ActivateAccount,
+        meta: { public: true, title: 'Activate Owner Account' }
     },
     {
         path: '/register/owner-details',
@@ -234,7 +250,7 @@ const routes = [
         path: '/admin/emergency-monitoring',
         name: 'AdminEmergencyMonitoring',
         component: AdminEmergencyMonitoring,
-        meta: { role: 'admin', title: 'Emergency Monitoring Registry' }
+        meta: { role: 'admin', title: 'Emergency Registry Residence Report' }
     },
     {
         path: '/admin/notifications',
@@ -280,11 +296,10 @@ const routes = [
         component: ReportCompliance,
         meta: { role: 'admin', title: 'Accreditation Compliance Audit' }
     },
+    // Reservation history report was removed; old links go to the admin home
     {
         path: '/admin/reports/transactions',
-        name: 'ReportTransactions',
-        component: ReportTransactions,
-        meta: { role: 'admin', title: 'Reservation Transactions Audit' }
+        redirect: '/admin/dashboard'
     }
 ];
 

@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import pool from '../config/db.js';
 import passport from 'passport';
+import { APPLICATION_STATUS, hashActivationToken, isPendingApplicant, recordStatusChange } from '../config/applicationWorkflow.js';
 import '../config/passport.js';
 
 const router = express.Router();
@@ -215,6 +216,13 @@ router.post('/login', validateBody('login'), async (req, res) => {
             });
         }
 
+        if (isPendingApplicant(user)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Your owner account is not active yet. Track your application with your reference number; once SASO approves it, activate your account from there or from the activation link.',
+            });
+        }
+
         if (!user.password) {
             return res.status(400).json({
                 success: false,
@@ -289,16 +297,20 @@ router.get('/google/callback',
         try {
             const user = req.user;
 
-            // ── A. Brand-new owner → redirect to onboarding form ──────────
+            // ── A. Brand-new owner → register the property first ──────────
+            //    Accounts are issued by SASO after the property is approved.
             if (user.isNewOwner) {
                 const params = new URLSearchParams({
-                    onboarding_code: issueOwnerOnboardingGrant(user),
                     email: user.email,
                     name: user.name,
-                    google_id: user.google_id,
-                    pic: user.profilePic || '',
+                    notice: 'register_property',
                 });
-                return res.redirect(`${targetOrigin}/register/owner-details?${params.toString()}`);
+                return res.redirect(`${targetOrigin}/register?${params.toString()}`);
+            }
+
+            // ── A2. Property registration still under SASO review ─────────
+            if (user.pendingRegistration) {
+                return res.redirect(`${targetOrigin}/login?error=pending_approval`);
             }
 
             // ── B. Suspended account ───────────────────────────────────────
@@ -431,6 +443,59 @@ router.post('/register/owner-complete', verifyOwnerOnboarding, validateBody('own
         return res.status(500).json({ success: false, message: 'Server error during registration.' });
     } finally {
         grant.inProgress = false;
+    }
+});
+
+// =========================================================================
+// 6.5 OWNER ACCOUNT ACTIVATION  POST /api/auth/activate
+//     One-time, expiring link issued after SASO approves an application. Applicants register
+//     without an email, so here they choose the email they will log in with and set their own
+//     password; no default or generated passwords are ever used.
+// =========================================================================
+router.post('/activate', validateBody('activation'), async (req, res) => {
+    const emailCheck = validateStrictEmail(req.body.email);
+    if (!emailCheck.valid) return res.status(400).json({ success: false, message: emailCheck.message });
+    if (/@(my\.)?cspc\.edu\.ph$/.test(emailCheck.email)) {
+        return res.status(400).json({ success: false, message: 'Please use a personal email address, not a CSPC institutional email.' });
+    }
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [tokens] = await connection.query(
+            'SELECT id, user_id FROM account_activation_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() FOR UPDATE',
+            [hashActivationToken(req.body.token)]
+        );
+        if (tokens.length === 0) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'This activation link is invalid, already used or expired. Open Track My Application to get a new link.' });
+        }
+        const [users] = await connection.query('SELECT id, email, role, status, password, google_id FROM users WHERE id = ? FOR UPDATE', [tokens[0].user_id]);
+        if (!isPendingApplicant(users[0])) {
+            await connection.query('UPDATE account_activation_tokens SET used_at = NOW() WHERE id = ?', [tokens[0].id]);
+            await connection.commit();
+            return res.status(409).json({ success: false, message: 'This account is already active. Please log in.' });
+        }
+        const userId = users[0].id;
+        const [taken] = await connection.query('SELECT id FROM users WHERE email = ? AND id <> ?', [emailCheck.email, userId]);
+        if (taken.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This email is already used by another account. Please choose a different email.' });
+        }
+        await connection.query("UPDATE users SET email = ?, password = ?, status = 'active' WHERE id = ?", [emailCheck.email, await bcrypt.hash(req.body.password, 10), userId]);
+        await connection.query('UPDATE account_activation_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [userId]);
+        const [approved] = await connection.query('SELECT id FROM boarding_houses WHERE owner_id = ? AND application_status = ?', [userId, APPLICATION_STATUS.ACCOUNT_PENDING]);
+        for (const house of approved) {
+            await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [APPLICATION_STATUS.ACTIVE, house.id]);
+            await recordStatusChange(connection, { houseId: house.id, from: APPLICATION_STATUS.ACCOUNT_PENDING, to: APPLICATION_STATUS.ACTIVE, remarks: 'Owner account activated', actorType: 'applicant', actorId: userId });
+        }
+        await connection.commit();
+        return res.json({ success: true, email: emailCheck.email, message: 'Your owner account is active. You can now log in with your email and new password.' });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Account activation error:', err.code || err.message);
+        return res.status(500).json({ success: false, message: 'We could not activate your account. Please try again.' });
+    } finally {
+        connection.release();
     }
 });
 

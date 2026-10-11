@@ -18,6 +18,7 @@ const showMapView = ref(false);
 const mapContainer = ref(null);
 let mapInstance = null;
 let mapMarkers = [];
+let houseInfoWindow = null;
 
 // Instant initialization from persistent localStorage cache for 0ms offline rendering
 const initialCachedHouses = (() => {
@@ -61,49 +62,69 @@ const fetchHouses = async () => {
   }
 };
 
+// Address shown on the map card: street/landmark from the saved location plus the barangay
+const houseAddress = (house) => {
+  const street = formatAddress(house.location || '');
+  const barangay = house.barangay?.trim();
+  if (barangay && !street.toLowerCase().includes(barangay.toLowerCase())) {
+    return street ? `${street} (Brgy. ${barangay})` : formatAddress(house);
+  }
+  return street || formatAddress(house) || 'Address not provided';
+};
+
 const plotMarkers = (googleInstance) => {
   mapMarkers.forEach(m => { m.map = null; });
   mapMarkers = [];
 
   const bounds = new googleInstance.maps.LatLngBounds();
-  bounds.extend(cspcGate);
+  const { AdvancedMarkerElement, PinElement } = googleInstance.maps.marker;
 
-  const cspcMarker = new googleInstance.maps.marker.AdvancedMarkerElement({
-    map: mapInstance,
-    position: cspcGate,
-    title: 'CSPC Main Campus',
-  });
-  mapMarkers.push(cspcMarker);
+  // One shared card: clicking a red pin shows that boarding house's name and address
+  if (!houseInfoWindow) houseInfoWindow = new googleInstance.maps.InfoWindow({ maxWidth: 260 });
 
   houses.value.forEach(house => {
     const lat = parseFloat(house.latitude);
     const lng = parseFloat(house.longitude);
-    if (!lat || !lng) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return;
     const position = { lat, lng };
     bounds.extend(position);
 
-    const marker = new googleInstance.maps.marker.AdvancedMarkerElement({
+    // Red pin for each boarding house; clicking it opens the name and address card
+    const housePin = new PinElement({ background: '#DC2626', borderColor: '#991B1B', glyphColor: '#FFFFFF' });
+    const pinEl = housePin.element ?? housePin;
+    pinEl.style.cursor = 'pointer';
+    const marker = new AdvancedMarkerElement({
       map: mapInstance,
       position,
       title: house.name,
+      content: pinEl,
       gmpClickable: true,
     });
 
-    const infoWindow = new googleInstance.maps.InfoWindow({
-      content: `
-        <div style="font-family: sans-serif; padding: 4px; max-width: 200px;">
-          <strong style="display:block; margin-bottom:4px; font-size: 13px;">${escapeHtml(house.name)}</strong>
-          <span style="font-size: 11px; color: #64748b;">${escapeHtml(formatAddress(house))}</span><br/>
-          <a href="/student/house/${escapeHtml(encodeURIComponent(String(house.id)))}" style="font-size: 11px; color: #2a528a; font-weight: bold;">View Details →</a>
+    const openCard = () => {
+      houseInfoWindow.setContent(`
+        <div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; padding: 2px 2px 4px; max-width: 240px;">
+          <strong style="display:block; margin-bottom:6px; font-size: 14px; color: #142B4A; line-height: 1.3;">${escapeHtml(house.name)}</strong>
+          <span style="display:flex; gap:6px; font-size: 12px; color: #5B6E86; line-height: 1.45;">
+            <span style="color:#DC2626;">&#9679;</span>${escapeHtml(houseAddress(house))}
+          </span>
+          <a href="/student/house/${escapeHtml(encodeURIComponent(String(house.id)))}" style="display:block; margin-top:10px; padding:8px 12px; border-radius:8px; background:#1E4A8D; color:#FFFFFF; font-size:12px; font-weight:700; text-align:center; text-decoration:none;">View details &rarr;</a>
         </div>
-      `
-    });
-    marker.addEventListener('gmp-click', () => infoWindow.open({ anchor: marker, map: mapInstance }));
+      `);
+      houseInfoWindow.open({ anchor: marker, map: mapInstance });
+    };
+    // gmp-click is the current marker event; the DOM click covers Maps versions without it
+    marker.addEventListener('gmp-click', openCard);
+    pinEl.addEventListener('click', openCard);
     mapMarkers.push(marker);
   });
 
   if (!bounds.isEmpty()) {
     mapInstance.fitBounds(bounds, 60);
+    // A single house next to the campus would otherwise zoom in to street level
+    googleInstance.maps.event.addListenerOnce(mapInstance, 'idle', () => {
+      if (mapInstance.getZoom() > 17) mapInstance.setZoom(17);
+    });
   }
 };
 
@@ -135,7 +156,10 @@ const initMap = async () => {
   mapInstance = new Map(mapContainer.value, {
     center: cspcGate,
     zoom: 14,
-    mapId: 'CSPC_BOARDING_HOUSE_MAP',
+    // Advanced markers need a real Map ID; DEMO_MAP_ID is Google's built-in one
+    mapId: import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID',
+    // Google's own place icons (e.g. nearby schools) would open their own card on click
+    clickableIcons: false,
   });
 
   plotMarkers(googleInstance);
@@ -146,7 +170,16 @@ const toggleMapView = () => {
 };
 
 watch(showMapView, (val) => {
-  if (val) initMap();
+  if (val) {
+    initMap();
+  } else {
+    // The map container is removed with v-if, so start fresh next time it opens
+    mapMarkers.forEach(m => { m.map = null; });
+    mapMarkers = [];
+    houseInfoWindow?.close();
+    houseInfoWindow = null;
+    mapInstance = null;
+  }
 });
 
 watch(houses, () => {
@@ -184,6 +217,7 @@ const fetchSiteContent = async () => {
   }
 };
 
+// Extra footer details added in Admin > Landing page (only filled-in ones are shown)
 const footerContacts = computed(() => {
   const s = siteSettings.value;
   return [
@@ -193,6 +227,12 @@ const footerContacts = computed(() => {
     { icon: 'fa-phone', text: s.footer_phone },
     { icon: 'fa-clock', text: s.footer_hours }
   ].filter(item => item.text && item.text.trim());
+});
+const footerCustomLines = computed(() => {
+  try {
+    const lines = JSON.parse(siteSettings.value.footer_custom || '[]');
+    return Array.isArray(lines) ? lines.filter(l => l && typeof l.text === 'string' && l.text.trim()) : [];
+  } catch (e) { return []; }
 });
 const footerLinks = computed(() => [
   { icon: 'fa-brands fa-facebook', label: 'Facebook page', href: safeExternalUrl(siteSettings.value.footer_facebook) },
@@ -294,9 +334,10 @@ onMounted(() => {
         <!-- AGGREGATE MAP VIEW -->
         <div v-if="showMapView" class="mb-10">
           <div ref="mapContainer" class="w-full h-[420px] sm:h-[480px] rounded-3xl border border-slate-200/80 shadow-md bg-slate-50"></div>
-          <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-3">
-            <i class="fa-solid fa-circle-info mr-1"></i> Click a pin to preview a listing near CSPC campus.
-          </p>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-[11px] font-semibold text-slate-500">
+            <span class="inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-red-600 text-sm"></i> Boarding house</span>
+            <span class="inline-flex items-center gap-1.5 text-slate-400"><i class="fa-solid fa-circle-info"></i> Click a red pin to see the boarding house name and address.</span>
+          </div>
         </div>
 
         <!-- Subtle Offline Notice (ONLY when physically offline) -->
@@ -386,6 +427,12 @@ onMounted(() => {
               <i :class="['fa-solid', item.icon, 'text-slate-500 mt-0.5 w-3.5 text-center']" aria-hidden="true"></i>
               <a v-if="item.href" :href="item.href" class="hover:text-white underline-offset-2 hover:underline break-all">{{ item.text }}</a>
               <span v-else>{{ item.text }}</span>
+            </li>
+          </ul>
+          <ul v-if="footerCustomLines.length" class="mt-3 space-y-1.5 text-[11px] text-slate-300">
+            <li v-for="(line, index) in footerCustomLines" :key="'custom-' + index" class="flex items-start justify-center md:justify-start gap-2">
+              <i class="fa-solid fa-circle-info text-slate-500 mt-0.5 w-3.5 text-center" aria-hidden="true"></i>
+              <span><strong v-if="line.label" class="text-slate-200">{{ line.label }}:</strong> {{ line.text }}</span>
             </li>
           </ul>
           <div v-if="footerLinks.length" class="mt-4 flex items-center justify-center md:justify-start gap-2">

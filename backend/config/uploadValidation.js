@@ -18,14 +18,26 @@ export function supportedImage(file) {
     }
     return false;
 }
+// Legal documents may also be PDF (checked by the %PDF- signature, not just the extension).
+export const PERMIT_FIELDS = ['permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay', 'permit_building', 'permit_zoning', 'permit_sanitary', 'permit_fire'];
+export function supportedPdf(file) {
+    if (!file || path.extname(file.originalname || '').toLowerCase() !== '.pdf') return false;
+    const b = file.buffer;
+    return Buffer.isBuffer(b) && b.length >= 5 && b.toString('ascii', 0, 5) === '%PDF-';
+}
 // Run after Multer buffers the request, before any file is persistently saved.
 export function validateImages(req, res, next) {
     const files = req.file ? [req.file] : Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat();
+    // Application uploads: accreditation, public registration and Track My Application routes.
+    const isApplicationUpload = req.path === '/accreditation' || req.path === '/register-property' || req.applicationUpload === true;
+    const allowsPermitPdf = isApplicationUpload;
     for (const file of files) {
+        if (allowsPermitPdf && PERMIT_FIELDS.includes(file.fieldname) && supportedPdf(file)) continue;
         if (!supportedImage(file)) {
             const labels = { profile_pic: 'Profile photo', img: 'Featured property photo', house_img: 'Featured property photo', house_photos: 'Gallery photo', permit_file: 'Document image', permit_business_form: 'Business permit image', permit_cedula: 'Cedula image', permit_dti: 'DTI image', permit_barangay: 'Barangay clearance image', permit_building: 'Building permit image', permit_zoning: 'Zoning permit image', permit_sanitary: 'Sanitary permit image', permit_fire: 'Fire safety permit image' };
             const label = labels[file.fieldname] || 'Selected image';
-            return res.status(400).json({ success: false, message: `${label} is invalid. Please select a supported image file (JPG, PNG, WEBP, GIF, BMP, TIFF, HEIC, HEIF, or AVIF).`, errorCode: 'invalid_input' });
+            const formats = allowsPermitPdf && PERMIT_FIELDS.includes(file.fieldname) ? 'image or PDF file (JPG, PNG, WEBP, HEIC or PDF)' : 'image file (JPG, PNG, WEBP, GIF, BMP, TIFF, HEIC, HEIF, or AVIF)';
+            return res.status(400).json({ success: false, message: `${label} is invalid. Please select a supported ${formats}.`, errorCode: 'invalid_input' });
         }
     }
     if (req.path?.startsWith('/edit/')) {
@@ -36,7 +48,7 @@ export function validateImages(req, res, next) {
         try { existing = JSON.parse(req.body.existing_photos || '[]'); } catch { existing = null; }
         if (!Array.isArray(existing) || existing.length + gallery.length > 10) return res.status(400).json({ success: false, message: 'A property can have at most 10 gallery photos. Please remove extra photos before saving.' });
     }
-    if (req.path === '/accreditation') {
+    if (isApplicationUpload) {
         let existing;
         try { existing = JSON.parse(req.body.existing_photos || '[]'); } catch { existing = null; }
         if (!Array.isArray(existing) || existing.length + (req.files?.house_photos?.length || 0) > 10) return res.status(400).json({ success: false, message: 'A property can have at most 10 gallery photos. Please remove extra photos before saving.' });

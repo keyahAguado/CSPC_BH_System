@@ -4,7 +4,7 @@ import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
-import { FEATURE_ICONS, SITE_SETTING_DEFAULTS, safeExternalUrl } from '../../constants/siteContent.js';
+import { FEATURE_ICONS, SITE_SETTING_DEFAULTS } from '../../constants/siteContent.js';
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
@@ -123,6 +123,9 @@ const confirmDelete = async () => {
 // ─── Section heading + footer details ───
 const saveSettings = async () => {
   const payload = Object.fromEntries(Object.keys(SITE_SETTING_DEFAULTS).map(key => [key, (settingsForm.value[key] || '').trim()]));
+  payload.footer_custom = JSON.stringify(parseCustom(payload.footer_custom)
+    .map(l => ({ label: String(l.label || '').trim(), text: String(l.text || '').trim() }))
+    .filter(l => l.text));
   const inputError = validateInput('siteSettings', payload);
   if (inputError) { showSystemAlert(inputError, 'error'); return; }
   isSavingSettings.value = true;
@@ -141,29 +144,49 @@ const saveSettings = async () => {
 };
 const discardSettings = () => { settingsForm.value = { ...savedSettings.value }; };
 
+// Footer text always shown on the landing page
 const footerFields = [
   { key: 'footer_title', label: 'Footer title', max: 120, required: true, wide: true },
   { key: 'footer_tagline', label: 'Tagline', max: 255, wide: true },
-  { key: 'footer_office', label: 'Office name', max: 120, placeholder: 'e.g. Student Affairs and Services Office' },
-  { key: 'footer_hours', label: 'Office hours', max: 120, placeholder: 'e.g. Mon–Fri, 8:00 AM – 5:00 PM' },
-  { key: 'footer_address', label: 'Office address', max: 255, wide: true, placeholder: 'e.g. CSPC Main Campus, San Miguel, Nabua, Camarines Sur' },
-  { key: 'footer_email', label: 'Contact email', max: 255, type: 'email', placeholder: 'e.g. saso@cspc.edu.ph' },
-  { key: 'footer_phone', label: 'Contact number', max: 60, placeholder: 'e.g. 09XX XXX XXXX' },
-  { key: 'footer_facebook', label: 'Facebook page link', max: 255, type: 'url', placeholder: 'https://facebook.com/…' },
-  { key: 'footer_website', label: 'Website link', max: 255, type: 'url', placeholder: 'https://…' },
   { key: 'footer_copyright', label: 'Copyright notice', max: 255, wide: true }
 ];
-const previewContacts = computed(() => [
-  ['fa-building-columns', settingsForm.value.footer_office],
-  ['fa-location-dot', settingsForm.value.footer_address],
-  ['fa-envelope', settingsForm.value.footer_email],
-  ['fa-phone', settingsForm.value.footer_phone],
-  ['fa-clock', settingsForm.value.footer_hours]
-].filter(([, text]) => text && text.trim()));
-const previewLinks = computed(() => [
-  ['fa-brands fa-facebook', safeExternalUrl(settingsForm.value.footer_facebook)],
-  ['fa-solid fa-globe', safeExternalUrl(settingsForm.value.footer_website)]
-].filter(([, href]) => href));
+// Extra footer details the admin can add when needed (shown on the landing page only when filled in)
+const OPTIONAL_FOOTER_FIELDS = [
+  { key: 'footer_office', label: 'Office name', icon: 'fa-solid fa-building-columns', max: 120, placeholder: 'e.g. Student Affairs and Services Office' },
+  { key: 'footer_address', label: 'Office address', icon: 'fa-solid fa-location-dot', max: 255, placeholder: 'e.g. CSPC Main Campus, San Miguel, Nabua, Camarines Sur' },
+  { key: 'footer_email', label: 'Contact email', icon: 'fa-solid fa-envelope', max: 255, type: 'email', placeholder: 'e.g. saso@cspc.edu.ph' },
+  { key: 'footer_phone', label: 'Contact number', icon: 'fa-solid fa-phone', max: 60, placeholder: 'e.g. 09XX XXX XXXX' },
+  { key: 'footer_hours', label: 'Office hours', icon: 'fa-solid fa-clock', max: 120, placeholder: 'e.g. Mon–Fri, 8:00 AM – 5:00 PM' },
+  { key: 'footer_facebook', label: 'Facebook page link', icon: 'fa-brands fa-facebook', max: 255, type: 'url', placeholder: 'https://facebook.com/…' },
+  { key: 'footer_website', label: 'Website link', icon: 'fa-solid fa-globe', max: 255, type: 'url', placeholder: 'https://…' }
+];
+const addedFooterKeys = ref([]);
+const shownOptionalFields = computed(() => OPTIONAL_FOOTER_FIELDS.filter(f => (settingsForm.value[f.key] || '').trim() || addedFooterKeys.value.includes(f.key)));
+const addableOptionalFields = computed(() => OPTIONAL_FOOTER_FIELDS.filter(f => !shownOptionalFields.value.includes(f)));
+const footerFieldToAdd = ref('');
+const addFooterDetail = () => {
+  if (!footerFieldToAdd.value) return;
+  addedFooterKeys.value = [...addedFooterKeys.value, footerFieldToAdd.value];
+  footerFieldToAdd.value = '';
+};
+const removeFooterDetail = (key) => {
+  settingsForm.value[key] = '';
+  addedFooterKeys.value = addedFooterKeys.value.filter(k => k !== key);
+};
+// Free-form footer lines the admin types in (e.g. "Hotline: 0912…", "Office: Room 101")
+const MAX_CUSTOM_LINES = 8;
+const parseCustom = (raw) => { try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+const customLines = computed({
+  get: () => parseCustom(settingsForm.value.footer_custom),
+  set: (lines) => { settingsForm.value.footer_custom = JSON.stringify(lines); }
+});
+const addCustomLine = () => { if (customLines.value.length < MAX_CUSTOM_LINES) customLines.value = [...customLines.value, { label: '', text: '' }]; };
+const updateCustomLine = (index, field, value) => { customLines.value = customLines.value.map((l, i) => (i === index ? { ...l, [field]: value } : l)); };
+const removeCustomLine = (index) => { customLines.value = customLines.value.filter((_, i) => i !== index); };
+
+const previewExtras = computed(() => shownOptionalFields.value
+  .filter(f => (settingsForm.value[f.key] || '').trim())
+  .map(f => ({ key: f.key, icon: f.icon, text: settingsForm.value[f.key].trim() })));
 
 onMounted(fetchContent);
 </script>
@@ -266,7 +289,7 @@ onMounted(fetchContent);
             <div class="admin-card-head">
               <div>
                 <h2 id="footer-title">Footer details</h2>
-                <p>Empty optional fields are hidden on the landing page. The Data Privacy Policy button is always shown.</p>
+                <p>The text at the bottom of the landing page. The Data Privacy Policy button is always shown.</p>
               </div>
             </div>
             <form class="admin-form-grid" @submit.prevent="saveSettings">
@@ -274,6 +297,40 @@ onMounted(fetchContent);
                 <span>{{ field.label }} <small v-if="!field.required">optional</small></span>
                 <input v-model="settingsForm[field.key]" :type="field.type || 'text'" :maxlength="field.max" :required="field.required" :placeholder="field.placeholder" class="admin-field" />
               </label>
+
+              <div v-if="addableOptionalFields.length" class="admin-form-field is-wide">
+                <span>Add footer detail <small>optional</small></span>
+                <div class="flex gap-2">
+                  <select v-model="footerFieldToAdd" class="admin-field flex-1" aria-label="Choose a footer detail to add">
+                    <option value="">Choose a detail to add…</option>
+                    <option v-for="f in addableOptionalFields" :key="f.key" :value="f.key">{{ f.label }}</option>
+                  </select>
+                  <button type="button" class="admin-btn admin-btn-secondary" :disabled="!footerFieldToAdd" @click="addFooterDetail"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button>
+                </div>
+              </div>
+
+              <!-- Extra details added by the admin -->
+              <div v-for="field in shownOptionalFields" :key="field.key" class="admin-form-field is-wide">
+                <span><i :class="field.icon" aria-hidden="true" style="width: 16px; color: var(--a-faint);"></i> {{ field.label }}</span>
+                <div class="flex gap-2">
+                  <input v-model="settingsForm[field.key]" :type="field.type || 'text'" :maxlength="field.max" :placeholder="field.placeholder" class="admin-field flex-1" :aria-label="field.label" />
+                  <button type="button" class="admin-icon-btn is-danger" :aria-label="'Remove ' + field.label" title="Remove from footer" @click="removeFooterDetail(field.key)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </div>
+              </div>
+
+              <!-- Custom lines typed by the admin -->
+              <div class="admin-form-field is-wide">
+                <span>Custom footer lines <small>{{ customLines.length }}/{{ MAX_CUSTOM_LINES }} · optional</small></span>
+                <div v-for="(line, index) in customLines" :key="index" class="flex gap-2 mb-2">
+                  <input :value="line.label" @input="updateCustomLine(index, 'label', $event.target.value)" type="text" maxlength="60" class="admin-field" style="max-width: 180px;" placeholder="Label (optional)" :aria-label="'Custom line ' + (index + 1) + ' label'" />
+                  <input :value="line.text" @input="updateCustomLine(index, 'text', $event.target.value)" type="text" maxlength="255" class="admin-field flex-1" placeholder="Text shown in the footer" :aria-label="'Custom line ' + (index + 1) + ' text'" />
+                  <button type="button" class="admin-icon-btn is-danger" :aria-label="'Remove custom line ' + (index + 1)" title="Remove line" @click="removeCustomLine(index)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </div>
+                <div>
+                  <button type="button" class="admin-btn admin-btn-secondary" :disabled="customLines.length >= MAX_CUSTOM_LINES" @click="addCustomLine"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add custom line</button>
+                </div>
+              </div>
+
             </form>
           </section>
 
@@ -288,12 +345,10 @@ onMounted(fetchContent);
             <div class="admin-preview-footer">
               <strong>{{ settingsForm.footer_title || 'Footer title' }}</strong>
               <p v-if="settingsForm.footer_tagline">{{ settingsForm.footer_tagline }}</p>
-              <ul v-if="previewContacts.length">
-                <li v-for="[icon, text] in previewContacts" :key="icon"><i :class="['fa-solid', icon]" aria-hidden="true"></i>{{ text }}</li>
+              <ul v-if="previewExtras.length || customLines.some(l => (l.text || '').trim())">
+                <li v-for="item in previewExtras" :key="item.key"><i :class="item.icon" aria-hidden="true"></i>{{ item.text }}</li>
+                <li v-for="(line, index) in customLines.filter(l => (l.text || '').trim())" :key="'c' + index"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><strong v-if="line.label">{{ line.label }}:&nbsp;</strong>{{ line.text }}</li>
               </ul>
-              <div v-if="previewLinks.length" class="admin-preview-links">
-                <span v-for="[icon] in previewLinks" :key="icon"><i :class="icon" aria-hidden="true"></i></span>
-              </div>
               <span class="admin-preview-privacy"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Data Privacy Policy</span>
               <small>{{ settingsForm.footer_copyright }}</small>
             </div>

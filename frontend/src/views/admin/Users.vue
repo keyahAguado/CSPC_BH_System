@@ -1,4 +1,5 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
@@ -218,6 +219,9 @@ const endItemIndex = computed(() => {
 const totalStudents = computed(() => users.value.filter(u => u.role === 'student').length);
 const totalOwners = computed(() => users.value.filter(u => u.role === 'owner').length);
 const totalSuspended = computed(() => users.value.filter(u => u.status === 'inactive').length);
+const totalPending = computed(() => users.value.filter(u => u.status === 'pending').length);
+const statusLabel = (status) => status === 'active' ? 'Active' : status === 'pending' ? 'Pending' : 'Suspended';
+const statusTone = (status) => status === 'active' ? 'is-success' : status === 'pending' ? 'is-warning' : 'is-danger';
 
 onMounted(() => {
   fetchUsers();
@@ -233,276 +237,136 @@ const loadError = ref('');
 
     <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-12 px-4 sm:px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
-      <!-- Header -->
-      <div class="mb-6 flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-6 animate-fade-in">
-        <PageHeader title="User registry" description="Manage account details, access, and existing security controls." />
+      <PageHeader title="User registry" description="Manage account details, access, and existing security controls." />
 
-        <!-- Metrics Engine Dashboard -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-          <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-slate-400 text-[12px] font-semibold uppercase tracking-wide block">System Users</span>
-            <span class="text-xl font-semibold text-slate-900">{{ users.length }}</span>
-          </div>
-          <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-blue-500 text-[12px] font-semibold uppercase tracking-wide block">Registered Students</span>
-            <span class="text-xl font-semibold text-blue-600">{{ totalStudents }}</span>
-            <span class="text-slate-400 text-[12px] font-bold block mt-0.5">All accounts, incl. non-boarders</span>
-          </div>
-          <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-purple-500 text-[12px] font-semibold uppercase tracking-wide block">Owners</span>
-            <span class="text-xl font-semibold text-purple-600">{{ totalOwners }}</span>
-          </div>
-          <div class="bg-white px-6 py-3 rounded-2xl border border-slate-200/60 shadow-sm shadow-slate-100 min-w-[140px]">
-            <span class="text-rose-500 text-[12px] font-semibold uppercase tracking-wide block">Suspended</span>
-            <span class="text-xl font-semibold text-rose-600">{{ totalSuspended }}</span>
-          </div>
+      <!-- Summary tiles -->
+      <dl class="reg-tiles">
+        <div>
+          <dt><i class="fa-solid fa-users" aria-hidden="true"></i> All users</dt>
+          <dd>{{ isLoading ? '…' : users.length }}</dd>
         </div>
-      </div>
+        <div>
+          <dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> Students</dt>
+          <dd class="text-blue-700">{{ isLoading ? '…' : totalStudents }}</dd>
+          <span class="reg-tile-sub">all accounts, incl. non-boarders</span>
+        </div>
+        <div>
+          <dt><i class="fa-solid fa-user-tie" aria-hidden="true"></i> Owners</dt>
+          <dd class="text-violet-700">{{ isLoading ? '…' : totalOwners }}</dd>
+          <span v-if="totalPending" class="reg-tile-sub">{{ totalPending }} awaiting accreditation</span>
+        </div>
+        <div :class="{ 'is-danger': totalSuspended > 0 }">
+          <dt><i class="fa-solid fa-user-lock" aria-hidden="true"></i> Suspended</dt>
+          <dd>{{ isLoading ? '…' : totalSuspended }}</dd>
+        </div>
+      </dl>
 
-      <!-- Live Search and Action Filters -->
-      <div class="bg-white rounded-3xl border border-slate-200/60 px-6 sm:px-8 py-6 mb-8 flex flex-col md:flex-row gap-4 items-center shadow-sm animate-fade-in">
-        <div class="relative w-full md:flex-1">
-          <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400">
-            <i class="fa-solid fa-magnifying-glass"></i>
-          </span>
-          <input aria-label="Search accounts by name or email query..." v-model="searchQuery" type="text" placeholder="Search accounts by name or email query..." 
-            class="w-full pl-11 pr-6 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition" />
+      <!-- Filters -->
+      <div class="reg-filters">
+        <div class="reg-search">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input v-model="searchQuery" type="text" aria-label="Search accounts" placeholder="Search by name, email, or phone..." />
+          <button v-if="searchQuery" type="button" class="reg-search-clear" aria-label="Clear search" @click="searchQuery = ''"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         </div>
-        
-        <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto shrink-0">
-          <select aria-label="filter Role" v-model="filterRole" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-semibold uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
-            <option value="all">All Roles</option>
+        <label class="reg-select"><i class="fa-solid fa-id-badge" aria-hidden="true"></i>
+          <select aria-label="Filter by role" v-model="filterRole">
+            <option value="all">All roles</option>
             <option value="student">Students</option>
             <option value="owner">Owners</option>
           </select>
-          
-          <select aria-label="filter Status" v-model="filterStatus" class="bg-slate-50 border border-slate-200 px-6 py-3.5 rounded-2xl text-xs font-semibold uppercase tracking-wider text-slate-600 outline-none focus:border-blue-500 focus:bg-white cursor-pointer w-full sm:w-auto">
-            <option value="all">All States</option>
+        </label>
+        <label class="reg-select"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+          <select aria-label="Filter by status" v-model="filterStatus">
+            <option value="all">All statuses</option>
             <option value="active">Active</option>
             <option value="inactive">Suspended</option>
             <option value="pending">Pending</option>
           </select>
-        </div>
+        </label>
+        <span class="reg-count">{{ filteredUsers.length }} result{{ filteredUsers.length !== 1 ? 's' : '' }}</span>
       </div>
 
-      <!-- Loading State -->
+      <!-- Loading -->
       <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 px-6 gap-6">
         <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
 
-      <!-- Content Container -->
-      <div v-else>
-        <!-- Top Pagination Bar -->
-        <div v-if="filteredUsers.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
-          <div class="flex items-center gap-4">
-            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
-            <div class="flex items-center gap-2">
-              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-              <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                <option :value="10">10</option>
-                <option :value="25">25</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              @click="currentPage > 1 && currentPage--" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-            </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
-              {{ currentPage }} / {{ totalPages }}
-            </span>
-            <button 
-              @click="currentPage < totalPages && currentPage++" 
-              :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-            </button>
-          </div>
+      <div v-else class="registry-body">
+        <!-- PHONE: cards -->
+        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredUsers.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
-
-        <!-- MOBILE VIEW CONTAINER (Card Layout para sa cp) -->
-        <div class="block md:hidden bg-white rounded-[2rem] shadow-sm border border-slate-200/60 p-6 space-y-4">
-          <div class="border-b border-slate-100 pb-3 text-center">
-            <h2 class="text-xs font-semibold uppercase tracking-normal text-slate-400">User Directory Overview</h2>
-          </div>
-
-          <!-- Kung walang nahanap na user sa mobile -->
-          <div v-if="filteredUsers.length === 0" class="py-12 text-center">
-            <p class="text-slate-400 italic text-xs font-semibold uppercase tracking-wide">
-              No matching user accounts registered.
-            </p>
-          </div>
-
-          <!-- Kung may mga user sa mobile -->
-          <div v-else class="space-y-4">
-            <div v-for="user in paginatedUsers" :key="user.id" class="bg-slate-50/50 rounded-[1.5rem] p-5 border border-slate-100 space-y-3">
-              <div class="flex items-center gap-3 border-b border-slate-200/60 pb-3">
-                <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
-                  <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`"
-                       class="w-full h-full object-cover" :alt="user.name" />
-                </div>
-                <div class="overflow-hidden flex-1">
-                  <div class="font-semibold text-slate-900 uppercase tracking-tight text-sm truncate">{{ user.name }}</div>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    <span class="inline-block text-[12px] font-semibold uppercase px-2.5 py-0.5 rounded-md tracking-wide leading-none border"
-                      :class="user.role === 'student' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'">
-                      {{ user.role }}
-                    </span>
-                    <div class="flex items-center gap-1.5">
-                      <div class="w-2 h-2 rounded-full" 
-                        :class="user.status === 'active' ? 'bg-emerald-500' : (user.status === 'pending' ? 'bg-amber-500' : 'bg-rose-500')" 
-                        :style="{ backgroundColor: user.status === 'active' ? '#10b981' : (user.status === 'pending' ? '#f59e0b' : '#f43f5e') }"></div>
-                      <span class="text-[12px] font-semibold uppercase tracking-wider" 
-                        :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
-                        {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        <div class="block md:hidden space-y-3">
+          <div v-if="filteredUsers.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">No matching user accounts.</div>
+          <div v-for="user in paginatedUsers" :key="'m-' + user.id" class="reg-card">
+            <div class="flex items-center gap-3">
+              <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`" class="reg-avatar" :alt="user.name" />
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold text-slate-900 truncate">{{ user.name }}</p>
+                <p class="text-xs text-slate-500 truncate">{{ user.email }}</p>
               </div>
-
-              <div class="space-y-1 text-xs">
-                <div class="flex justify-between py-0.5">
-                  <span class="font-semibold text-slate-400 uppercase tracking-wider text-[12px]">Email:</span>
-                  <span class="font-semibold text-slate-600 text-right truncate ml-4">{{ user.email }}</span>
-                </div>
-                <div class="flex justify-between py-0.5">
-                  <span class="font-semibold text-slate-400 uppercase tracking-wider text-[12px]">Phone:</span>
-                  <span class="font-semibold text-slate-600 text-right">{{ user.phone || 'No Phone' }}</span>
-                </div>
-              </div>
-
-              <!-- Action Buttons para sa Mobile -->
-              <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60">
-                <button @click="openEditModal(user)" class="bg-white border border-slate-200 text-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[12px] font-semibold uppercase tracking-wider shadow-2xs cursor-pointer management-button management-button-secondary">
-                  <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
-                </button>
-
-                <template v-if="user.role === 'owner'">
-                  <button @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))" 
-                    class="bg-white border border-slate-200 text-slate-700 hover:bg-amber-500 hover:text-white hover:border-amber-500 rounded-xl p-2.5 flex items-center justify-center gap-1.5 transition text-[12px] font-semibold uppercase tracking-wider shadow-2xs cursor-pointer management-button management-button-secondary">
-                    <i class="fa-solid fa-key text-[12px]"></i> Reset Key
-                  </button>
-                </template>
-                <template v-else>
-                  <div class="bg-blue-50 border border-blue-100 text-blue-600 rounded-xl p-2.5 flex items-center justify-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider">
-                    <i class="fa-brands fa-google"></i> Google SSO
-                  </div>
-                </template>
-              </div>
-
-              <!-- Action button for Mobile with Locked state for Pending -->
-              <div class="pt-1">
-                <template v-if="user.status === 'pending'">
-                  <div class="bg-amber-50 border border-amber-100 text-amber-600 rounded-xl py-2.5 flex items-center justify-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider">
-                    <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
-                  </div>
-                </template>
-                <template v-else>
-                  <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                          class="w-full rounded-xl py-2.5 font-semibold uppercase text-[12px] tracking-wide transition shadow-sm active:scale-95 cursor-pointer border"
-                          :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
-                    {{ user.status === 'active' ? 'Deactivate Account' : 'Activate Account' }}
-                  </button>
-                </template>
-              </div>
+            </div>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <span :class="['reg-chip', user.role === 'student' ? 'is-primary' : 'is-violet']">{{ user.role === 'student' ? 'Student' : 'Owner' }}</span>
+              <span :class="['reg-chip', statusTone(user.status)]"><span class="reg-dot" aria-hidden="true"></span>{{ statusLabel(user.status) }}</span>
+              <span class="reg-chip"><i :class="user.role === 'owner' ? 'fa-solid fa-key' : 'fa-brands fa-google'" aria-hidden="true"></i>{{ user.role === 'owner' ? 'Password' : 'Google sign-in' }}</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-phone text-slate-400 mr-1" aria-hidden="true"></i>{{ user.phone || 'No phone' }}</p>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button type="button" class="reg-btn" @click="openEditModal(user)"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
+              <button v-if="user.role === 'owner'" type="button" class="reg-btn" @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))"><i class="fa-solid fa-key" aria-hidden="true"></i> Reset password</button>
+              <span v-if="user.status === 'pending'" class="reg-chip is-warning"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Awaiting accreditation</span>
+              <button v-else type="button" :class="['reg-btn', user.status === 'active' ? 'is-danger' : 'is-success']"
+                      @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))">
+                {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- DESKTOP TABLE LAYOUT (Laging kita ang headers kahit walang laman) -->
-        <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden animate-fade-in shadow-slate-100">
-          <div class="overflow-x-auto">
-            <table class="w-full text-center border-collapse min-w-[1100px]">
-              <thead>
-                <tr class="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[12px] font-semibold tracking-wide uppercase">
-                  <th class="py-6 px-8 text-left w-2/5 border-r border-slate-100">User Profile / Contact info</th>
-                  <th class="py-6 px-6 border-r border-slate-100">System Role</th>
-                  <th class="py-6 px-6 border-r border-slate-100">Security Access</th>
-                  <th class="py-6 px-8 text-right">Administrative Actions</th>
-                </tr>
+        <!-- LAPTOP / DESKTOP: table -->
+        <div class="registry-table-card hidden md:flex md:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredUsers.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+
+          <div class="registry-table-scroll overflow-x-auto">
+            <table class="management-registry-table w-full border-collapse">
+              <thead class="bg-slate-50">
+                <tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Sign-in</th><th scope="col" class="w-[1%] whitespace-nowrap">Actions</th></tr>
               </thead>
-              <tbody class="text-[13px] font-bold text-slate-700 divide-y divide-slate-100">
+              <tbody class="divide-y divide-slate-100">
                 <tr v-if="filteredUsers.length === 0">
-                  <td colspan="4" class="py-20 text-slate-400 italic text-sm text-center font-semibold uppercase tracking-wide">
-                    No matching user accounts registered.
-                  </td>
+                  <td colspan="5" class="py-20 text-slate-500 text-sm text-center font-semibold">No matching user accounts.</td>
                 </tr>
-                <tr v-for="user in paginatedUsers" :key="user.id" class="hover:bg-slate-50/20 transition duration-200">
-                  <td class="py-6 px-8 text-left border-r border-slate-100">
-                    <div class="flex items-center gap-5">
-                      <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
-                        <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`"
-                             class="w-full h-full object-cover" :alt="user.name" />
-                      </div>
-                      <div>
-                        <div class="font-semibold text-slate-900 uppercase tracking-tight text-base leading-tight">{{ user.name }}</div>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-slate-400 text-[12px] font-bold uppercase">
-                          <span><i class="fa-solid fa-envelope mr-1.5 text-blue-500"></i>{{ user.email }}</span>
-                          <span><i class="fa-solid fa-phone mr-1.5 text-slate-400"></i>{{ user.phone || 'No Phone' }}</span>
-                        </div>
+                <tr v-for="user in paginatedUsers" :key="user.id">
+                  <td>
+                    <div class="flex items-center gap-3">
+                      <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`" class="reg-avatar" :alt="user.name" />
+                      <div class="min-w-0 text-left">
+                        <strong class="block text-slate-900 font-semibold">{{ user.name }}</strong>
+                        <span class="block text-slate-500 text-xs mt-0.5">{{ user.email }}</span>
+                        <span class="block text-slate-500 text-xs mt-0.5">{{ user.phone || 'No phone' }}</span>
                       </div>
                     </div>
                   </td>
-
-                  <td class="py-6 px-6 border-r border-slate-100">
-                    <span class="inline-block text-[12px] font-semibold uppercase px-3.5 py-1.5 rounded-xl tracking-wide leading-none border"
-                      :class="user.role === 'student' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'">
-                      {{ user.role }}
+                  <td><span :class="['reg-chip', user.role === 'student' ? 'is-primary' : 'is-violet']">{{ user.role === 'student' ? 'Student' : 'Owner' }}</span></td>
+                  <td><span :class="['reg-chip', statusTone(user.status)]"><span class="reg-dot" aria-hidden="true"></span>{{ statusLabel(user.status) }}</span></td>
+                  <td>
+                    <span class="text-slate-600 text-xs font-semibold" :title="user.role === 'owner' ? 'Signs in with email and password' : 'Signs in with a Google account; password is managed by Google'">
+                      <i :class="user.role === 'owner' ? 'fa-solid fa-key text-slate-400' : 'fa-brands fa-google text-blue-500'" aria-hidden="true"></i>
+                      {{ user.role === 'owner' ? 'Password' : 'Google' }}
                     </span>
                   </td>
-
-                  <td class="py-6 px-6 border-r border-slate-100">
-                    <div class="flex items-center justify-center gap-2">
-                      <div class="w-2.5 h-2.5 rounded-full" 
-                        :class="user.status === 'active' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : (user.status === 'pending' ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.4)]')"></div>
-                      <span class="text-[12px] font-semibold uppercase tracking-wide leading-none"
-                        :class="user.status === 'active' ? 'text-emerald-600' : (user.status === 'pending' ? 'text-amber-600' : 'text-rose-600')">
-                        {{ user.status === 'active' ? 'Active' : (user.status === 'pending' ? 'Pending' : 'Suspended') }}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td class="py-6 px-8 text-right">
-                    <div class="flex justify-end items-center gap-3">
-                      <button aria-label="Edit Profile Details" @click="openEditModal(user)" class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-blue-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer management-button management-button-secondary" title="Edit Profile Details">
-                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                  <td>
+                    <div class="reg-actions">
+                      <button type="button" class="reg-btn" @click="openEditModal(user)" :aria-label="'Edit ' + user.name"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
+                      <span v-if="user.role !== 'owner'" aria-hidden="true"></span>
+                      <button v-else type="button" class="reg-btn is-icon" title="Reset to default password" :aria-label="'Reset password of ' + user.name"
+                              @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))"><i class="fa-solid fa-key" aria-hidden="true"></i></button>
+                      <span v-if="user.status === 'pending'" class="reg-chip is-warning reg-action-wide" title="This account is awaiting boarding house accreditation approval."><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Awaiting accreditation</span>
+                      <button v-else type="button" :class="['reg-btn', 'reg-action-wide', user.status === 'active' ? 'is-danger' : 'is-success']"
+                              @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))">
+                        {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
                       </button>
-                      
-                      <!-- DYNAMIC ADAPTATION FOR SSO USERS VS LOCAL USERS -->
-                      <template v-if="user.role === 'owner'">
-                        <button @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))" 
-                          class="w-10 h-10 flex items-center justify-center border border-slate-100 bg-white hover:bg-amber-500 hover:text-white rounded-xl transition duration-300 shadow-sm active:scale-95 cursor-pointer management-button management-button-secondary" title="Reset Default Password">
-                          <i class="fa-solid fa-key text-xs"></i>
-                        </button>
-                      </template>
-                      <template v-else>
-                        <span class="text-[12px] font-semibold uppercase tracking-wider text-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="Federated SSO accounts manage passwords via Google Security panels.">
-                          <i class="fa-brands fa-google"></i> Google SSO
-                        </span>
-                      </template>
-
-                      <!-- SAFEGUARD: Hides manual activation button and replaces with status badge for Pending Landlords -->
-                      <template v-if="user.status === 'pending'">
-                        <span class="inline-block text-[12px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-100 px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm leading-none" title="This account is currently awaiting boarding house accreditation approval.">
-                          <i class="fa-solid fa-clock-rotate-left"></i> Awaiting Accreditation
-                        </span>
-                      </template>
-                      <template v-else>
-                        <button @click="triggerConfirm(user.status === 'active' ? 'Deactivate Account Access?' : 'Approve System Access?', `Are you sure you want to transition ${user.name}'s operational status to ${user.status === 'active' ? 'suspended' : 'active'}?`, () => handleToggleStatus(user.id))"
-                          class="px-5 py-2.5 rounded-xl font-semibold uppercase text-[12px] tracking-wide transition shadow-sm active:scale-95 cursor-pointer border"
-                          :class="user.status === 'active' ? 'bg-rose-50 text-rose-500 border-rose-100 hover:bg-rose-500 hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'">
-                          {{ user.status === 'active' ? 'Deactivate' : 'Activate' }}
-                        </button>
-                      </template>
                     </div>
                   </td>
                 </tr>
@@ -510,41 +374,8 @@ const loadError = ref('');
             </table>
           </div>
 
-          <!-- Bottom Pagination Bar -->
-          <div v-if="filteredUsers.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
-            <div class="flex items-center gap-4">
-              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredUsers.length }} entries</span>
-              <div class="flex items-center gap-2">
-                <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-                <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
-                  <option :value="10">10</option>
-                  <option :value="25">25</option>
-                  <option :value="50">50</option>
-                  <option :value="100">100</option>
-                </select>
-              </div>
-            </div>
+          <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredUsers.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
-            <div class="flex items-center gap-2">
-              <button 
-                @click="currentPage > 1 && currentPage--" 
-                :disabled="currentPage === 1"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-              >
-                <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-              </button>
-              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-semibold text-xs">
-                {{ currentPage }} / {{ totalPages }}
-              </span>
-              <button 
-                @click="currentPage < totalPages && currentPage++" 
-                :disabled="currentPage === totalPages"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-              >
-                Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </main>
@@ -615,3 +446,104 @@ const loadError = ref('');
 
   </div>
 </template>
+
+<style scoped>
+/* Registry pages: same layout as Registered properties (one screen on laptop, table scrolls inside its card) */
+@media (min-width: 768px) {
+  .registry-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
+  .registry-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
+  .registry-fit > main :deep(.management-page-header) { margin-bottom: 14px; }
+  .registry-fit > main > * { flex-shrink: 0; }
+  .registry-fit > main > .registry-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .registry-table-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .registry-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .registry-table-scroll thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+  .registry-table-scroll :deep(td) { padding-top: 10px; padding-bottom: 10px; vertical-align: middle; }
+}
+
+/* Summary tiles */
+.reg-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+@media (min-width: 1024px) { .reg-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.reg-tiles > div { padding: 12px 16px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; min-width: 0; }
+.reg-tiles dt { font-size: 12px; font-weight: 600; color: #64748b; }
+.reg-tiles dt i { color: #94a3b8; margin-right: 4px; }
+.reg-tiles dd { margin: 4px 0 0; font-size: 22px; font-weight: 700; color: #142b4a; line-height: 1.2; }
+.reg-tiles .reg-tile-text { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reg-tile-sub { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+.reg-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
+.reg-tiles > div.is-primary dd, .reg-tiles > div.is-primary dt i { color: #1e4a8d; }
+.reg-tiles > div.is-danger { background: #fff1f2; border-color: #fecdd3; }
+.reg-tiles > div.is-danger dd { color: #be123c; }
+
+/* Filter bar */
+.reg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.reg-search { position: relative; flex: 1 1 280px; min-width: 0; }
+.reg-search > i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
+.reg-search input { width: 100%; padding: 12px 40px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-search input::placeholder { font-weight: 400; color: #94a3b8; }
+.reg-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.reg-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-height: 28px !important; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer; }
+.reg-search-clear:hover { background: #f1f5f9; color: #475569; }
+.reg-select { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 46px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-select i { color: #94a3b8; font-size: 12px; }
+.reg-select select { border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; cursor: pointer; min-height: 0 !important; max-width: 220px; }
+.reg-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.reg-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #1e4a8d; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.reg-btn-primary:hover { background: #163870; }
+@media (max-width: 767px) { .reg-select, .reg-btn-primary { flex: 1 1 100%; justify-content: center; } .reg-select select { max-width: none; width: 100%; } }
+
+/* Chips, buttons */
+.reg-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; text-transform: capitalize; }
+.reg-chip.is-primary { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.reg-chip.is-violet { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+.reg-chip.is-success { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.reg-chip.is-warning { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.reg-chip.is-danger { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.reg-chip.is-male { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.reg-chip.is-female { background: #fdf2f8; color: #be185d; border-color: #fbcfe8; }
+.reg-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.reg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; min-height: 36px !important; border-radius: 10px; border: 1px solid #bfdbfe; background: #fff; color: #1d4ed8; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.reg-btn:hover { background: #eff6ff; }
+.reg-btn.is-icon { width: 36px; padding: 0; }
+.reg-btn.is-danger { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+.reg-btn.is-danger:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+.reg-btn.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.reg-btn.is-success:hover { background: #22c55e; border-color: #22c55e; color: #fff; }
+.reg-avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0; background: #f1f5f9; }
+
+/* Residency groups */
+.reg-group-row td { background: #f5f8fd; }
+.reg-group-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #1e4a8d; color: #fff; font-size: 13px; }
+.reg-group-name { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; font-weight: 700; color: #142b4a; }
+.reg-group-sub { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+.reg-group-sub i { color: #94a3b8; margin-right: 2px; }
+.reg-emergency { display: inline-flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-radius: 10px; background: #fff1f2; border: 1px solid #fecdd3; min-width: 150px; }
+.reg-emergency span { font-size: 12px; color: #9f1239; font-weight: 600; }
+.reg-emergency strong { font-size: 13px; color: #be123c; font-weight: 700; }
+.reg-group-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #e7eef8; border: 1px solid #c9d7ec; }
+.reg-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+.reg-card-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 10px 0 0; }
+.reg-card-facts dt { font-size: 11.5px; color: #64748b; }
+.reg-card-facts dd { margin: 1px 0 0; font-size: 13px; font-weight: 600; color: #142b4a; }
+
+
+/* Actions: fixed slots (Edit · reset password · access) so buttons line up on every row */
+.reg-actions { display: grid; grid-template-columns: 76px 36px 176px; gap: 8px; align-items: center; justify-content: center; }
+.reg-action-wide { width: 100%; justify-content: center; }
+.reg-actions > .reg-btn { width: 100%; }
+
+/* Center every column's content (group banners in the residency table stay left-aligned) */
+.registry-table-scroll :deep(th),
+.registry-table-scroll :deep(td) { text-align: center !important; vertical-align: middle !important; }
+.registry-table-scroll :deep(.reg-group-row td) { text-align: left !important; }
+/* User column stays left-aligned; the other columns are centered */
+.registry-table-scroll :deep(tr > th:first-child),
+.registry-table-scroll :deep(tr > td:first-child) { text-align: left !important; }
+
+/* User registry: the page scrolls (no inner scroll box); the column header stays pinned below the top bar */
+@media (min-width: 768px) {
+  .registry-table-card { overflow: clip !important; }
+  .registry-table-scroll { overflow: visible !important; }
+  .registry-table-scroll thead th { position: sticky; top: 72px; z-index: 5; background: #f8fafc; box-shadow: inset 0 -1px 0 #e2e8f0; }
+}
+</style>
