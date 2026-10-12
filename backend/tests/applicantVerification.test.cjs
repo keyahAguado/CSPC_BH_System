@@ -6,21 +6,24 @@ let helpers;
 test.before(async () => { helpers = await import('../config/applicantVerification.js'); });
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
 const rawToken = 'a'.repeat(64);
-function fixture({ user, expired = false, used = false, failSend = false } = {}) {
-    const state = { used, rows: 0, sent: 0, verified: false, committed: 0, rolledBack: 0 };
+const requestId = 'c'.repeat(64);
+function fixture({ user, expired = false, used = false, failSend = false, linkOpened = false, claimed = false } = {}) {
+    const state = { used, rows: 0, sent: 0, verified: false, committed: 0, rolledBack: 0, linkOpened, claimed };
     const connection = {
         async beginTransaction() {}, async commit() { state.committed++; }, async rollback() { state.rolledBack++; }, release() {},
         async query(sql, args) {
             if (sql.startsWith('SELECT id, email FROM applicant_email')) return [!expired && !state.used && args[0] === helpers.hashVerificationToken(rawToken) ? [{ id: 1, email: 'applicant@example.test' }] : []];
+            if (sql.startsWith('SELECT id, email, verified_at')) return [args[0] === helpers.hashVerificationToken(requestId) ? [{ id: 1, email: 'applicant@example.test', verified_at: state.linkOpened ? new Date() : null, claimed_at: state.claimed ? new Date() : null, active: expired ? 0 : 1 }] : []];
             if (sql.startsWith('SELECT id, role')) return [user ? [user] : []];
-            if (sql.startsWith('UPDATE applicant_email')) { state.used = true; return [{ affectedRows: 1 }]; }
+            if (sql.startsWith('UPDATE applicant_email_verifications SET claimed_at')) { state.claimed = true; return [{ affectedRows: 1 }]; }
+            if (sql.startsWith('UPDATE applicant_email')) { state.used = true; state.linkOpened = true; return [{ affectedRows: 1 }]; }
             if (sql.startsWith('UPDATE users')) { state.verified = true; return [{ affectedRows: 1 }]; }
             throw Error('Unexpected query: ' + sql);
         }
     };
     const pool = { async getConnection() { return connection; }, async query(sql, args) {
         if (sql.startsWith('SELECT role')) return [user ? [user] : []];
-        if (sql.startsWith('INSERT INTO applicant_email')) { state.rows++; assert.match(args[1], /^[a-f0-9]{64}$/); return [{ insertId: 1 }]; }
+        if (sql.startsWith('INSERT INTO applicant_email')) { state.rows++; assert.match(args[1], /^[a-f0-9]{64}$/); assert.match(args[2], /^[a-f0-9]{64}$/); return [{ insertId: 1 }]; }
         if (sql.startsWith('DELETE FROM applicant_email')) { state.rows--; return [{}]; }
         throw Error('Unexpected pool query');
     } };
@@ -50,7 +53,7 @@ test('Unverified request is rejected before upload or identity selection', () =>
 });
 test('New email receives a link without creating a user or property', async () => {
     const f = fixture(), res = response(); await f.handlers.request({ ip: 'mock', body: { email: 'applicant@example.test' } }, res);
-    assert.equal(res.code, 200); assert.equal(f.state.rows, 1); assert.equal(f.state.sent, 1);
+    assert.equal(res.code, 200); assert.equal(f.state.rows, 1); assert.equal(f.state.sent, 1); assert.match(res.body.requestId, /^[a-f0-9]{64}$/);
 });
 test('SMTP/provider failure invalidates challenge and reports no application submitted', async () => {
     const f = fixture({ failSend: true }), res = response(); await f.handlers.request({ ip: 'mock', body: { email: 'applicant@example.test' } }, res);
@@ -67,16 +70,32 @@ test('Institutional and malformed email rejected without delivery', async () => 
         assert.equal(res.code, 400); assert.equal(f.state.sent, 0);
     }
 });
-test('Valid challenge grants a restricted pre-registration session', async () => {
+test('Opening the link only confirms the inbox and does not sign in that device', async () => {
     const f = fixture(), res = response(); await f.handlers.consume({ ip: 'mock', body: { token: rawToken } }, res);
-    assert.equal(res.code, 200); assert.equal(res.body.hasApplications, false); assert.equal(f.state.used, true);
-    assert.equal(helpers.readVerifiedApplicant('Bearer ' + res.body.token).applicantId, undefined);
+    assert.equal(res.code, 200); assert.equal(res.body.verified, true); assert.equal(res.body.token, undefined); assert.equal(f.state.used, true);
+});
+test('Requesting tab receives a restricted pre-registration session once the link was opened', async () => {
+    const f = fixture(), pending = response(), done = response();
+    await f.handlers.status({ ip: 'mock', body: { requestId } }, pending);
+    assert.equal(pending.body.verified, false); assert.equal(pending.body.token, undefined);
+    await f.handlers.consume({ ip: 'mock', body: { token: rawToken } }, response());
+    await f.handlers.status({ ip: 'mock', body: { requestId } }, done);
+    assert.equal(done.code, 200); assert.equal(done.body.hasApplications, false);
+    assert.equal(helpers.readVerifiedApplicant('Bearer ' + done.body.token).applicantId, undefined);
 });
 test('Verified existing pending applicant gets only its own identity', async () => {
     const f = fixture({ user: { id: 77, role: 'owner', status: 'pending', password: null, google_id: null } }), res = response();
-    await f.handlers.consume({ ip: 'mock', body: { token: rawToken } }, res);
+    await f.handlers.consume({ ip: 'mock', body: { token: rawToken } }, response());
+    await f.handlers.status({ ip: 'mock', body: { requestId } }, res);
     assert.equal(res.code, 200); assert.equal(f.state.verified, true);
     assert.equal(helpers.readVerifiedApplicant('Bearer ' + res.body.token).applicantId, 77);
+});
+test('Verified session is handed over once and never for expired or unknown requests', async () => {
+    for (const [options, id] of [[{ linkOpened: true, claimed: true }, requestId], [{ linkOpened: true, expired: true }, requestId], [{ linkOpened: true }, 'd'.repeat(64)]]) {
+        const f = fixture(options), res = response(); await f.handlers.status({ ip: 'mock', body: { requestId: id } }, res);
+        assert.equal(res.body.verified, false); assert.equal(res.body.expired, true); assert.equal(res.body.token, undefined);
+    }
+    const bad = response(); await fixture().handlers.status({ ip: 'mock', body: { requestId: 'nope' } }, bad); assert.equal(bad.code, 400);
 });
 test('One-time token cannot be consumed twice', async () => {
     const f = fixture(), first = response(), second = response();
@@ -102,7 +121,7 @@ test('Activation/deactivation between request and verification refuses applicant
 });
 test('Rate limit prevents delivery and token consumption', async () => {
     const h = helpers.verificationHandlers({ pool: {}, limit: () => false });
-    for (const [method, body] of [['request', { email: 'applicant@example.test' }], ['consume', { token: rawToken }]]) {
+    for (const [method, body] of [['request', { email: 'applicant@example.test' }], ['consume', { token: rawToken }], ['status', { requestId }]]) {
         const res = response(); await h[method]({ ip: 'mock', body }, res); assert.equal(res.code, 429);
     }
 });

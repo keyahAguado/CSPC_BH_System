@@ -1,9 +1,12 @@
 <script setup>
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
+import DropdownSelect from '../../components/DropdownSelect.vue';
+import TablePager from '../../components/management/TablePager.vue';
 import { verifiedApplicantEmail } from '../../utils/applicantSession.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { normalizePhPhone } from '../../utils/phoneValidation.js';
 import { getRegions, getProvinces, getCitiesByRegion, getCities, getBarangays } from '../../utils/psgc.js';
+import { saveDraftPart, loadDraft, clearDraft } from '../../utils/registrationDraft.js';
 import { applicantToken, applicantHeaders, setApplicantToken, STATUS_INFO } from '../../utils/applicantSession.js';
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
@@ -163,8 +166,8 @@ const handleDpaAccepted = () => {
 
 const isLoading = ref(true);
 
-// Legal documents step (laptop/desktop): the whole step is shown in one frame with no page scroll
-const fitLegalScreen = computed(() => useRegistrationLayout && activeStep.value === 1 && !isLoading.value && !submittedRegistration.value);
+// Details & Map (laptop/desktop): the step fits the window; the map takes whatever height is left.
+const fitDetailsStep = computed(() => useRegistrationLayout && activeStep.value === 3 && !isLoading.value && !submittedRegistration.value);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
@@ -320,6 +323,7 @@ const resetFormToCleanSlate = () => {
 };
 
 const loadOnboardingData = async () => {
+  draftReady.value = false;
   if (isPublicRegistration) {
     if (submittedRegistration.value) return;
     resetFormToCleanSlate();
@@ -328,11 +332,12 @@ const loadOnboardingData = async () => {
       return;
     }
     if (applicantEditRef) await fetchApplicantApplication();
-    else if (includeOwnerStep) loadRegions();
+    else if (includeOwnerStep) { await loadRegions(); await restoreDraft(); }
     return;
   }
   if (route.query.new === 'true') {
     resetFormToCleanSlate();
+    await restoreDraft();
   } else if (route.query.houseId) {
     houseId.value = route.query.houseId;
     await fetchHouseDetails();
@@ -582,55 +587,6 @@ const validateOwnerDetails = () => {
   return list;
 };
 
-// Shrinks the legal documents panel just enough to fit the space between the progress bar and
-// Back/Next, so every document, label and expiry date stays visible without scrolling.
-const legalFitRef = ref(null);
-let legalFitObserver = null;
-const fitLegalPanel = async () => {
-  await nextTick();
-  const el = legalFitRef.value;
-  if (!el) return;
-  el.style.width = '';
-  el.style.transform = '';
-  const on = fitLegalScreen.value && window.innerWidth >= 768;
-  document.documentElement.classList.toggle('registration-no-scroll', on);
-  if (!on) return;
-  const box = el.parentElement;
-  const cs = getComputedStyle(box);
-  const available = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  // Grow (up to 1.8x) or shrink the panel so it fills the free space exactly, without scrolling.
-  // Changing the width changes the height, so settle the scale in a few passes.
-  const MAX_SCALE = 1.8;
-  const target = available * 0.99;
-  let scale = 1;
-  for (let i = 0; i < 8; i++) {
-    // scrollHeight is the unscaled height at the current width; on screen it is scrollHeight × scale
-    const next = Math.min(MAX_SCALE, target / el.scrollHeight);
-    if (Math.abs(next - scale) < 0.005) { scale = next; break; }
-    scale = next;
-    el.style.width = `${100 / scale}%`;
-    el.style.transform = `scale(${scale})`;
-  }
-  // Never end up taller than the space (the last pass can overshoot slightly)
-  if (el.scrollHeight * scale > available) scale = available / el.scrollHeight;
-  el.style.width = Math.abs(scale - 1) > 0.005 ? `${100 / scale}%` : '';
-  el.style.transform = Math.abs(scale - 1) > 0.005 ? `scale(${scale})` : '';
-};
-watch([fitLegalScreen, permitFiles, permitFileErrors, existingFiles, validationErrors], fitLegalPanel, { deep: true });
-onMounted(() => {
-  window.addEventListener('resize', fitLegalPanel);
-  if (window.ResizeObserver && legalFitRef.value) {
-    legalFitObserver = new ResizeObserver(() => fitLegalPanel());
-    legalFitObserver.observe(legalFitRef.value.parentElement);
-  }
-  fitLegalPanel();
-});
-onUnmounted(() => {
-  window.removeEventListener('resize', fitLegalPanel);
-  legalFitObserver?.disconnect();
-  document.documentElement.classList.remove('registration-no-scroll');
-});
-
 const validateCurrentStep = () => {
   const errors = [];
   if (activeStep.value === 0 && includeOwnerStep) {
@@ -706,11 +662,106 @@ const nextStep = () => {
     return;
   }
   validationErrors.value = [];
-  if (activeStep.value < 4) activeStep.value++;
+  if (activeStep.value < 4) { pushStepToHistory = true; activeStep.value++; }
 };
 
 const prevStep = () => {
   if (activeStep.value > firstStep) activeStep.value--;
+};
+
+// ---- Keep progress across refresh / accidental Back -------------------------------------------
+// New registrations save a draft on this device (fields, current step and the chosen files) and
+// restore it on return. The step is also kept in the address (?step=N), so the browser/phone Back
+// button goes to the previous step instead of leaving the form. Editing an existing application
+// or property always loads from the server instead.
+let pushStepToHistory = false;
+const draftReady = ref(false);
+const draftKey = computed(() => {
+  if (includeOwnerStep) return verifiedEmail.value ? `register:${verifiedEmail.value}` : '';
+  if (isPortalRegistration) return `portal:${currentUser.value.id || currentUser.value.email || 'owner'}`;
+  return '';
+});
+const draftFieldRefs = {
+  ownerName, ownerEmailName, ownerPhone, addressStreet, regionCode, provinceCode, cityCode, barangayCode,
+  houseName, contactNumber, price, advanceMonths, depositMonths, depositType, mapLink, locationAddress,
+  selectedBarangay, latitude, longitude, description, permitExpiries, selectedFree, customFree, selectedPaid, customPaid
+};
+const draftFields = () => {
+  const out = { step: activeStep.value, dpaAccepted: !showDpaModal.value };
+  for (const [name, r] of Object.entries(draftFieldRefs)) out[name] = r.value;
+  return JSON.parse(JSON.stringify(out));
+};
+// Files are copied into plain arrays (reactive proxies cannot be stored)
+const draftFiles = () => ({
+  permits: Object.fromEntries(Object.entries(permitFiles.value).map(([k, list]) => [k, [...(list || [])]])),
+  main: mainHouseImg.value || null,
+  photos: selectedPhotos.value.filter(p => p.file).map(p => ({ file: p.file, category: p.category || null }))
+});
+const restoreAddressOptions = async () => {
+  if (!regionCode.value) return;
+  const provinces = await loadAddressOptions('province', () => getProvinces(regionCode.value));
+  regionHasProvinces.value = provinces.length > 0;
+  if (regionHasProvinces.value) {
+    provinceOptions.value = provinces;
+    if (provinceCode.value) cityOptions.value = await loadAddressOptions('city', () => getCities(provinceCode.value));
+  } else {
+    cityOptions.value = await loadAddressOptions('city', () => getCitiesByRegion(regionCode.value));
+  }
+  if (cityCode.value) barangayOptions.value = await loadAddressOptions('barangay', () => getBarangays(cityCode.value));
+};
+const restoreDraft = async () => {
+  draftReady.value = false;
+  const key = draftKey.value;
+  if (!key) return;
+  const draft = await loadDraft(key);
+  if (draft?.fields) {
+    const f = draft.fields;
+    for (const [name, r] of Object.entries(draftFieldRefs)) if (f[name] !== undefined) r.value = f[name];
+    if (f.dpaAccepted) handleDpaAccepted();
+    if (draft.files) {
+      permitFiles.value = draft.files.permits || {};
+      if (draft.files.main) { mainHouseImg.value = draft.files.main; mainHouseImgPreview.value = URL.createObjectURL(draft.files.main); }
+      selectedPhotos.value = (draft.files.photos || []).map(p => ({ file: p.file, previewUrl: URL.createObjectURL(p.file), dbValue: null, category: p.category }));
+    }
+    await restoreAddressOptions();
+    const step = Number(f.step);
+    if (Number.isInteger(step) && step >= firstStep && step <= 4) activeStep.value = step;
+  }
+  draftReady.value = true;
+  syncStepToUrl(false);
+};
+const syncStepToUrl = (push) => {
+  if (!useRegistrationLayout || applicantEditRef || submittedRegistration.value) return;
+  if (String(route.query.step) === String(activeStep.value)) return;
+  router[push ? 'push' : 'replace']({ query: { ...route.query, step: String(activeStep.value) } }).catch(() => {});
+};
+watch(activeStep, () => {
+  const push = pushStepToHistory;
+  pushStepToHistory = false;
+  if (draftReady.value || !draftKey.value) syncStepToUrl(push);
+});
+// Back / Forward in the browser (or the phone's back gesture) moves between steps
+watch(() => route.query.step, (value) => {
+  const step = Number(value);
+  if (Number.isInteger(step) && step >= firstStep && step <= 4 && step !== activeStep.value) activeStep.value = step;
+});
+let draftFieldsTimer;
+watch(() => JSON.stringify(draftFields()), () => {
+  if (!draftReady.value || !draftKey.value || submittedRegistration.value) return;
+  clearTimeout(draftFieldsTimer);
+  const key = draftKey.value;
+  draftFieldsTimer = setTimeout(() => saveDraftPart(key, 'fields', draftFields()), 400);
+});
+watch(() => [permitFiles.value, mainHouseImg.value, selectedPhotos.value.map(p => p.file)], () => {
+  if (!draftReady.value || !draftKey.value || submittedRegistration.value) return;
+  saveDraftPart(draftKey.value, 'files', draftFiles());
+}, { deep: true });
+// Email verified in this tab after the page loaded: pick up a draft saved earlier for that email
+watch(verifiedEmail, (email) => { if (email && includeOwnerStep && !submittedRegistration.value) restoreDraft(); });
+const discardDraft = () => {
+  draftReady.value = false;
+  clearTimeout(draftFieldsTimer);
+  if (draftKey.value) clearDraft(draftKey.value);
 };
 
 // Add Custom Amenity dynamically
@@ -751,6 +802,37 @@ const handlePermitFile = async (key, event) => {
   delete permitFileErrors.value[key];
   permitFiles.value[key] = await Promise.all(files.map(f => (isPdfUpload(f) ? f : transcodeHeicFile(f))));
 };
+
+// Legal documents table: one row per document, paged like the admin tables
+const allPermits = computed(() => [...requiredCriteria.value, ...optionalCriteria.value].map((p, i) => ({ ...p, number: i + 1 })));
+const docPage = ref(1);
+const docPerPage = ref(10);
+const docTotalPages = computed(() => Math.max(1, Math.ceil(allPermits.value.length / docPerPage.value)));
+const docStart = computed(() => (allPermits.value.length ? (docPage.value - 1) * docPerPage.value + 1 : 0));
+const docEnd = computed(() => Math.min(docPage.value * docPerPage.value, allPermits.value.length));
+// Rows on the current page, still grouped under Mandatory / Additional
+const docSections = computed(() => {
+  const rows = allPermits.value.slice(docStart.value - 1, docEnd.value);
+  return [
+    { key: 'required', title: 'Mandatory documents', note: 'Items 1–4', items: rows.filter(p => p.required) },
+    { key: 'optional', title: 'Additional documents', note: 'Items 5–8 · optional', items: rows.filter(p => !p.required) }
+  ].filter(section => section.items.length);
+});
+const permitHasFile = (key) => !!permitFiles.value[key]?.length || !!existingFiles.value[key];
+const permitDone = (key) => permitHasFile(key) && !!permitExpiries.value[key] && !permitFileErrors.value[key];
+const permitStatus = (key) => {
+  if (permitFileErrors.value[key]) return { tone: 'error', text: 'Needs attention' };
+  const count = permitFiles.value[key]?.length || 0;
+  if (count) return { tone: permitExpiries.value[key] ? 'done' : 'partial', text: `${count} file${count > 1 ? 's' : ''} attached${permitExpiries.value[key] ? '' : ' · add expiry date'}` };
+  if (existingFiles.value[key]) return { tone: permitExpiries.value[key] ? 'done' : 'partial', text: 'On file' };
+  return { tone: 'empty', text: 'Not uploaded' };
+};
+const formatFileSize = (bytes) => (bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB');
+// When "Next: Photos" flags a document, show the page that holds it
+watch(() => Object.keys(permitFileErrors.value).join(), () => {
+  const i = allPermits.value.findIndex(p => permitFileErrors.value[p.permit_key]);
+  if (i >= 0) docPage.value = Math.floor(i / docPerPage.value) + 1;
+});
 
 // Handle Main House Image with instant validation
 const handleMainImg = async (event) => {
@@ -1193,16 +1275,16 @@ onMounted(async () => {
     console.error('Google Maps loader failed:', err);
   } finally {
     isLoading.value = false;
+    if (activeStep.value === 3) { await nextTick(); initGoogleMap(); }
   }
 });
 
 // Reactively watch for route queries changing during component lifecycles (no remounting required)
 watch(
-  () => route.query,
+  () => JSON.stringify({ ...route.query, step: undefined }),
   async () => {
     await loadOnboardingData();
-  },
-  { deep: true }
+  }
 );
 
 watch(activeStep, async (newStep) => {
@@ -1367,6 +1449,7 @@ const submitApplication = async () => {
       });
       if (response.data.success) {
         const referenceNo = response.data.reference_no;
+        discardDraft();
         try {
           // Open Track My Application for the new reference right away.
           setApplicantToken(response.data.token);
@@ -1388,6 +1471,7 @@ const submitApplication = async () => {
     });
 
     if (response.data.success) {
+      discardDraft();
       const isAlreadyAccredited = currentUser.value.houseStatus === 'accredited';
       const successNotice = isAlreadyAccredited
         ? 'New boarding house application submitted! Awaiting SASO approval.'
@@ -1423,7 +1507,7 @@ const submitApplication = async () => {
 
 
 <template>
-  <div class="management-page management-form-page bg-[#eef6ff] min-h-screen font-sans pb-24" :class="{ 'registration-compact': useRegistrationLayout, 'registration-in-portal': isPortalRegistration, 'registration-fit-screen': fitLegalScreen }">
+  <div class="management-page management-form-page bg-[#eef6ff] min-h-screen font-sans pb-24" :class="{ 'registration-compact': useRegistrationLayout, 'registration-in-portal': isPortalRegistration, 'registration-details-fit': fitDetailsStep }">
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
     <!-- Navbar (the public registration page is a focused, full-width flow) -->
     <OwnerNav v-if="!isPublicRegistration" />
@@ -1517,20 +1601,20 @@ const submitApplication = async () => {
       <nav v-if="useRegistrationLayout" class="registration-progress" aria-label="Registration progress">
         <ol class="flex items-start justify-center">
           <li v-for="step in steps" :key="step" class="flex items-start">
-            <div class="flex flex-col items-center gap-1.5 w-12 sm:w-28">
+            <div class="flex flex-col items-center gap-1 w-10 sm:w-24">
               <span
                 :aria-current="activeStep === step ? 'step' : undefined"
                 :class="[
                   activeStep === step ? 'registration-step-active' : activeStep > step ? 'registration-step-done' : 'registration-step-todo',
-                  'w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm'
+                  'w-8 h-8 rounded-full flex items-center justify-center font-bold text-[13px]'
                 ]"
               >
                 <i v-if="activeStep > step" class="fa-solid fa-check" aria-hidden="true" />
                 <span v-else>{{ stepNumber(step) }}</span>
               </span>
-              <span class="hidden sm:block text-[12px] font-semibold text-center leading-tight" :class="activeStep === step ? 'text-[#142b4a]' : activeStep > step ? 'text-green-700' : 'text-slate-400'">{{ stepShortTitles[step] }}</span>
+              <span class="hidden sm:block text-[11.5px] font-semibold text-center leading-tight" :class="activeStep === step ? 'text-[#142b4a]' : activeStep > step ? 'text-green-700' : 'text-slate-400'">{{ stepShortTitles[step] }}</span>
             </div>
-            <span v-if="step < 4" class="h-0.5 w-4 sm:w-14 mt-5 rounded-full" :class="activeStep > step ? 'bg-green-400' : 'bg-slate-200'"></span>
+            <span v-if="step < 4" class="h-0.5 w-4 sm:w-12 mt-4 rounded-full" :class="activeStep > step ? 'bg-green-400' : 'bg-slate-200'"></span>
           </li>
         </ol>
       </nav>
@@ -1662,38 +1746,34 @@ const submitApplication = async () => {
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label for="owner-region" class="registration-label">Region</label>
-                  <select id="owner-region" v-model="regionCode" @change="onRegionChange"
-                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer" :class="ownerErrors.address && !regionCode ? 'border-red-400' : 'border-slate-200'">
-                    <option value="">{{ addressLoading === 'region' ? 'Loading…' : 'Select region' }}</option>
-                    <option v-for="r in regionOptions" :key="r.code" :value="r.code">{{ r.label }}</option>
-                  </select>
+                  <DropdownSelect id="owner-region" v-model="regionCode" @change="onRegionChange"
+                    :options="regionOptions.map(r => ({ value: r.code, label: r.label }))"
+                    :placeholder="addressLoading === 'region' ? 'Loading…' : 'Select region'"
+                    :invalid="!!(ownerErrors.address && !regionCode)" trigger-class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition border-slate-200" />
                 </div>
                 <div>
                   <label for="owner-province" class="registration-label">Province</label>
-                  <select id="owner-province" v-model="provinceCode" @change="onProvinceChange"
+                  <DropdownSelect id="owner-province" v-model="provinceCode" @change="onProvinceChange"
                     :disabled="!regionCode || !regionHasProvinces || addressLoading === 'province'"
-                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && regionCode && regionHasProvinces && !provinceCode ? 'border-red-400' : 'border-slate-200'">
-                    <option value="">{{ addressLoading === 'province' ? 'Loading…' : (regionCode && !regionHasProvinces ? 'Not applicable' : 'Select province') }}</option>
-                    <option v-for="o in provinceOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
-                  </select>
+                    :options="provinceOptions.map(o => ({ value: o.code, label: o.name }))"
+                    :placeholder="addressLoading === 'province' ? 'Loading…' : (regionCode && !regionHasProvinces ? 'Not applicable' : 'Select province')"
+                    :invalid="!!(ownerErrors.address && regionCode && regionHasProvinces && !provinceCode)" trigger-class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition border-slate-200" />
                 </div>
                 <div>
                   <label for="owner-city" class="registration-label">City / Municipality</label>
-                  <select id="owner-city" v-model="cityCode" @change="onCityChange"
+                  <DropdownSelect id="owner-city" v-model="cityCode" @change="onCityChange"
                     :disabled="!cityOptions.length || addressLoading === 'city'"
-                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && cityOptions.length && !cityCode ? 'border-red-400' : 'border-slate-200'">
-                    <option value="">{{ addressLoading === 'city' ? 'Loading…' : 'Select city / municipality' }}</option>
-                    <option v-for="o in cityOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
-                  </select>
+                    :options="cityOptions.map(o => ({ value: o.code, label: o.name }))"
+                    :placeholder="addressLoading === 'city' ? 'Loading…' : 'Select city / municipality'"
+                    :invalid="!!(ownerErrors.address && cityOptions.length && !cityCode)" trigger-class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition border-slate-200" />
                 </div>
                 <div>
                   <label for="owner-barangay" class="registration-label">Barangay</label>
-                  <select id="owner-barangay" v-model="barangayCode"
+                  <DropdownSelect id="owner-barangay" v-model="barangayCode"
                     :disabled="!barangayOptions.length || addressLoading === 'barangay'"
-                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && barangayOptions.length && !barangayCode ? 'border-red-400' : 'border-slate-200'">
-                    <option value="">{{ addressLoading === 'barangay' ? 'Loading…' : 'Select barangay' }}</option>
-                    <option v-for="o in barangayOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
-                  </select>
+                    :options="barangayOptions.map(o => ({ value: o.code, label: o.name }))"
+                    :placeholder="addressLoading === 'barangay' ? 'Loading…' : 'Select barangay'"
+                    :invalid="!!(ownerErrors.address && barangayOptions.length && !barangayCode)" trigger-class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition border-slate-200" />
                 </div>
               </div>
               <div>
@@ -1710,7 +1790,7 @@ const submitApplication = async () => {
 
         <!-- ================= STEP 1: MANDATORY PERMITS ================= -->
         <div v-show="activeStep === 1" class="registration-legal bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
-          <div ref="legalFitRef" class="legal-fit">
+          <div class="legal-fit">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
             <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-semibold shadow-sm">{{ stepNumber(1) }}</div>
             <div>
@@ -1720,120 +1800,65 @@ const submitApplication = async () => {
           </div>
 
 
-          <div class="space-y-10">
-            <!-- SECTION A: MANDATORY REQUIRED DOCUMENTS -->
-            <div>
-              <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
-                <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                  <i class="fa-solid fa-shield-halved text-blue-600"></i> Mandatory Documents
-                </h3>
-                <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Required (Items 1-4)</span>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6" :class="{ 'lg:grid-cols-4': useRegistrationLayout }">
-                <div
-                  v-for="(p, idx) in requiredCriteria" 
-                  :key="p.id" 
-                  class="relative group p-6 rounded-2xl border transition-all"
-                  :class="permitFileErrors[p.permit_key] ? 'bg-rose-50/30 border-rose-300' : 'bg-slate-50/60 border-slate-200/80 hover:border-blue-300 hover:bg-white'"
-                >
-                  <div class="flex items-center justify-between mb-4 gap-2">
-                    <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
-                      <span class="text-blue-600 font-semibold mr-1">{{ idx + 1 }}.</span> {{ p.label }}
-                    </label>
-                    <span class="bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Required</span>
-                  </div>
-                  
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
-                      <input aria-label="Scanned File" 
-                        type="file" 
-                        multiple
-                        accept="image/*,application/pdf,.pdf"
-                        @change="(e) => handlePermitFile(p.permit_key, e)"
-                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
-                      />
-                      <p v-if="permitFiles[p.permit_key]?.length && !permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-slate-500 mt-1.5 truncate" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
-                        <i class="fa-solid fa-paperclip mr-1"></i>{{ permitFiles[p.permit_key].length }} file{{ permitFiles[p.permit_key].length > 1 ? 's' : '' }}: {{ permitFiles[p.permit_key].map(f => f.name).join(', ') }}
-                      </p>
-                      <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
-                        <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
-                      </p>
-                      <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-[12px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
-                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[12px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
+          <div class="dt-card">
+            <TablePager position="top" noun="documents" :page="docPage" @update:page="docPage = $event" :total-pages="docTotalPages" :start="docStart" :end="docEnd" :total="allPermits.length" :per-page="docPerPage" @update:per-page="docPerPage = $event; docPage = 1" />
+            <!-- Each group title sits above its own column header -->
+            <div v-for="section in docSections" :key="section.key" class="dt-group">
+              <div class="dt-group-title"><i :class="['fa-solid', section.key === 'required' ? 'fa-shield-halved' : 'fa-folder-open']" aria-hidden="true"></i> {{ section.title }} <span>{{ section.note }}</span></div>
+              <div class="dt-scroll">
+                <table class="dt-table">
+                  <thead>
+                    <tr>
+                      <th class="dt-col-num">#</th>
+                      <th>Document<small>Legal permit / clearance</small></th>
+                      <th>File<small>PDF or image · up to 5</small></th>
+                      <th>Expiration date</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in section.items" :key="p.id" :class="['dt-row', 'is-' + permitStatus(p.permit_key).tone]">
+                      <td class="dt-col-num" data-label="#">{{ p.number }}</td>
+                      <td data-label="Document">
+                        <span class="dt-name">{{ p.label }}</span>
+                        <span :class="['dt-pill', p.required ? 'is-required' : '']">{{ p.required ? 'Required' : 'Optional' }}</span>
+                      </td>
+                      <td data-label="File">
+                        <div class="dt-file">
+                          <!-- The invisible file input covers the button, so click and drag-and-drop both work -->
+                          <span class="dt-upload">
+                            <input type="file" multiple accept="image/*,application/pdf,.pdf" :aria-label="'Upload ' + p.label" @change="(e) => handlePermitFile(p.permit_key, e)" />
+                            <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> {{ permitFiles[p.permit_key]?.length ? 'Replace' : 'Upload' }}
+                          </span>
+                          <span v-if="permitFileErrors[p.permit_key]" class="dt-file-text is-error">{{ permitFileErrors[p.permit_key] }}</span>
+                          <span v-else-if="permitFiles[p.permit_key]?.length" class="dt-file-text is-ok" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
+                            <i :class="['fa-solid', isPdfUpload(permitFiles[p.permit_key][0]) ? 'fa-file-pdf' : 'fa-file-image']" aria-hidden="true"></i>
+                            {{ permitFiles[p.permit_key].length > 1 ? permitFiles[p.permit_key].length + ' files' : permitFiles[p.permit_key][0].name }}
+                            <small>{{ formatFileSize(permitFiles[p.permit_key].reduce((t, f) => t + f.size, 0)) }}</small>
+                          </span>
+                          <span v-else-if="existingFiles[p.permit_key]" class="dt-file-text is-ok">
+                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener">View</a>
+                          </span>
+                          <span v-else class="dt-file-text">No file chosen</span>
                         </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input aria-label="Expiration Date" type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
-                    </div>
-                  </div>
-                </div>
+                      </td>
+                      <td data-label="Expiration date">
+                        <input type="date" class="dt-date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" :aria-label="'Expiration date of ' + p.label" />
+                      </td>
+                      <td data-label="Status">
+                        <span :class="['dt-status', 'is-' + permitStatus(p.permit_key).tone]">
+                          <i :class="['fa-solid', { done: 'fa-circle-check', partial: 'fa-clock', error: 'fa-circle-exclamation', empty: 'fa-circle' }[permitStatus(p.permit_key).tone]]" aria-hidden="true"></i>
+                          {{ { done: 'Complete', partial: permitExpiries[p.permit_key] ? 'In progress' : 'Add expiry date', error: 'Needs attention', empty: p.required ? 'Missing' : 'Optional' }[permitStatus(p.permit_key).tone] }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-
-            <!-- SECTION B: ADDITIONAL SUPPORTING DOCUMENTS -->
-            <div>
-              <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
-                <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                  <i class="fa-solid fa-folder-open text-slate-400"></i> Additional Documents
-                </h3>
-                <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Optional (Items 5-8)</span>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6" :class="{ 'lg:grid-cols-4': useRegistrationLayout }">
-                <div
-                  v-for="(p, idx) in optionalCriteria" 
-                  :key="p.id" 
-                  class="relative group p-6 rounded-2xl border transition-all"
-                  :class="permitFileErrors[p.permit_key] ? 'bg-rose-50/30 border-rose-300' : 'bg-slate-50/60 border-slate-200/80 hover:border-blue-300 hover:bg-white'"
-                >
-                  <div class="flex items-center justify-between mb-4 gap-2">
-                    <label class="text-xs font-bold text-slate-800 transition group-hover:text-blue-600">
-                      <span class="text-slate-400 font-bold mr-1">{{ idx + 5 }}.</span> {{ p.label }}
-                    </label>
-                    <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">Optional</span>
-                  </div>
-                  
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
-                      <input aria-label="Scanned File" 
-                        type="file" 
-                        multiple
-                        accept="image/*,application/pdf,.pdf"
-                        @change="(e) => handlePermitFile(p.permit_key, e)"
-                        class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer" 
-                      />
-                      <p v-if="permitFiles[p.permit_key]?.length && !permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-slate-500 mt-1.5 truncate" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
-                        <i class="fa-solid fa-paperclip mr-1"></i>{{ permitFiles[p.permit_key].length }} file{{ permitFiles[p.permit_key].length > 1 ? 's' : '' }}: {{ permitFiles[p.permit_key].map(f => f.name).join(', ') }}
-                      </p>
-                      <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
-                        <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
-                      </p>
-                      <div v-if="existingFiles[p.permit_key] && !permitFileErrors[p.permit_key]" class="mt-2">
-                        <div class="flex items-center gap-2">
-                          <span class="text-[12px] text-emerald-600 font-bold uppercase tracking-wider"><i class="fa-solid fa-circle-check"></i> Current:</span>
-                          <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" class="text-[12px] font-bold text-blue-600 hover:underline uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap block max-w-[180px]">View Document</a>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expiration Date</label>
-                      <input aria-label="Expiration Date" type="date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" class="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 outline-none transition" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TablePager position="bottom" noun="documents" :page="docPage" @update:page="docPage = $event" :total-pages="docTotalPages" :start="docStart" :end="docEnd" :total="allPermits.length" :per-page="docPerPage" @update:per-page="docPerPage = $event; docPage = 1" />
           </div>
-          <p class="mt-8 text-[12px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC or PDF — up to 5 files per document, 10MB each.</p>
+          <p class="dt-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Accepted formats: PNG, JPG, JPEG, WEBP, HEIC or PDF — up to 5 files per document, 10 MB each. You can also drag files onto the Upload button.</p>
           </div>
         </div>
 
@@ -1966,7 +1991,7 @@ const submitApplication = async () => {
         </div>
 
         <!-- ================= STEP 3: CORE INFO & 3-WAY MAP ================= -->
-        <div v-show="activeStep === 3" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
+        <div v-show="activeStep === 3" class="registration-details bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
             <div class="bg-purple-100 text-purple-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">{{ stepNumber(3) }}</div>
             <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Boarding House Details</h2>
@@ -2012,15 +2037,11 @@ const submitApplication = async () => {
 
             <div>
               <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.selectedBarangay ? 'text-red-600' : 'text-slate-400'">Official Barangay (Nabua)</label>
-              <select aria-label="Official Barangay (Nabua)" 
-                v-model="selectedBarangay" 
+              <DropdownSelect aria-label="Official Barangay (Nabua)" v-model="selectedBarangay"
                 @change="validateField('selectedBarangay')"
-                class="w-full p-4 rounded-xl text-sm font-bold outline-none transition cursor-pointer border" 
-                :class="fieldErrors.selectedBarangay ? 'bg-red-50 border-red-500 focus:border-red-500' : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-blue-500'"
-              >
-                <option value="">Select Barangay</option>
-                <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
-              </select>
+                :options="barangaysList.map(b => ({ value: b, label: b }))" placeholder="Select Barangay"
+                :invalid="!!fieldErrors.selectedBarangay"
+                :trigger-class="['w-full p-4 rounded-xl text-sm font-bold outline-none transition border', fieldErrors.selectedBarangay ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-slate-200']" />
               <p v-if="fieldErrors.selectedBarangay" class="text-[12px] font-bold text-red-600 mt-1 ml-1 flex items-center gap-1">
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.selectedBarangay }}
               </p>
@@ -2050,34 +2071,26 @@ const submitApplication = async () => {
               <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Advance Rent</label>
-                  <select aria-label="Advance Rent" v-model="advanceMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
-                    <option value="0">No Advance</option>
-                    <option value="1">1 Month</option>
-                    <option value="2">2 Months</option>
-                  </select>
+                  <DropdownSelect aria-label="Advance Rent" v-model="advanceMonths" trigger-class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none transition"
+                    :options="[{ value: '0', label: 'No Advance' }, { value: '1', label: '1 Month' }, { value: '2', label: '2 Months' }]" />
                 </div>
 
                 <div>
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Deposit Duration</label>
-                  <select aria-label="Deposit Duration" v-model="depositMonths" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
-                    <option value="0">No Deposit</option>
-                    <option value="1">1 Month</option>
-                    <option value="2">2 Months</option>
-                  </select>
+                  <DropdownSelect aria-label="Deposit Duration" v-model="depositMonths" trigger-class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none transition"
+                    :options="[{ value: '0', label: 'No Deposit' }, { value: '1', label: '1 Month' }, { value: '2', label: '2 Months' }]" />
                 </div>
 
                 <div v-if="parseInt(depositMonths) > 0">
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Rent Deposit Type</label>
-                  <select aria-label="Rent Deposit Type" v-model="depositType" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
-                    <option value="consumable">Consumable (Last Month)</option>
-                    <option value="refundable">Refundable (Cash)</option>
-                  </select>
+                  <DropdownSelect aria-label="Rent Deposit Type" v-model="depositType" trigger-class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none transition"
+                    :options="[{ value: 'consumable', label: 'Consumable (Last Month)' }, { value: 'refundable', label: 'Refundable (Cash)' }]" />
                 </div>
               </div>
             </div>
 
             <!-- 3-Way Location -->
-            <div class="md:col-span-2" :class="useRegistrationLayout ? 'xl:col-start-3 xl:col-span-2 xl:row-start-1 xl:row-span-5' : 'border-t border-slate-100 pt-6 mt-4'">
+            <div class="registration-location md:col-span-2" :class="useRegistrationLayout ? 'xl:col-start-3 xl:col-span-2 xl:row-start-1 xl:row-span-5' : 'border-t border-slate-100 pt-6 mt-4'">
               <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-6">
                 <i class="fa-solid fa-map-location-dot" /> High-Precision Location Setup
               </h3>
@@ -2121,7 +2134,7 @@ const submitApplication = async () => {
 
                   <div 
                     class="rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl w-full relative bg-slate-50 group cursor-pointer"
-                    :class="useRegistrationLayout ? 'h-[280px]' : 'h-[380px] sm:h-[450px]'" 
+                    :class="useRegistrationLayout ? 'registration-map h-[280px]' : 'h-[380px] sm:h-[450px]'" 
                   >
                     <div ref="mapContainer" class="w-full h-full"></div>
                     <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
@@ -2148,7 +2161,7 @@ const submitApplication = async () => {
             <input type="hidden" v-model="latitude" />
             <input type="hidden" v-model="longitude" />
 
-            <div class="md:col-span-2">
+            <div class="registration-description md:col-span-2">
               <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Property Description &amp; Rules</label>
               <textarea aria-label="Property Description &amp;amp; Rules" v-model="description" :rows="useRegistrationLayout ? 2 : 4" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Describe your rooms, house rules (curfews), and environment..."></textarea>
             </div>
@@ -2302,7 +2315,7 @@ const submitApplication = async () => {
   .registration-topbar-actions { padding: 0 8px; }
 }
 .registration-compact.management-page > main { max-width: none !important; padding: 16px clamp(12px, 2vw, 32px) 0 !important; }
-.registration-progress { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px 10px; margin-bottom: 10px; }
+.registration-progress { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 16px 6px; margin-bottom: 10px; }
 .registration-compact main > .mb-10 { margin-bottom: 12px !important; }
 .registration-compact main > :is(.p-10, .p-8) { padding: 14px 18px !important; }
 .registration-compact main > div .w-14.h-14 { width: 40px; height: 40px; }
@@ -2332,23 +2345,113 @@ const submitApplication = async () => {
 .registration-compact main > form { flex: 1; display: flex; flex-direction: column; }
 .registration-compact form > .animate-fade-in { flex: 1; display: flex; flex-direction: column; }
 .registration-compact form > .animate-fade-in > :not(:first-child) { flex-shrink: 0; }
-/* Legal documents step (laptop/desktop): one frame, no page scroll. The page is locked to the
-   window height and the documents panel is scaled to fit by fitLegalPanel(). */
-@media (min-width: 768px) {
-  html.registration-no-scroll, html.registration-no-scroll body { overflow: hidden !important; }
-  .registration-fit-screen.management-page { height: 100dvh; min-height: 0 !important; overflow: hidden; display: flex; flex-direction: column; }
-  .registration-fit-screen.management-page > main { flex: 1 1 0; min-height: 0 !important; overflow: hidden; }
-  .registration-fit-screen main > form { min-height: 0; }
-  .registration-fit-screen form > .registration-legal { flex: 1 1 0; min-height: 0; overflow: hidden; display: block; }
-  .registration-fit-screen .legal-fit { transform-origin: top left; }
-}
 .registration-compact .registration-legal > .legal-fit { margin-bottom: 0 !important; padding-bottom: 0 !important; }
 .registration-compact .registration-legal .legal-fit > div:first-child { margin-bottom: 10px !important; padding-bottom: 8px !important; }
+/* Legal documents: table with the admin pager (Showing 1 to 8 of 8 · Rows per page · Prev / Next) */
+.dt-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; }
+.dt-group + .dt-group { border-top: 1px solid #e2e8f0; }
+.dt-group-title { padding: 9px 14px; background: #eef2f7; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: .04em; }
+.dt-group-title i { margin-right: 6px; color: #2563eb; }
+.dt-group-title span { margin-left: 6px; font-weight: 500; color: #64748b; text-transform: none; letter-spacing: 0; }
+.dt-scroll { overflow-x: auto; }
+.dt-table { width: 100%; min-width: 860px; table-layout: fixed; border-collapse: collapse; font-size: 13px; color: #0f172a; text-align: left; }
+.dt-table thead th { padding: 9px 14px; background: #f8fafc; font-size: 12.5px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0; white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.dt-table thead th small { display: block; font-size: 11px; font-weight: 500; color: #64748b; }
+.dt-table td { padding: 9px 14px; vertical-align: middle; border-bottom: 1px solid #eef2f7; }
+.dt-table tbody tr:last-child td { border-bottom: 0; }
+.dt-col-num { width: 44px; color: #64748b; }
+/* Fixed column widths: changing a file name or status never shifts the columns,
+   and the Mandatory and Additional tables line up with each other */
+.dt-table thead th:nth-child(2) { width: 30%; }
+.dt-table thead th:nth-child(3) { width: 30%; }
+.dt-table thead th:nth-child(4) { width: 20%; }
+.dt-table thead th:nth-child(5) { width: auto; }
+.dt-row:hover td { background: #f8fbff; }
+.dt-row.is-error td { background: #fff7f7; }
+.dt-name { display: block; font-size: 13.5px; font-weight: 600; color: #0f172a; }
+.dt-pill { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: #f1f5f9; color: #64748b; }
+.dt-pill.is-required { background: #fff1f2; color: #be123c; }
+.dt-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dt-upload { position: relative; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #bfdbfe; border-radius: 9px; background: #eff6ff; color: #1d4ed8; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.dt-upload:hover, .dt-upload:focus-within { background: #dbeafe; border-color: #93c5fd; }
+.dt-upload input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0 !important; opacity: 0; cursor: pointer; }
+.dt-file-text { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: #94a3b8; }
+.dt-file-text.is-ok { color: #15803d; font-weight: 500; }
+.dt-file-text.is-ok i { margin-right: 4px; }
+.dt-file-text small { margin-left: 4px; color: #64748b; font-weight: 400; }
+.dt-file-text.is-error { color: #b91c1c; white-space: normal; }
+.dt-file-text a { color: #1d4ed8; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.dt-date { width: 160px; height: 34px; min-height: 34px !important; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; font-size: 13px; color: #0f172a; outline: none; }
+.dt-date:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .15); }
+.dt-status { display: inline-flex; align-items: center; gap: 5px; width: 140px; padding: 3px 9px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #64748b; }
+.dt-status.is-done { background: #dcfce7; color: #15803d; }
+.dt-status.is-partial { background: #fef3c7; color: #b45309; }
+.dt-status.is-error { background: #fee2e2; color: #b91c1c; }
+.dt-row.is-empty .dt-status i { font-size: 7px; }
+.dt-note { margin: 10px 0 0; font-size: 12px; color: #64748b; text-align: center; }
+.dt-note i { color: #94a3b8; margin-right: 4px; }
+/* Phones: each document becomes a small card */
+@media (max-width: 767px) {
+  .dt-table { min-width: 0; table-layout: auto; }
+  .dt-table thead th { width: auto !important; }
+  .dt-table thead { display: none; }
+  .dt-table, .dt-table tbody, .dt-table tr, .dt-table td { display: block; width: 100%; }
+  .dt-row { padding: 10px 14px; border-bottom: 1px solid #eef2f7; }
+  .dt-table td { padding: 3px 0; border: 0; }
+  .dt-col-num { display: none !important; }
+  .dt-date { width: 100%; }
+  .dt-file-text { max-width: none; }
+}
+/* Details & Map (laptop/desktop, 4-column layout): compact so the whole step fits on one screen.
+   Only spacing and box heights change; text stays readable and follows browser zoom. */
+@media (min-width: 1280px) {
+  .registration-compact .registration-details { padding: 14px 20px !important; }
+  .registration-compact .registration-details > div:first-child { margin-bottom: 10px !important; padding-bottom: 8px !important; }
+  .registration-compact .registration-details > div:first-child > div:first-child { width: 32px; height: 32px; }
+  .registration-compact .registration-details > .grid { gap: 10px 18px !important; }
+  .registration-compact .registration-details label.block { margin-bottom: 4px !important; }
+  .registration-compact .registration-details :is(input[type='text'], input[type='number']),
+  .registration-compact .registration-details .dd-trigger { height: 40px; min-height: 40px !important; padding: 0 12px !important; }
+  .registration-compact .registration-details textarea { padding: 8px 12px !important; }
+  .registration-compact .registration-details p.mt-1\.5 { margin-top: 3px !important; font-size: 11.5px; }
+  .registration-compact .registration-details h3.mb-4 { margin-bottom: 6px !important; }
+  .registration-compact .registration-details h3.mb-6 { margin-bottom: 6px !important; }
+  .registration-compact .registration-details .grid.md\:grid-cols-3 { gap: 12px !important; }
+  .registration-compact .registration-details .space-y-8 { padding: 12px 14px !important; border-radius: 18px !important; }
+  .registration-compact .registration-details .space-y-8 > * + * { margin-top: 10px !important; }
+  .registration-compact .registration-details .space-y-8 .mb-4 { margin-bottom: 8px !important; }
+  .registration-compact .registration-details .registration-map { height: 230px !important; border-width: 2px; border-radius: 18px !important; }
+}
+/* Details & Map, laptop/desktop: the page is locked to the window height (like the admin lists).
+   The left column keeps its size; the location box stretches to the bottom and the map fills the
+   remaining height, so the whole step fits without page scrolling. No scaling, so text keeps its
+   size and follows browser zoom. The panel never shows a scrollbar; the map absorbs the difference. */
+@media (min-width: 1280px) and (min-height: 600px) {
+  .registration-details-fit.management-page { height: 100dvh; min-height: 0 !important; overflow: hidden; display: flex; flex-direction: column; }
+  .registration-details-fit.management-page > main { flex: 1 1 0; min-height: 0 !important; overflow: hidden; }
+  .registration-details-fit main > * { flex-shrink: 0; }
+  .registration-details-fit main > form { flex: 1 1 0; min-height: 0; }
+  .registration-details-fit form > .registration-details { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .registration-details-fit .registration-details > * { flex-shrink: 0; }
+  .registration-details-fit .registration-details > .grid { flex: 1 1 auto; min-height: 0; grid-template-rows: repeat(4, auto) minmax(0, 1fr); }
+  .registration-details-fit .registration-location { display: flex; flex-direction: column; min-height: 0; }
+  .registration-details-fit .registration-location > .space-y-8 { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .registration-details-fit .registration-location > .space-y-8 > div:nth-child(2) { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .registration-details-fit .registration-location .registration-map { flex: 1 1 0; height: auto !important; min-height: 120px; }
+  .registration-details-fit .registration-description { display: flex; flex-direction: column; min-height: 0; }
+  .registration-details-fit .registration-description textarea { flex: 1 1 auto; min-height: 56px; resize: none; }
+  .registration-details-fit .registration-progress { margin-bottom: 8px; }
+  .registration-details-fit .registration-actions { padding: 6px 2px !important; }
+}
+/* Address search box: less padding (its size is set inline by the Google element) */
+@media (min-width: 1280px) {
+  .registration-compact #autocomplete-wrapper gmp-place-autocomplete { padding: 4px 10px !important; border-radius: 12px !important; }
+}
 /* Owner information: compact two-column layout */
 .registration-compact .registration-owner { align-content: start; }
 .registration-compact .registration-section-title { display: block; font-size: 13px; font-weight: 700; color: #142b4a; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; padding: 0; }
 .registration-compact .registration-label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 5px; }
-.registration-compact .registration-owner :is(input, select) { padding: 10px 14px !important; font-size: 15px !important; height: 48px; min-height: 48px; }
+.registration-compact .registration-owner :is(input, select, .dd-trigger) { padding: 10px 14px !important; font-size: 15px !important; height: 48px; min-height: 48px; }
 /* Photos: compact upload boxes like the document cards */
 /* Photos: featured photo + categorized gallery (consistent 4:3 frames) */
 .registration-photo-frame { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; background: #f1f5f9; }
@@ -2400,7 +2503,7 @@ const submitApplication = async () => {
 .step-btn-submit:hover:not(:disabled) { background: linear-gradient(135deg, #1fb355 0%, #116a33 100%); box-shadow: 0 8px 20px rgba(21, 128, 61, .34); }
 
 /* Step circles */
-.registration-step-active { background: linear-gradient(135deg, #2f6fc0, #1e4a8d); color: #fff; box-shadow: 0 0 0 5px #dbe8f8, 0 4px 12px rgba(30, 74, 141, .3); }
+.registration-step-active { background: linear-gradient(135deg, #2f6fc0, #1e4a8d); color: #fff; box-shadow: 0 0 0 3px #dbe8f8, 0 3px 8px rgba(30, 74, 141, .25); }
 .registration-step-done { background: linear-gradient(135deg, #34d399, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, .25); }
 .registration-step-todo { background: #fff; color: #94a3b8; border: 2px solid #dbe3ee; }
 
@@ -2439,10 +2542,4 @@ const submitApplication = async () => {
 .registration-compact .gmail-field input { height: 46px; min-height: 46px; font-size: 15px !important; }
 .gmail-domain { display: flex; align-items: center; padding: 0 14px; background: #eef2f7; border-left: 1px solid #e2e8f0; color: #475569; font-size: 14px; font-weight: 600; white-space: nowrap; user-select: none; }
 
-/* Legal documents step: give the documents panel as much room as possible */
-@media (min-width: 768px) {
-  .registration-fit-screen .registration-progress { padding: 6px 16px 4px !important; margin-bottom: 6px !important; }
-  .registration-fit-screen form > .registration-legal { padding: 12px 18px !important; }
-  .registration-fit-screen .registration-actions { padding: 6px 2px !important; }
-}
 </style>

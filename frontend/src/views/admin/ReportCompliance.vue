@@ -130,7 +130,7 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
       </div>
 
       <div class="no-print">
-        <PageHeader title="Compliance & expiry" description="Legal permit expiry dates of every accredited boarding house." />
+        <PageHeader title="Compliance & expiry" />
 
         <!-- Summary tiles -->
         <dl class="cp-tiles">
@@ -157,15 +157,15 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 
       <div v-else class="cp-body">
         <!-- LAPTOP / DESKTOP + PRINT: table -->
-        <div class="cp-card hidden md:flex md:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="cp-card admin-table-card hidden md:flex md:flex-col print:block">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="cp-scroll overflow-x-auto">
-            <table class="cp-table w-full" id="complianceTable">
+            <table class="cp-table admin-table w-full" id="complianceTable">
               <thead>
                 <tr>
-                  <th rowspan="2" class="text-left">Boarding house<small>Owner</small></th>
-                  <th rowspan="2">Status</th>
+                  <th rowspan="2">Boarding house<small>Owner</small></th>
+                  <th rowspan="2" class="cp-center">Status</th>
                   <th colspan="8" class="cp-group-head">Legal permit expiration dates</th>
                 </tr>
                 <tr>
@@ -174,13 +174,13 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
               </thead>
               <tbody>
                 <tr v-if="filteredHouses.length === 0">
-                  <td colspan="10" class="py-16 text-center text-slate-500 font-semibold text-sm">No compliance records found.</td>
+                  <td colspan="10" class="admin-table-empty">No compliance records found.</td>
                 </tr>
                 <!-- Screen: current page only. Print: every filtered row. -->
                 <tr v-for="h in filteredHouses" :key="h.name" :class="{ 'cp-off-page': !paginatedHouses.includes(h) }">
-                  <td class="text-left">
-                    <strong class="block text-slate-900 font-semibold">{{ h.name }}</strong>
-                    <span class="block text-slate-500 text-xs mt-0.5">{{ h.owner_name }}</span>
+                  <td class="cp-name-cell">
+                    <strong class="admin-table-name">{{ h.name }}</strong>
+                    <span class="admin-table-sub">{{ h.owner_name }}</span>
                   </td>
                   <td><span :class="['cp-status', 'is-' + statusTone(h.compliance_status)]">{{ statusLabel(h.compliance_status) }}</span></td>
                   <td v-for="p in PERMITS" :key="p.key">
@@ -334,27 +334,30 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 .cp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .cp-search { position: relative; flex: 1 1 280px; min-width: 0; }
 .cp-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.cp-search input { width: 100%; padding: 12px 16px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; }
+.cp-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; }
 .cp-search input::placeholder { font-weight: 400; color: #94a3b8; }
 .cp-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .cp-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #64748b; }
 .cp-dot { width: 8px; height: 8px; border-radius: 999px; background: #dc2626; }
 .cp-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.cp-print { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #dc2626; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.cp-print { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 16px; border: 0; border-radius: 10px; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .cp-print:hover { background: #b91c1c; }
 @media (max-width: 767px) { .cp-print { flex: 1 1 100%; justify-content: center; } }
 
-.cp-table { border-collapse: collapse; min-width: 1100px; font-size: 13px; color: #142b4a; }
+/* Compliance table uses the shared .admin-table look (styles/management.css); the two header rows
+   stick together, and a thin rule groups the permit date columns */
+.cp-table { min-width: 1100px !important; }
 .cp-table thead { position: sticky; top: 0; z-index: 2; }
-.cp-table thead th { padding: 10px 12px; background: #1e4a8d !important; color: #fff; font-size: 12.5px; font-weight: 700; text-align: center; vertical-align: middle; line-height: 1.3; border: 1px solid #3a67a8 !important; text-transform: none; white-space: nowrap; }
-.cp-table thead th small { display: block; font-size: 12px; font-weight: 500; color: #dbe7f7; }
-.cp-table thead th.text-left { text-align: left; }
-.cp-table thead th.cp-sub { background: #1e4a8d !important; font-weight: 600; }
-.cp-table tbody td { padding: 10px 12px; text-align: center; vertical-align: middle; border: 1px solid #e2e8f0; white-space: nowrap; }
-.cp-table tbody td.text-left { text-align: left; white-space: normal; }
-.cp-table tbody td:last-child { border-right: 0; }
-.cp-table tbody tr:nth-child(even) td { background: #f5f8fd; }
-.cp-status { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #f1f5f9; color: #475569; }
+.cp-table thead th { position: static !important; vertical-align: bottom; color: #0f172a !important; }
+.cp-table thead th.cp-group-head { padding-bottom: 4px !important; text-align: center !important; font-weight: 700 !important; color: #0f172a !important; }
+.cp-table thead th.cp-sub { padding-top: 4px !important; text-align: center !important; font-weight: 600 !important; color: #0f172a !important; }
+/* One divider line between Status and the permit date columns */
+.cp-table thead th.cp-group-head, .cp-table thead th.cp-sub:first-child, .cp-table tbody td:nth-child(3) { border-left: 1px solid #e2e8f0 !important; }
+/* Status and permit date columns are centred */
+.cp-table thead th.cp-center, .cp-table tbody td:not(.cp-name-cell) { text-align: center !important; }
+.cp-table tbody td { white-space: nowrap; }
+.cp-table tbody td.cp-name-cell { white-space: normal; min-width: 220px; }
+.cp-status { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #475569; }
 .cp-status.is-success { background: #e3f6ea; color: #15803d; }
 .cp-status.is-warning { background: #fff7ed; color: #c2410c; }
 .cp-status.is-danger { background: #fee2e2; color: #b91c1c; }
@@ -376,6 +379,7 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 /* Printed copy / PDF: large, even text in every cell */
 @media print {
   .cp-table { min-width: 0 !important; width: 100% !important; }
+  .cp-table thead th, .cp-table tbody td { padding: 8px 10px !important; white-space: normal !important; }
   .cp-table thead th, .cp-table thead th * { font-size: 9.5pt !important; }
   .cp-table tbody td, .cp-table tbody td * { font-size: 10pt !important; line-height: 1.3 !important; }
   .print-letterhead p { font-size: 10.5pt !important; }
@@ -383,11 +387,6 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
   .signatories-block p { font-size: 10pt !important; }
 }
 
-/* Clean outer edge: no side borders against the card, but a closing line under the last row */
-.cp-table tr > :first-child { border-left: 0 !important; }
-.cp-table tr > :last-child { border-right: 0 !important; }
-.cp-table thead tr:first-child th { border-top: 0 !important; }
-.cp-table tbody tr:last-child td { border-bottom: 1px solid #cbd5e1 !important; }
 
 /* Signature lines sit at the bottom of every printed page; the empty table footer
    (repeated on each page) keeps rows from running underneath them */
@@ -396,5 +395,16 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
   .management-page .signatories-block { position: fixed !important; left: 0 !important; right: 0 !important; bottom: 0 !important; margin: 0 !important; padding: 0 0 4mm !important; background: #fff !important; }
   .sig-spacer-row { display: table-footer-group !important; }
   .sig-spacer-row td { height: 26mm !important; border: 0 !important; padding: 0 !important; background: transparent !important; }
+}
+/* Printed copy: every cell gets the same visible border (including Status | Business),
+   and column titles wrap between words only ("Building", not "Buildin g") */
+@media print {
+  .cp-table thead th, .cp-table thead th.cp-group-head, .cp-table thead th.cp-sub, .cp-table thead th.cp-sub:first-child,
+  .cp-table tbody td, .cp-table tbody td:nth-child(3) { border: 1px solid #475569 !important; }
+  .cp-table thead { position: static !important; }
+  .cp-table { table-layout: auto !important; border: 0 !important; }
+  .cp-table .sig-spacer-row td { border: 0 !important; }
+  .cp-table thead th, .cp-table thead th * { font-size: 8pt !important; overflow-wrap: normal !important; word-break: keep-all !important; hyphens: none !important; }
+  .cp-card { border: 0 !important; border-radius: 0 !important; }
 }
 </style>

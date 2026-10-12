@@ -202,7 +202,6 @@ onMounted(fetchContent);
       <header class="admin-page-head">
         <div>
           <h1>Landing page</h1>
-          <p>Edit the Core Features cards and the footer details shown on the public home page.</p>
         </div>
         <a href="/" target="_blank" rel="noopener" class="admin-btn admin-btn-secondary">
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> View landing page

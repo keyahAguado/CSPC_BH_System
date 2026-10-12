@@ -16,10 +16,14 @@ const router = express.Router();
 const verificationIpLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const verificationEmailLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 const verificationCooldown = createRateLimiter({ windowMs: 60 * 1000, max: 1 });
+// The requesting tab polls every few seconds while it waits for the link to be opened
+const verificationStatusLimit = createRateLimiter({ windowMs: 60 * 1000, max: 40 });
 const emailVerification = verificationHandlers({ pool, limit: key => key.startsWith('email:')
-    ? verificationEmailLimit(key) && verificationCooldown(key) : verificationIpLimit(key) });
+    ? verificationEmailLimit(key) && verificationCooldown(key)
+    : key.startsWith('status:') ? verificationStatusLimit(key) : verificationIpLimit(key) });
 router.post('/email/request', emailVerification.request);
 router.post('/email/verify', emailVerification.consume);
+router.post('/email/status', emailVerification.status);
 
 const accessByIp = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const accessByReference = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });

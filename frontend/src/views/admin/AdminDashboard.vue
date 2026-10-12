@@ -503,7 +503,6 @@ const loadError = ref('');
       <header class="admin-page-head no-print">
         <div>
           <h1>Welcome back, {{ adminName }}</h1>
-          <p>Accreditation, student residency, and booking activity across CSPC-accredited boarding houses.</p>
         </div>
       </header>
 
@@ -647,7 +646,7 @@ const loadError = ref('');
             <div class="admin-card-head">
               <div>
                 <h2 id="courses-title">Active residents by course</h2>
-                <p>Select a course to open its residents in the emergency registry residence report</p>
+                <p>Select a course to open its residents in the emergency registry residence</p>
               </div>
               <button type="button" @click="openCourseModal" class="admin-btn admin-btn-secondary">
                 <i class="fa-solid fa-sliders" aria-hidden="true"></i> Manage courses
@@ -702,7 +701,7 @@ const loadError = ref('');
               </router-link>
               <router-link to="/admin/emergency-monitoring">
                 <span class="admin-link-icon" aria-hidden="true"><i class="fa-solid fa-house-medical"></i></span>
-                <span><strong>Emergency registry residence report</strong><small>Residents and emergency contacts by area</small></span>
+                <span><strong>Emergency registry residence</strong><small>Residents and emergency contacts by area</small></span>
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </router-link>
             </nav>
