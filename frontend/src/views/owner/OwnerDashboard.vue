@@ -1,9 +1,8 @@
 <script setup>
 import LoadError from '../../components/management/LoadError.vue';
 
-import MetricCard from '../../components/management/MetricCard.vue';
-import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
@@ -100,6 +99,61 @@ const visibleHouses = computed(() => {
 const archivedCount = computed(() =>
   houses.value.filter(h => h.house_status === 'archived').length
 );
+
+// Welcome banner summary
+const accreditedCount = computed(() => houses.value.filter(h => h.house_status === 'accredited').length);
+const attentionCount = computed(() => houses.value.filter(h => h.house_status === 'rejected' || h.house_status === 'archived' || h.compliance === 'warning').length);
+const summaryLine = computed(() => {
+  if (!houses.value.length) return 'Register your first boarding house to start receiving bookings from CSPC students.';
+  const parts = [`${accreditedCount.value} of ${houses.value.length} ${houses.value.length === 1 ? 'property is' : 'properties are'} listed for students`];
+  if (stats.value.pendingBookings) parts.push(`${stats.value.pendingBookings} booking ${stats.value.pendingBookings === 1 ? 'request needs' : 'requests need'} your decision`);
+  else if (attentionCount.value) parts.push(`${attentionCount.value} ${attentionCount.value === 1 ? 'property needs' : 'properties need'} attention`);
+  return parts.join(' · ') + '.';
+});
+const firstName = computed(() => String(user.value || 'Owner').trim().split(/\s+/)[0]);
+
+const isExpiredArchive = (h) => h.house_status === 'archived' && (h.archived_by === 'system' || h.compliance === 'expired' || h.compliance_status === 'expired');
+const statusMeta = (h) => {
+  if (h.house_status === 'pending') return { label: 'Pending approval', tone: 'warning', icon: 'fa-hourglass-half' };
+  if (h.house_status === 'rejected') return { label: 'Rejected', tone: 'danger', icon: 'fa-circle-xmark' };
+  if (isExpiredArchive(h)) return { label: 'Inactive · permits expired', tone: 'danger', icon: 'fa-ban' };
+  if (h.house_status === 'archived' && h.archived_by === 'owner') return { label: 'Unlisted by you', tone: 'neutral', icon: 'fa-eye-slash' };
+  if (h.house_status === 'archived') return { label: 'Suspended by SASO', tone: 'neutral', icon: 'fa-box-archive' };
+  if (h.compliance === 'warning') return { label: 'Renew permits soon', tone: 'expiry', icon: 'fa-clock' };
+  return { label: 'Accredited', tone: 'success', icon: 'fa-circle-check' };
+};
+
+// Welcome banner, attention list and property facts
+const PERMIT_EXPIRY_FIELDS = ['business_form', 'barangay', 'sanitary', 'fire'].map(k => 'expiry_permit_' + k);
+const nextPermitExpiry = (h) => {
+  const dates = PERMIT_EXPIRY_FIELDS.map(f => h[f]).filter(Boolean).map(v => new Date(v)).filter(d => !Number.isNaN(d.getTime()));
+  if (!dates.length) return null;
+  return new Date(Math.min(...dates.map(d => d.getTime())));
+};
+const formatDay = (d) => d ? d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+// Days until the earliest required permit expires (negative once expired), counted in calendar days
+const permitDaysLeft = (h) => {
+  const d = nextPermitExpiry(h);
+  if (!d) return null;
+  const today = new Date();
+  const startOf = (x) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
+  return Math.round((startOf(d) - startOf(today)) / 86400000);
+};
+const permitCountdown = (h) => {
+  const days = permitDaysLeft(h);
+  if (days === null) return '';
+  if (days < 0) return `Expired ${-days} ${days === -1 ? 'day' : 'days'} ago`;
+  if (days === 0) return 'Expires today';
+  return `${days} ${days === 1 ? 'day' : 'days'} left`;
+};
+const permitTone = (h) => {
+  const days = permitDaysLeft(h);
+  if (days === null) return 'none';
+  if (days <= 0) return 'danger';
+  if (days <= 30) return 'warn';
+  return 'ok';
+};
+const formatPeso =(v) => (Number(v) > 0 ? '₱' + Number(v).toLocaleString('en-PH', { maximumFractionDigits: 0 }) : null);
 
 // Keep showArchived as an alias for backward-compat with any other refs
 const showArchived = computed(() => listingFilter.value === 'archived');
@@ -235,278 +289,172 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page bg-[#eef6ff] min-h-screen flex flex-col font-sans">
+  <div class="admin-shell owner-dashboard">
     <OwnerNav />
 
     <!-- Alert Panel -->
-    <div class="fixed top-8 right-8 z-[9999] max-w-sm w-full px-4 pointer-events-none space-y-4">
-      <div v-for="alert in alerts" :key="alert.id" 
-           class="pointer-events-auto flex items-stretch bg-white border-l-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-r-xl transition-all duration-500 ease-out transform overflow-hidden" 
+    <div class="fixed top-20 right-6 z-[9999] max-w-sm w-full px-4 pointer-events-none space-y-3">
+      <div v-for="alert in alerts" :key="alert.id"
+           class="pointer-events-auto relative flex items-stretch bg-white border-l-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] rounded-r-xl overflow-hidden"
            :class="alert.borderClass">
-        <div class="px-5 py-5 flex items-center justify-center bg-slate-50/50">
-          <i class="fa-solid text-xl" :class="[alert.iconClass, alert.iconColorClass]"></i>
+        <div class="px-4 flex items-center justify-center bg-slate-50/60">
+          <i class="fa-solid text-lg" :class="[alert.iconClass, alert.iconColorClass]"></i>
         </div>
-        <div class="flex-1 p-5 pr-8 text-left">
-          <h4 class="text-[12px] font-semibold uppercase tracking-normal text-slate-400 mb-1">{{ alert.title }}</h4>
-          <p class="text-[13px] font-bold text-slate-700 leading-relaxed">{{ alert.message }}</p>
+        <div class="flex-1 p-4 pr-8 text-left">
+          <h4 class="text-[12px] font-semibold text-slate-500 mb-0.5">{{ alert.title }}</h4>
+          <p class="text-[13px] font-semibold text-slate-700 leading-relaxed">{{ alert.message }}</p>
         </div>
-        <button aria-label="Close dialog" @click="closeAlert(alert.id)" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
+        <button aria-label="Close" @click="closeAlert(alert.id)" class="absolute top-2.5 right-2.5 text-slate-300 hover:text-slate-700 transition-colors">
           <i class="fa-solid fa-xmark text-xs"></i>
         </button>
       </div>
     </div>
 
-    <!-- Main Content -->
-    <main id="management-content" tabindex="-1" class="flex-1 w-full max-w-7xl mx-auto px-6 lg:px-12 py-10 text-center">
+    <main id="management-content" tabindex="-1">
       <LoadError :message="loadError" />
-      <PageHeader title="Overview & properties" :eyebrow="'Welcome, ' + user" description="Manage your boarding houses, reservation requests, and compliance." ><router-link to="/owner/accreditation?new=true" class="management-button inline-flex items-center gap-2 px-5 py-3"><i class="fa-solid fa-plus" aria-hidden="true"></i>Register a property</router-link></PageHeader>
 
-      <!-- Loading State -->
-      <div v-if="isLoading" class="py-20 flex flex-col items-center justify-center gap-3">
-        <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading Dashboard data...</p>
+      <section class="od-welcome" aria-label="Welcome">
+        <div class="od-welcome-text">
+          <p class="od-welcome-eyebrow"><span class="od-portal"><i class="fa-solid fa-house-user" aria-hidden="true"></i> Owner portal</span></p>
+          <h1>Welcome back, {{ firstName }}</h1>
+          <p class="od-welcome-summary">{{ isLoading ? 'Loading your properties…' : summaryLine }}</p>
+        </div>
+        <div class="od-welcome-actions">
+          <router-link to="/owner/accreditation?new=true" class="od-btn-gold"><i class="fa-solid fa-plus" aria-hidden="true"></i> Register a property</router-link>
+          <router-link to="/owner/bookings" class="od-btn-glass"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i> View bookings</router-link>
+        </div>
+      </section>
+
+      <div v-if="!isLoading && stats.pendingBookings > 0" class="od-alert" role="status">
+        <span class="od-alert-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
+        <p>{{ stats.pendingBookings }} booking {{ stats.pendingBookings === 1 ? 'request needs' : 'requests need' }} your decision</p>
+        <router-link to="/owner/bookings" class="od-btn-navy">Review {{ stats.pendingBookings === 1 ? 'booking' : 'bookings' }} <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></router-link>
       </div>
 
-      <div v-else>
-        <div class="management-metrics"><MetricCard label="Total properties" :value="stats.totalListings" description="All registered properties, including archived listings" icon="fa-building" /><MetricCard label="Pending reservations" :value="stats.pendingBookings" description="Requests awaiting your decision" icon="fa-calendar-check" to="/owner/bookings" /></div>
-        <!-- Pending Bookings Alert -->
-        <div v-if="stats.pendingBookings > 0" class="mb-10 animate-pulse">
-        <router-link to="/owner/bookings" class="inline-flex items-center gap-4 bg-orange-500 text-white px-8 py-4 rounded-2xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition-all group management-button">
-            <div class="bg-white/20 p-2 rounded-lg">
-              <i class="fa-solid fa-bell text-xl"></i>
-            </div>
-            <div class="text-left">
-              <p class="text-[12px] font-semibold uppercase tracking-wide opacity-80">Action Required</p>
-              <p class="text-sm font-semibold uppercase">You have {{ stats.pendingBookings }} new booking request{{ stats.pendingBookings > 1 ? 's' : '' }}</p>
-            </div>
-            <i class="fa-solid fa-arrow-right ml-4 group-hover:translate-x-1 transition-transform"></i>
-          </router-link>
-        </div>
+      <div v-if="isLoading" class="od-panel od-loading" role="status">
+        <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading your dashboard…
+      </div>
 
-        <h2 class="management-section-title">Your properties</h2>
-        <!-- Cards Container -->
-        <!-- Filter tabs — centered, 3-way: All / Active / Archived (Permanently visible when houses exist) -->
-        <div v-if="houses.length > 0" class="mb-6 max-w-xl">
-          <div class="flex items-center gap-1 bg-white rounded-xl p-1.5 border border-slate-200 shadow-sm w-full">
-            <button @click="listingFilter = 'all'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'all' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'">
-              <i class="fa-solid fa-layer-group text-[12px] shrink-0"></i>
-              <span class="truncate">All</span>
-              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
-                    :class="listingFilter === 'all' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
-                {{ houses.length }}
-              </span>
-            </button>
-            <button @click="listingFilter = 'active'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'active' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'">
-              <i class="fa-solid fa-house-chimney text-[12px] shrink-0"></i>
-              <span class="truncate">Not archived</span>
-              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
-                    :class="listingFilter === 'active' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'">
-                {{ houses.filter(h => h.house_status !== 'archived').length }}
-              </span>
-            </button>
-            <button @click="listingFilter = 'archived'"
-                    class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition cursor-pointer min-w-0"
-                    :class="listingFilter === 'archived' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'">
-              <i class="fa-solid fa-box-archive text-[12px] shrink-0"></i>
-              <span class="truncate">Archived</span>
-              <span class="text-[12px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0"
-                    :class="listingFilter === 'archived' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'">
-                {{ archivedCount }}
-              </span>
-            </button>
+      <template v-else>
+        <section class="od-section" aria-labelledby="od-props-title">
+          <div class="od-section-head">
+            <div>
+              <h2 id="od-props-title">{{ houses.length === 1 ? 'Your property' : 'Your properties' }}</h2>
+              <p>{{ houses.length - archivedCount }} active boarding {{ houses.length - archivedCount === 1 ? 'house' : 'houses' }}<template v-if="archivedCount"> · {{ archivedCount }} archived</template></p>
+            </div>
+            <div v-if="houses.length > 1" class="od-tabs" role="tablist" aria-label="Filter properties">
+              <button type="button" role="tab" :aria-selected="listingFilter === 'all'" :class="{ active: listingFilter === 'all' }" @click="listingFilter = 'all'">All <span>{{ houses.length }}</span></button>
+              <button type="button" role="tab" :aria-selected="listingFilter === 'active'" :class="{ active: listingFilter === 'active' }" @click="listingFilter = 'active'">Active <span>{{ houses.length - archivedCount }}</span></button>
+              <button type="button" role="tab" :aria-selected="listingFilter === 'archived'" :class="{ active: listingFilter === 'archived' }" @click="listingFilter = 'archived'">Archived <span>{{ archivedCount }}</span></button>
+            </div>
           </div>
-        </div>
 
-        <div class="management-property-grid">
-          
-          <div v-for="house in visibleHouses" :key="house.id" 
-               class="management-property-card flex flex-col text-left">
-            
-            <div class="management-property-media rounded-xl overflow-hidden mb-4 relative">
-              <img :src="getImageUrl(house.img)" :alt="house.name"
-                   class="w-full h-full object-cover grayscale-[10%] hover:grayscale-0 transition duration-500"
-                   @error="e => e.target.src = '/img/cspc_bg.webp'" />
-              
-              <!-- 1. AUTOMATICALLY ARCHIVED: EXPIRED PERMITS -->
-              <div v-if="house.house_status === 'archived' && (house.archived_by === 'system' || house.compliance === 'expired' || house.compliance_status === 'expired')" 
-                   class="absolute inset-0 bg-red-600/70 backdrop-blur-sm flex items-center justify-center p-6 text-center">
-                <div>
-                  <i class="fa-solid fa-ban text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">HIDDEN FROM STUDENTS: REQUIRED PERMITS EXPIRED</p>
-                  <p class="text-white/80 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">Renew your permits under Docs to reactivate listing.</p>
-                  <router-link :to="`/owner/documents/${house.id}`" 
-                               class="inline-block mt-3 bg-white text-red-600 text-[12px] font-semibold px-4 py-2 rounded-full uppercase tracking-wide shadow-md hover:bg-slate-100 transition management-button">
-                    Upload Renewed Permits
-                  </router-link>
-                </div>
+          <div v-if="visibleHouses.length" class="od-list">
+            <article v-for="house in visibleHouses" :key="house.id" class="od-card">
+              <div class="od-media" :class="{ 'is-muted': house.house_status === 'archived' || house.house_status === 'rejected' }">
+                <img class="od-media-photo" :src="getImageUrl(house.img)" :alt="house.name" @error="e => e.target.src = '/img/cspc_bg.webp'" />
+                <span :class="['od-status', 'od-status-overlay', 'is-' + statusMeta(house).tone]"><i :class="['fa-solid', statusMeta(house).icon]" aria-hidden="true"></i>{{ statusMeta(house).label }}</span>
+                <span v-if="house.pending_count > 0" class="od-media-pending"><i class="fa-solid fa-bell" aria-hidden="true"></i> {{ house.pending_count }} pending</span>
               </div>
 
-              <!-- 2. ARCHIVED BY OWNER (Manual Unlist) -->
-              <div v-else-if="house.house_status === 'archived' && house.archived_by === 'owner'" 
-                   class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
-                <div class="flex flex-col items-center">
-                  <i class="fa-solid fa-eye-slash text-amber-400 text-3xl mb-2"></i>
-                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">UNLISTED BY OWNER (HIDDEN FROM STUDENTS)</p>
-                  <p v-if="house.archive_reason" class="text-slate-300 text-[12px] font-bold uppercase tracking-wide mt-2 bg-slate-800/70 px-3 py-1 rounded-full">
-                    Reason: {{ house.archive_reason }}
-                  </p>
-                  <button @click="openReactivateConfirm(house.id)"
-                          class="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold px-5 py-2.5 rounded-full uppercase tracking-wide shadow-xl transition active:scale-95 cursor-pointer management-button">
-                    <i class="fa-solid fa-play mr-1.5 text-[12px]"></i> Reactivate Listing
+              <div class="od-body">
+                <div class="od-title-row">
+                  <h3 class="od-name">{{ house.name }}</h3>
+                  <span v-if="house.reference_no" class="od-ref" title="Property reference number">#{{ house.reference_no }}</span>
+                </div>
+                <p class="od-address"><i class="fa-solid fa-location-dot" aria-hidden="true"></i>{{ formatAddress(house) }}</p>
+
+                <dl class="od-stats">
+                  <div>
+                    <span class="od-stat-icon" aria-hidden="true"><i class="fa-solid fa-peso-sign"></i></span>
+                    <div>
+                      <dt>Monthly rate</dt>
+                      <dd>{{ formatPeso(house.price) ? formatPeso(house.price) : '—' }}<small v-if="formatPeso(house.price)"> / mo</small></dd>
+                    </div>
+                  </div>
+                  <div>
+                    <span class="od-stat-icon" aria-hidden="true"><i class="fa-solid fa-door-open"></i></span>
+                    <div>
+                      <dt>Rooms</dt>
+                      <dd>{{ Number(house.room_count ?? house.rooms) > 0 ? Number(house.room_count ?? house.rooms) : '—' }}</dd>
+                    </div>
+                  </div>
+                  <div :class="['is-permit', 'is-' + permitTone(house)]">
+                    <span class="od-stat-icon" aria-hidden="true"><i class="fa-solid fa-file-shield"></i></span>
+                    <div>
+                      <dt>Permits valid until</dt>
+                      <dd>{{ nextPermitExpiry(house) ? formatDay(nextPermitExpiry(house)) : '—' }}</dd>
+                      <span v-if="nextPermitExpiry(house)" class="od-stat-sub">{{ permitCountdown(house) }}</span>
+                    </div>
+                  </div>
+                </dl>
+
+                <!-- Status note (one per state) -->
+                <div v-if="isExpiredArchive(house)" class="od-note is-danger">
+                  <p>Hidden from students — required permits expired. Renew them to reactivate the listing.</p>
+                  <router-link :to="`/owner/documents/${house.id}`" class="admin-link">Upload renewed permits <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+                </div>
+                <div v-else-if="house.house_status === 'archived' && house.archived_by === 'owner'" class="od-note">
+                  <p>You unlisted this property<template v-if="house.archive_reason"> ({{ house.archive_reason }})</template>. Students can't see it.</p>
+                </div>
+                <div v-else-if="house.house_status === 'archived'" class="od-note">
+                  <p>Suspended by SASO<template v-if="house.admin_comments">: “{{ house.admin_comments }}”</template>. Upload updated documents to request re-accreditation.</p>
+                  <router-link :to="`/owner/documents/${house.id}`" class="admin-link">Upload updated documents <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+                </div>
+                <div v-else-if="house.house_status === 'rejected'" class="od-note is-danger">
+                  <p>Rejected by SASO and hidden from students. Review the feedback and resubmit.</p>
+                </div>
+                <div v-else-if="house.house_status === 'pending'" class="od-note is-warning">
+                  <p>Waiting for SASO to review your application.</p>
+                </div>
+                <div v-else-if="house.compliance === 'warning'" class="od-note is-warning is-expiry">
+                  <p>Some permits expire soon. Upload renewed copies to stay listed.</p>
+                  <router-link :to="`/owner/documents/${house.id}`" class="admin-link">Renew permits <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+                </div>
+
+                <div v-if="house.document_update_pending || (house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active')" class="od-chips">
+                  <span v-if="house.document_update_pending" class="admin-badge is-warning"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Document update under review</span>
+                  <button v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'" type="button"
+                          class="admin-badge is-neutral od-chip-btn" @click="openSuppModal(house.supplementary_status)">
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>{{ house.supplementary_status === 'expired' ? 'Supplementary doc expired' : 'Supplementary doc expiring' }}
                   </button>
                 </div>
-              </div>
 
-              <!-- 3. ARCHIVED BY SASO ADMIN (Manual Suspension) -->
-              <div v-else-if="house.house_status === 'archived'" class="absolute inset-0 bg-slate-800/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
-                <div>
-                  <i class="fa-solid fa-box-archive text-white text-3xl mb-2"></i>
-                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight">SUSPENDED BY SASO ADMIN</p>
-                  <p v-if="house.admin_comments" class="text-amber-300 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">"{{ house.admin_comments }}"</p>
-                  <p class="text-white/80 text-[12px] font-bold uppercase tracking-wide leading-tight mt-2">Contact SASO or upload updated documents to request re-accreditation.</p>
-                  <router-link :to="`/owner/documents/${house.id}`" 
-                               class="inline-block mt-3 bg-amber-400 text-slate-900 text-[12px] font-semibold px-4 py-2 rounded-full uppercase tracking-wide shadow-md hover:bg-amber-300 transition management-button">
-                    Upload Updated Documents
+                <div class="od-actions">
+                  <router-link v-if="house.house_status === 'rejected'" :to="`/owner/documents/${house.id}`" class="od-act is-danger">
+                    <i class="fa-solid fa-wrench" aria-hidden="true"></i> Fix &amp; resubmit
                   </router-link>
+                  <template v-else>
+                    <router-link :to="`/owner/rooms/${house.id}`" class="od-act is-primary od-act-rooms">
+                      Manage rooms
+                      <span v-if="house.pending_count > 0" class="od-count" :aria-label="house.pending_count + ' pending requests'">{{ house.pending_count }}</span>
+                    </router-link>
+                    <router-link :to="`/owner/documents/${house.id}`" class="od-act od-act-docs"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Documents</router-link>
+                    <router-link :to="`/owner/edit/${house.id}`" class="od-act od-act-edit"><i class="fa-solid fa-pen" aria-hidden="true"></i> Edit property</router-link>
+                  </template>
+                </div>
+                <div v-if="house.house_status !== 'rejected'" class="od-foot">
+                  <button v-if="house.house_status === 'accredited'" type="button" class="od-pause" @click="openPauseModal(house.id)">Pause / unlist listing</button>
+                  <button v-else-if="canReactivateListing(house)" type="button" class="od-act od-reactivate" @click="openReactivateConfirm(house.id)">
+                    <i class="fa-solid fa-play" aria-hidden="true"></i> Reactivate listing
+                  </button>
+                  <p v-else-if="house.house_status === 'archived'" class="od-hint">Contact SASO for review before reactivation.</p>
                 </div>
               </div>
-
-              <!-- REJECTED OVERLAY -->
-              <div v-else-if="house.house_status === 'rejected'" class="absolute inset-0 bg-red-500/80 backdrop-blur-sm flex items-center justify-center p-6 text-center">
-                <div class="flex flex-col items-center">
-                  <i class="fa-solid fa-circle-xmark text-white text-3xl mb-3"></i>
-                  <p class="text-white text-[12px] font-semibold uppercase tracking-wide leading-tight mb-4">REJECTED BY SASO: HIDDEN FROM STUDENTS</p>
-                  <router-link :to="`/owner/documents/${house.id}`" class="bg-white text-red-600 text-[12px] font-semibold px-6 py-2.5 rounded-full uppercase tracking-wide shadow-xl hover:bg-slate-100 transition active:scale-95 text-center management-button">
-                    Fix & Resubmit
-                  </router-link>
-                </div>
-              </div>
-
-              <!-- STATUS BADGES -->
-              <div class="absolute top-4 left-4 flex flex-col gap-2">
-                <div v-if="house.house_status === 'pending'" class="bg-yellow-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Pending Approval
-                </div>
-                <div v-else-if="house.house_status === 'rejected'" class="bg-red-600 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Rejected
-                </div>
-                <div v-else-if="house.house_status === 'archived' && (house.archived_by === 'system' || house.compliance === 'expired' || house.compliance_status === 'expired')" class="bg-red-600 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Inactive: Permits Expired
-                </div>
-                <div v-else-if="house.house_status === 'archived' && house.archived_by === 'owner'" class="bg-amber-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Unlisted by Owner
-                </div>
-                <div v-else-if="house.house_status === 'archived'" class="bg-slate-700 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Suspended by SASO
-                </div>
-                <div v-else-if="house.compliance === 'warning'" class="bg-orange-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Warning: Renew Permits
-                </div>
-                <div v-else class="bg-green-500 text-white text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                  Accredited
-                </div>
-              </div>
-            </div>
-
-            <!-- Warning Box (Shown on active or unlisted houses if permits expiring) -->
-            <div v-if="house.compliance === 'warning'" class="bg-orange-50 border-l-4 border-orange-500 p-3 mb-4 rounded-r-lg">
-              <div class="flex items-center gap-2">
-                <i class="fa-solid fa-clock text-orange-600 text-[12px]"></i>
-                <p class="text-[12px] font-semibold text-orange-700 uppercase tracking-wide">Action Required: Permits expiring soon!</p>
-              </div>
-            </div>
-
-            <!-- Body Details -->
-            <div class="mb-4 flex-1 px-1">
-              <h2 class="font-semibold text-lg text-slate-900 leading-tight mb-1 uppercase tracking-tight">
-                {{ house.name }}
-              </h2>
-              <p class="text-[12px] text-slate-400 font-bold uppercase tracking-wide">{{ formatAddress(house) }}</p>
-              <!-- Supplementary Doc Notice — compact chip, click for details -->
-              <button v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'"
-                      @click="openSuppModal(house.supplementary_status)"
-                      class="inline-flex items-center gap-1 mt-1.5 text-[12px] font-bold text-slate-400 bg-slate-100 hover:bg-slate-200 hover:text-slate-600 px-2 py-0.5 rounded-full transition cursor-pointer management-button">
-                <i class="fa-solid fa-circle-info text-[12px]"></i>
-                {{ house.supplementary_status === 'expired' ? 'Supplementary doc expired — non-urgent' : 'Supplementary doc expiring soon' }}
-              </button>
-              <!-- Document Re-Verification Pending chip — shown when owner uploaded a doc awaiting admin review -->
-              <span v-if="house.document_update_pending"
-                    class="inline-flex items-center gap-1 mt-1.5 text-[12px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
-                Document update pending admin review
-              </span>
-            </div>
-
-            <!-- Actions Panel -->
-            <div class="mt-auto bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <div class="management-property-actions">
-                <router-link v-if="house.house_status === 'rejected'" :to="`/owner/documents/${house.id}`" 
-                   class="col-span-3 bg-red-600 text-white text-[12px] font-semibold px-4 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
-                  <i class="fa-solid fa-wrench text-[12px]"></i> Fix Application
-                </router-link>
-                <template v-else>
-                  <router-link :to="`/owner/edit/${house.id}`" 
-                     class="management-button-secondary bg-white text-blue-700 text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
-                    <i class="fa-solid fa-pen text-[12px]"></i> Edit
-                  </router-link>
-                  <router-link :to="`/owner/documents/${house.id}`" 
-                     class="management-button-secondary bg-white text-blue-700 text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button">
-                    <i class="fa-solid fa-file-lines text-[12px]"></i> Docs
-                  </router-link>
-                  <router-link :to="`/owner/rooms/${house.id}`" 
-                     class="relative bg-blue-600 text-white text-[12px] font-semibold px-2 py-2 rounded-md uppercase tracking-wide transition shadow-sm hover:scale-[1.02] active:scale-[0.98] inline-flex items-center justify-center gap-1.5 management-button management-button-primary">
-                    <i class="fa-solid fa-door-open text-[12px]"></i> Rooms
-                    <span v-if="house.pending_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                      {{ house.pending_count }}
-                    </span>
-                  </router-link>
-                </template>
-              </div>
-
-              <!-- Unlist / Reactivate — full-width row below the main action buttons -->
-              <div v-if="house.house_status === 'accredited'" class="mt-2 pt-2 border-t border-slate-200">
-                <button @click="openPauseModal(house.id)"
-                        class="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50 text-slate-500 hover:text-amber-700 text-[12px] font-semibold py-2 px-4 rounded-lg uppercase tracking-wide transition cursor-pointer management-button management-button-secondary">
-                  <i class="fa-solid fa-eye-slash text-[12px]"></i> Pause / Unlist Listing
-                </button>
-              </div>
-              <div v-else-if="canReactivateListing(house)" class="mt-2 pt-2 border-t border-slate-200">
-                <button @click="openReactivateConfirm(house.id)"
-                        class="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold py-2 px-4 rounded-lg uppercase tracking-wide transition shadow-sm cursor-pointer management-button">
-                  <i class="fa-solid fa-play text-[12px]"></i> Reactivate Listing
-                </button>
-              </div>
-              <p v-else-if="house.house_status === 'archived'" class="mt-2 text-center text-[12px] font-semibold text-slate-500">
-                Contact SASO for review before reactivation.
-              </p>
-            </div>
+            </article>
           </div>
 
-          <div v-if="visibleHouses.length === 0" class="p-12 border-2 border-dashed border-slate-300 rounded-3xl w-full max-w-xl bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center my-4 shadow-sm">
-            <i class="fa-solid fa-folder-open text-slate-300 text-4xl mb-3"></i>
-            <p class="text-slate-600 font-bold uppercase text-xs tracking-wider mb-1">
-              {{ houses.length === 0 ? 'No properties listed yet.' : 'No listings in this category.' }}
-            </p>
-            <button v-if="houses.length > 0 && listingFilter !== 'all'" @click="listingFilter = 'all'"
-                    class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[12px] uppercase tracking-wide px-6 py-2.5 rounded-full shadow-md transition active:scale-95 cursor-pointer management-button management-button-primary">
-              Show All Listings ({{ houses.length }})
-            </button>
+          <div v-else class="od-panel od-empty">
+            <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
+            <p class="od-empty-title">{{ houses.length === 0 ? 'No properties yet' : 'No properties in this view' }}</p>
+            <p>{{ houses.length === 0 ? 'Register your first boarding house to get started.' : 'Try another filter.' }}</p>
+            <router-link v-if="houses.length === 0" to="/owner/accreditation?new=true" class="od-act is-primary"><i class="fa-solid fa-plus" aria-hidden="true"></i> Register a property</router-link>
+            <button v-else type="button" class="od-act" @click="listingFilter = 'all'">Show all ({{ houses.length }})</button>
           </div>
+        </section>
 
-        </div>
-
-        <!-- Add Boarding House Button -->
-        <div class="flex justify-center pb-12">
-          <router-link to="/owner/accreditation?new=true"
-             class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-10 rounded-xl text-[12px] uppercase tracking-wide shadow-md flex items-center justify-center gap-2 transition active:scale-95 w-full max-w-[350px] management-button management-button-primary">
-            <span class="text-xl leading-none font-semibold mt-[-2px]">+</span> Add boarding house
-          </router-link>
-        </div>
-      </div>
+        <p class="od-tip"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Keep your property information and documents up to date.</p>
+      </template>
     </main>
 
     <!-- Supplementary Document Info Modal -->
@@ -681,3 +629,200 @@ const loadError = ref('');
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Owner dashboard — CSPC navy / blue / gold, Plus Jakarta Sans (tokens from admin-theme.css) */
+.od-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-bottom: 20px; }
+.od-head h1 { margin: 0; font-size: clamp(24px, 2.4vw, 30px) !important; font-weight: 700 !important; color: var(--a-heading) !important; letter-spacing: -.02em; line-height: 1.2; }
+.od-head p { margin: 6px 0 0; font-size: 14px; color: var(--a-muted); }
+.od-btn-outline { display: inline-flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 18px; border-radius: 10px; border: 1.5px solid var(--a-heading); background: #fff; color: var(--a-heading); font-size: 13.5px; font-weight: 600; text-decoration: none; transition: background .15s, color .15s; }
+.od-btn-outline:hover { background: var(--a-heading); color: #fff; }
+.od-btn-navy { flex-shrink: 0; display: inline-flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 16px; border-radius: 8px; background: var(--a-heading); color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; transition: background .15s; }
+.od-btn-navy:hover { background: var(--a-primary); }
+.od-btn-navy i { font-size: 11px; }
+
+.od-alert { display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 14px; margin-bottom: 24px; border-radius: 12px; background: #fdf3dc; border: 1px solid #f3e1ad; }
+.od-alert-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 999px; background: var(--a-gold); color: #142b4a; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.od-alert p { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 500; color: var(--a-heading); }
+
+.od-section-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.od-section-head h2 { margin: 0; font-size: 20px !important; font-weight: 700 !important; color: var(--a-heading) !important; letter-spacing: -.01em; }
+.od-section-head p { margin: 2px 0 0; font-size: 13px; color: var(--a-muted); }
+.od-tabs { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--a-track); }
+.od-tabs button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--a-muted); border: 0; background: transparent; cursor: pointer; }
+.od-tabs button span { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--a-surface); color: var(--a-muted); font-size: 11px; line-height: 18px; text-align: center; }
+.od-tabs button.active { background: var(--a-surface); color: var(--a-heading); box-shadow: 0 1px 3px rgba(20, 43, 74, .12); }
+.od-tabs button.active span { background: var(--a-heading); color: #fff; }
+
+.od-list { display: flex; flex-direction: column; gap: 16px; }
+.od-card { display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 1fr); gap: 20px; padding: 12px; background: #fff; border: 1px solid var(--a-border); border-radius: 14px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04); }
+.od-media { position: relative; min-height: 200px; border-radius: 10px; overflow: hidden; background: var(--a-surface-2); }
+.od-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.od-media img.is-muted { filter: grayscale(.6) brightness(.9); }
+.od-body { min-width: 0; display: flex; flex-direction: column; padding: 8px 8px 4px 0; }
+.od-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.od-name { margin: 0; font-size: 22px !important; font-weight: 700 !important; color: var(--a-heading) !important; letter-spacing: -.02em; line-height: 1.25; }
+.od-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.od-status.is-success { background: #e3f6ea; color: #1d7a45; }
+.od-status.is-warning { background: var(--a-warning-soft); color: var(--a-warning); }
+.od-status.is-danger { background: var(--a-danger-soft); color: var(--a-danger); }
+.od-status.is-neutral { background: var(--a-surface-2); color: var(--a-muted); }
+.od-address { margin: 10px 0 0; display: flex; gap: 8px; font-size: 13px; color: var(--a-muted); line-height: 1.4; }
+.od-address i { color: var(--a-faint); margin-top: 2px; font-size: 12px; }
+.od-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 18px 0 0; padding-bottom: 16px; border-bottom: 1px solid var(--a-border); }
+.od-stats > div + div { padding-left: 24px; border-left: 1px solid var(--a-border); }
+.od-stats dt { font-size: 12.5px; color: var(--a-muted); }
+.od-stats dd { margin: 4px 0 0; font-size: 17px; font-weight: 700; color: var(--a-heading); }
+.od-stats dd.is-warn { color: var(--a-warning); }
+.od-note { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.od-note p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--a-text); }
+.od-note.is-warning p { color: var(--a-warning); }
+.od-note.is-danger p { color: var(--a-danger); }
+.od-note .admin-link { font-size: 13px; }
+.od-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.od-chip-btn { cursor: pointer; font-family: inherit; }
+
+.od-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.od-act { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 18px; border-radius: 8px; border: 1.5px solid var(--a-heading); background: #fff; color: var(--a-heading); font-family: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.od-act:hover { background: #eef3fa; }
+.od-act.is-primary { background: var(--a-heading); color: #fff; }
+.od-act.is-primary:hover { background: var(--a-primary); border-color: var(--a-primary); }
+.od-act.is-danger { background: var(--a-danger); border-color: var(--a-danger); color: #fff; }
+.od-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--a-gold); color: #142b4a; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.od-foot { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 10px; }
+.od-pause { padding: 2px 0; border: 0; background: none; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--a-muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.od-pause:hover { color: var(--a-warning); }
+.od-reactivate { background: var(--a-success); border-color: var(--a-success); color: #fff; }
+.od-reactivate:hover { background: #225f43; }
+.od-hint { margin: 0; font-size: 12.5px; color: var(--a-muted); }
+
+.od-panel { background: #fff; border: 1px solid var(--a-border); border-radius: 14px; }
+.od-loading { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--a-muted); font-weight: 600; padding: 48px; }
+.od-empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 32px; text-align: center; color: var(--a-muted); }
+.od-empty > i { font-size: 28px; color: var(--a-faint); }
+.od-empty-title { margin: 4px 0 0; font-size: 15px; font-weight: 700; color: var(--a-heading); }
+.od-empty p:not(.od-empty-title) { margin: 0 0 8px; }
+.od-tip { display: flex; align-items: center; gap: 8px; margin: 20px 0 0; font-size: 12.5px; color: var(--a-muted); }
+.od-tip i { color: var(--a-faint); }
+
+/* Property card v2: full-photo media panel, icon stat tiles, softer notes */
+.od-list { gap: 20px; }
+.od-card { grid-template-columns: minmax(0, 46%) minmax(0, 1fr); gap: 0; padding: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(20, 43, 74, .04), 0 10px 28px rgba(20, 43, 74, .06); transition: box-shadow .2s, transform .2s; }
+.od-card:hover { box-shadow: 0 2px 4px rgba(20, 43, 74, .05), 0 16px 36px rgba(20, 43, 74, .10); }
+.od-media { min-height: 300px; border-radius: 0; background: #0f1f36; }
+.od-media img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.od-media .od-media-photo { object-fit: cover; object-position: center; transition: transform .35s ease; }
+.od-card:hover .od-media-photo { transform: scale(1.02); }
+.od-media.is-muted img { filter: grayscale(.65) brightness(.85); }
+.od-media::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(15, 31, 54, .35) 0%, transparent 28%, transparent 78%, rgba(15, 31, 54, .35) 100%); pointer-events: none; }
+.od-status-overlay { position: absolute; z-index: 1; top: 14px; left: 14px; box-shadow: 0 4px 12px rgba(15, 31, 54, .25); backdrop-filter: blur(6px); }
+.od-status-overlay.is-success { background: rgba(227, 246, 234, .95); }
+.od-status-overlay.is-neutral { background: rgba(246, 249, 253, .95); }
+.od-media-pending { position: absolute; z-index: 1; right: 14px; bottom: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; background: var(--a-gold); color: #142b4a; font-size: 12px; font-weight: 700; box-shadow: 0 4px 12px rgba(15, 31, 54, .25); }
+.od-body { padding: 22px 24px 18px; }
+.od-name { font-size: 23px !important; }
+.od-address { margin-top: 8px; font-size: 13.5px; }
+.od-stats { gap: 12px; margin-top: 18px; padding-bottom: 0; border-bottom: 0; }
+.od-stats > div { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
+.od-stats > div + div { padding-left: 14px; border-left: 1px solid var(--a-border); }
+.od-stat-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--a-primary-soft); color: var(--a-primary); font-size: 14px; }
+.od-stats dt { font-size: 12px; font-weight: 500; }
+.od-stats dd { margin-top: 2px; font-size: 16.5px; }
+.od-stats dd small { font-size: 12px; font-weight: 500; color: var(--a-muted); }
+.od-stats > div.is-warn { background: var(--a-warning-soft); border-color: #f1d9b5; }
+.od-stats > div.is-warn .od-stat-icon { background: #f8e2c2; color: var(--a-warning); }
+.od-stats > div.is-warn dd { color: var(--a-warning); }
+
+/* Property card v3: refined accents, three stat tiles, live permit countdown */
+.od-card { position: relative; }
+.od-card::before { content: ''; position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 4px; background: var(--a-primary); }
+.od-card:has(.od-status.is-warning)::before { background: var(--a-gold); }
+.od-card:has(.od-status.is-danger)::before { background: var(--a-danger); }
+.od-card:has(.od-status.is-neutral)::before { background: var(--a-faint); }
+.od-media { min-height: 320px; }
+.od-title-row { align-items: baseline; }
+.od-name { font-size: 24px !important; letter-spacing: -.025em; }
+.od-ref { padding: 2px 9px; border-radius: 6px; background: var(--a-surface-2); border: 1px solid var(--a-border); color: var(--a-muted); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.od-address { padding-bottom: 16px; border-bottom: 1px dashed var(--a-border); }
+.od-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.od-stats > div, .od-stats > div + div { padding: 12px; gap: 10px; border: 1px solid var(--a-border); background: #fff; }
+.od-stat-icon { width: 34px; height: 34px; font-size: 13px; }
+.od-stats dt { font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--a-faint); }
+.od-stats dd { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.od-stat-sub { display: block; margin-top: 1px; font-size: 11.5px; font-weight: 600; color: var(--a-muted); }
+.od-stats > div.is-ok .od-stat-sub { color: var(--a-success); }
+.od-stats > div.is-warn { background: var(--a-warning-soft); border-color: #f1d9b5; }
+.od-stats > div.is-warn .od-stat-sub { color: var(--a-warning); }
+.od-stats > div.is-danger { background: var(--a-danger-soft); border-color: #f0c9c5; }
+.od-stats > div.is-danger .od-stat-icon { background: #f6d5d1; color: var(--a-danger); }
+.od-stats > div.is-danger :is(dd, .od-stat-sub) { color: var(--a-danger); }
+.od-act { min-height: 42px; }
+.od-act:not(.is-primary):not(.is-danger):not(.od-reactivate) { border-width: 1px; border-color: var(--a-primary-tint); color: var(--a-primary); }
+.od-act:not(.is-primary):not(.is-danger):not(.od-reactivate):hover { background: var(--a-primary-soft); border-color: var(--a-primary); }
+@media (max-width: 1280px) and (min-width: 901px) {
+  .od-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .od-stats > .is-permit { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .od-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .od-stats > .is-permit { grid-column: 1 / -1; }
+}
+.od-note { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--a-surface-2); border-left: 3px solid var(--a-faint); }
+.od-note.is-warning { background: var(--a-warning-soft); border-left-color: var(--a-gold); }
+.od-note.is-danger { background: var(--a-danger-soft); border-left-color: var(--a-danger); }
+/* Permit expiry: orange (same palette as the Edit / Docs / Rooms buttons) */
+.od-note.is-expiry { background: #fff7ed; border-left-color: #fb923c; }
+.od-note.is-expiry p { color: #c2410c; }
+.od-note.is-expiry .admin-link { color: #ea580c; font-weight: 700; }
+.od-stats > div.is-warn, .od-stats > div.is-warn + div, div + .od-stats > div.is-warn { background: #fff7ed !important; border-color: #fdba74 !important; }
+.od-stats > div.is-warn .od-stat-icon { background: #fb923c; color: #fff; }
+.od-stats > div.is-warn :is(dd, .od-stat-sub) { color: #ea580c; }
+.od-status.is-expiry, .od-status-overlay.is-expiry { background: #fb923c; color: #fff; }
+.od-card:has(.od-status.is-expiry)::before { background: #fb923c; }
+.od-chips .admin-badge.is-warning { background: #ffedd5; color: #c2410c; }
+/* Card actions: green rooms, blue documents, orange edit */
+.od-actions .od-act.od-act-rooms, .od-actions .od-act.od-act-docs, .od-actions .od-act.od-act-edit { border: 0 !important; color: #fff !important; font-weight: 700; box-shadow: 0 4px 10px rgba(15, 23, 42, .12); }
+.od-actions .od-act.od-act-rooms { background: #22c55e; }
+.od-actions .od-act.od-act-rooms:hover { background: #16a34a; }
+.od-actions .od-act.od-act-docs { background: #3b82f6; }
+.od-actions .od-act.od-act-docs:hover { background: #2563eb; }
+.od-actions .od-act.od-act-edit { background: #fb923c; }
+.od-actions .od-act.od-act-edit:hover { background: #f97316; }
+.od-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--a-border); }
+.od-act { border-radius: 10px; }
+.od-act.is-primary { box-shadow: 0 4px 12px rgba(20, 43, 74, .18); }
+.od-foot { padding-top: 12px; }
+
+@media (max-width: 900px) {
+  .od-card { grid-template-columns: minmax(0, 1fr); }
+  .od-media { min-height: 0; aspect-ratio: 16 / 10; }
+  .od-body { padding: 18px; }
+}
+@media (max-width: 480px) {
+  .od-stats { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .od-alert { flex-wrap: wrap; }
+  .od-btn-navy, .od-btn-outline { width: 100%; justify-content: center; }
+  .od-act { flex: 1 1 auto; }
+  .od-stats > div + div { padding-left: 14px; }
+}
+
+/* Welcome banner (original) */
+.od-welcome { position: relative; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px 24px; padding: 26px 28px; margin-bottom: 20px; border-radius: var(--a-radius); color: #fff;
+  background: radial-gradient(circle at 88% -10%, rgba(224, 165, 38, .35), transparent 40%), linear-gradient(120deg, #1E4A8D 0%, #163870 55%, #142B4A 100%); box-shadow: 0 12px 28px rgba(20, 43, 74, .18); }
+.od-welcome::after { content: '\f015'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; right: 26px; bottom: -34px; font-size: 150px; color: rgba(255, 255, 255, .05); pointer-events: none; }
+.od-welcome-text { position: relative; z-index: 1; min-width: 0; }
+.od-welcome-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 13px; color: #c9d7ec; }
+.od-portal { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.od-welcome h1 { margin: 0; font-size: clamp(22px, 2.4vw, 30px) !important; font-weight: 700 !important; color: #fff !important; letter-spacing: -.02em; line-height: 1.2; }
+.od-welcome-summary { margin: 6px 0 0; font-size: 14px; color: #dce6f4; max-width: 640px; }
+.od-welcome-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 10px; }
+.od-btn-gold, .od-btn-glass { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 18px; border-radius: 12px; font-size: 13.5px; font-weight: 700; text-decoration: none; transition: transform .15s, box-shadow .15s, background .15s; }
+.od-btn-gold { background: var(--a-gold); color: #142b4a; box-shadow: 0 6px 16px rgba(224, 165, 38, .35); }
+.od-btn-gold:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(224, 165, 38, .45); }
+.od-btn-glass { background: rgba(255, 255, 255, .12); color: #fff; border: 1px solid rgba(255, 255, 255, .22); }
+.od-btn-glass:hover { background: rgba(255, 255, 255, .2); }
+@media (max-width: 640px) { .od-welcome { padding: 20px; } .od-welcome-actions { width: 100%; } .od-btn-gold, .od-btn-glass { flex: 1; justify-content: center; } }
+@media (max-width: 400px) { .od-stats { grid-template-columns: minmax(0, 1fr); } }
+</style>

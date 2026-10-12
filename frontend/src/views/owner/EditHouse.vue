@@ -4,6 +4,8 @@ import LoadError from '../../components/management/LoadError.vue';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, watch, nextTick } from 'vue';
@@ -690,11 +692,17 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page management-form-page min-h-screen font-sans flex flex-col">
+  <div class="management-page owner-page min-h-screen font-sans flex flex-col">
     <OwnerNav />
-    <main id="management-content" tabindex="-1" class="management-content">
+    <main id="management-content" tabindex="-1" class="management-content eh-main">
       <LoadError :message="loadError" />
-<PageHeader title="Edit property" :eyebrow="houseName" description="Update property information, photos, location, and rent policy." />
+      <PageHeader title="Edit property" :eyebrow="houseName">
+        <router-link to="/owner/dashboard" class="eh-btn eh-btn-ghost">Cancel</router-link>
+        <button v-if="!isLoading" type="submit" form="eh-form" :disabled="isSubmitting" class="eh-btn eh-btn-primary">
+          <i :class="isSubmitting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
+          {{ isSubmitting ? 'Saving…' : 'Save changes' }}
+        </button>
+      </PageHeader>
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <!-- Fullscreen Verification Map Modal -->
@@ -702,8 +710,8 @@ const loadError = ref('');
       <div class="max-w-6xl mx-auto w-full h-full flex flex-col bg-white rounded-[2rem] sm:rounded-[3rem] overflow-hidden shadow-2xl relative">
         <div class="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div>
-            <h3 class="text-base sm:text-xl font-semibold text-slate-900 uppercase tracking-tight">Pin Your Location</h3>
-            <p class="text-[12px] sm:text-[12px] font-bold text-slate-400 uppercase tracking-wide">Adjust the map pin precisely</p>
+            <h3 class="text-base sm:text-xl font-semibold text-slate-900 tracking-tight">Pin your location</h3>
+            <p class="text-[12px] font-semibold text-slate-400">Adjust the map pin precisely</p>
           </div>
           <button aria-label="Close dialog" type="button" @click="toggleFullscreenMap" class="bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center transition-all management-button">
             <i class="fa-solid fa-xmark text-lg sm:text-xl"></i>
@@ -711,302 +719,178 @@ const loadError = ref('');
         </div>
         <div ref="largeMapContainer" class="flex-1 bg-slate-100"></div>
         <div class="p-4 sm:p-6 bg-white border-t border-slate-100 flex justify-center">
-          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-semibold px-8 sm:px-12 py-3 sm:py-4 rounded-2xl uppercase text-[12px] sm:text-[12px] tracking-normal shadow-xl hover:bg-black transition-all management-button management-button-primary">
-            Save &amp; Confirm Location
+          <button type="button" @click="toggleFullscreenMap" class="bg-blue-600 text-white font-semibold px-8 sm:px-12 py-3 sm:py-4 rounded-2xl text-[13px] shadow-xl hover:bg-black transition-all management-button management-button-primary">
+            Save &amp; confirm location
           </button>
         </div>
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="isLoading" class="bg-white rounded-2xl w-full max-w-4xl p-12 text-center flex flex-col items-center justify-center">
-      <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-      <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading details...</p>
+    <div v-if="isLoading" class="eh-card eh-loading" role="status">
+      <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading details…
     </div>
 
-    <!-- Modal Content -->
-    <div v-else class="bg-white rounded-2xl w-full shadow-sm my-6 overflow-hidden relative text-left animate-in zoom-in duration-300">
-      
-      <!-- Header -->
-      <div class="bg-slate-50 border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-        <h2 class="font-semibold text-[12px] sm:text-xs tracking-normal sm:tracking-normal uppercase text-black">Edit Boarding House</h2>
-        <router-link to="/owner/dashboard" aria-label="Back to properties" class="text-slate-500 hover:text-black transition focus:outline-none inline-flex items-center justify-center w-11 h-11">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </router-link>
+    <form v-else id="eh-form" @submit.prevent="handleSubmit" class="eh-grid">
+
+      <!-- Column 1: photos + amenities -->
+      <div class="eh-col">
+        <section class="eh-card">
+          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Photos</h2>
+          <div class="eh-cover">
+            <img class="eh-cover-photo" :src="mainHouseImgPreview" :alt="houseName" @error="e => e.target.src = '/img/cspc_bg.webp'" />
+            <label class="eh-cover-change">
+              <i class="fa-solid fa-camera" aria-hidden="true"></i> Change main photo
+              <input aria-label="Main Boarding House Photo" type="file" @change="handleHouseImgChange" accept="image/*" class="eh-sr" />
+            </label>
+          </div>
+
+          <div class="eh-row-head">
+            <span class="eh-label">Interior photos <small>max 10</small></span>
+            <label class="eh-btn eh-btn-soft eh-btn-sm">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Add photos
+              <input aria-label="Additional Interior Photos" type="file" multiple accept="image/*" @change="handlePhotosSelected" class="eh-sr" />
+            </label>
+          </div>
+          <div v-if="selectedPhotos.length > 0" class="eh-thumbs">
+            <div v-for="(photo, index) in selectedPhotos" :key="index" class="eh-thumb">
+              <img :src="photo.previewUrl" alt="Interior preview" />
+              <button aria-label="Remove photo" type="button" @click="removePhoto(index)" class="eh-thumb-del">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <p v-else class="eh-hint">No interior photos yet.</p>
+        </section>
+
+        <section class="eh-card">
+          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Amenities</h2>
+          <div v-for="group in [{ key: 'free', label: 'Free', icon: 'fa-gift', items: freeAmenities, model: 'free' }, { key: 'paid', label: 'Paid', icon: 'fa-coins', items: paidAmenities, model: 'paid' }]" :key="group.key" class="eh-amen-group">
+            <div class="eh-row-head">
+              <span :class="['eh-label', 'is-' + group.key]"><i :class="['fa-solid', group.icon]" aria-hidden="true"></i> {{ group.label }}</span>
+              <div class="eh-add">
+                <input v-if="group.key === 'free'" aria-label="Add custom free amenity" type="text" v-model="newFreeAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('free')" />
+                <input v-else aria-label="Add custom paid amenity" type="text" v-model="newPaidAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('paid')" />
+                <button type="button" @click="addCustomAmenity(group.key)" class="eh-btn eh-btn-soft eh-btn-sm">Add</button>
+              </div>
+            </div>
+            <div class="eh-chips">
+              <label v-for="item in group.items" :key="item" :class="['eh-chip', 'is-' + group.key]">
+                <input v-if="group.key === 'free'" :aria-label="item" type="checkbox" :value="item" v-model="selectedFreeAmenities" />
+                <input v-else :aria-label="item" type="checkbox" :value="item" v-model="selectedPaidAmenities" />
+                <i class="fa-solid fa-check" aria-hidden="true"></i>
+                <span>{{ item }}</span>
+              </label>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <!-- Form Body -->
-      <div class="p-4 sm:p-8 md:p-10">
-        
-        <div class="mb-8 sm:mb-12 border-b border-slate-100 pb-8 sm:pb-10">
-          <div class="flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start">
-            <div class="w-full md:w-64 h-48 rounded-2xl overflow-hidden shadow-md border border-slate-100 shrink-0 bg-slate-50">
-              <img :src="mainHouseImgPreview" :alt="houseName"
-                   class="w-full h-full object-cover rounded-2xl shadow-sm"
-                   @error="e => e.target.src = 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'" />
+      <!-- Column 2: details -->
+      <section class="eh-card eh-col">
+        <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Property details</h2>
+        <div class="eh-fields">
+          <div class="eh-span-2">
+            <label class="eh-label" for="eh-name">Boarding house name</label>
+            <input id="eh-name" type="text" v-model="houseName" required class="eh-input" />
+          </div>
+          <div>
+            <label class="eh-label" for="eh-price">Monthly rent (₱)</label>
+            <input id="eh-price" type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="eh-input" />
+          </div>
+          <div>
+            <label class="eh-label" for="eh-brgy">Barangay (Nabua)</label>
+            <select id="eh-brgy" v-model="selectedBarangay" required class="eh-input">
+              <option value="">Select barangay</option>
+              <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
+            </select>
+          </div>
+          <div class="eh-span-2">
+            <label class="eh-label" for="eh-phone">Contact number</label>
+            <input id="eh-phone" type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="09123456789 / 09987654321" required class="eh-input" />
+            <p class="eh-hint"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Separate multiple numbers with a slash.</p>
+          </div>
+        </div>
+
+        <div class="eh-sub">
+          <p class="eh-sub-title"><i class="fa-solid fa-coins" aria-hidden="true"></i> Advance &amp; deposit policy</p>
+          <div class="eh-fields eh-fields-3">
+            <div>
+              <label class="eh-label" for="eh-adv">Advance rent</label>
+              <select id="eh-adv" v-model="advanceMonths" class="eh-input">
+                <option :value="0">No advance</option>
+                <option :value="1">1 month</option>
+                <option :value="2">2 months</option>
+              </select>
             </div>
-            <div class="flex-1 text-center md:text-left py-2 sm:py-4 w-full">
-              <div class="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-3 sm:gap-4 mb-3">
-                <i class="fa-solid fa-building-circle-check text-3xl sm:text-4xl text-blue-600"></i>
-                <h2 class="text-2xl sm:text-4xl font-semibold text-slate-900 uppercase tracking-tighter leading-tight break-all">{{ houseName }}</h2>
-              </div>
-              <div class="flex items-center justify-center md:justify-start gap-2 text-slate-500 mb-6 sm:mb-8">
-                <i class="fa-solid fa-location-dot text-blue-500 shrink-0"></i>
-                <span class="text-[12px] sm:text-[12px] font-bold uppercase tracking-[0.15em] sm:tracking-normal break-all">{{ locationAddress }}</span>
-              </div>
-              
-              <div class="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 sm:px-5 py-2 rounded-xl border border-blue-100">
-                <i class="fa-solid fa-pen-to-square text-[12px]"></i>
-                <span class="text-[12px] sm:text-[12px] font-semibold uppercase tracking-wide text-blue-900">Update Property Details</span>
-              </div>
+            <div>
+              <label class="eh-label" for="eh-dep">Deposit</label>
+              <select id="eh-dep" v-model="depositMonths" class="eh-input">
+                <option :value="0">No deposit</option>
+                <option :value="1">1 month</option>
+                <option :value="2">2 months</option>
+              </select>
+            </div>
+            <div v-show="depositMonths > 0">
+              <label class="eh-label" for="eh-deptype">Deposit type</label>
+              <select id="eh-deptype" v-model="depositType" class="eh-input">
+                <option value="consumable">Consumable</option>
+                <option value="refundable">Refundable</option>
+              </select>
             </div>
           </div>
         </div>
 
-        <form @submit.prevent="handleSubmit" class="space-y-8 sm:space-y-12">
-          
-          <!-- Photos Section -->
-          <div class="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200">
-            <h3 class="text-xs font-semibold text-black uppercase tracking-normal mb-4">Update Photos</h3>
-            
-            <div>
-              <label class="block text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Main Boarding House Photo</label>
-              <input aria-label="Main Boarding House Photo" type="file" @change="handleHouseImgChange" accept="image/*" class="w-full px-3 sm:px-4 py-3 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-600 font-semibold file:mr-2 sm:file:mr-4 file:py-2 file:px-3 sm:file:px-4 file:rounded-lg file:border-0 file:text-[12px] file:font-bold file:bg-blue-600 file:text-white hover:file:bg-black transition cursor-pointer" />
-            </div>
+        <div class="eh-grow">
+          <label class="eh-label" for="eh-desc">Description &amp; house rules</label>
+          <textarea id="eh-desc" v-model="description" class="eh-input eh-textarea"></textarea>
+        </div>
+      </section>
 
-            <!-- Dynamic Additional Photo Upload Section -->
-            <div class="border-t border-slate-200/60 pt-6">
-              <label class="block text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">Additional Interior Photos (Maximum 10 Photos)</label>
-              <div class="flex items-center justify-center bg-white border border-slate-200 rounded-xl p-4 sm:p-6 transition cursor-pointer mb-6">
-                <input aria-label="Field" type="file" multiple accept="image/*" @change="handlePhotosSelected" class="w-full text-xs font-bold text-slate-500 file:mr-2 sm:file:mr-4 file:py-2 file:px-4 sm:file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-[#2a528a] file:text-white hover:file:bg-black transition cursor-pointer" />
-              </div>
-
-              <!-- Interactive Previews Grid with Delete option -->
-              <div v-if="selectedPhotos.length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
-                <div v-for="(photo, index) in selectedPhotos" :key="index" class="relative rounded-xl overflow-hidden aspect-square border border-slate-200 group">
-                  <img :src="photo.previewUrl" class="w-full h-full object-cover" alt="Interior Preview" />
-                  <button aria-label="remove Photo" type="button" @click="removePhoto(index)" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-700 management-button">
-                    <i class="fa-solid fa-trash text-xs" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Basic Details -->
-          <div class="space-y-6 sm:space-y-10">
-            <div>
-              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                Boarding House Name
-              </label>
-              <input aria-label="Boarding House Name" type="text" v-model="houseName" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
-            </div>
-
-            <div>
-              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <span class="text-base font-semibold leading-none shrink-0 mt-[-2px]">₱</span>
-                Monthly Rent Price
-              </label>
-              <input aria-label="₱ Monthly Rent Price" type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
-            </div>
-
-            <div>
-              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <i class="fa-solid fa-location-dot text-blue-600"></i>
-                Official Barangay (Nabua)
-              </label>
-              <select aria-label="Official Barangay (Nabua)" v-model="selectedBarangay" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm cursor-pointer">
-                <option value="">Select Official Barangay</option>
-                <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
-              </select>
-            </div>
-            
-            <!-- Advance & Deposit Policy -->
-            <div class="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200">
-              <h3 class="text-xs font-semibold text-black uppercase tracking-normal mb-4 flex items-center gap-2">
-                <i class="fa-solid fa-coins" />
-                Advance & Deposit Policy
-              </h3>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-                <div>
-                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Advance Rent</label>
-                  <select aria-label="Advance Rent" v-model="advanceMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
-                    <option :value="0">No Advance</option>
-                    <option :value="1">1 Month</option>
-                    <option :value="2">2 Months</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Deposit Duration</label>
-                  <select aria-label="Deposit Duration" v-model="depositMonths" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
-                    <option :value="0">No Deposit</option>
-                    <option :value="1">1 Month</option>
-                    <option :value="2">2 Months</option>
-                  </select>
-                </div>
-
-                <div v-show="depositMonths > 0">
-                  <label class="block text-[12px] font-bold text-black uppercase mb-2 ml-0.5 tracking-wider">Rent Deposit Type</label>
-                  <select aria-label="Rent Deposit Type" v-model="depositType" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-black font-semibold focus:outline-none focus:border-black transition">
-                    <option value="consumable">Consumable (Last Month)</option>
-                    <option value="refundable">Refundable (Cash)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                Contact Number
-              </label>
-              <input aria-label="Contact Number" type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="E.g., 09123456789 / 09987654321" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm" />
-              <p class="text-[12px] text-slate-400 font-bold mt-1.5 ml-0.5">
-                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
-              </p>
-            </div>
-
-            <!-- High-Precision 3-Way Location Registration -->
-            <div>
-              <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-4 sm:mb-6">
-                <i class="fa-solid fa-map-location-dot" /> High-Precision Location Setup
-              </h3>
-              
-              <div class="space-y-6 sm:space-y-8 bg-slate-50/50 p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] border border-slate-100">
-                <!-- STEP A -->
-                <div>
-                  <div class="flex items-center gap-3 mb-3 sm:mb-4">
-                    <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">A</div>
-                    <label class="text-[12px] sm:text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Type your Property Address</label>
-                  </div>
-                  <div id="autocomplete-wrapper" class="w-full"></div>
-                </div>
-
-                <!-- STEP B -->
-                <div>
-                  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4">
-                    <div class="flex items-center gap-3">
-                      <div class="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold shadow-lg">B</div>
-                      <label class="text-[12px] sm:text-[12px] font-semibold text-slate-900 uppercase tracking-wide">Verify or Pin Exactly on Map</label>
-                    </div>
-                    <div class="flex flex-wrap gap-2 w-full sm:w-auto">
-                      <button 
-                        type="button" 
-                        @click="detectMyLocation" 
-                        :disabled="isGpsLoading"
-                        class="bg-white border border-slate-200 text-slate-600 text-[12px] font-semibold uppercase tracking-wide px-3 sm:px-4 py-2 rounded-full shadow-sm hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center management-button management-button-secondary"
-                      >
-                        <i v-if="isGpsLoading" class="fa-solid fa-spinner fa-spin" />
-                        <i v-else class="fa-solid fa-location-crosshairs" /> Use GPS
-                      </button>
-                      <button 
-                        type="button" 
-                        @click="toggleFullscreenMap" 
-                        class="bg-slate-900 text-white text-[12px] font-semibold uppercase tracking-wide px-3 sm:px-4 py-2 rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2 flex-1 sm:flex-initial justify-center management-button"
-                      >
-                        <i class="fa-solid fa-expand" /> Large Map
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden border-4 border-white shadow-xl aspect-video relative bg-slate-50 group cursor-pointer">
-                    <div id="map" ref="mapContainer" class="w-full h-full min-h-[300px] sm:min-h-[350px]"></div>
-                    <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
-                      <span class="bg-white/90 backdrop-blur-md px-4 sm:px-6 py-2 sm:py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide text-slate-600 shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
-                        <i class="fa-solid fa-hand-pointer" /> Click to Zoom &amp; Adjust Pin
-                      </span>
-                    </div>
-                  </div>
-
-                  <div v-if="!latitude || !longitude" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
-                    <p class="text-[12px] font-bold text-amber-800 leading-snug">
-                      No GPS pin set yet. Without a location, this listing won't appear on the public Map View and students can't get walking directions from CSPC. Use "Use GPS" or "Large Map" above to set it.
-                    </p>
-                  </div>
-                  <div v-else-if="pinNeedsConfirmation" class="mt-3 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs mt-0.5"></i>
-                    <p class="text-[12px] font-bold text-amber-800 leading-snug">
-                      Address text changed but the map pin hasn't moved yet. Select a suggestion from the dropdown, use "Use GPS", or drag the pin — otherwise the old location will be kept when you save.
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Step C removed: Google Maps short link extraction was unreliable.
-                     Use GPS button or the Places search (Step A) instead. -->
-              </div>
-            </div>
-
-            <!-- Hidden inputs -->
-            <input type="hidden" v-model="latitude" />
-            <input type="hidden" v-model="longitude" />
-
-            <div>
-              <label class="flex items-center gap-2 text-[12px] font-bold text-black uppercase mb-3 ml-0.5 tracking-wider">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                Property Description & Rules
-              </label>
-              <textarea aria-label="Property Description &amp; Rules" v-model="description" rows="5" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black font-semibold focus:bg-white focus:border-black focus:outline-none transition shadow-sm"></textarea>
-            </div>
-          </div>
-
-          <!-- Amenities -->
-          <div class="space-y-6 sm:space-y-8">
-            <!-- Free Amenities -->
-            <div class="px-1 sm:px-2 py-2 sm:py-4">
-              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8">
-                <p class="flex items-center gap-3 text-[12px] sm:text-[12px] font-semibold text-black uppercase tracking-normal">
-                  <i class="fa-solid fa-gift text-emerald-500" />
-                  Free Amenities
-                </p>
-                <div class="flex gap-2 w-full sm:w-auto">
-                  <input aria-label="Add custom..." type="text" v-model="newFreeAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[12px] font-bold focus:border-blue-400 outline-none" />
-                  <button type="button" @click="addCustomAmenity('free')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 sm:py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition shrink-0 management-button">Add</button>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs text-black font-semibold">
-                <label v-for="item in freeAmenities" :key="item" class="flex items-center gap-3 cursor-pointer bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-black transition">
-                  <input aria-label="selected Free Amenities" type="checkbox" :value="item" v-model="selectedFreeAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
-                  <span class="break-words">{{ item }}</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Paid Amenities -->
-            <div class="px-1 sm:px-2 py-2 sm:py-4 border-t border-slate-100">
-              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8 mt-4">
-                <p class="flex items-center gap-3 text-[12px] sm:text-[12px] font-semibold text-black uppercase tracking-normal">
-                  <i class="fa-solid fa-coins text-rose-500" />
-                  Paid Amenities
-                </p>
-                <div class="flex gap-2 w-full sm:w-auto">
-                  <input aria-label="Add custom..." type="text" v-model="newPaidAmenityInput" placeholder="Add custom..." class="flex-1 sm:w-32 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 sm:py-1 text-[12px] font-bold focus:border-red-400 outline-none" />
-                  <button type="button" @click="addCustomAmenity('paid')" class="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1.5 sm:py-1 rounded-lg text-[12px] font-semibold uppercase tracking-wider transition shrink-0 management-button">Add</button>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs text-black font-semibold">
-                <label v-for="item in paidAmenities" :key="item" class="flex items-center gap-3 cursor-pointer bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-black transition">
-                  <input aria-label="selected Paid Amenities" type="checkbox" :value="item" v-model="selectedPaidAmenities" class="w-4 h-4 border-slate-300 text-black rounded accent-black shrink-0" />
-                  <span class="break-words">{{ item }}</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Submit Button -->
-          <div class="pt-8 sm:pt-10 border-t border-slate-100 flex justify-center">
-            <button type="submit" :disabled="isSubmitting" class="bg-black hover:bg-slate-800 text-white font-semibold py-4 px-8 sm:px-16 rounded-xl text-[12px] sm:text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 w-full max-w-[400px] disabled:opacity-50 management-button">
-              {{ isSubmitting ? 'Saving Changes...' : 'Save Changes' }}
+      <!-- Column 3: location -->
+      <section class="eh-card eh-col eh-col-location">
+        <div class="eh-row-head">
+          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Location</h2>
+          <div class="eh-map-actions">
+            <button type="button" @click="detectMyLocation" :disabled="isGpsLoading" class="eh-btn eh-btn-soft eh-btn-sm">
+              <i :class="isGpsLoading ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-location-crosshairs'" aria-hidden="true"></i> Use GPS
+            </button>
+            <button type="button" @click="toggleFullscreenMap" class="eh-btn eh-btn-dark eh-btn-sm">
+              <i class="fa-solid fa-expand" aria-hidden="true"></i> Large map
             </button>
           </div>
-        </form>
-      </div>
-    </div>
-  
+        </div>
+
+        <div>
+          <span class="eh-label"><span class="eh-step">A</span> Search your property address</span>
+          <div id="autocomplete-wrapper" class="w-full"></div>
+        </div>
+
+        <div class="eh-map-block">
+          <span class="eh-label"><span class="eh-step">B</span> Verify or pin exactly on the map</span>
+          <div class="eh-map group">
+            <div id="map" ref="mapContainer" class="w-full h-full"></div>
+            <div class="eh-map-overlay" @click="toggleFullscreenMap">
+              <span><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Click to zoom &amp; adjust pin</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="!latitude || !longitude" class="eh-warn">
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+          <p>No GPS pin set yet. Without a location, this listing won't appear on the public Map View and students can't get walking directions from CSPC.</p>
+        </div>
+        <div v-else-if="pinNeedsConfirmation" class="eh-warn">
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+          <p>Address changed but the pin hasn't moved. Pick a suggestion, use GPS, or drag the pin — otherwise the old location is kept.</p>
+        </div>
+
+        <!-- Hidden inputs -->
+        <input type="hidden" v-model="latitude" />
+        <input type="hidden" v-model="longitude" />
+      </section>
+    </form>
+
     </main>
 </div>
 </template>
@@ -1019,5 +903,112 @@ const loadError = ref('');
   padding: 0.5rem !important;
   margin-top: 5px !important;
   z-index: 9999 !important;
+}
+</style>
+
+<style scoped>
+/* Edit property: full-width card grid that fits one screen on desktop (same card language as Profile) */
+.eh-main { display: flex; flex-direction: column; padding-top: 24px !important; padding-bottom: 24px !important; }
+.eh-main :deep(.management-page-header) { margin-bottom: 18px; }
+.eh-grid { flex: 1; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+@media (min-width: 900px) { .eh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .eh-col-location { grid-column: 1 / -1; } }
+@media (min-width: 1360px) {
+  .eh-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr); }
+  .eh-col-location { grid-column: auto; }
+}
+.eh-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.eh-card { background: #fff; border: 1px solid var(--a-border); border-radius: 18px; padding: 18px 20px; box-shadow: var(--a-shadow); min-width: 0; }
+section.eh-card.eh-col { gap: 16px; }
+.eh-col > .eh-card:last-child { flex: 1; }
+.eh-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px; color: var(--a-muted); font-weight: 600; }
+
+.eh-title { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 17px !important; font-weight: 700 !important; color: var(--a-heading); }
+section.eh-col > .eh-title, .eh-row-head .eh-title { margin-bottom: 0; }
+.eh-bar { width: 5px; height: 20px; border-radius: 999px; background: var(--a-primary); }
+.eh-row-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 14px 0 10px; }
+.eh-col-location > .eh-row-head:first-child { margin-top: 0; margin-bottom: 0; }
+.eh-label { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12.5px; font-weight: 600; color: var(--a-muted); }
+.eh-row-head .eh-label { margin-bottom: 0; }
+.eh-label small { font-weight: 500; color: var(--a-faint); }
+.eh-label.is-free i { color: #059669; }
+.eh-label.is-paid i { color: #e11d48; }
+.eh-hint { margin: 6px 0 0; font-size: 12px; color: var(--a-faint); }
+.eh-hint i { color: var(--a-primary); margin-right: 4px; }
+.eh-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Buttons */
+.eh-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 10px; border: 1px solid transparent; font-size: 13.5px; font-weight: 600; text-decoration: none; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.eh-btn-sm { height: 34px; padding: 0 12px; font-size: 12.5px; border-radius: 9px; }
+.eh-btn-primary { background: var(--a-primary); color: #fff; box-shadow: 0 4px 12px rgba(30, 74, 141, .22); }
+.eh-btn-primary:hover:not(:disabled) { background: var(--a-primary-strong); }
+.eh-btn-ghost { background: #fff; border-color: var(--a-border); color: var(--a-text); }
+.eh-btn-ghost:hover { background: var(--a-surface-2); }
+.eh-btn-soft { background: var(--a-primary-soft); color: var(--a-primary); }
+.eh-btn-soft:hover:not(:disabled) { background: var(--a-primary-tint); }
+.eh-btn-soft:focus-within { outline: 3px solid #7fa6db; outline-offset: 2px; }
+.eh-btn-dark { background: var(--a-heading); color: #fff; }
+.eh-btn-dark:hover { background: var(--a-primary); }
+
+/* Photos */
+.eh-cover { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #0f1f36; }
+.eh-cover img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.eh-cover-photo { object-fit: cover; object-position: center; }
+.eh-cover-change { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 9px; background: rgba(255, 255, 255, .94); color: var(--a-heading); font-size: 12.5px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(15, 31, 54, .25); transition: background .15s; }
+.eh-cover-change:hover { background: #fff; }
+.eh-cover-change:focus-within { outline: 3px solid #7fa6db; outline-offset: 2px; }
+.eh-thumbs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.eh-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--a-border); }
+.eh-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.eh-thumb-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 999px; border: 0; background: rgba(169, 60, 52, .92); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.eh-thumb-del:hover { background: #8f2f28; }
+
+/* Amenities */
+.eh-amen-group + .eh-amen-group { margin-top: 14px; border-top: 1px dashed var(--a-border); }
+.eh-amen-group:first-of-type .eh-row-head { margin-top: 0; }
+.eh-add { display: flex; gap: 6px; }
+.eh-add input { width: 130px; height: 34px; min-height: 34px !important; padding: 0 10px; border: 1px solid var(--a-border); border-radius: 9px !important; background: var(--a-surface-2); font-size: 12.5px; }
+.eh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.eh-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--a-border); background: #fff; color: var(--a-text); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.eh-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.eh-chip i { display: none; font-size: 10px; }
+.eh-chip:hover { border-color: var(--a-primary-tint); background: var(--a-surface-2); }
+.eh-chip:focus-within { outline: 3px solid #7fa6db; outline-offset: 1px; }
+.eh-chip.is-free:has(input:checked) { background: #e3f6ea; border-color: #9fd8b7; color: #1d7a45; }
+.eh-chip.is-paid:has(input:checked) { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+.eh-chip:has(input:checked) i { display: inline; }
+
+/* Details */
+.eh-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.eh-fields-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.eh-span-2 { grid-column: 1 / -1; }
+.eh-input { width: 100%; height: 42px; min-height: 42px !important; padding: 0 12px; border: 1px solid var(--a-border); border-radius: 10px !important; background: var(--a-surface-2); color: var(--a-heading); font-size: 14px; font-weight: 600; outline: none; transition: background .15s, border-color .15s; }
+.eh-input:focus { background: #fff; }
+.eh-sub { padding: 14px; border-radius: 14px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
+.eh-sub .eh-input { background: #fff; }
+.eh-sub-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--a-heading); }
+.eh-sub-title i { color: var(--a-gold); }
+.eh-grow { flex: 1; display: flex; flex-direction: column; min-height: 120px; }
+.eh-textarea { flex: 1; height: auto; min-height: 110px !important; padding: 10px 12px; line-height: 1.55; font-weight: 500; resize: vertical; }
+
+/* Location */
+.eh-map-actions { display: flex; gap: 8px; }
+.eh-step { width: 20px; height: 20px; border-radius: 999px; background: var(--a-primary); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.eh-map-block { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.eh-map { position: relative; flex: 1; min-height: 300px; border-radius: 14px; overflow: hidden; border: 1px solid var(--a-border); background: var(--a-surface-2); cursor: pointer; }
+.eh-map-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15, 31, 54, .04); transition: background .15s; }
+.eh-map-overlay span { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, .94); color: var(--a-heading); font-size: 12.5px; font-weight: 600; box-shadow: 0 4px 12px rgba(15, 31, 54, .18); opacity: 0; transition: opacity .15s; }
+.eh-map:hover .eh-map-overlay { background: transparent; }
+.eh-map:hover .eh-map-overlay span { opacity: 1; }
+.eh-warn { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--a-warning-soft); border: 1px solid #f1d9b5; }
+.eh-warn i { color: var(--a-gold); margin-top: 2px; font-size: 13px; }
+.eh-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--a-warning); font-weight: 500; }
+
+@media (max-width: 560px) {
+  .eh-fields, .eh-fields-3 { grid-template-columns: minmax(0, 1fr); }
+  .eh-thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .eh-add { width: 100%; }
+  .eh-add input { flex: 1; width: auto; }
+  .eh-main :deep(.management-header-actions) { width: 100%; }
+  .eh-main :deep(.management-header-actions) .eh-btn { flex: 1; }
 }
 </style>

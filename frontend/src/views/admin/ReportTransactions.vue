@@ -50,9 +50,9 @@ const loadError = ref('');
 <template>
   <div class="management-page min-h-screen font-sans">
 <AdminNav />
-<main id="management-content" tabindex="-1" class="management-content">
+<main id="management-content" tabindex="-1" class="management-content report-wide">
       <LoadError :message="loadError" /><PageHeader title="Reservation history" description="Review the existing student reservation report." />
-    <div class="max-w-[1000px] mx-auto bg-white p-12 shadow-xl rounded-2xl border-t-8 border-[#2a528a] text-left">
+    <div class="w-full bg-white p-6 sm:p-12 shadow-xl rounded-2xl border-t-8 border-[#2a528a] text-left">
       
       <!-- Header -->
       <div class="flex flex-col sm:flex-row gap-5 justify-between items-start sm:items-center border-b-2 border-slate-100 pb-8 mb-8">
@@ -177,4 +177,4 @@ const loadError = ref('');
     page-break-after: auto;
   }
 }
-</style>
+</style>

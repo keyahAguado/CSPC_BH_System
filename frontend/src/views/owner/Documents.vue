@@ -2,8 +2,8 @@
 <script setup>
 import LoadError from '../../components/management/LoadError.vue';
 
-import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
 const isValidPermitDate = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -11,7 +11,7 @@ const isValidPermitDate = (value) => {
   const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return day <= days[month - 1];
 };
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
@@ -274,7 +274,9 @@ const saveDocumentUpdate = async (p) => {
       }
       
       // Fetch fresh records to reflect changes immediately
+      delete fileInputs.value[identifier];
       await fetchDocuments();
+      return true;
     }
   } catch (error) {
     console.error('Failed to save document update:', error);
@@ -282,6 +284,7 @@ const saveDocumentUpdate = async (p) => {
   } finally {
     isUpdating.value[identifier] = false;
   }
+  return false;
 };
 
 onMounted(async () => {
@@ -290,198 +293,263 @@ onMounted(async () => {
 });
 
 const loadError = ref('');
+
+// Row 1: the four required permits. Row 2: the four additional permits. Extra SASO requirements follow.
+const REQUIRED_KEYS = ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'];
+const isRequiredDoc = (p) => REQUIRED_KEYS.includes(p.permit_key);
+const requiredDocs = computed(() => criteria.value.filter(isRequiredDoc));
+const additionalDocs = computed(() => criteria.value.filter(p => !isRequiredDoc(p)));
+const STATUS_TEXT = { expired: 'Expired', warning: 'Expiring soon', valid: 'Valid', none: 'No expiry set' };
+const formatExpiry = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A');
+const docKey = (p) => p.permit_key || p.id;
+const statusLine = (p) => {
+  if (!p.current_file) return 'Not uploaded';
+  const status = getDocStatus(p.current_expiry);
+  if (status === 'none') return 'Uploaded · no expiry set';
+  return `${STATUS_TEXT[status]} · ${status === 'expired' ? 'expired' : 'expires'} ${formatExpiry(p.current_expiry)}`;
+};
+
+// Header status chip
+const HOUSE_STATUS = {
+  accredited: { label: 'Accredited', tone: 'success' },
+  pending: { label: 'Pending review', tone: 'warning' },
+  rejected: { label: 'Rejected', tone: 'danger' },
+  archived: { label: 'Archived', tone: 'neutral' }
+};
+const houseStatus = computed(() => HOUSE_STATUS[house.value?.house_status] || null);
+
+// Per-document status pill and icon
+const PILL_TEXT = { expired: 'Expired', warning: 'Expiring soon', valid: 'Valid', none: 'Uploaded' };
+const docTone = (p) => (p.current_file ? getDocStatus(p.current_expiry) : 'missing');
+const docPill = (p) => (p.current_file ? PILL_TEXT[getDocStatus(p.current_expiry)] : 'Not uploaded');
+const DOC_ICONS = { permit_fire: 'fa-shield-halved', permit_sanitary: 'fa-notes-medical' };
+const docIcon = (p) => DOC_ICONS[p.permit_key] || 'fa-file-lines';
+
+// Line under each document name: pending review or needed action (nothing when up to date)
+const docNote = (p) => {
+  if (house.value?.document_update_pending && house.value?.last_updated_document == docKey(p)) return { tone: 'pending', icon: 'fa-rotate', text: 'Pending re-verification' };
+  const tone = docTone(p);
+  if (tone === 'missing') return isRequiredDoc(p)
+    ? { tone: 'danger', icon: 'fa-circle-exclamation', text: 'Needs action · upload required' }
+    : null;
+  if (tone === 'expired') return { tone: 'danger', icon: 'fa-circle-exclamation', text: 'Needs action · renew now' };
+  if (tone === 'warning') return { tone: 'expiry', icon: 'fa-clock', text: 'Needs action · renew soon' };
+  return null;
+};
+
+// Collapsible sections
+const collapsed = ref({ required: false, additional: false });
+
 </script>
 
+
 <template>
-  <div class="management-page management-form-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page docs-page flex flex-col font-sans">
     <OwnerNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main id="management-content" tabindex="-1" class="flex-1 bg-slate-100 py-16 px-4">
+    <main id="management-content" tabindex="-1" class="docs-main">
       <LoadError :message="loadError" />
-<PageHeader title="Legal documents" description="Inspect permit validity and submit document updates for administrative review." />
-      
-      <div class="max-w-3xl mx-auto mb-6 text-left">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <router-link to="/owner/dashboard" class="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-black uppercase tracking-wide transition">
-            <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
-          </router-link>
 
-          <!-- Boarding House Selector for Multi-Property Owners -->
-          <div v-if="ownerProperties.length > 1" class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <label class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Property:</label>
-            <select aria-label="Property:" :value="selectedHouseId" @change="handleHouseSwitch" class="bg-transparent font-semibold text-slate-800 text-xs outline-none cursor-pointer">
-              <option v-for="p in ownerProperties" :key="p.id" :value="p.id">
-                {{ p.name }}
-              </option>
-            </select>
-          </div>
+      <!-- Status banners -->
+      <div v-if="isRejected" class="docs-banner is-danger" role="alert">
+        <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+        <div>
+          <strong>Application rejected.</strong>
+          <span>"{{ adminComments || 'No specific comments provided. Please ensure all documents are valid and clearly scanned.' }}"</span>
+          <span class="docs-banner-hint">Re-upload the corrected documents below to resubmit.</span>
         </div>
-        
-        <!-- Rejection Warning Alert Card (Active Rejection) -->
-        <div v-if="isRejected" class="mb-10 bg-[#fff1f2] border-2 border-[#fecaca] rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden text-left">
-          <div class="flex items-start gap-8 relative z-10">
-            <div class="bg-[#ef4444] text-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-200">
-              <i class="fa-solid fa-circle-exclamation text-2xl"></i>
-            </div>
-            <div class="grow">
-              <h3 class="text-[#991b1b] font-semibold uppercase text-xl tracking-tight mb-1">Application Rejected</h3>
-              <p class="text-[#ef4444] text-[12px] font-bold uppercase tracking-normal mb-6">Please review the comments from SASO Admin below:</p>
-              
-              <div class="bg-white/90 border-2 border-[#fee2e2] rounded-[1.8rem] p-8 text-slate-700 text-sm font-medium italic shadow-inner mb-6">
-                "{{ adminComments || 'No specific comments provided. Please ensure all documents are valid and clearly scanned.' }}"
-              </div>
-              
-              <div class="flex items-center gap-3 text-[#ef4444]">
-                <div class="w-2 h-2 bg-[#ef4444] rounded-full animate-ping"></div>
-                <p class="text-[12px] font-semibold uppercase tracking-wide leading-relaxed">
-                  <i class="fa-solid fa-info-circle mr-1"></i> You can update your information and re-upload the corrected documents below to resubmit your application.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="absolute -bottom-12 -right-12 w-48 h-48 bg-red-500/5 rounded-full blur-3xl"></div>
-        </div>
-
-        <!-- Resubmitted / Pending Re-Verification Banner -->
-        <div v-if="isResubmitted" class="mb-10 bg-[#eff6ff] border-2 border-[#bfdbfe] rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden text-left">
-          <div class="flex items-start gap-8 relative z-10">
-            <div class="bg-[#2563eb] text-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-200">
-              <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
-            </div>
-            <div class="grow">
-              <h3 class="text-[#1e40af] font-semibold uppercase text-xl tracking-tight mb-1">Updates Submitted for Review</h3>
-              <p class="text-slate-500 text-[12px] font-bold uppercase tracking-normal mb-6">Status: Pending Re-Verification</p>
-              
-              <div class="bg-white/90 border-2 border-blue-100 rounded-[1.8rem] p-8 text-slate-700 text-sm font-medium italic shadow-inner mb-6">
-                You have successfully uploaded corrected document files. The SASO Admin has been notified of your updates and is currently reviewing your resubmission. No further action is required from you at this time.
-              </div>
-              
-              <div class="flex items-center gap-3 text-blue-600">
-                <div class="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                <p class="text-[12px] font-semibold uppercase tracking-wide leading-relaxed">
-                  <i class="fa-solid fa-circle-info mr-1"></i> Your listing will automatically return to active accredited status once approved by the administrator.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div class="absolute -bottom-12 -right-12 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl"></div>
+      </div>
+      <div v-if="isResubmitted" class="docs-banner is-info" role="status">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+        <div>
+          <strong>Updates submitted for review.</strong>
+          <span>SASO is reviewing your corrected files. Your listing returns to accredited status once approved.</span>
         </div>
       </div>
 
-      <!-- Main Loader state (PWA inline SVG Loader) -->
-      <div v-if="isLoading" class="max-w-3xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 p-12 text-center flex flex-col items-center justify-center">
-        <svg class="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading documents records...</p>
-      </div>
-
-      <!-- Main Box -->
-      <div v-else class="max-w-3xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden text-left animate-in fade-in duration-300">
-        <div class="p-8 md:p-12">
-          
-          <div class="flex flex-col items-center justify-center text-center mb-8 border-b border-slate-100 pb-8 text-black">
-            <div class="flex items-center justify-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-[#2a528a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <h2 class="text-xl font-semibold tracking-tight text-slate-800">Document requirements</h2>
-            </div>
-            <p v-if="house?.name" class="text-[#2a528a] text-sm font-semibold uppercase tracking-wider mt-2">
-              {{ house.name }}
-            </p>
+      <div class="dx-panel">
+        <!-- Panel header -->
+        <header class="dx-head">
+          <span class="dx-head-badge" aria-hidden="true"><i class="fa-solid fa-folder-open"></i></span>
+          <h1>Legal documents</h1>
+          <div class="dx-head-chips">
+            <label v-if="ownerProperties.length > 1" class="dx-chip dx-chip-select">
+              <span class="dx-sr">Property</span>
+              <select :value="selectedHouseId" @change="handleHouseSwitch">
+                <option v-for="prop in ownerProperties" :key="prop.id" :value="prop.id">{{ prop.name }}</option>
+              </select>
+              <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+            </label>
+            <span v-else-if="house?.name" class="dx-chip">{{ house.name }}</span>
+            <span v-if="houseStatus" :class="['dx-chip', 'dx-status', 'is-' + houseStatus.tone]"><span class="dx-dot" aria-hidden="true"></span>{{ houseStatus.label }}</span>
           </div>
+        </header>
 
-          <div class="bg-[#fef3c7] text-[#c2862c] px-6 py-5 rounded-md mb-10 text-[14px]">
-            <div class="flex flex-col gap-1">
-              <p>Ensure your permits are always up-to-date. Select a new file and date, then click <span class="font-bold underline">Save Update</span>.</p>
-              <p class="text-[12px] font-semibold uppercase tracking-tight text-amber-600 italic">Note: You must click "Save Update" for each specific document you change.</p>
+        <div v-if="isLoading" class="docs-loading" role="status">
+          <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading documents…
+        </div>
+
+        <div v-else class="dx-sections">
+          <section v-for="section in [{ key: 'required', title: 'Required Documents', icon: 'fa-shield-halved', items: requiredDocs, offset: 0 }, { key: 'additional', title: 'Additional Documents', icon: 'fa-folder-open', items: additionalDocs, offset: requiredDocs.length }]"
+                   v-show="section.items.length" :key="section.key" :class="['dx-section', 'is-' + section.key]" :aria-label="section.title">
+            <button type="button" class="dx-section-head" :aria-expanded="!collapsed[section.key]" @click="collapsed[section.key] = !collapsed[section.key]">
+              <i :class="['fa-solid', section.icon, 'dx-section-icon']" aria-hidden="true"></i>
+              <h2>{{ section.title }}</h2>
+              <span class="dx-count">{{ section.key === 'required' ? 'Required' : 'Optional' }} (Items {{ section.offset + 1 }}-{{ section.offset + section.items.length }})</span>
+              <i :class="['fa-solid', 'dx-chevron', collapsed[section.key] ? 'fa-chevron-down' : 'fa-chevron-up']" aria-hidden="true"></i>
+            </button>
+
+            <div v-show="!collapsed[section.key]" class="dx-grid">
+              <article v-for="(p, idx) in section.items" :key="p.id || docKey(p)" class="dx-card">
+                <div class="dx-card-top">
+                  <div class="dx-info">
+                    <h3><span class="dx-num">{{ section.offset + idx + 1 }}.</span> {{ p.label }}</h3>
+                    <p v-if="docNote(p)" :class="['dx-note', 'is-' + docNote(p).tone]"><i :class="['fa-solid', docNote(p).icon]" aria-hidden="true"></i>{{ docNote(p).text }}</p>
+                  </div>
+                  <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional">Optional</span>
+                  <span v-else :class="['dx-pill', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
+                </div>
+
+                <!-- Inline update form: file + view, editable expiry date, save -->
+                <div class="dx-field">
+                  <span class="dx-label">Scanned File</span>
+                  <div class="dx-file-row">
+                    <label class="dx-file" :title="fileInputs[docKey(p)]?.name || 'Choose a scanned file'">
+                      <span class="dx-file-btn">Choose File</span>
+                      <span :class="['dx-file-name', { 'has-file': fileInputs[docKey(p)] }]">
+                        <i v-if="fileInputs[docKey(p)]" class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                        {{ fileInputs[docKey(p)] ? fileInputs[docKey(p)].name : 'No file chosen' }}
+                      </span>
+                      <input :id="'docs-file-' + docKey(p)" type="file" class="dx-sr" :aria-label="'Scanned file for ' + p.label"
+                             accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
+                             @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
+                    </label>
+                    <a v-if="p.current_file" :href="getImageUrl(p.current_file)" target="_blank" rel="noopener" class="dx-view" :aria-label="'View ' + p.label">
+                      <i class="fa-regular fa-eye" aria-hidden="true"></i> View
+                    </a>
+                    <span v-else class="dx-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
+                  </div>
+                </div>
+
+                <div class="dx-field">
+                  <label class="dx-label" :for="'docs-exp-' + docKey(p)">Expiration Date</label>
+                  <div class="dx-date-row">
+                    <input :id="'docs-exp-' + docKey(p)" type="date" min="1000-01-01" max="9999-12-31" v-model="expiryDates[docKey(p)]" class="dx-date" />
+                    <button type="button" class="dx-save" @click="saveDocumentUpdate(p)" :disabled="isUpdating[docKey(p)]">
+                      <i :class="isUpdating[docKey(p)] ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
+                      {{ isUpdating[docKey(p)] ? 'Saving' : 'Save' }}
+                    </button>
+                  </div>
+                </div>
+              </article>
             </div>
-          </div>
-
-          <!-- Criteria Documents list loop -->
-          <div class="space-y-8">
-            <div v-for="(p, index) in criteria" :key="p.id || index" 
-                 class="border border-slate-200 rounded-xl p-6 bg-slate-50/50 relative overflow-hidden group hover:border-blue-300 transition">
-              
-              <!-- Expiry Badges -->
-              <div class="absolute top-0 right-0 px-3 py-1 text-[12px] font-semibold uppercase tracking-wide text-white"
-                   :class="[
-                     getDocStatus(p.current_expiry) === 'expired' ? 'bg-red-500' :
-                     getDocStatus(p.current_expiry) === 'warning' ? 'bg-orange-400' : 
-                     getDocStatus(p.current_expiry) === 'valid' ? 'bg-green-500' : 'bg-slate-400'
-                   ]">
-                {{ 
-                  getDocStatus(p.current_expiry) === 'expired' ? 'Expired' :
-                  getDocStatus(p.current_expiry) === 'warning' ? 'Expiring Soon' : 
-                  getDocStatus(p.current_expiry) === 'valid' ? 'Valid' : 'No Expiry Set'
-                }}
-              </div>
-
-              <div class="flex items-center gap-2 mb-4 pr-24 flex-wrap">
-                <h3 class="text-[13px] font-bold text-slate-800">{{ index + 1 }}. {{ p.label }}</h3>
-                <span 
-                  class="px-2.5 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wider shrink-0"
-                  :class="['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'].includes(p.permit_key) ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-100 text-slate-500 border border-slate-200'"
-                >
-                  {{ ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'].includes(p.permit_key) ? 'Required' : 'Optional' }}
-                </span>
-              </div>
-              
-              <!-- Re-verification Pending badge indicator -->
-              <div v-if="house?.document_update_pending && house?.last_updated_document == (p.permit_key || p.id)" 
-                   class="mb-6 inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 px-3 py-1 rounded-full w-fit">
-                <div class="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
-                <span class="text-[12px] font-semibold uppercase tracking-wide">Pending Re-verification</span>
-              </div>
-
-              <!-- Saved record feedback -->
-              <div v-if="p.current_file" class="flex items-center gap-3 mb-6 bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                <div class="w-8 h-8 rounded bg-blue-50 flex items-center justify-center text-blue-500">
-                  <i class="fa-solid fa-file-image"></i>
-                </div>
-                <div>
-                  <a :href="getImageUrl(p.current_file)" target="_blank" class="text-xs font-bold text-blue-600 hover:underline truncate max-w-[200px] block">
-                    View Current File
-                  </a>
-                  <p class="text-[12px] font-semibold text-slate-400">
-                    Expiry: {{ p.current_expiry ? new Date(p.current_expiry).toLocaleDateString() : 'N/A' }}
-                  </p>
-                </div>
-              </div>
-
-              <div v-else class="mb-6 inline-flex items-center gap-1.5 bg-red-500 text-white px-3 py-1 rounded-full w-fit shadow-sm">
-                <i class="fa-solid fa-file-circle-plus text-[12px]"></i>
-                <span class="text-[12px] font-semibold uppercase tracking-wide">Document Missing</span>
-              </div>
-
-              <!-- Update specific document form -->
-              <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-end">
-                <div class="w-full">
-                  <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5 ml-1">New File (Required)</label>
-                  <input aria-label="New File (Required)" type="file" @change="e => handleFileChange(e, p.permit_key || p.id)" required
-                      accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
-                      class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:border-r file:border-slate-200 file:text-xs file:font-bold file:bg-slate-50 file:text-slate-700 hover:file:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer" />
-                </div>
-                
-                <div class="w-full sm:w-48">
-                  <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5 ml-1">New Expiry</label>
-                  <input aria-label="New Expiry" type="date" min="1000-01-01" max="9999-12-31" v-model="expiryDates[p.permit_key || p.id]" required
-                      class="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-lg text-xs font-bold focus:border-blue-400 outline-none transition" />
-                </div>
-
-                <button type="button" @click="saveDocumentUpdate(p)" :disabled="isUpdating[p.permit_key || p.id]" class="w-full sm:w-auto bg-black hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition active:scale-95 whitespace-nowrap disabled:opacity-50 management-button">
-                  {{ isUpdating[p.permit_key || p.id] ? 'Saving...' : 'Save Update' }}
-                </button>
-              </div>
-
-            </div>
-          </div>
-
+          </section>
         </div>
       </div>
     </main>
   </div>
 </template>
+
+<style scoped>
+/* Legal documents — same look as the accreditation form's Legal Documents step */
+.docs-main { flex: 1; width: 100%; max-width: 1600px !important; padding: 18px clamp(16px, 2.2vw, 32px) 18px !important; text-align: left; }
+.docs-main, .docs-main :is(h1, h2, h3, p, span, a, label, button, input, select, option, strong) { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif !important; }
+.docs-page { height: 100vh; overflow: hidden; }
+.docs-page > .docs-main { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+@media (max-width: 1179px), (max-height: 819px) {
+  .docs-page { height: auto; overflow: visible; }
+  .docs-page > .docs-main { overflow: visible; }
+}
+.dx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Banners */
+.docs-banner { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+.docs-banner i { margin-top: 3px; }
+.docs-banner div { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.docs-banner-hint { font-weight: 600; }
+.docs-banner.is-danger { background: #fbeae8; border: 1px solid #f0c9c5; color: #a93c34; }
+.docs-banner.is-info { background: #e7eef8; border: 1px solid #c9d7ec; color: #1e4a8d; }
+
+/* One white panel holding everything */
+.dx-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04); padding: 14px 18px 16px; }
+.docs-loading { padding: 48px; text-align: center; color: #5b6e86; font-weight: 600; }
+
+/* Panel header */
+.dx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; }
+.dx-head-badge { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #3b82f6; color: #fff; font-size: 16px; box-shadow: 0 1px 2px rgba(37, 99, 235, .3); }
+.dx-head h1 { margin: 0; font-size: 15px !important; font-weight: 600 !important; color: #0f172a; letter-spacing: 0; line-height: 1.3; }
+.dx-head-chips { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dx-chip { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 12.5px; font-weight: 700; }
+.dx-chip-select { padding-right: 30px; }
+.dx-chip-select select { appearance: none; border: 0; background: transparent; color: inherit; font-size: 12.5px; font-weight: 700; min-height: 0 !important; height: 28px; padding: 0 !important; outline: none; cursor: pointer; }
+.dx-chip-select i { position: absolute; right: 11px; font-size: 10px; pointer-events: none; }
+.dx-status.is-success { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+.dx-status.is-warning { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.dx-status.is-danger { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+.dx-status.is-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; }
+.dx-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; flex-shrink: 0; }
+
+/* Sections */
+.dx-sections { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.dx-section { display: flex; flex-direction: column; min-height: 0; }
+.dx-section-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 0 8px; border: 0; background: transparent; text-align: left; cursor: pointer; min-height: 0 !important; }
+.dx-section-head:focus-visible { outline: 3px solid #7fa6db; outline-offset: 2px; border-radius: 8px; }
+.dx-section-icon { font-size: 13px; color: #2563eb; }
+.dx-section.is-additional .dx-section-icon { color: #64748b; }
+.dx-section-head h2 { margin: 0; font-size: 12.5px !important; font-weight: 600 !important; color: #0f172a; text-transform: none !important; letter-spacing: 0; }
+.dx-count { margin-left: auto; padding: 3px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+.dx-section.is-additional .dx-count { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; }
+.dx-chevron { font-size: 11px; color: #64748b; width: 16px; text-align: center; }
+
+.dx-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; }
+@media (min-width: 768px) { .dx-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1180px) { .dx-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Document cards */
+.dx-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: rgba(248, 250, 252, .6); min-width: 0; transition: border-color .15s, background .15s; }
+.dx-card:hover { border-color: #93c5fd; background: #fff; }
+.dx-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.dx-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dx-info h3 { margin: 0; font-size: 12.5px !important; font-weight: 700 !important; color: #1e293b; line-height: 1.4; text-transform: none !important; letter-spacing: 0 !important; }
+.dx-num { color: #2563eb; font-weight: 600; margin-right: 2px; }
+.dx-section.is-additional .dx-num { color: #94a3b8; }
+.dx-note { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 11.5px; font-weight: 600; }
+.dx-note i { font-size: 11px; }
+.dx-note.is-pending { color: #b45309; }
+.dx-note.is-danger { color: #be123c; }
+.dx-note.is-expiry { color: #ea580c; }
+
+/* Status badge (top right of each card) */
+.dx-pill { flex-shrink: 0; padding: 2px 10px; border-radius: 999px; border: 1px solid #e2e8f0; background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.dx-pill.is-valid { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+.dx-pill.is-warning { background: #fb923c; border-color: #fb923c; color: #fff; }
+.dx-pill.is-expired, .dx-pill.is-missing { background: #fff1f2; border-color: #fecdd3; color: #e11d48; }
+.dx-pill.is-none { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+/* Fields */
+.dx-field { display: flex; flex-direction: column; gap: 5px; }
+.dx-label { font-size: 12px; font-weight: 600; color: #64748b; }
+.dx-file-row, .dx-date-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dx-file { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.dx-file:focus-within .dx-file-btn { outline: 3px solid #7fa6db; outline-offset: 2px; }
+.dx-file-btn { flex-shrink: 0; padding: 6px 12px; border-radius: 9px; border: 1px solid #3b82f6; background: #3b82f6; color: #fff; font-size: 12px; font-weight: 700; transition: background .15s, color .15s, border-color .15s; }
+.dx-file:hover .dx-file-btn { background: #2563eb; border-color: #2563eb; color: #fff; }
+.dx-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #64748b; }
+.dx-file-name.has-file { color: #047857; font-weight: 600; }
+.dx-view { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9px; border: 1px solid #d6e2f3; background: #fff; color: #1e4a8d; font-size: 12px; font-weight: 600; text-decoration: none; }
+.dx-view:hover { background: #f3f7fd; border-color: #a9c1e4; }
+.dx-view:focus-visible { outline: 3px solid #7fa6db; outline-offset: 2px; }
+.dx-view.is-disabled { color: #a0aec0; border-style: dashed; background: #f8fafc; cursor: not-allowed; }
+.dx-date { flex: 1; min-width: 0; height: 38px; min-height: 38px !important; padding: 0 12px; border: 1px solid #e2e8f0 !important; border-radius: 12px; background: #fff; font-size: 12px; font-weight: 600; color: #334155; outline: none; }
+.dx-date:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12) !important; }
+.dx-save { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; min-height: 38px !important; padding: 0 14px; border: 0; border-radius: 12px; background: #22c55e; color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .15s; }
+.dx-save:hover:not(:disabled) { background: #16a34a; }
+.dx-save:disabled { opacity: .7; cursor: default; }
+.dx-save:focus-visible { outline: 3px solid #7fa6db; outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .dx-panel { padding: 12px; }
+  .dx-head-chips { margin-left: 0; }
+}
+</style>

@@ -25,11 +25,13 @@ export default defineConfig({
             handler: 'NetworkOnly'
           },
           {
-            // Caches the public landing page listings (HomeView.vue)
+            // Public landing page listings (HomeView.vue): always try the network first so a
+            // newly accredited house appears (list + map) right away; cache is the offline fallback.
             urlPattern: /\/api\/boarding-houses\/accredited/i,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'api-listings-cache',
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24 * 7 // 7 Days

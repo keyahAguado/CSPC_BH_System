@@ -72,7 +72,10 @@ CREATE TABLE `boarding_houses` (
   `deposit_months` int DEFAULT '0',
   `deposit_fixed_amount` decimal(10,2) DEFAULT '0.00',
   `deposit_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `reference_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `application_status` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `reference_no` (`reference_no`),
   KEY `owner_id` (`owner_id`),
   CONSTRAINT `boarding_houses_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `boarding_houses_chk_1` CHECK (json_valid(`amenities_free`)),
@@ -196,6 +199,23 @@ LOCK TABLES `checklist_results` WRITE;
 /*!40000 ALTER TABLE `checklist_results` DISABLE KEYS */;
 /*!40000 ALTER TABLE `checklist_results` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `house_permit_files`
+--
+
+CREATE TABLE `house_permit_files` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `house_id` int NOT NULL,
+  `permit_key` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `house_permit` (`house_id`,`permit_key`),
+  CONSTRAINT `house_permit_files_house` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 
 --
 -- Table structure for table `house_documents`
@@ -387,6 +407,7 @@ CREATE TABLE `users` (
   `emergency_contact` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `guardian_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `profile_pic` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `applicant_key_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
@@ -412,10 +433,43 @@ CREATE TABLE `house_photos` (
   `house_id` int NOT NULL,
   `photo_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `sort_order` int DEFAULT '0',
+  `category` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `house_id` (`house_id`),
   CONSTRAINT `house_photos_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Accountless application tracking: status history and owner account activation tokens
+--
+
+CREATE TABLE `application_status_history` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `house_id` int NOT NULL,
+  `from_status` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `to_status` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `remarks` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `actor_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `actor_id` int DEFAULT NULL,
+  `snapshot` json DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `application_status_history_house` (`house_id`,`created_at`),
+  CONSTRAINT `application_status_history_house` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `account_activation_tokens` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `token_hash` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_activation_token_hash` (`token_hash`),
+  KEY `account_activation_user` (`user_id`),
+  CONSTRAINT `account_activation_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --

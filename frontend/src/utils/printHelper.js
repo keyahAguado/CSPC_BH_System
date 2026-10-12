@@ -11,23 +11,23 @@ const CSPC_LOGO = '/img/CSPC_logo.png';
 const BASE_STYLES = `
   @page { margin: 1.5cm; }
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
-  body { background: #fff; color: #1e293b; font-size: 10pt; }
+  body { background: #fff; color: #1e293b; font-size: 10.5pt; }
   .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
   .header-left { display: flex; align-items: center; gap: 16px; }
   .header-left img { width: 70px; height: 70px; object-fit: contain; }
   .school-name { font-size: 15pt; font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em; }
-  .school-sub { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; margin-top: 4px; }
+  .school-sub { font-size: 8.5pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; margin-top: 4px; }
   .report-date { text-align: right; }
-  .report-date .label { font-size: 7pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.2em; color: #94a3b8; }
-  .report-date .value { font-size: 10pt; font-weight: bold; }
+  .report-date .label { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.2em; color: #94a3b8; }
+  .report-date .value { font-size: 11pt; font-weight: bold; }
   .title-section { text-align: center; margin-bottom: 24px; }
   .title-section h2 { font-size: 13pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; color: #1e4a8d; text-decoration: underline; text-underline-offset: 6px; }
   .title-section .subtitle { margin-top: 10px; display: inline-block; background: #f1f5f9; padding: 4px 16px; border-radius: 20px; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-  th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 10px; font-size: 7.5pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #475569; }
-  td { border: 1px solid #e2e8f0; padding: 7px 10px; font-size: 9pt; color: #334155; vertical-align: top; }
+  th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 7px 9px; font-size: 9pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #475569; }
+  td { border: 1px solid #e2e8f0; padding: 6px 9px; font-size: 10.5pt; color: #334155; vertical-align: top; }
   tr:nth-child(even) td { background: #f8fafc; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 7pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
   .badge-green { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
   .badge-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
   .badge-blue { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
@@ -36,21 +36,29 @@ const BASE_STYLES = `
   .badge-gray { background: #f8fafc; color: #94a3b8; border: 1px solid #e2e8f0; }
   .bold { font-weight: 700; }
   .upper { text-transform: uppercase; }
-  .small { font-size: 7.5pt; color: #64748b; }
+  .small { font-size: 9pt; color: #475569; }
   .text-right { text-align: right; }
   .text-center { text-align: center; }
   .signatories { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; padding-top: 50px; margin-top: 20px; }
+  /* In print the signature lines sit at the bottom of every page; the repeated empty
+     footer of .page-wrap reserves that space so content never runs underneath them */
+  .page-wrap { width: 100%; border-collapse: collapse; }
+  .page-wrap > tbody > tr > td, .page-wrap > tfoot > tr > td { border: 0; padding: 0; }
+  .page-wrap-space { height: 26mm; }
+  @media print {
+    .signatories { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 0 0 4mm; background: #fff; }
+  }
   .signatory { text-align: center; }
   .signatory-line { border-bottom: 1.5px solid #1e293b; margin: 0 auto 8px; width: 80%; }
-  .signatory-label { font-size: 7.5pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; }
+  .signatory-label { font-size: 9pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; }
   .expiry-ok { color: #059669; font-weight: 700; }
   .expiry-exp { color: #dc2626; font-weight: 900; }
   .na { color: #cbd5e1; }
   .total-row td { background: #f1f5f9 !important; font-weight: 900; font-size: 10pt; }
   .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; gap: 24px; align-items: center; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 8pt; font-weight: 700; text-transform: uppercase; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 9pt; font-weight: 700; text-transform: uppercase; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  .print-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 7.5pt; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+  .print-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 8.5pt; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
   .print-footer strong { color: #1e4a8d; font-weight: 900; }
 `;
 
@@ -92,7 +100,10 @@ function openPrintWindow(html, title, landscape = false) {
 </head>
 <body>
   <div style="max-width:${landscape ? '100%' : '800px'};margin:0 auto;padding:20px;">
-    ${html}
+    <table class="page-wrap">
+      <tbody><tr><td>${html}</td></tr></tbody>
+      <tfoot><tr><td><div class="page-wrap-space"></div></td></tr></tfoot>
+    </table>
   </div>
 </body>
 </html>`);
@@ -242,7 +253,8 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
     const houseKey = r.house_name || 'Unassigned Boarding House';
     if (!grouped[houseKey]) {
       grouped[houseKey] = {
-        location: r.house_location || '',
+        location: r.house_barangay ? `Brgy. ${r.house_barangay}, Nabua, Camarines Sur` : (r.house_location || ''),
+        owner: r.house_owner_name || '',
         phone: r.house_owner_phone || '',
         status: r.house_status || 'accredited',
         list: []
@@ -277,13 +289,12 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
 
         return `
           <div style="margin-top: 24px; margin-bottom: 8px; padding: 10px 14px; background-color: #f1f5f9; border-left: 5px solid #1e4a8d; border-radius: 6px;">
-            <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
-              ${escapeHtml(houseName)} <span style="font-size: 10px; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
+            <div style="font-size: 12.5pt; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
+              ${escapeHtml(houseName)} <span style="font-size: 10pt; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
               ${group.status !== 'accredited' ? '<span class="badge badge-amber" style="margin-left:8px">Archived Property</span>' : ''}
             </div>
-            <div style="font-size: 10px; color: #475569; margin-top: 4px; font-weight: 600;">
-              ${escapeHtml(group.location)}${group.phone ? ` &nbsp;&bull;&nbsp; Owner Contact: ${escapeHtml(group.phone)}` : ''}
-            </div>
+            ${group.location ? `<div style="font-size: 10pt; color: #334155; margin-top: 4px; font-weight: 600;">Address: ${escapeHtml(group.location)}</div>` : ''}
+            ${(group.owner || group.phone) ? `<div style="font-size: 10pt; color: #334155; margin-top: 2px; font-weight: 600;">Owner: ${escapeHtml(group.owner || 'N/A')}${group.phone ? ` &nbsp;&bull;&nbsp; Contact: ${escapeHtml(group.phone)}` : ''}</div>` : ''}
           </div>
           <table>
             <thead><tr>
@@ -306,7 +317,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
       <div class="report-date"><div class="label">Report Date</div><div class="value">${escapeHtml(reportDate || getReportDate())}</div></div>
     </div>
     <div class="title-section">
-      <h2>Emergency Student Residency Registry</h2>
+      <h2>Emergency Registry Residence Report</h2>
       <div class="subtitle">Summary of Lists per Boarding House | Scope: ${escapeHtml(targetArea || 'Unified Registry')}</div>
       <div class="subtitle" style="margin-top:6px">
         Total Residents: ${(residents || []).length} &nbsp;&bull;&nbsp;
@@ -321,7 +332,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
     </div>
     <div class="print-footer">
       Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
-    </div>`, 'Emergency Student Residency Registry', true);
+    </div>`, 'Emergency Registry Residence Report', true);
 }
 
 /** TRANSACTIONS REPORT */

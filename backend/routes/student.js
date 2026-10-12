@@ -161,7 +161,7 @@ router.get('/house/:id', async (req, res) => {
         const houseId = req.params.id;
 
         const [houseRows] = await pool.query(`
-            SELECT ${PUBLIC_HOUSE_COLUMNS}, u.name as owner_name, u.email as owner_email,
+            SELECT ${PUBLIC_HOUSE_COLUMNS}, u.name as owner_name, (CASE WHEN u.email LIKE '%@applicant.invalid' THEN NULL ELSE u.email END) as owner_email,
                    (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
                    (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price
             FROM boarding_houses bh

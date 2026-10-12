@@ -1,0 +1,65 @@
+/* Owner pages theme (Reservations, Rooms, Room details, Edit property, Profile).
+   Aligns the older owner screens with the owner dashboard / admin design system:
+   CSPC navy + blue (#1E4A8D) + gold, Plus Jakarta Sans, 16px cards, soft shadows,
+   sentence-case headings. Visual only; scoped to .owner-page so nothing else changes.
+   The colour tokens come from admin-theme.css (.owner-page is added to its token selector). */
+
+.management-page.owner-page {
+  background: var(--a-bg) !important;
+  color: var(--a-text);
+  font-family: var(--a-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Page header (PageHeader component) */
+.owner-page .management-page-header { margin-bottom: 24px; }
+.owner-page .management-page-header h1 { font-family: var(--a-font); font-size: clamp(22px, 2.2vw, 28px); font-weight: 700; letter-spacing: -.02em; color: var(--a-heading); text-transform: none; }
+.owner-page .management-eyebrow { color: var(--a-primary); font-weight: 600; }
+.owner-page .management-page-description { color: var(--a-muted); }
+
+/* Headings and buttons read in sentence case like the rest of the portal */
+.owner-page :is(h1, h2, h3, h4) { font-family: var(--a-font); text-transform: none !important; letter-spacing: -.01em !important; color: var(--a-heading); }
+.owner-page :is(button, .management-button, a.management-button) { font-family: var(--a-font); text-transform: none !important; letter-spacing: 0 !important; }
+.owner-page :is(.tracking-widest, .tracking-\[0\.2em\], .tracking-\[0\.3em\], .tracking-\[0\.4em\]) { letter-spacing: .06em !important; }
+
+/* Cards and panels */
+.owner-page main :is(.rounded-\[1\.5rem\], .rounded-\[2rem\], .rounded-\[2\.5rem\], .rounded-\[3rem\], .rounded-3xl) { border-radius: 16px !important; }
+.owner-page main .rounded-2xl { border-radius: 14px !important; }
+.owner-page main .bg-white:is(.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) { box-shadow: var(--a-shadow) !important; }
+.owner-page main .bg-white.border:not([class*="border-red"]):not([class*="border-rose"]):not([class*="border-amber"]):not([class*="border-emerald"]):not([class*="border-green"]) { border-color: var(--a-border) !important; }
+
+/* Brand colours: map the many blues/blacks used on these pages to the CSPC primary */
+.owner-page :is(.bg-blue-600, .bg-blue-700, .bg-\[\#2a528a\], .bg-\[\#1e4a8d\], .bg-\[\#2563eb\]) { background-color: var(--a-primary) !important; }
+.owner-page button.bg-black, .owner-page a.bg-black { background-color: var(--a-primary) !important; }
+.owner-page :is(.hover\:bg-blue-700, .hover\:bg-black, .hover\:bg-blue-800, .hover\:bg-slate-800):hover { background-color: var(--a-primary-strong) !important; }
+.owner-page :is(.text-blue-600, .text-blue-700, .text-blue-800, .text-\[\#2a528a\], .text-\[\#1e4a8d\]) { color: var(--a-primary) !important; }
+.owner-page :is(.bg-blue-50, .bg-blue-100) { background-color: var(--a-primary-soft) !important; }
+.owner-page .bg-slate-100:not(.management-page) { background-color: var(--a-surface-2); }
+
+/* Buttons from management.css */
+.owner-page .management-button { border-radius: 10px; font-weight: 600; }
+.owner-page .management-button-primary { background: var(--a-primary) !important; border-color: var(--a-primary) !important; }
+.owner-page .management-button-primary:hover { background: var(--a-primary-strong) !important; }
+.owner-page .management-button-secondary { color: var(--a-primary) !important; border-color: var(--a-primary-tint) !important; }
+.owner-page .management-button-secondary:hover { background: var(--a-primary-soft) !important; }
+
+/* Form controls */
+.owner-page main :is(input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea) { border-radius: 10px !important; font-family: var(--a-font); }
+.owner-page main :is(input, select, textarea):focus { border-color: var(--a-primary) !important; box-shadow: 0 0 0 3px rgba(30, 74, 141, .12) !important; outline: none; }
+.owner-page main input[type=file]::file-selector-button { border-radius: 10px; background: var(--a-primary-soft); color: var(--a-primary); border: 0; font-weight: 700; cursor: pointer; }
+.owner-page main input[type=file]:hover::file-selector-button { background: var(--a-primary-tint); }
+
+/* Tables */
+.owner-page main table thead :is(th, tr) { background: var(--a-surface-2) !important; color: var(--a-muted) !important; text-transform: none !important; letter-spacing: 0 !important; font-weight: 600; }
+.owner-page main table thead th { border-color: var(--a-border) !important; }
+.owner-page main table tbody tr { border-color: #edf2f8 !important; }
+.owner-page main table tbody tr:hover { background: #f6f9fd; }
+
+/* Modals keep their layout; just round and soften them */
+.owner-page [class*="fixed"][class*="inset-0"] > div.bg-white { border-radius: 18px !important; }
+
+/* Tables: sentence-case headers and tighter cells so action columns stay in view */
+.owner-page main table thead * { text-transform: none !important; letter-spacing: 0 !important; }
+.owner-page main table :is(th, td) { padding-left: 10px !important; padding-right: 10px !important; }
+.owner-page main table thead th { font-size: 12px !important; }
+.owner-page main .booking-table-wrapper table { min-width: 0 !important; }

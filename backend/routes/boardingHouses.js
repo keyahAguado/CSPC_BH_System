@@ -1,4 +1,5 @@
 import { validateImages } from '../config/uploadValidation.js';
+import { requireVerifiedEmail, signVerifiedApplicant } from '../config/applicantVerification.js';
 import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import multer from 'multer';
@@ -7,19 +8,20 @@ import { PUBLIC_HOUSE_COLUMNS } from '../config/publicHouseFields.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 import { evaluateHouseCompliance } from '../config/complianceManager.js';
+import { APPLICATION_STATUS, APPLICANT_EDITABLE, effectiveApplicationStatus, generateReferenceNo, recordStatusChange, createRateLimiter, isPendingApplicant } from '../config/applicationWorkflow.js';
 
 const router = express.Router();
 
 // Multer using memory storage for buffering file uploads
-const uploadAccreditationFiles = upload.fields([
-    { name: 'permit_business_form', maxCount: 1 },
-    { name: 'permit_cedula', maxCount: 1 },
-    { name: 'permit_dti', maxCount: 1 },
-    { name: 'permit_barangay', maxCount: 1 },
-    { name: 'permit_building', maxCount: 1 },
-    { name: 'permit_zoning', maxCount: 1 },
-    { name: 'permit_sanitary', maxCount: 1 },
-    { name: 'permit_fire', maxCount: 1 },
+export const uploadAccreditationFiles = upload.fields([
+    { name: 'permit_business_form', maxCount: 5 },
+    { name: 'permit_cedula', maxCount: 5 },
+    { name: 'permit_dti', maxCount: 5 },
+    { name: 'permit_barangay', maxCount: 5 },
+    { name: 'permit_building', maxCount: 5 },
+    { name: 'permit_zoning', maxCount: 5 },
+    { name: 'permit_sanitary', maxCount: 5 },
+    { name: 'permit_fire', maxCount: 5 },
     { name: 'house_img', maxCount: 1 },
     { name: 'house_photos', maxCount: 10 }
 ]);
@@ -457,6 +459,8 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
                  WHERE id = ? AND owner_id = ?`,
                 [fileUrl, parsedExpiryDate, targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );
+            // The re-uploaded file replaces any earlier multi-file set for this document.
+            await connection.query('DELETE FROM house_permit_files WHERE house_id = ? AND permit_key = ?', [houseId, fileColumn]);
 
             const labels = {
                 'permit_business_form': 'Business Permit',
@@ -537,7 +541,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
         const allowedColumns = new Set([
             'owner_id', 'name', 'price', 'phone_contact', 'latitude', 'longitude',
             'advance_months', 'deposit_months', 'deposit_type', 'house_status',
-            'house_id', 'photo_url', 'sort_order', 'barangay', 'location', 'map_link',
+            'house_id', 'photo_url', 'sort_order', 'barangay', 'location', 'map_link', 'permit_key', 'file_path',
             'amenities_free', 'amenities_paid', 'description', 'img', 'img_1', 'img_2', 'img_3',
             ...['business_form', 'cedula', 'dti', 'barangay', 'building', 'zoning', 'sanitary', 'fire'].flatMap(key => ['permit_' + key, 'expiry_permit_' + key])
         ]);
@@ -591,6 +595,31 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
 
         const getExpiry = (fieldName) => req.body[`expiry_permit_${fieldName}`] || null;
 
+        // Legal documents may carry several files (images or PDF). The first file keeps
+        // using the permit column (via uploadField); the rest are uploaded here and the
+        // complete list is written to house_permit_files inside the property transaction.
+        const permitFileKeys = ['permit_business_form', 'permit_cedula', 'permit_dti', 'permit_barangay', 'permit_building', 'permit_zoning', 'permit_sanitary', 'permit_fire'];
+        const extraPermitFiles = {};
+        const uploadExtraPermitFiles = async () => {
+            for (const key of permitFileKeys) {
+                const extra = (req.files && req.files[key]) ? req.files[key].slice(1) : [];
+                if (extra.length === 0) continue;
+                submissionStep = 'upload:' + key;
+                extraPermitFiles[key] = await Promise.all(extra.map(f => saveUploadedFile(f.buffer, f.originalname, 'permits')));
+            }
+        };
+        const savePermitFileList = async (targetHouseId, firstFiles) => {
+            for (const key of permitFileKeys) {
+                if (!firstFiles[key]) continue;
+                submissionStep = 'permit-files-save';
+                await connection.query('DELETE FROM house_permit_files WHERE house_id = ? AND permit_key = ?', [targetHouseId, key]);
+                const list = [firstFiles[key], ...(extraPermitFiles[key] || [])];
+                for (let i = 0; i < list.length; i++) {
+                    await connection.query('INSERT INTO house_permit_files (house_id, permit_key, file_path, sort_order) VALUES (?, ?, ?, ?)', [targetHouseId, key, list[i], i]);
+                }
+            }
+        };
+
         // A missing house_id means a new application, never an implicit edit.
         // Check before persistent uploads so a duplicate leaves the existing record untouched.
         if (!house_id) {
@@ -631,6 +660,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             console.log(`[ACCREDITATION PHOTOS] Uploaded: ${JSON.stringify(uploadedPhotoUrls)}`);
         }
         const combinedPhotos = [...parsedExistingPhotos, ...uploadedPhotoUrls];
+        // Optional gallery categories, aligned with combinedPhotos (existing first, then new uploads).
+        const photoCategoryOptions = ['bedroom', 'comfort_room', 'kitchen', 'exterior', 'common_area', 'other'];
+        let photoCategories = [];
+        try {
+            const parsedCategories = JSON.parse(req.body.house_photo_categories || '[]');
+            if (Array.isArray(parsedCategories)) photoCategories = parsedCategories;
+        } catch { photoCategories = []; }
+        const photoCategoryAt = (i) => (photoCategoryOptions.includes(photoCategories[i]) ? photoCategories[i] : null);
         console.log(`[ACCREDITATION PHOTOS] existing=${parsedExistingPhotos.length} new=${uploadedPhotoUrls.length} combined=${combinedPhotos.length}`);
 
         // Sanitize amenities input
@@ -656,14 +693,17 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             const img_2 = combinedPhotos[1] || null;
             const img_3 = combinedPhotos[2] || null;
 
-            const permit_business_form = (await uploadField('permit_business_form', 'permits')) || existingHouse.permit_business_form;
-            const permit_cedula        = (await uploadField('permit_cedula', 'permits'))         || existingHouse.permit_cedula;
-            const permit_dti           = (await uploadField('permit_dti', 'permits'))            || existingHouse.permit_dti;
-            const permit_barangay      = (await uploadField('permit_barangay', 'permits'))       || existingHouse.permit_barangay;
-            const permit_building      = (await uploadField('permit_building', 'permits'))       || existingHouse.permit_building;
-            const permit_zoning        = (await uploadField('permit_zoning', 'permits'))         || existingHouse.permit_zoning;
-            const permit_sanitary      = (await uploadField('permit_sanitary', 'permits'))       || existingHouse.permit_sanitary;
-            const permit_fire          = (await uploadField('permit_fire', 'permits'))           || existingHouse.permit_fire;
+            const newPermitFiles = {};
+            for (const key of permitFileKeys) newPermitFiles[key] = await uploadField(key, 'permits');
+            await uploadExtraPermitFiles();
+            const permit_business_form = newPermitFiles.permit_business_form || existingHouse.permit_business_form;
+            const permit_cedula        = newPermitFiles.permit_cedula        || existingHouse.permit_cedula;
+            const permit_dti           = newPermitFiles.permit_dti           || existingHouse.permit_dti;
+            const permit_barangay      = newPermitFiles.permit_barangay      || existingHouse.permit_barangay;
+            const permit_building      = newPermitFiles.permit_building      || existingHouse.permit_building;
+            const permit_zoning        = newPermitFiles.permit_zoning        || existingHouse.permit_zoning;
+            const permit_sanitary      = newPermitFiles.permit_sanitary      || existingHouse.permit_sanitary;
+            const permit_fire          = newPermitFiles.permit_fire          || existingHouse.permit_fire;
 
             const expiry_permit_business_form = getExpiry('business_form') ? parseSafeDate(getExpiry('business_form')) : existingHouse.expiry_permit_business_form;
             const expiry_permit_cedula        = getExpiry('cedula')        ? parseSafeDate(getExpiry('cedula'))        : existingHouse.expiry_permit_cedula;
@@ -675,6 +715,21 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             const expiry_permit_fire          = getExpiry('fire')          ? parseSafeDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
             await beginApplicationTransaction();
+            // Applicant routes supply this server-only context. Ordinary owner
+            // accreditation requests retain their existing behavior.
+            if (req.applicantEdit) {
+                submissionStep = 'application-edit-check';
+                const [currentRows] = await connection.query('SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE', [house_id, ownerId]);
+                const current = currentRows[0];
+                if (!current || !APPLICANT_EDITABLE.has(effectiveApplicationStatus(current))
+                    || effectiveApplicationStatus(current) !== req.applicantEdit.before
+                    || current.house_status !== req.applicantEdit.houseStatus
+                    || (current.admin_comments || '') !== req.applicantEdit.remarks) {
+                    await connection.rollback();
+                    transactionOpen = false;
+                    return res.status(409).json({ success: false, message: 'SASO has updated this application while you were editing. Refresh Track My Application to see its current status before making further changes.' });
+                }
+            }
             submissionStep = 'property-update';
             const [updateResult] = await connection.query(
                 `UPDATE boarding_houses 
@@ -713,9 +768,24 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             await connection.query('DELETE FROM house_photos WHERE house_id = ?', [house_id]);
             for (let i = 0; i < combinedPhotos.length; i++) {
                 await connection.query(
-                    'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
-                    [house_id, combinedPhotos[i], i]
+                    'INSERT INTO house_photos (house_id, photo_url, sort_order, category) VALUES (?, ?, ?, ?)',
+                    [house_id, combinedPhotos[i], i, photoCategoryAt(i)]
                 );
+            }
+            await savePermitFileList(house_id, newPermitFiles);
+            if (req.applicantEdit) {
+                const { before, after } = req.applicantEdit;
+                submissionStep = 'application-status-save';
+                await connection.query(
+                    after === APPLICATION_STATUS.RESUBMITTED
+                        ? 'UPDATE boarding_houses SET application_status = ?, is_resubmission = 1, resubmitted_at = NOW() WHERE id = ?'
+                        : 'UPDATE boarding_houses SET application_status = ? WHERE id = ?',
+                    [after, house_id]
+                );
+                await recordStatusChange(connection, {
+                    houseId: house_id, from: before, to: after, actorType: 'applicant', actorId: ownerId, withSnapshot: true,
+                    remarks: after === APPLICATION_STATUS.RESUBMITTED ? 'Revised application resubmitted for review' : 'Application edited before review'
+                });
             }
             await commitApplicationTransaction();
 
@@ -744,6 +814,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
         const permit_zoning        = await uploadField('permit_zoning', 'permits');
         const permit_sanitary      = await uploadField('permit_sanitary', 'permits');
         const permit_fire          = await uploadField('permit_fire', 'permits');
+        await uploadExtraPermitFiles();
 
         const img_1 = combinedPhotos[0] || null;
         const img_2 = combinedPhotos[1] || null;
@@ -785,10 +856,11 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
         const newHouseId = result.insertId;
         for (let i = 0; i < combinedPhotos.length; i++) {
             await connection.query(
-                'INSERT INTO house_photos (house_id, photo_url, sort_order) VALUES (?, ?, ?)',
-                [newHouseId, combinedPhotos[i], i]
+                'INSERT INTO house_photos (house_id, photo_url, sort_order, category) VALUES (?, ?, ?, ?)',
+                [newHouseId, combinedPhotos[i], i, photoCategoryAt(i)]
             );
         }
+        await savePermitFileList(newHouseId, { permit_business_form, permit_cedula, permit_dti, permit_barangay, permit_building, permit_zoning, permit_sanitary, permit_fire });
 
         await commitApplicationTransaction();
 
@@ -822,6 +894,144 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
     } finally {
         if (connection) connection.release();
     }
+});
+
+// 8. [POST] - Public property-first owner registration (no account yet)
+//    The applicant registers the property together with their owner details.
+//    A pending owner record (no password, no Google link) is created and the
+//    property is saved through the same accreditation handler as above. The applicant
+//    receives a random reference number that opens Track My Application.
+//    Submitting never activates an account: SASO approval issues an activation link.
+const allowRegistrationAttempt = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+
+// Runs the accreditation handler above (unchanged) as the given owner and captures its
+// response, so every application path shares the same validation, uploads and transaction.
+export async function submitAccreditationAs(req, ownerId) {
+    const layer = router.stack.find(l => l.route && l.route.path === '/accreditation' && l.route.methods.post);
+    const submitAccreditation = layer.route.stack[layer.route.stack.length - 1].handle;
+    const captured = { code: 200, body: null };
+    const capture = {
+        status(code) { captured.code = code; return this; },
+        json(body) { captured.body = body; return this; }
+    };
+    req.user = { id: ownerId, role: 'owner', status: 'pending' };
+    try {
+        await submitAccreditation(req, capture);
+    } catch (err) {
+        console.error('Application Submission Error:', err.code || err.message);
+        captured.code = 500;
+        captured.body = null;
+    }
+    return captured;
+}
+
+// Marks a freshly saved application: random reference number (unique key, retried on the
+// rare collision), SUBMITTED status and an audit entry.
+export async function markApplicationSubmitted(houseId, applicantId) {
+    let referenceNo = null;
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        for (let attempt = 0; attempt < 5 && !referenceNo; attempt++) {
+            const candidate = generateReferenceNo();
+            try {
+                await connection.query('UPDATE boarding_houses SET reference_no = ?, application_status = ? WHERE id = ?', [candidate, APPLICATION_STATUS.SUBMITTED, houseId]);
+                referenceNo = candidate;
+            } catch (err) {
+                if (err.code !== 'ER_DUP_ENTRY') throw err;
+            }
+        }
+        if (!referenceNo) throw new Error('Could not allocate a unique reference number');
+        await recordStatusChange(connection, { houseId, to: APPLICATION_STATUS.SUBMITTED, remarks: 'Application submitted', actorType: 'applicant', actorId: applicantId, withSnapshot: true });
+        await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [applicantId, `APPLICATION SUBMITTED: Your property application ${referenceNo} was received. SASO will review it. Open Track My Application to view its status.`]);
+        await connection.commit();
+    } catch (err) {
+        await connection.rollback();
+        throw err;
+    } finally {
+        connection.release();
+    }
+    return referenceNo;
+}
+
+const submissionFailed = (captured) => captured.code >= 400 || !captured.body?.success || !captured.body.houseId;
+const failureResponse = (res, captured) => res.status(captured.code >= 400 ? captured.code : 500).json(
+    captured.body && !captured.body.success
+        ? captured.body
+        : { success: false, message: 'We could not save your application. Please try again. If the problem continues, contact SASO.' }
+);
+
+router.post('/register-property', requireVerifiedEmail, (req, res, next) => {
+    if (!allowRegistrationAttempt(req.ip || 'unknown')) {
+        return res.status(429).json({ success: false, message: 'Please wait before submitting another application.' });
+    }
+    next();
+}, uploadAccreditationFiles, validateImages, validateBody('property'), validateBody('ownerApplicant'), async (req, res) => {
+
+    const ownerName = req.body.owner_name.trim();
+    const ownerEmail = req.verifiedApplicant.email;
+    if (req.body.owner_email.trim().toLowerCase() !== ownerEmail) return res.status(400).json({ success: false, message: 'Use the email address you verified.' });
+    const ownerPhone = req.body.owner_phone.trim();
+    const ownerAddress = req.body.owner_address.trim();
+    // A public registration is always a brand-new application identified by its reference number.
+    delete req.body.house_id;
+
+    // Only the server-verified email can select the pending applicant identity.
+    // An email that already has a pending application gets another application under the same
+    // applicant; emails of active accounts (owners, students, SASO) are never reused here.
+    let ownerId = null;
+    let createdOwner = false;
+    try {
+        const [existing] = await pool.query('SELECT id, role, status, password, google_id FROM users WHERE email = ?', [ownerEmail]);
+        if (existing.length > 0) {
+            if (!isPendingApplicant(existing[0])) {
+                return res.status(409).json({ success: false, message: 'This email belongs to an active account. Please log in and add the property from your owner dashboard.' });
+            }
+            ownerId = existing[0].id;
+        } else {
+            const [userResult] = await pool.query(
+                `INSERT INTO users (name, email, role, status, phone, address, dpa_accepted, dpa_accepted_at, email_verified_at)
+                 VALUES (?, ?, 'owner', 'pending', ?, ?, 1, NOW(), NOW())`,
+                [ownerName, ownerEmail, ownerPhone, ownerAddress]
+            );
+            ownerId = userResult.insertId;
+            createdOwner = true;
+        }
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Another registration with this email is being saved. Please wait a moment and try again.' });
+        console.error('Property Registration Owner Error:', err.code || err.message);
+        return res.status(500).json({ success: false, message: 'We could not save your registration. Please try again. If the problem continues, contact SASO.' });
+    }
+
+    const captured = await submitAccreditationAs(req, ownerId);
+    if (submissionFailed(captured)) {
+        try {
+            if (createdOwner) await pool.query('DELETE FROM users WHERE id = ?', [ownerId]);
+        } catch (cleanupErr) {
+            console.error('Property Registration cleanup failed:', cleanupErr.code || cleanupErr.message);
+        }
+        return failureResponse(res, captured);
+    }
+
+    let referenceNo;
+    try {
+        referenceNo = await markApplicationSubmitted(captured.body.houseId, ownerId);
+    } catch (err) {
+        // Without a reference the applicant could not track it, so undo the whole registration.
+        console.error('Property Registration status save failed:', err.code || err.message);
+        try {
+            if (createdOwner) await pool.query('DELETE FROM users WHERE id = ?', [ownerId]);
+            else await pool.query('DELETE FROM boarding_houses WHERE id = ?', [captured.body.houseId]);
+        } catch { /* best effort */ }
+        return res.status(500).json({ success: false, message: 'We could not save your registration. Please try again. If the problem continues, contact SASO.' });
+    }
+
+    return res.status(201).json({
+        success: true,
+        message: 'Application submitted! Keep your reference number to track it.',
+        reference_no: referenceNo,
+        token: signVerifiedApplicant(ownerEmail, ownerId)
+    });
 });
 
 export default router;

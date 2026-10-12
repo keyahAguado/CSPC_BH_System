@@ -1,3 +1,4 @@
+import { createNotificationEmailWorker } from './config/notificationEmail.js';
 import { uploadErrorHandler } from './config/uploadValidation.js';
 // =========================================================================
 // SECTION 1: GLOBAL IMPORTS & CONFIGURATION
@@ -26,6 +27,7 @@ import adminRouter from './routes/admin.js';                    // SASO Admin da
 import notificationRouter from './routes/notifications.js';    // Real-time unread alerts & inbox manager
 import paymentRoutes from './routes/payment.js';
 import siteContentRouter from './routes/siteContent.js';        // Public landing page content (managed by admin)
+import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -138,6 +140,7 @@ app.use('/api/payment', paymentRoutes);
 
 // B. Public landing page content (Core Features + footer), edited under /api/admin/site-content
 app.use('/api/site-content', siteContentRouter);
+app.use('/api/applications', applicationsRouter);
 
 // Multer validation failures use the same user-facing JSON contract as forms.
 app.use(uploadErrorHandler);
@@ -227,6 +230,9 @@ app.get('/api/test', (req, res) => {
 // ===================================================
 // AUTOMATED COMPLIANCE & BOOKING SCHEDULER (DAILY)
 // ===================================================
+const runNotificationEmails = createNotificationEmailWorker({ pool });
+cron.schedule('* * * * *', () => { void runNotificationEmails(); });
+
 cron.schedule('0 0 * * *', async () => {
     console.log('[CRON EXECUTION] Running daily compliance check...');
     try {

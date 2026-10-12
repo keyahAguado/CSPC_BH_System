@@ -3,6 +3,8 @@ import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
+import '../../styles/admin-theme.css';
+import '../../styles/owner-pages.css';
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
@@ -255,23 +257,15 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page management-form-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <OwnerNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main id="management-content" tabindex="-1" class="flex-1 max-w-4xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
+    <main id="management-content" tabindex="-1" class="flex-1 w-full py-6 px-4 sm:px-6 lg:px-8 text-left">
       <LoadError :message="loadError" />
       <!-- Header -->
-      <div class="mb-12">
-        <router-link to="/owner/dashboard"
-           class="text-[#2a528a] font-semibold text-[12px] uppercase tracking-wide hover:text-blue-800 transition inline-flex items-center gap-2 mb-8">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          BACK TO DASHBOARD
-        </router-link>
-        
-        <PageHeader title="Profile & security" description="Keep your personal information and account credentials up to date." />
+      <div class="mb-5">
+        <PageHeader title="Profile & security" />
       </div>
 
       <!-- Loading State -->
@@ -280,21 +274,25 @@ const loadError = ref('');
         <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Compiling Account Profile...</p>
       </div>
 
-      <div v-else-if="user" class="space-y-8 animate-in fade-in duration-300">
+      <div v-else-if="user" class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch animate-in fade-in duration-300">
         <!-- PROFILE FIELDS CARD -->
-        <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left">
-          <div class="p-8 md:p-12">
-            <form @submit.prevent="handleSaveProfile" class="space-y-10">
-              
+        <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left flex flex-col">
+          <div class="p-6 md:p-7 h-full flex flex-col">
+            <div class="flex items-center gap-4 mb-5">
+              <div class="bg-blue-600 w-2 h-8 rounded-full"></div>
+              <h2 class="text-2xl font-semibold text-[#1e293b] uppercase tracking-tight">Profile Information</h2>
+            </div>
+            <form @submit.prevent="handleSaveProfile" class="space-y-5 flex-1 flex flex-col">
+
               <!-- Profile Pic Section -->
-              <div class="flex flex-col md:flex-row gap-8 items-center border-b border-slate-100 pb-10">
-                <div class="w-36 h-36 rounded-full overflow-hidden shadow-lg border-4 border-slate-50 shrink-0 bg-slate-50 relative group">
+              <div class="flex flex-col sm:flex-row gap-5 items-center border-b border-slate-100 pb-5">
+                <div class="w-20 h-20 rounded-full overflow-hidden shadow-lg border-4 border-slate-50 shrink-0 bg-slate-50 relative group">
                   <img :src="filePreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || nameInput || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`" 
                        @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`"
                        class="w-full h-full object-cover" 
                        alt="Profile Picture" />
                 </div>
-                <div class="grow text-center md:text-left space-y-4">
+                <div class="grow text-center sm:text-left space-y-2">
                   <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Account Photo</h3>
                   <input aria-label="Field" type="file" @change="handleFileChange" accept="image/*" class="text-xs font-bold text-slate-500 file:mr-4 file:py-2.5 file:px-6 file:rounded-full file:border-0 file:text-[12px] file:font-semibold file:bg-blue-50 file:text-[#2a528a] hover:file:bg-blue-100 transition cursor-pointer" />
                   <p class="text-[12px] text-slate-400 font-bold uppercase tracking-wide leading-none">JPEG and PNG formats accepted.</p>
@@ -302,31 +300,31 @@ const loadError = ref('');
               </div>
 
               <!-- Profile Fields -->
-              <div class="grid grid-cols-1 gap-8">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Full Name</label>
-                  <input aria-label="Full Name" v-model="nameInput" type="text" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Juan Dela Cruz" />
-                </div>
-
-                <div>
-                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Email Address (Read Only)</label>
-                  <input aria-label="Email Address (Read Only)" :value="user.email" type="email" disabled class="w-full bg-slate-100 border border-slate-200 p-4 rounded-xl text-sm font-bold text-slate-400 outline-none cursor-not-allowed select-none" />
+                  <input aria-label="Full Name" v-model="nameInput" type="text" required class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Juan Dela Cruz" />
                 </div>
 
                 <div>
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Contact Phone Number</label>
-                  <input aria-label="Contact Phone Number" v-model="phoneInput" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" required class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
+                  <input aria-label="Contact Phone Number" v-model="phoneInput" @input="sanitizePhoneInput" type="text" inputmode="numeric" maxlength="11" required class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="09xxxxxxxxx" />
                 </div>
 
-                <div>
+                <div class="sm:col-span-2">
+                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Email Address (Read Only)</label>
+                  <input aria-label="Email Address (Read Only)" :value="user.email" type="email" disabled class="w-full bg-slate-100 border border-slate-200 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 outline-none cursor-not-allowed select-none" />
+                </div>
+
+                <div class="sm:col-span-2">
                   <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Residential / Contact Address</label>
-                  <input aria-label="Residential / Contact Address" :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
+                  <input aria-label="Residential / Contact Address" :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
                 </div>
               </div>
 
               <!-- Action buttons -->
-              <div class="pt-8 border-t border-slate-100 flex justify-center">
-                <button type="submit" :disabled="isSaving" class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
+              <div class="pt-5 mt-auto border-t border-slate-100 flex justify-center">
+                <button type="submit" :disabled="isSaving" class="bg-blue-600 hover:bg-black text-white font-semibold py-3.5 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
                   {{ isSaving ? 'Saving Changes...' : 'Save Changes' }}
                 </button>
               </div>
@@ -335,22 +333,22 @@ const loadError = ref('');
         </div>
 
         <!-- CHANGE PASSWORD SECURITY CARD -->
-        <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left">
-          <div class="p-8 md:p-12">
-            <div class="flex items-center gap-4 mb-8">
+        <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left flex flex-col">
+          <div class="p-6 md:p-7 h-full flex flex-col">
+            <div class="flex items-center gap-4 mb-5">
               <div class="bg-blue-600 w-2 h-8 rounded-full"></div>
               <h2 class="text-2xl font-semibold text-[#1e293b] uppercase tracking-tight">Security Credentials</h2>
             </div>
 
             <!-- Google SSO Info Banner -->
-            <div v-if="user.isGoogleUser" class="mb-6 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-start gap-3">
+            <div v-if="user.isGoogleUser" class="mb-4 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-start gap-3">
               <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span>Your account is connected to <strong>Google SSO</strong>. {{ user.hasPassword ? 'You can update your local password below anytime.' : 'Set a password below to enable manual Email + Password login as well.' }}</span>
             </div>
 
-            <form @submit.prevent="handleChangePassword" autocomplete="off" class="space-y-6 max-w-lg">
+            <form @submit.prevent="handleChangePassword" autocomplete="off" class="space-y-4 flex-1 flex flex-col">
               <!-- Dummy fields to trap browser password manager autofill -->
               <input aria-label="Field" type="text" name="prevent_autofill_user" class="hidden" tabindex="-1" autocomplete="off" />
               <input aria-label="Field" type="password" name="prevent_autofill_pass" class="hidden" tabindex="-1" autocomplete="new-password" />
@@ -361,7 +359,7 @@ const loadError = ref('');
                 <div class="relative">
                   <input aria-label="Enter your current password" v-model="passwordForm.currentPassword" :type="showCurrentPassword ? 'text' : 'password'" required 
                     name="current_password_field" autocomplete="new-password" placeholder="Enter your current password"
-                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                    class="w-full bg-slate-50 border border-slate-200 px-4 py-3 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
                   <button aria-label="Toggle password visibility" type="button" @click="showCurrentPassword = !showCurrentPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showCurrentPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
@@ -373,7 +371,7 @@ const loadError = ref('');
                 <div class="relative">
                   <input aria-label="At least 6 characters" v-model="passwordForm.newPassword" :type="showNewPassword ? 'text' : 'password'" required 
                     name="new_password_field" autocomplete="new-password" placeholder="At least 6 characters"
-                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                    class="w-full bg-slate-50 border border-slate-200 px-4 py-3 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
                   <button aria-label="Toggle password visibility" type="button" @click="showNewPassword = !showNewPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showNewPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
@@ -385,16 +383,16 @@ const loadError = ref('');
                 <div class="relative">
                   <input aria-label="Repeat new password" v-model="passwordForm.confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" required 
                     name="confirm_password_field" autocomplete="new-password" placeholder="Repeat new password"
-                    class="w-full bg-slate-50 border border-slate-200 p-4 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
+                    class="w-full bg-slate-50 border border-slate-200 px-4 py-3 pr-12 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
                   <button aria-label="Toggle password visibility" type="button" @click="showConfirmPassword = !showConfirmPassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition cursor-pointer">
                     <i :class="showConfirmPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                   </button>
                 </div>
               </div>
 
-              <div class="pt-6 flex justify-center">
+              <div class="pt-5 mt-auto border-t border-slate-100 flex justify-center">
                 <button type="submit" :disabled="isUpdatingPassword" 
-                  class="bg-blue-600 hover:bg-black text-white font-semibold py-4 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
+                  class="bg-blue-600 hover:bg-black text-white font-semibold py-3.5 px-16 rounded-xl text-[12px] uppercase tracking-wide shadow-xl flex items-center justify-center gap-3 transition active:scale-95 disabled:opacity-50 w-full max-w-sm cursor-pointer management-button management-button-primary">
                   <div v-if="isUpdatingPassword" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   {{ isUpdatingPassword ? 'Saving Password...' : (user.hasPassword ? 'Update Password' : 'Create Account Password') }}
                 </button>

@@ -1,5 +1,10 @@
 <script setup>
+import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
+import { verifiedApplicantEmail } from '../../utils/applicantSession.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
+import { normalizePhPhone } from '../../utils/phoneValidation.js';
+import { getRegions, getProvinces, getCitiesByRegion, getCities, getBarangays } from '../../utils/psgc.js';
+import { applicantToken, applicantHeaders, setApplicantToken, STATUS_INFO } from '../../utils/applicantSession.js';
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
@@ -11,7 +16,7 @@ const isValidPermitDate = (value) => {
   const days = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return day <= days[month - 1];
 };
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import axios from 'axios';
@@ -26,9 +31,130 @@ const token = sessionStorage.getItem('cspc_token');
 const API = import.meta.env.VITE_API_URL;
 const alertRef = ref(null);
 
-const currentUser = ref(JSON.parse(sessionStorage.getItem('cspc_user') || '{}'));
-const activeStep = ref(1);
-const showDpaModal = ref(!Boolean(currentUser.value.dpa_accepted));
+// Public property-first registration (/register): no account yet. The owner's
+// details are collected with the property; SASO issues login credentials on approval.
+const isPublicRegistration = route.meta?.publicRegistration === true;
+// "Register a property" from the owner dashboard uses the same form layout and flow as /register.
+const isPortalRegistration = !isPublicRegistration && route.query.new === 'true';
+const useRegistrationLayout = isPublicRegistration || isPortalRegistration;
+const ownerName = ref(typeof route.query.name === 'string' ? route.query.name : '');
+// Owners register with a Gmail account: they type only the part before "@gmail.com"
+const GMAIL_DOMAIN = '@gmail.com';
+const cleanGmailName = (value) => String(value || '').split('@')[0].replace(/[^A-Za-z0-9.]/g, '').slice(0, 64);
+const ownerEmailName = ref(cleanGmailName(typeof route.query.email === 'string' ? route.query.email : ''));
+const verifiedEmail = ref(verifiedApplicantEmail());
+const refreshVerifiedEmail = () => { verifiedEmail.value = verifiedApplicantEmail(); };
+onMounted(() => window.addEventListener('applicant-session-updated', refreshVerifiedEmail));
+onUnmounted(() => window.removeEventListener('applicant-session-updated', refreshVerifiedEmail));
+const ownerEmail = computed(() => isPublicRegistration && !applicantMode ? verifiedEmail.value : (ownerEmailName.value ? ownerEmailName.value + GMAIL_DOMAIN : ''));
+const sanitizeOwnerEmailName = () => { ownerEmailName.value = cleanGmailName(ownerEmailName.value); };
+const ownerPhone = ref('');
+const ownerErrors = ref({});
+
+// Owner home address: Region → Province → City/Municipality → Barangay (PSGC lists) + street.
+const addressStreet = ref('');
+const regionCode = ref('');
+const provinceCode = ref('');
+const cityCode = ref('');
+const barangayCode = ref('');
+const regionOptions = ref([]);
+const provinceOptions = ref([]);
+const cityOptions = ref([]);
+const barangayOptions = ref([]);
+const regionHasProvinces = ref(true);
+const addressLoading = ref('');
+const addressLoadError = ref('');
+const optionName = (list, code) => (list.find(o => o.code === code) || {}).name || '';
+const ownerAddress = computed(() => [
+  addressStreet.value.trim(),
+  optionName(barangayOptions.value, barangayCode.value),
+  optionName(cityOptions.value, cityCode.value),
+  regionHasProvinces.value ? optionName(provinceOptions.value, provinceCode.value) : '',
+  optionName(regionOptions.value, regionCode.value)
+].filter(Boolean).join(', '));
+
+const loadAddressOptions = async (level, loader) => {
+  addressLoading.value = level;
+  addressLoadError.value = '';
+  try {
+    return await loader();
+  } catch (e) {
+    addressLoadError.value = 'Could not load the address list. Check your internet connection and select again.';
+    return [];
+  } finally {
+    addressLoading.value = '';
+  }
+};
+const onRegionChange = async () => {
+  provinceCode.value = ''; cityCode.value = ''; barangayCode.value = '';
+  provinceOptions.value = []; cityOptions.value = []; barangayOptions.value = [];
+  if (!regionCode.value) return;
+  const provinces = await loadAddressOptions('province', () => getProvinces(regionCode.value));
+  regionHasProvinces.value = provinces.length > 0;
+  if (regionHasProvinces.value) provinceOptions.value = provinces;
+  else cityOptions.value = await loadAddressOptions('city', () => getCitiesByRegion(regionCode.value));
+};
+const onProvinceChange = async () => {
+  cityCode.value = ''; barangayCode.value = '';
+  cityOptions.value = []; barangayOptions.value = [];
+  if (provinceCode.value) cityOptions.value = await loadAddressOptions('city', () => getCities(provinceCode.value));
+};
+const onCityChange = async () => {
+  barangayCode.value = '';
+  barangayOptions.value = [];
+  if (cityCode.value) barangayOptions.value = await loadAddressOptions('barangay', () => getBarangays(cityCode.value));
+};
+const loadRegions = async () => {
+  if (!regionOptions.value.length) regionOptions.value = await loadAddressOptions('region', getRegions);
+};
+const submittedRegistration = ref(null);
+const googleRedirectNotice = isPublicRegistration && route.query.notice === 'register_property';
+
+// Track My Application modes (verified applicant, no owner account):
+//   /register?edit=BH-…  edit before review or respond to a revision request
+//   /register?add=1      add another property for the same applicant
+const applicantEditRef = isPublicRegistration && typeof route.query.edit === 'string' ? route.query.edit.trim().toUpperCase() : '';
+const applicantAddMode = isPublicRegistration && !applicantEditRef && route.query.add === '1';
+const applicantMode = Boolean(applicantEditRef || applicantAddMode);
+const includeOwnerStep = isPublicRegistration && !applicantMode;
+const applicantStatus = ref('');
+const applicantRemarks = ref('');
+const editLocked = ref('');
+const existingMainImgUrl = ref('');
+const submitLabel = computed(() => {
+  if (applicantEditRef) return applicantStatus.value === 'REVISION_REQUIRED' ? 'Resubmit for review' : 'Save changes';
+  return applicantAddMode ? 'Submit property' : 'Submit application';
+});
+const breadcrumbTitle = computed(() => {
+  if (submittedRegistration.value) return submittedRegistration.value.mode === 'edit' ? 'Changes saved' : 'Application submitted';
+  if (applicantEditRef) return `${applicantStatus.value === 'REVISION_REQUIRED' ? 'Respond to revision' : 'Edit application'} · ${applicantEditRef}`;
+  return applicantAddMode ? 'Add another property' : 'Register your Property';
+});
+
+const currentUser = ref(isPublicRegistration ? {} : JSON.parse(sessionStorage.getItem('cspc_user') || '{}'));
+// Public registration adds an Owner Information step (step 0) before the existing four.
+const firstStep = includeOwnerStep ? 0 : 1;
+const steps = includeOwnerStep ? [0, 1, 2, 3, 4] : [1, 2, 3, 4];
+const stepNumber = (step) => step + (includeOwnerStep ? 1 : 0);
+const stepTitles = { 0: 'Owner Information', 1: 'Legal Compliance', 2: 'Property Photos', 3: 'Property Details & Map', 4: 'Amenities Center' };
+const stepShortTitles = { 0: 'Owner Info', 1: 'Legal Documents', 2: 'Photos', 3: 'Details & Map', 4: 'Amenities' };
+// Example featured photo and gallery categories for the public registration page.
+const featuredPhotoExample = '/img/boarding_house/rumadabie.jpg';
+const photoCategories = [
+  { key: 'bedroom', label: 'Bedroom', hint: 'One photo per room: beds, cabinets, windows', sample: '/img/samples/bedroom.svg' },
+  { key: 'comfort_room', label: 'Comfort Room / Bathroom', hint: 'Toilet, shower and sink', sample: '/img/samples/bathroom.svg' },
+  { key: 'kitchen', label: 'Kitchen', hint: 'Cooking area, sink and dining table', sample: '/img/samples/kitchen.svg' },
+  { key: 'exterior', label: 'Exterior', hint: 'Building sides, gate, parking, signage', sample: '/img/samples/exterior.svg' },
+  { key: 'common_area', label: 'Common Areas', hint: 'Lounge, study or visitor area', sample: '/img/samples/common.svg' },
+  { key: 'other', label: 'Other Property Areas', hint: 'Laundry, water supply, storage, etc.', sample: '/img/samples/other.svg' }
+];
+const photoCategoryKeys = photoCategories.map(c => c.key);
+// Legacy (uncategorised) photos are listed under "Other Property Areas".
+const photosIn = (key) => selectedPhotos.value
+  .map((photo, index) => ({ photo, index }))
+  .filter(({ photo }) => (photoCategoryKeys.includes(photo.category) ? photo.category : 'other') === key);
+const activeStep = ref(firstStep);
+const showDpaModal = ref(!applicantMode && !Boolean(currentUser.value.dpa_accepted));
 
 const handleDpaAccepted = () => {
   showDpaModal.value = false;
@@ -36,6 +162,9 @@ const handleDpaAccepted = () => {
 };
 
 const isLoading = ref(true);
+
+// Legal documents step (laptop/desktop): the whole step is shown in one frame with no page scroll
+const fitLegalScreen = computed(() => useRegistrationLayout && activeStep.value === 1 && !isLoading.value && !submittedRegistration.value);
 const isSaving = ref(false);
 const successMsg = ref('');
 const errorMsg = ref('');
@@ -184,13 +313,24 @@ const resetFormToCleanSlate = () => {
   customPaid.value = [];
   isRejected.value = false;
   adminComments.value = '';
-  activeStep.value = 1;
+  activeStep.value = firstStep;
   validationErrors.value = [];
   successMsg.value = '';
   errorMsg.value = '';
 };
 
 const loadOnboardingData = async () => {
+  if (isPublicRegistration) {
+    if (submittedRegistration.value) return;
+    resetFormToCleanSlate();
+    if (applicantMode && !applicantToken()) {
+      router.replace('/track');
+      return;
+    }
+    if (applicantEditRef) await fetchApplicantApplication();
+    else if (includeOwnerStep) loadRegions();
+    return;
+  }
   if (route.query.new === 'true') {
     resetFormToCleanSlate();
   } else if (route.query.houseId) {
@@ -209,6 +349,54 @@ const loadOnboardingData = async () => {
 };
 
 // ================= DATABASE RETRIEVAL =================
+const parseList = (value) => {
+  if (Array.isArray(value)) return value;
+  try { const parsed = JSON.parse(value || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+};
+
+// Track My Application edit mode: the server only returns the verified applicant's own application.
+async function fetchApplicantApplication() {
+  try {
+    const { data } = await axios.get(`/api/applications/${encodeURIComponent(applicantEditRef)}`, { headers: applicantHeaders() });
+    const app = data.application;
+    applicantStatus.value = app.status;
+    applicantRemarks.value = app.status === 'REVISION_REQUIRED' ? (app.admin_comments || '') : '';
+    if (!app.editable) editLocked.value = STATUS_INFO[app.status]?.hint || 'This application can no longer be edited.';
+    houseId.value = 'existing';
+    houseName.value = app.name || '';
+    contactNumber.value = app.phone_contact || '';
+    price.value = app.price || '';
+    advanceMonths.value = String(app.advance_months ?? '0');
+    depositMonths.value = String(app.deposit_months ?? '0');
+    depositType.value = app.deposit_type || 'refundable';
+    mapLink.value = app.map_link || '';
+    locationAddress.value = app.location || '';
+    selectedBarangay.value = app.barangay || '';
+    latitude.value = app.latitude || '';
+    longitude.value = app.longitude || '';
+    description.value = app.description || '';
+    selectedFree.value = parseList(app.amenities_free);
+    selectedPaid.value = parseList(app.amenities_paid);
+    selectedFree.value.forEach(tag => { if (!freeAmenities.value.includes(tag)) freeAmenities.value.push(tag); });
+    selectedPaid.value.forEach(tag => { if (!paidAmenities.value.includes(tag)) paidAmenities.value.push(tag); });
+    if (app.img) {
+      existingMainImgUrl.value = getImageUrl(app.img);
+      mainHouseImgPreview.value = existingMainImgUrl.value;
+    }
+    selectedPhotos.value = (data.photos || []).map(ph => ({ file: null, previewUrl: getImageUrl(ph.photo_url), dbValue: ph.photo_url, category: ph.category || null }));
+    criteria.value.forEach(p => {
+      if (app[p.permit_key]) {
+        existingFiles.value[p.permit_key] = app[p.permit_key];
+        const expiry = app['expiry_' + p.permit_key];
+        permitExpiries.value[p.permit_key] = expiry ? new Date(expiry).toISOString().split('T')[0] : '';
+      }
+    });
+  } catch (err) {
+    if (err.response?.status === 401) { router.replace('/track'); return; }
+    editLocked.value = err.response?.data?.message || 'We could not load this application.';
+  }
+}
+
 async function fetchHouseDetails() {
   if (!houseId.value) return;
   try {
@@ -368,9 +556,86 @@ const handleOwnerPhoneInput = (e) => {
   if (fieldErrors.value.contactNumber) validateField('contactNumber');
 };
 
+const sanitizeOwnerPhone = () => {
+  ownerPhone.value = normalizePhPhone(ownerPhone.value);
+};
+
+const validateOwnerDetails = () => {
+  const errors = {};
+  if (!ownerName.value.trim()) errors.name = 'Owner full name is required.';
+  if (isPublicRegistration && !applicantMode) {
+    if (!verifiedEmail.value) errors.email = 'Verify your personal email before continuing.';
+  } else if (!ownerEmailName.value.trim()) errors.email = 'Gmail address is required.';
+  else if (/^\.|\.$|\.\./.test(ownerEmailName.value)) errors.email = 'A Gmail name cannot start or end with a dot, or have two dots in a row.';
+  if (!/^09\d{9}$/.test(ownerPhone.value.trim())) errors.phone = 'Phone number must be a valid PH mobile number (11 digits, starting with 09).';
+  if (!regionCode.value || (regionHasProvinces.value && !provinceCode.value) || !cityCode.value || !barangayCode.value) {
+    errors.address = 'Please select your region, province, city/municipality and barangay.';
+  }
+  ownerErrors.value = errors;
+  const list = Object.values(errors);
+  const inputError = validateInput('ownerApplicant', { owner_name: ownerName.value, owner_email: ownerEmail.value.trim(), owner_phone: ownerPhone.value.trim(), owner_address: ownerAddress.value });
+  // The shared rules only add format problems (e.g. an invalid email); "required" is already reported above.
+  if (inputError && list.length === 0) {
+    list.push(inputError);
+    if (/email/i.test(inputError)) ownerErrors.value.email = inputError;
+  }
+  return list;
+};
+
+// Shrinks the legal documents panel just enough to fit the space between the progress bar and
+// Back/Next, so every document, label and expiry date stays visible without scrolling.
+const legalFitRef = ref(null);
+let legalFitObserver = null;
+const fitLegalPanel = async () => {
+  await nextTick();
+  const el = legalFitRef.value;
+  if (!el) return;
+  el.style.width = '';
+  el.style.transform = '';
+  const on = fitLegalScreen.value && window.innerWidth >= 768;
+  document.documentElement.classList.toggle('registration-no-scroll', on);
+  if (!on) return;
+  const box = el.parentElement;
+  const cs = getComputedStyle(box);
+  const available = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  // Grow (up to 1.8x) or shrink the panel so it fills the free space exactly, without scrolling.
+  // Changing the width changes the height, so settle the scale in a few passes.
+  const MAX_SCALE = 1.8;
+  const target = available * 0.99;
+  let scale = 1;
+  for (let i = 0; i < 8; i++) {
+    // scrollHeight is the unscaled height at the current width; on screen it is scrollHeight × scale
+    const next = Math.min(MAX_SCALE, target / el.scrollHeight);
+    if (Math.abs(next - scale) < 0.005) { scale = next; break; }
+    scale = next;
+    el.style.width = `${100 / scale}%`;
+    el.style.transform = `scale(${scale})`;
+  }
+  // Never end up taller than the space (the last pass can overshoot slightly)
+  if (el.scrollHeight * scale > available) scale = available / el.scrollHeight;
+  el.style.width = Math.abs(scale - 1) > 0.005 ? `${100 / scale}%` : '';
+  el.style.transform = Math.abs(scale - 1) > 0.005 ? `scale(${scale})` : '';
+};
+watch([fitLegalScreen, permitFiles, permitFileErrors, existingFiles, validationErrors], fitLegalPanel, { deep: true });
+onMounted(() => {
+  window.addEventListener('resize', fitLegalPanel);
+  if (window.ResizeObserver && legalFitRef.value) {
+    legalFitObserver = new ResizeObserver(() => fitLegalPanel());
+    legalFitObserver.observe(legalFitRef.value.parentElement);
+  }
+  fitLegalPanel();
+});
+onUnmounted(() => {
+  window.removeEventListener('resize', fitLegalPanel);
+  legalFitObserver?.disconnect();
+  document.documentElement.classList.remove('registration-no-scroll');
+});
+
 const validateCurrentStep = () => {
   const errors = [];
-  if (activeStep.value === 1) {
+  if (activeStep.value === 0 && includeOwnerStep) {
+    errors.push(...validateOwnerDetails());
+  } else if (activeStep.value === 1) {
     criteria.value.forEach(p => {
       const hasFile = !!permitFiles.value[p.permit_key] || !!existingFiles.value[p.permit_key];
       const hasExpiry = !!permitExpiries.value[p.permit_key];
@@ -425,12 +690,19 @@ const validateCurrentStep = () => {
   return errors;
 };
 
+// Missing details are shown as a flash alert so the form keeps its full size
+const flashValidationErrors = (errors) => {
+  const shown = errors.slice(0, 4).map(e => '• ' + e).join('\n');
+  const more = errors.length > 4 ? `\n• …and ${errors.length - 4} more` : '';
+  alertRef.value?.showSystemAlert(`Please complete the following:\n${shown}${more}`, 'warning');
+};
+
 // Stepper Navigation Methods
 const nextStep = () => {
   const stepErrors = validateCurrentStep();
   if (stepErrors.length > 0) {
     validationErrors.value = stepErrors;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    flashValidationErrors(stepErrors);
     return;
   }
   validationErrors.value = [];
@@ -438,7 +710,7 @@ const nextStep = () => {
 };
 
 const prevStep = () => {
-  if (activeStep.value > 1) activeStep.value--;
+  if (activeStep.value > firstStep) activeStep.value--;
 };
 
 // Add Custom Amenity dynamically
@@ -454,22 +726,30 @@ const addCustomAmenity = (type) => {
   }
 };
 
-// Handle generic permit file changes with automatic background conversion & instant reactive validation
+// Legal documents accept up to 5 files each: images (HEIC converted) or PDF.
+const MAX_FILES_PER_DOCUMENT = 5;
+const isPdfUpload = (file) => file && (file.type === 'application/pdf' || (file.name || '').toLowerCase().endsWith('.pdf'));
 const handlePermitFile = async (key, event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+  const files = Array.from(event.target.files || []);
+  if (files.length === 0) return;
 
-  const validation = validateImageFile(file);
-  if (!validation.valid) {
-    permitFileErrors.value[key] = validation.message;
+  const reject = (message) => {
+    permitFileErrors.value[key] = message;
     event.target.value = '';
     delete permitFiles.value[key];
-    return;
+  };
+  if (files.length > MAX_FILES_PER_DOCUMENT) return reject(`You can attach up to ${MAX_FILES_PER_DOCUMENT} files per document.`);
+  for (const file of files) {
+    if (isPdfUpload(file)) {
+      if (file.size > 10 * 1024 * 1024) return reject('File is too large. Maximum size is 10MB.');
+      continue;
+    }
+    const validation = validateImageFile(file);
+    if (!validation.valid) return reject(validation.message.replace('Only image files (PNG, JPG, JPEG, WEBP) are allowed.', 'Only images (PNG, JPG, JPEG, WEBP, HEIC) or PDF files are allowed.'));
   }
 
   delete permitFileErrors.value[key];
-  const processedFile = await transcodeHeicFile(file);
-  permitFiles.value[key] = processedFile;
+  permitFiles.value[key] = await Promise.all(files.map(f => (isPdfUpload(f) ? f : transcodeHeicFile(f))));
 };
 
 // Handle Main House Image with instant validation
@@ -491,8 +771,14 @@ const handleMainImg = async (event) => {
   mainHouseImgPreview.value = URL.createObjectURL(processedFile);
 };
 
-// Handle Dynamic Multi-Photo uploads with instant validation
-const handlePhotosSelected = async (event) => {
+const clearMainImg = () => {
+  if (mainHouseImgPreview.value && mainHouseImgPreview.value.startsWith('blob:')) URL.revokeObjectURL(mainHouseImgPreview.value);
+  mainHouseImg.value = null;
+  mainHouseImgPreview.value = existingMainImgUrl.value;
+};
+
+// Handle Dynamic Multi-Photo uploads with instant validation (category: gallery section on the public page)
+const handlePhotosSelected = async (event, category = null) => {
   const files = Array.from(event.target.files);
   photosError.value = '';
 
@@ -516,7 +802,8 @@ const handlePhotosSelected = async (event) => {
     selectedPhotos.value.push({
       file: processedFile,
       previewUrl: URL.createObjectURL(processedFile),
-      dbValue: null
+      dbValue: null,
+      category
     });
   }
   event.target.value = '';
@@ -938,7 +1225,7 @@ watch(mapLink, (newVal) => {
 
 // ================= THE RIGOROUS CLIENT-SIDE VALIDATOR =================
 const validateForm = () => {
-  const errors = [];
+  const errors = includeOwnerStep ? validateOwnerDetails() : [];
   const inputError = validateInput('property', { house_name: houseName.value, location: locationAddress.value, price: price.value, contact_number: contactNumber.value, latitude: latitude.value, longitude: longitude.value, advance_months: advanceMonths.value, deposit_months: depositMonths.value, deposit_type: depositType.value, description: description.value, map_link: mapLink.value });
   if (inputError) errors.push(inputError);
   criteria.value.forEach(p => {
@@ -980,11 +1267,24 @@ const validateForm = () => {
     errors.push('Featured Main Exterior/Facade Image is required for new registration (Step 2).');
   }
 
-  return errors;
+  return includeOwnerStep ? errors.map(e => e.replace(/\(Step (\d)\)/, (m, n) => `(Step ${stepNumber(Number(n))})`)) : errors;
+};
+
+const referenceCopied = ref(false);
+const copyReferenceNo = async () => {
+  const r = submittedRegistration.value;
+  if (!r) return;
+  try {
+    await navigator.clipboard.writeText(r.reference_no);
+    referenceCopied.value = true;
+  } catch {
+    referenceCopied.value = false;
+  }
 };
 
 // Handle Form Submission
 const submitApplication = async () => {
+  if (isPublicRegistration && !verifiedApplicantEmail()) { errorMsg.value = 'Your email verification session expired. Request another link before submitting. Your application has not been submitted.'; verifiedEmail.value = ''; return; }
   validationErrors.value = [];
   successMsg.value = '';
   errorMsg.value = '';
@@ -992,7 +1292,7 @@ const submitApplication = async () => {
   const errors = validateForm();
   if (errors.length > 0) {
     validationErrors.value = errors;
-    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+    flashValidationErrors(errors);
     return;
   }
 
@@ -1016,7 +1316,7 @@ const submitApplication = async () => {
     fd.append('amenities_free', JSON.stringify(selectedFree.value));
     fd.append('amenities_paid', JSON.stringify(selectedPaid.value));
 
-    if (houseId.value) {
+    if (houseId.value && !isPublicRegistration) {
       fd.append('house_id', houseId.value);
     }
 
@@ -1025,26 +1325,60 @@ const submitApplication = async () => {
     }
 
     // Append remaining database-stored extra images — pass the full stored value (Cloudinary URL or legacy filename)
-    const dbPhotos = selectedPhotos.value.filter(p => !p.file).map(p => p.dbValue || '').filter(Boolean);
-    fd.append('existing_photos', JSON.stringify(dbPhotos));
+    const keptPhotos = selectedPhotos.value.filter(p => !p.file && p.dbValue);
+    fd.append('existing_photos', JSON.stringify(keptPhotos.map(p => p.dbValue)));
 
     // Append newly uploaded extra photos
-    selectedPhotos.value.forEach(photoObj => {
-      if (photoObj.file) {
-        fd.append('house_photos', photoObj.file);
-      }
-    });
+    const newPhotos = selectedPhotos.value.filter(p => p.file);
+    newPhotos.forEach(photoObj => fd.append('house_photos', photoObj.file));
+    // Gallery categories in the same order the server combines photos (kept first, then new)
+    fd.append('house_photo_categories', JSON.stringify([...keptPhotos, ...newPhotos].map(p => p.category || null)));
 
     // Append legal permit files and expiries dynamically
     criteria.value.forEach(p => {
-      const file = permitFiles.value[p.permit_key];
+      const selected = permitFiles.value[p.permit_key];
       const expiry = permitExpiries.value[p.permit_key];
-      if (file) fd.append(p.permit_key, file);
+      (Array.isArray(selected) ? selected : (selected ? [selected] : [])).forEach(file => fd.append(p.permit_key, file));
       if (expiry) {
         const fieldName = p.permit_key.replace('permit_', '');
         fd.append(`expiry_permit_${fieldName}`, expiry);
       }
     });
+
+    if (applicantMode) {
+      const url = applicantEditRef ? `/api/applications/${encodeURIComponent(applicantEditRef)}/update` : '/api/applications/new';
+      const response = await axios.post(url, fd, { headers: { ...applicantHeaders(), 'Content-Type': 'multipart/form-data' } });
+      if (response.data.success) {
+        router.push({ path: '/track', query: applicantEditRef
+          ? { updated: applicantEditRef, status: response.data.status }
+          : { submitted: response.data.reference_no } });
+      }
+      return;
+    }
+
+    if (isPublicRegistration) {
+      fd.append('owner_name', ownerName.value.trim());
+      fd.append('owner_email', ownerEmail.value.trim());
+      fd.append('owner_phone', ownerPhone.value.trim());
+      fd.append('owner_address', ownerAddress.value.trim());
+
+      const response = await axios.post(`/api/boarding-houses/register-property`, fd, {
+        headers: { ...applicantHeaders(), 'Content-Type': 'multipart/form-data' }
+      });
+      if (response.data.success) {
+        const referenceNo = response.data.reference_no;
+        try {
+          // Open Track My Application for the new reference right away.
+          setApplicantToken(response.data.token);
+          router.push({ path: '/track', query: { submitted: referenceNo } });
+        } catch {
+          // Tracking could not be opened automatically: show the reference on the confirmation screen.
+          submittedRegistration.value = { mode: 'new', reference_no: referenceNo, house_name: houseName.value };
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+      return;
+    }
 
     const response = await axios.post(`/api/boarding-houses/accreditation`, fd, {
       headers: {
@@ -1078,6 +1412,7 @@ const submitApplication = async () => {
     }
   } catch (err) {
     console.error(err);
+    if (applicantMode && err.response?.status === 401) { router.replace('/track'); return; }
     errorMsg.value = err.response?.data?.message || 'Accreditation application failed. Please verify files and try again.';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } finally {
@@ -1088,10 +1423,21 @@ const submitApplication = async () => {
 
 
 <template>
-  <div class="management-page management-form-page bg-[#eef6ff] min-h-screen font-sans pb-24">
+  <div class="management-page management-form-page bg-[#eef6ff] min-h-screen font-sans pb-24" :class="{ 'registration-compact': useRegistrationLayout, 'registration-in-portal': isPortalRegistration, 'registration-fit-screen': fitLegalScreen }">
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
-    <!-- Navbar -->
-    <OwnerNav />
+    <!-- Navbar (the public registration page is a focused, full-width flow) -->
+    <OwnerNav v-if="!isPublicRegistration" />
+    <header v-else class="registration-topbar">
+      <nav class="registration-breadcrumb" aria-label="Breadcrumb">
+        <span class="hidden sm:inline">Boarding House Owner</span>
+        <span class="registration-breadcrumb-sep hidden sm:inline" aria-hidden="true">/</span>
+        <strong aria-current="page">{{ breadcrumbTitle }}</strong>
+      </nav>
+      <div class="registration-topbar-actions">
+        <router-link v-if="applicantMode" to="/track"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span class="hidden md:inline">My applications</span></router-link>
+        <router-link v-if="!applicantMode" to="/track" class="registration-login"><i class="fa-solid fa-magnifying-glass-location" aria-hidden="true"></i><span class="hidden md:inline">Track my application</span></router-link>
+      </div>
+    </header>
 
     <!-- Fullscreen Large Map Verification Modal -->
     <div v-management-dialog="{ close: () => toggleFullscreenMap() }" v-if="showFullscreenMap" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex flex-col p-6 md:p-10 animate-fade-in">
@@ -1117,16 +1463,94 @@ const submitApplication = async () => {
     <!-- Main Workspace container -->
     <main id="management-content" tabindex="-1" class="max-w-4xl mx-auto py-16 px-6">
       
+
+      <!-- Public registration submitted: reference number and next steps -->
+      <div v-if="submittedRegistration" class="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-10 text-center animate-fade-in" role="status">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+          <i class="fa-solid fa-circle-check text-2xl" aria-hidden="true"></i>
+        </div>
+        <h1 class="text-2xl font-semibold text-slate-900">
+          {{ submittedRegistration.mode === 'edit' ? (submittedRegistration.status === 'RESUBMITTED' ? 'Revision resubmitted' : 'Changes saved') : 'Application submitted' }}
+        </h1>
+        <p class="text-slate-500 text-sm mt-2 max-w-lg mx-auto">
+          <strong class="text-slate-800">{{ submittedRegistration.house_name }}</strong>
+          {{ submittedRegistration.mode === 'edit' ? '— ' + (submittedRegistration.message || 'saved.') : 'has been sent to SASO for review.' }}
+        </p>
+
+        <div class="mt-6 bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 max-w-sm mx-auto">
+          <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Reference No.</p>
+          <p class="text-2xl font-bold text-[#1e4a8d] tracking-wider mt-1 select-all font-mono">{{ submittedRegistration.reference_no }}</p>
+          <button type="button" @click="copyReferenceNo" class="mt-2 text-[13px] font-semibold text-[#1e4a8d] hover:underline">
+            <i :class="['fa-solid mr-1', referenceCopied ? 'fa-check' : 'fa-copy']" aria-hidden="true"></i>{{ referenceCopied ? 'Copied' : 'Copy reference number' }}
+          </button>
+        </div>
+        <p v-if="submittedRegistration.mode !== 'edit'" class="mt-3 max-w-md mx-auto text-[13px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
+          <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Save this reference number to identify your property application. Access to tracking requires verification of your registered email.</p>
+
+        <ol v-if="submittedRegistration.mode !== 'edit'" class="mt-6 text-left max-w-md mx-auto space-y-2 text-sm text-slate-600">
+          <li class="flex gap-3"><span class="font-semibold text-[#1e4a8d]">1.</span> SASO reviews your property and documents. You can edit it until the review starts.</li>
+          <li class="flex gap-3"><span class="font-semibold text-[#1e4a8d]">2.</span> If SASO asks for changes, update and resubmit from Track My Application.</li>
+          <li class="flex gap-3"><span class="font-semibold text-[#1e4a8d]">3.</span> Once approved, activate your owner account and set your own password.</li>
+        </ol>
+        <router-link to="/track" class="inline-block mt-6 bg-[#1e4a8d] hover:bg-black text-white font-semibold py-3 px-8 rounded-xl text-sm transition management-button management-button-primary">
+          Go to Track My Application
+        </router-link>
+      </div>
+
+      <template v-else>
+
+      <div v-if="googleRedirectNotice" class="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-blue-900 text-sm font-medium text-left">
+        <i class="fa-solid fa-circle-info mr-2"></i>
+        No owner account was found for that Google account. Please register your property first. After SASO approves it, you can activate your owner account.
+      </div>
+
+
+      <div v-if="editLocked" role="alert" class="mb-3 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700">
+        <i class="fa-solid fa-lock mr-1.5" aria-hidden="true"></i>{{ editLocked }}
+        <router-link to="/track" class="ml-1 font-semibold text-[#1e4a8d] hover:underline">Back to my applications</router-link>
+      </div>
+      <div v-if="applicantRemarks" class="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+        <p class="font-semibold text-[12px] uppercase tracking-wide mb-1"><i class="fa-solid fa-comment-dots mr-1" aria-hidden="true"></i>SASO revision remarks</p>
+        <p class="whitespace-pre-line">{{ applicantRemarks }}</p>
+      </div>
+
+      <nav v-if="useRegistrationLayout" class="registration-progress" aria-label="Registration progress">
+        <ol class="flex items-start justify-center">
+          <li v-for="step in steps" :key="step" class="flex items-start">
+            <div class="flex flex-col items-center gap-1.5 w-12 sm:w-28">
+              <span
+                :aria-current="activeStep === step ? 'step' : undefined"
+                :class="[
+                  activeStep === step ? 'registration-step-active' : activeStep > step ? 'registration-step-done' : 'registration-step-todo',
+                  'w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm'
+                ]"
+              >
+                <i v-if="activeStep > step" class="fa-solid fa-check" aria-hidden="true" />
+                <span v-else>{{ stepNumber(step) }}</span>
+              </span>
+              <span class="hidden sm:block text-[12px] font-semibold text-center leading-tight" :class="activeStep === step ? 'text-[#142b4a]' : activeStep > step ? 'text-green-700' : 'text-slate-400'">{{ stepShortTitles[step] }}</span>
+            </div>
+            <span v-if="step < 4" class="h-0.5 w-4 sm:w-14 mt-5 rounded-full" :class="activeStep > step ? 'bg-green-400' : 'bg-slate-200'"></span>
+          </li>
+        </ol>
+      </nav>
+
+      <template v-else>
+      <div class="text-center mb-10">
+        <PageHeader title="Property accreditation" />
+      </div>
+
       <!-- Stepper Progress Indicator -->
-      <div class="mb-12 flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm max-w-xl mx-auto">
-        <div 
-          v-for="step in [1, 2, 3, 4]" 
+      <div class="mb-6 flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm max-w-xl mx-auto">
+        <div
+          v-for="step in steps"
           :key="step"
           class="flex items-center"
         >
           <!-- Step Circle -->
-          <button 
+          <button
             type="button"
+            :aria-current="activeStep === step ? 'step' : undefined"
             @click="activeStep = step"
             :class="[
               activeStep === step ? 'bg-[#1e4a8d] text-white' : activeStep > step ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400',
@@ -1134,40 +1558,23 @@ const submitApplication = async () => {
             ]"
           >
             <i v-if="activeStep > step" class="fa-solid fa-check" />
-            <span v-else>{{ step }}</span>
+            <span v-else>{{ stepNumber(step) }}</span>
           </button>
-          
+
           <!-- Connecting Line -->
-          <div 
-            v-if="step < 4" 
+          <div
+            v-if="step < 4"
             class="h-1 w-10 sm:w-16 mx-2 rounded-full"
             :class="activeStep > step ? 'bg-green-400' : 'bg-slate-100'"
           ></div>
         </div>
       </div>
 
-      <div class="text-center mb-12">
-        <PageHeader title="Property accreditation" description="Complete the existing four steps to submit your boarding house for review." />
-        <p class="text-slate-500 font-bold uppercase text-[12px] tracking-normal mt-3">
-          {{ activeStep === 1 ? 'Step 1: Legal Compliance' : activeStep === 2 ? 'Step 2: Property Photos' : activeStep === 3 ? 'Step 3: Property Details & Map' : 'Step 4: Amenities Center' }}
-        </p>
-      </div>
+      <p class="text-center text-slate-500 font-bold uppercase text-[12px] tracking-normal mb-12">
+        Step {{ stepNumber(activeStep) }}: {{ stepTitles[activeStep] }}
+      </p>
+      </template>
 
-      <!-- Client Validation Errors Banner -->
-      <div v-if="validationErrors.length > 0" class="mb-10 bg-[#fffbeb] border-2 border-[#fef3c7] rounded-[2.5rem] p-10 shadow-sm text-left animate-fade-in">
-        <div class="flex items-start gap-6">
-          <div class="bg-amber-500 text-white w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200">
-            <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
-          </div>
-          <div>
-            <h3 class="text-amber-800 font-semibold uppercase text-lg tracking-tight mb-2">Incomplete Details Detected</h3>
-            <p class="text-slate-500 text-[12px] font-bold uppercase tracking-wide mb-4">Please fix the following problems to proceed with submission:</p>
-            <ul class="list-disc list-inside space-y-2 text-slate-700 text-[13px] font-bold">
-              <li v-for="err in validationErrors" :key="err" class="leading-relaxed">{{ err }}</li>
-            </ul>
-          </div>
-        </div>
-      </div>
 
       <!-- Backend Success Banner -->
       <div v-if="successMsg" class="mb-10 bg-emerald-50 border-2 border-emerald-200 rounded-[2.5rem] p-8 text-emerald-800 text-center font-bold text-sm">
@@ -1211,18 +1618,108 @@ const submitApplication = async () => {
       </div>
 
       <!-- Use v-show so that map Container and input are instantly available on mount -->
-      <form v-show="!isLoading" @submit.prevent="submitApplication" class="space-y-10" novalidate>
+      <ApplicantEmailGate v-if="isPublicRegistration && !verifiedEmail" />
+      <form v-show="!isLoading && (!isPublicRegistration || verifiedEmail)" @submit.prevent="submitApplication" class="space-y-10" novalidate>
         
-        <!-- ================= STEP 1: MANDATORY PERMITS ================= -->
-        <div v-show="activeStep === 1" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
+        <!-- ================= STEP 0: OWNER INFORMATION (public registration) ================= -->
+        <div v-if="includeOwnerStep" v-show="activeStep === 0" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
             <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-semibold shadow-sm">1</div>
+            <h2 class="text-sm font-semibold text-slate-900 uppercase tracking-wider">Owner Information</h2>
+          </div>
+          <div class="registration-owner grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-6">
+            <div class="space-y-4">
+              <h3 class="registration-section-title">Contact details</h3>
+              <div>
+                <label for="owner-name" class="registration-label">Full name <span class="text-red-500">*</span></label>
+                <input id="owner-name" v-model="ownerName" type="text" maxlength="255" autocomplete="name" placeholder="Juan Dela Cruz"
+                  class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition" :class="ownerErrors.name ? 'border-red-400' : 'border-slate-200'" />
+                <p v-if="ownerErrors.name" class="text-red-500 text-[12px] font-bold mt-1">{{ ownerErrors.name }}</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="owner-email" class="registration-label">{{ isPublicRegistration ? 'Verified email address' : 'Gmail address' }} <span class="text-red-500">*</span></label>
+                  <input v-if="isPublicRegistration" id="owner-email" :value="ownerEmail" readonly class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 text-sm" />
+                  <div v-else class="gmail-field" :class="ownerErrors.email ? 'is-error' : ''">
+                    <input id="owner-email" v-model="ownerEmailName" @input="sanitizeOwnerEmailName" type="text" maxlength="64" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="yourname" aria-describedby="owner-email-domain"
+                      class="flex-1 min-w-0 bg-transparent border-0 text-sm font-semibold outline-none" />
+                    <span id="owner-email-domain" class="gmail-domain">@gmail.com</span>
+                  </div>
+                  <p v-if="ownerErrors.email" class="text-red-500 text-[12px] font-bold mt-1">{{ ownerErrors.email }}</p>
+                </div>
+                <div>
+                  <label for="owner-phone" class="registration-label">Mobile number <span class="text-red-500">*</span></label>
+                  <input id="owner-phone" v-model="ownerPhone" @input="sanitizeOwnerPhone" type="text" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="09XXXXXXXXX"
+                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition" :class="ownerErrors.phone ? 'border-red-400' : 'border-slate-200'" />
+                  <p v-if="ownerErrors.phone" class="text-red-500 text-[12px] font-bold mt-1">{{ ownerErrors.phone }}</p>
+                </div>
+              </div>
+              <p class="text-[12px] text-slate-500"><i class="fa-solid fa-circle-info mr-1 text-blue-500" aria-hidden="true"></i>Your email becomes your owner login after approval. After you submit, you go straight to Track My Application with your reference number.</p>
+            </div>
+
+            <fieldset class="space-y-4 min-w-0">
+              <legend class="registration-section-title">Residential address <span class="text-red-500">*</span></legend>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="owner-region" class="registration-label">Region</label>
+                  <select id="owner-region" v-model="regionCode" @change="onRegionChange"
+                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer" :class="ownerErrors.address && !regionCode ? 'border-red-400' : 'border-slate-200'">
+                    <option value="">{{ addressLoading === 'region' ? 'Loading…' : 'Select region' }}</option>
+                    <option v-for="r in regionOptions" :key="r.code" :value="r.code">{{ r.label }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="owner-province" class="registration-label">Province</label>
+                  <select id="owner-province" v-model="provinceCode" @change="onProvinceChange"
+                    :disabled="!regionCode || !regionHasProvinces || addressLoading === 'province'"
+                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && regionCode && regionHasProvinces && !provinceCode ? 'border-red-400' : 'border-slate-200'">
+                    <option value="">{{ addressLoading === 'province' ? 'Loading…' : (regionCode && !regionHasProvinces ? 'Not applicable' : 'Select province') }}</option>
+                    <option v-for="o in provinceOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="owner-city" class="registration-label">City / Municipality</label>
+                  <select id="owner-city" v-model="cityCode" @change="onCityChange"
+                    :disabled="!cityOptions.length || addressLoading === 'city'"
+                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && cityOptions.length && !cityCode ? 'border-red-400' : 'border-slate-200'">
+                    <option value="">{{ addressLoading === 'city' ? 'Loading…' : 'Select city / municipality' }}</option>
+                    <option v-for="o in cityOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="owner-barangay" class="registration-label">Barangay</label>
+                  <select id="owner-barangay" v-model="barangayCode"
+                    :disabled="!barangayOptions.length || addressLoading === 'barangay'"
+                    class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition cursor-pointer disabled:cursor-not-allowed" :class="ownerErrors.address && barangayOptions.length && !barangayCode ? 'border-red-400' : 'border-slate-200'">
+                    <option value="">{{ addressLoading === 'barangay' ? 'Loading…' : 'Select barangay' }}</option>
+                    <option v-for="o in barangayOptions" :key="o.code" :value="o.code">{{ o.name }}</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label for="owner-street" class="registration-label">House no., street, purok <span class="font-normal text-slate-400">(optional)</span></label>
+                <input id="owner-street" v-model="addressStreet" type="text" maxlength="255" autocomplete="address-line1" placeholder="e.g. 12 Rizal St., Purok 2"
+                  class="w-full bg-slate-50 border rounded-lg text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition border-slate-200" />
+              </div>
+              <p v-if="ownerErrors.address" class="text-red-500 text-[12px] font-bold">{{ ownerErrors.address }}</p>
+              <p v-else-if="addressLoadError" class="text-amber-600 text-[12px] font-bold">{{ addressLoadError }}</p>
+              <p v-else-if="ownerAddress" class="text-slate-500 text-[12px] font-medium"><i class="fa-solid fa-location-dot mr-1" aria-hidden="true"></i>{{ ownerAddress }}</p>
+            </fieldset>
+          </div>
+        </div>
+
+        <!-- ================= STEP 1: MANDATORY PERMITS ================= -->
+        <div v-show="activeStep === 1" class="registration-legal bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
+          <div ref="legalFitRef" class="legal-fit">
+          <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+            <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-semibold shadow-sm">{{ stepNumber(1) }}</div>
             <div>
               <h2 class="text-sm font-semibold text-slate-900 uppercase tracking-wider">Legal Permits &amp; Clearances</h2>
               <p class="text-xs text-slate-500 font-medium mt-0.5">Please provide the 4 mandatory permits and any additional supporting documents.</p>
             </div>
           </div>
-          
+
+
           <div class="space-y-10">
             <!-- SECTION A: MANDATORY REQUIRED DOCUMENTS -->
             <div>
@@ -1233,8 +1730,8 @@ const submitApplication = async () => {
                 <span class="bg-blue-50 text-blue-700 border border-blue-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Required (Items 1-4)</span>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div 
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6" :class="{ 'lg:grid-cols-4': useRegistrationLayout }">
+                <div
                   v-for="(p, idx) in requiredCriteria" 
                   :key="p.id" 
                   class="relative group p-6 rounded-2xl border transition-all"
@@ -1252,10 +1749,14 @@ const submitApplication = async () => {
                       <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
                       <input aria-label="Scanned File" 
                         type="file" 
-                        accept="image/*"
+                        multiple
+                        accept="image/*,application/pdf,.pdf"
                         @change="(e) => handlePermitFile(p.permit_key, e)"
                         class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition cursor-pointer" 
                       />
+                      <p v-if="permitFiles[p.permit_key]?.length && !permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-slate-500 mt-1.5 truncate" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
+                        <i class="fa-solid fa-paperclip mr-1"></i>{{ permitFiles[p.permit_key].length }} file{{ permitFiles[p.permit_key].length > 1 ? 's' : '' }}: {{ permitFiles[p.permit_key].map(f => f.name).join(', ') }}
+                      </p>
                       <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
                         <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
                       </p>
@@ -1285,8 +1786,8 @@ const submitApplication = async () => {
                 <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Optional (Items 5-8)</span>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div 
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6" :class="{ 'lg:grid-cols-4': useRegistrationLayout }">
+                <div
                   v-for="(p, idx) in optionalCriteria" 
                   :key="p.id" 
                   class="relative group p-6 rounded-2xl border transition-all"
@@ -1304,10 +1805,14 @@ const submitApplication = async () => {
                       <label class="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Scanned File</label>
                       <input aria-label="Scanned File" 
                         type="file" 
-                        accept="image/*"
+                        multiple
+                        accept="image/*,application/pdf,.pdf"
                         @change="(e) => handlePermitFile(p.permit_key, e)"
                         class="w-full text-xs font-medium text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 transition cursor-pointer" 
                       />
+                      <p v-if="permitFiles[p.permit_key]?.length && !permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-slate-500 mt-1.5 truncate" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
+                        <i class="fa-solid fa-paperclip mr-1"></i>{{ permitFiles[p.permit_key].length }} file{{ permitFiles[p.permit_key].length > 1 ? 's' : '' }}: {{ permitFiles[p.permit_key].map(f => f.name).join(', ') }}
+                      </p>
                       <p v-if="permitFileErrors[p.permit_key]" class="text-[12px] font-medium text-rose-600 mt-1.5 flex items-center gap-1.5">
                         <i class="fa-solid fa-circle-info"></i> {{ permitFileErrors[p.permit_key] }}
                       </p>
@@ -1328,17 +1833,18 @@ const submitApplication = async () => {
               </div>
             </div>
           </div>
-          <p class="mt-8 text-[12px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC up to 10MB.</p>
+          <p class="mt-8 text-[12px] text-slate-400 font-bold uppercase italic tracking-wider text-center">* Accepted formats: PNG, JPG, JPEG, WEBP, HEIC or PDF — up to 5 files per document, 10MB each.</p>
+          </div>
         </div>
 
         <!-- ================= STEP 2: DYNAMIC PROPERTY PHOTOS ================= -->
         <div v-show="activeStep === 2" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-green-100 text-green-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">2</div>
+            <div class="bg-green-100 text-green-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">{{ stepNumber(2) }}</div>
             <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Property Photos</h2>
           </div>
           
-          <div class="space-y-8">
+          <div v-if="!useRegistrationLayout" class="space-y-8">
             <!-- Main Featured Image -->
             <div>
               <label class="block text-[12px] font-semibold uppercase mb-3 ml-1" :class="mainImgError ? 'text-red-600' : 'text-slate-400'">Featured Main Image (Facade/Exterior)</label>
@@ -1361,7 +1867,7 @@ const submitApplication = async () => {
                 </div>
               </div>
             </div>
-            
+
             <!-- Dynamic Interior / Extra Photos Uploader -->
             <div class="border-t border-slate-100 pt-6">
               <label class="block text-[12px] font-semibold uppercase mb-3 ml-1" :class="photosError ? 'text-red-600' : 'text-slate-400'">Property Gallery Showcase (Upload up to 10 photos of rooms, amenities, and common areas)</label>
@@ -1401,16 +1907,72 @@ const submitApplication = async () => {
               </div>
             </div>
           </div>
+
+          <div v-else class="registration-photos grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] gap-6">
+            <!-- Featured photo -->
+            <section aria-labelledby="featured-photo-title" class="min-w-0">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <h3 id="featured-photo-title" class="registration-section-title !mb-0">Featured photo <span class="text-red-500">*</span></h3>
+                <span class="registration-featured-badge"><i class="fa-solid fa-star" aria-hidden="true"></i> Featured</span>
+              </div>
+              <div class="registration-photo-frame" :class="mainImgError ? 'ring-2 ring-red-400' : ''">
+                <img :src="mainHouseImgPreview || featuredPhotoExample" :alt="mainHouseImgPreview ? 'Selected featured photo' : 'Example featured photo: the full front of a two-storey boarding house, taken in daylight'" />
+                <span v-if="!mainHouseImgPreview" class="registration-example-badge">Example</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mt-3">
+                <label class="registration-upload-button">
+                  <input type="file" accept="image/*" class="sr-only" @change="handleMainImg" />
+                  <i class="fa-solid fa-upload" aria-hidden="true"></i> {{ mainHouseImgPreview ? 'Replace photo' : 'Choose photo' }}
+                </label>
+                <button v-if="mainHouseImg" type="button" @click="clearMainImg" class="text-[13px] font-semibold text-rose-600 hover:underline">Remove</button>
+              </div>
+              <p v-if="mainImgError" class="text-[12px] font-bold text-red-600 mt-2"><i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{{ mainImgError }}</p>
+              <p v-else class="text-[12px] text-slate-500 mt-2">A clear daytime photo of the whole front of the building. This is the main photo students see.</p>
+            </section>
+
+            <!-- Categorized gallery -->
+            <section aria-labelledby="gallery-title" class="min-w-0">
+              <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                <h3 id="gallery-title" class="registration-section-title !mb-0">Property gallery <span class="font-normal text-slate-400">(optional)</span></h3>
+                <span class="text-[12px] font-semibold text-slate-500">{{ selectedPhotos.length }} / {{ maxPhotosLimit }} photos</span>
+              </div>
+              <p v-if="photosError" role="alert" class="text-[12px] font-bold text-red-600 mb-2"><i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{{ photosError }}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div v-for="cat in photoCategories" :key="cat.key" class="registration-category">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <p class="text-[13px] font-semibold text-[#142b4a]">{{ cat.label }}</p>
+                      <p class="text-[11px] text-slate-500 leading-snug">{{ cat.hint }}</p>
+                    </div>
+                    <label class="registration-upload-button small" :class="selectedPhotos.length >= maxPhotosLimit ? 'opacity-50 pointer-events-none' : ''">
+                      <input type="file" multiple accept="image/*" class="sr-only" :aria-label="'Add ' + cat.label + ' photos'" @change="(e) => handlePhotosSelected(e, cat.key)" />
+                      <i class="fa-solid fa-plus" aria-hidden="true"></i> Add
+                    </label>
+                  </div>
+                  <div class="grid grid-cols-3 gap-1.5 mt-2">
+                    <div v-for="item in photosIn(cat.key)" :key="item.photo.previewUrl" class="registration-thumb group">
+                      <img :src="item.photo.previewUrl" :alt="cat.label + ' photo'" />
+                      <button type="button" @click="removePhoto(item.index)" :aria-label="'Remove ' + cat.label + ' photo'" class="registration-thumb-remove"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                    </div>
+                    <div v-if="photosIn(cat.key).length === 0" class="registration-thumb col-span-3 sample">
+                      <img :src="cat.sample" :alt="'Example ' + cat.label.toLowerCase() + ' photo'" />
+                      <span class="registration-example-badge">Example</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
 
         <!-- ================= STEP 3: CORE INFO & 3-WAY MAP ================= -->
         <div v-show="activeStep === 3" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-purple-100 text-purple-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">3</div>
+            <div class="bg-purple-100 text-purple-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">{{ stepNumber(3) }}</div>
             <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Boarding House Details</h2>
           </div>
           
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6" :class="{ 'xl:grid-cols-4': useRegistrationLayout }">
             <div class="md:col-span-2">
               <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.houseName ? 'text-red-600' : 'text-slate-400'">Boarding House Name</label>
               <input aria-label="Boarding House Name" 
@@ -1427,7 +1989,7 @@ const submitApplication = async () => {
               </p>
             </div>
 
-            <div>
+            <div :class="{ 'xl:col-span-2': useRegistrationLayout }">
               <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.contactNumber ? 'text-red-600' : 'text-slate-400'">Contact Number</label>
               <input aria-label="Contact Number" 
                 type="text" 
@@ -1481,7 +2043,7 @@ const submitApplication = async () => {
             </div>
 
             <!-- Advance & Deposit Policy -->
-            <div class="md:col-span-2 border-t border-slate-100 pt-6 mt-2">
+            <div class="md:col-span-2" :class="useRegistrationLayout ? '' : 'border-t border-slate-100 pt-6 mt-2'">
               <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-coins" /> Advance &amp; Deposit Policy
               </h3>
@@ -1515,7 +2077,7 @@ const submitApplication = async () => {
             </div>
 
             <!-- 3-Way Location -->
-            <div class="md:col-span-2 border-t border-slate-100 pt-6 mt-4">
+            <div class="md:col-span-2" :class="useRegistrationLayout ? 'xl:col-start-3 xl:col-span-2 xl:row-start-1 xl:row-span-5' : 'border-t border-slate-100 pt-6 mt-4'">
               <h3 class="text-xs font-semibold text-[#1e4a8d] uppercase tracking-normal mb-6">
                 <i class="fa-solid fa-map-location-dot" /> High-Precision Location Setup
               </h3>
@@ -1558,7 +2120,8 @@ const submitApplication = async () => {
                   </div>
 
                   <div 
-                    class="rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl h-[380px] sm:h-[450px] w-full relative bg-slate-50 group cursor-pointer" 
+                    class="rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl w-full relative bg-slate-50 group cursor-pointer"
+                    :class="useRegistrationLayout ? 'h-[280px]' : 'h-[380px] sm:h-[450px]'" 
                   >
                     <div ref="mapContainer" class="w-full h-full"></div>
                     <div class="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors flex items-center justify-center" @click="toggleFullscreenMap">
@@ -1587,7 +2150,7 @@ const submitApplication = async () => {
 
             <div class="md:col-span-2">
               <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Property Description &amp; Rules</label>
-              <textarea aria-label="Property Description &amp;amp; Rules" v-model="description" rows="4" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Describe your rooms, house rules (curfews), and environment..."></textarea>
+              <textarea aria-label="Property Description &amp;amp; Rules" v-model="description" :rows="useRegistrationLayout ? 2 : 4" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Describe your rooms, house rules (curfews), and environment..."></textarea>
             </div>
           </div>
         </div>
@@ -1595,7 +2158,7 @@ const submitApplication = async () => {
         <!-- ================= STEP 4: AMENITIES CENTER ================= -->
         <div v-show="activeStep === 4" class="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 animate-fade-in text-left">
           <div class="flex items-center gap-4 mb-8 border-b border-slate-50 pb-6">
-            <div class="bg-orange-100 text-orange-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">4</div>
+            <div class="bg-orange-100 text-orange-600 w-10 h-10 rounded-full flex items-center justify-center font-semibold">{{ stepNumber(4) }}</div>
             <h2 class="text-xs font-semibold text-slate-900 uppercase tracking-normal">Amenities &amp; Services</h2>
           </div>
 
@@ -1691,37 +2254,25 @@ const submitApplication = async () => {
         </div>
 
         <!-- Stepper Navigation Buttons (Prev/Next/Submit) -->
-        <div class="flex justify-between items-center max-w-sm mx-auto pt-10 pb-20">
-          <button 
-            v-if="activeStep > 1" 
-            type="button" 
-            @click="prevStep" 
-            class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-4 px-8 rounded-2xl text-xs uppercase tracking-wide transition management-button"
-          >
-            Back
+        <div class="step-nav" :class="useRegistrationLayout ? 'registration-actions' : 'max-w-2xl mx-auto w-full pt-10 pb-20'">
+          <button v-if="activeStep > firstStep" type="button" @click="prevStep" class="step-btn step-btn-secondary">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>Back</span>
           </button>
-          <div v-else class="w-20"></div> <!-- Spacer -->
+          <span v-else aria-hidden="true"></span>
 
-          <button 
-            v-if="activeStep < 4" 
-            type="button" 
-            @click="nextStep" 
-            class="bg-[#1e4a8d] hover:bg-black text-white font-semibold py-4 px-10 rounded-2xl text-xs uppercase tracking-wide transition management-button management-button-primary"
-          >
-            Next Step
+          <span aria-hidden="true"></span>
+
+          <button v-if="activeStep < 4" type="button" @click="nextStep" class="step-btn step-btn-primary">
+            <span>Next<span class="hidden md:inline">: {{ stepShortTitles[activeStep + 1] }}</span></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
           </button>
-
-          <button 
-            v-else 
-            type="submit" 
-            :disabled="isSaving"
-            class="bg-green-600 hover:bg-black text-white font-semibold py-4 px-10 rounded-2xl text-xs uppercase tracking-wide transition disabled:opacity-50 management-button"
-          >
-            {{ isSaving ? 'Submitting...' : 'Submit Application' }}
+          <button v-else type="submit" :disabled="isSaving || Boolean(editLocked)" class="step-btn step-btn-submit">
+            <i :class="isSaving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-paper-plane'" aria-hidden="true"></i>
+            <span>{{ isSaving ? 'Submitting…' : (isPublicRegistration ? submitLabel : 'Submit Application') }}</span>
           </button>
         </div>
 
       </form>
+      </template>
     </main>
 
     <!-- Data Privacy Act (DPA 2012) Mandatory Consent Notice Modal -->
@@ -1735,11 +2286,163 @@ const submitApplication = async () => {
 </template>
 
 <style>
+/* Public property registration: full-width, compact layout so each step fits one screen */
+.registration-compact.management-page { padding: 0 !important; }
+.registration-topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: stretch; height: 64px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+.registration-breadcrumb { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 clamp(12px, 2vw, 32px); font-size: 15px; color: #586b82; }
+.registration-breadcrumb strong { color: #142b4a; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.registration-breadcrumb-sep { color: #94a3b8; }
+.registration-topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 20px; }
+.registration-topbar-actions a { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #245b99; white-space: nowrap; }
+.registration-topbar-actions a:hover { background: #edf3fa; }
+.registration-topbar-actions a.registration-login { background: #245b99; color: #fff; }
+.registration-topbar-actions a.registration-login:hover { background: #194775; }
+@media (max-width: 767px) {
+      .registration-breadcrumb { padding: 0 12px; font-size: 14px; }
+  .registration-topbar-actions { padding: 0 8px; }
+}
+.registration-compact.management-page > main { max-width: none !important; padding: 16px clamp(12px, 2vw, 32px) 0 !important; }
+.registration-progress { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px 10px; margin-bottom: 10px; }
+.registration-compact main > .mb-10 { margin-bottom: 12px !important; }
+.registration-compact main > :is(.p-10, .p-8) { padding: 14px 18px !important; }
+.registration-compact main > div .w-14.h-14 { width: 40px; height: 40px; }
+.registration-compact form.space-y-10 > * + * { margin-top: 12px !important; }
+.registration-compact form > .animate-fade-in { padding: 14px 20px !important; }
+.registration-compact form > .animate-fade-in > div:first-child { margin-bottom: 10px !important; padding-bottom: 8px !important; }
+.registration-compact form .pb-3 { padding-bottom: 6px !important; }
+.registration-compact form .mb-1\.5 { margin-bottom: 4px !important; }
+.registration-compact form .space-y-10 > * + * { margin-top: 12px !important; }
+.registration-compact form .space-y-8 > * + * { margin-top: 14px !important; }
+.registration-compact form .space-y-4 > * + * { margin-top: 6px !important; }
+.registration-compact form .p-4 { padding: 9px 12px !important; }
+.registration-compact form .p-6 { padding: 10px 14px !important; }
+.registration-compact form .p-8 { padding: 14px !important; }
+.registration-compact form .gap-6 { gap: 14px !important; }
+.registration-compact form .gap-12 { gap: 24px !important; }
+.registration-compact form :is(.mb-5, .mb-6) { margin-bottom: 10px !important; }
+.registration-compact form .mb-4 { margin-bottom: 8px !important; }
+.registration-compact form .mt-8 { margin-top: 10px !important; }
+.registration-compact form .mt-4 { margin-top: 0 !important; }
+/* Same layout inside the owner portal: keep room for the portal top bar and sidebar */
+.registration-compact.registration-in-portal.management-page { padding-top: 72px !important; }
+@media (min-width: 1180px) { .registration-compact.registration-in-portal.management-page { padding-left: 248px !important; } }
+/* Fill the screen: the visible step panel stretches down to the action bar */
+.registration-compact.management-page > main { min-height: calc(100vh - 64px); display: flex; flex-direction: column; }
+.registration-compact.registration-in-portal.management-page > main { min-height: calc(100vh - 72px); }
+.registration-compact main > form { flex: 1; display: flex; flex-direction: column; }
+.registration-compact form > .animate-fade-in { flex: 1; display: flex; flex-direction: column; }
+.registration-compact form > .animate-fade-in > :not(:first-child) { flex-shrink: 0; }
+/* Legal documents step (laptop/desktop): one frame, no page scroll. The page is locked to the
+   window height and the documents panel is scaled to fit by fitLegalPanel(). */
+@media (min-width: 768px) {
+  html.registration-no-scroll, html.registration-no-scroll body { overflow: hidden !important; }
+  .registration-fit-screen.management-page { height: 100dvh; min-height: 0 !important; overflow: hidden; display: flex; flex-direction: column; }
+  .registration-fit-screen.management-page > main { flex: 1 1 0; min-height: 0 !important; overflow: hidden; }
+  .registration-fit-screen main > form { min-height: 0; }
+  .registration-fit-screen form > .registration-legal { flex: 1 1 0; min-height: 0; overflow: hidden; display: block; }
+  .registration-fit-screen .legal-fit { transform-origin: top left; }
+}
+.registration-compact .registration-legal > .legal-fit { margin-bottom: 0 !important; padding-bottom: 0 !important; }
+.registration-compact .registration-legal .legal-fit > div:first-child { margin-bottom: 10px !important; padding-bottom: 8px !important; }
+/* Owner information: compact two-column layout */
+.registration-compact .registration-owner { align-content: start; }
+.registration-compact .registration-section-title { display: block; font-size: 13px; font-weight: 700; color: #142b4a; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; padding: 0; }
+.registration-compact .registration-label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 5px; }
+.registration-compact .registration-owner :is(input, select) { padding: 10px 14px !important; font-size: 15px !important; height: 48px; min-height: 48px; }
+/* Photos: compact upload boxes like the document cards */
+/* Photos: featured photo + categorized gallery (consistent 4:3 frames) */
+.registration-photo-frame { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; background: #f1f5f9; }
+.registration-photo-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.registration-example-badge { position: absolute; top: 8px; left: 8px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+.registration-featured-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; padding: 2px 8px; border-radius: 999px; }
+.registration-upload-button { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: #fff; background: #245b99; border-radius: 8px; padding: 8px 14px; white-space: nowrap; }
+.registration-upload-button:hover { background: #194775; }
+.registration-upload-button:focus-within { outline: 3px solid #5e99db; outline-offset: 2px; }
+.registration-upload-button.small { font-size: 12px; padding: 5px 10px; background: #eff6ff; color: #1e4a8d; border: 1px solid #bfdbfe; }
+.registration-upload-button.small:hover { background: #dbeafe; }
+.registration-category { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #fff; min-width: 0; }
+.registration-thumb { position: relative; aspect-ratio: 4 / 3; border-radius: 6px; overflow: hidden; border: 1px solid #e2e8f0; background: #f8fafc; }
+.registration-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.registration-thumb.sample { aspect-ratio: auto; height: 72px; }
+.registration-thumb.sample img { opacity: .9; }
+.registration-thumb-remove { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; min-height: 22px !important; border-radius: 999px; background: rgba(220, 38, 38, .92); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.registration-thumb-remove:focus-visible { outline: 2px solid #fff; }
+.registration-actions { position: sticky; bottom: 0; z-index: 20; padding: 10px 2px !important; background: rgba(244, 247, 251, .95); backdrop-filter: blur(6px); border-top: 1px solid #e2e8f0; }
+/* Step navigation (Back / progress / Next or Submit) */
+.step-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.step-nav > :first-child { justify-self: start; }
+.step-nav > :last-child { justify-self: end; }
+.step-nav-progress { margin: 0; font-size: 13px; color: #64748b; text-align: center; white-space: nowrap; }
+.step-nav-count { font-weight: 700; color: #142b4a; }
+.step-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; min-height: 44px; padding: 0 20px; border-radius: 10px; font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap; transition: background-color .15s, border-color .15s, box-shadow .15s; }
+.step-btn:focus-visible { outline: 3px solid #5e99db; outline-offset: 2px; }
+.step-btn:disabled { opacity: .55; cursor: not-allowed; }
+.step-btn-secondary { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
+.step-btn-secondary:hover { border-color: #94a3b8; background: #f8fafc; }
+.step-btn-primary { background: #245b99; color: #fff; box-shadow: 0 1px 2px rgba(20, 43, 74, .15); }
+.step-btn-primary:hover { background: #194775; }
+.step-btn-submit { background: #16a34a; color: #fff; box-shadow: 0 1px 2px rgba(22, 101, 52, .2); }
+.step-btn-submit:hover:not(:disabled) { background: #15803d; }
+@media (max-width: 480px) { .step-btn { padding: 0 14px; } .step-nav-progress { font-size: 12px; } }
+
+/* ── Polished buttons (register page + shared step navigation) ───────────────────── */
+.step-btn { height: 46px; min-height: 46px; padding: 0 22px; border-radius: 12px; font-size: 14px; letter-spacing: .01em; transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease; }
+.step-btn i { font-size: 13px; transition: transform .15s ease; }
+.step-btn:not(:disabled):hover { transform: translateY(-1px); }
+.step-btn:not(:disabled):active { transform: translateY(0); }
+.step-btn-secondary { background: #fff; color: #1e3a5f; border: 1px solid #d5dfeb; box-shadow: 0 1px 2px rgba(20, 43, 74, .06); }
+.step-btn-secondary:hover { background: #f5f8fc; border-color: #9fb3cc; box-shadow: 0 4px 10px rgba(20, 43, 74, .08); }
+.step-btn-secondary:hover i { transform: translateX(-2px); }
+.step-btn-primary { background: linear-gradient(135deg, #2f6fc0 0%, #1e4a8d 100%); color: #fff; border: 0; box-shadow: 0 6px 16px rgba(30, 74, 141, .28); }
+.step-btn-primary:hover { background: linear-gradient(135deg, #2a64ad 0%, #173c74 100%); box-shadow: 0 8px 20px rgba(30, 74, 141, .34); }
+.step-btn-primary:hover i { transform: translateX(3px); }
+.step-btn-submit { background: linear-gradient(135deg, #22c55e 0%, #15803d 100%); color: #fff; border: 0; box-shadow: 0 6px 16px rgba(21, 128, 61, .28); }
+.step-btn-submit:hover:not(:disabled) { background: linear-gradient(135deg, #1fb355 0%, #116a33 100%); box-shadow: 0 8px 20px rgba(21, 128, 61, .34); }
+
+/* Step circles */
+.registration-step-active { background: linear-gradient(135deg, #2f6fc0, #1e4a8d); color: #fff; box-shadow: 0 0 0 5px #dbe8f8, 0 4px 12px rgba(30, 74, 141, .3); }
+.registration-step-done { background: linear-gradient(135deg, #34d399, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, .25); }
+.registration-step-todo { background: #fff; color: #94a3b8; border: 2px solid #dbe3ee; }
+
+/* Header log in */
+.registration-topbar-actions a.registration-login { background: linear-gradient(135deg, #2f6fc0, #1e4a8d); box-shadow: 0 4px 12px rgba(30, 74, 141, .25); border-radius: 10px; }
+.registration-topbar-actions a.registration-login:hover { background: linear-gradient(135deg, #2a64ad, #173c74); }
+
+/* Photo upload buttons */
+.registration-upload-button { background: linear-gradient(135deg, #2f6fc0, #1e4a8d); border-radius: 10px; padding: 9px 16px; box-shadow: 0 4px 12px rgba(30, 74, 141, .22); transition: transform .15s ease, box-shadow .15s ease; }
+.registration-upload-button:hover { background: linear-gradient(135deg, #2a64ad, #173c74); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(30, 74, 141, .28); }
+.registration-upload-button.small { background: #f1f6fd; color: #1e4a8d; border: 1px solid #c9daf1; border-radius: 999px; padding: 5px 12px; box-shadow: none; }
+.registration-upload-button.small:hover { background: #1e4a8d; color: #fff; border-color: #1e4a8d; transform: none; box-shadow: 0 3px 8px rgba(30, 74, 141, .2); }
+
+/* Document "Choose files" buttons (native file inputs) */
+.registration-compact input[type=file]:not(.sr-only) { font-size: 12px; color: #64748b; }
+.registration-compact input[type=file]:not(.sr-only)::file-selector-button {
+  margin-right: 10px; padding: 6px 12px; border-radius: 9px; border: 1px solid #c9daf1;
+  background: #f1f6fd; color: #1e4a8d; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.registration-compact input[type=file]:not(.sr-only):hover::file-selector-button { background: #1e4a8d; color: #fff; border-color: #1e4a8d; }
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in {
   animation: fadeIn 0.35s ease-out forwards;
+}
+
+/* Gmail field: owner types the name, "@gmail.com" is fixed */
+.gmail-field { display: flex; align-items: stretch; width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; transition: border-color .15s, background .15s; }
+.gmail-field:focus-within { background: #fff; border-color: #3b82f6; }
+.gmail-field.is-error { border-color: #f87171; }
+.gmail-field input { padding: 10px 14px; }
+.registration-compact .gmail-field input { height: 46px; min-height: 46px; font-size: 15px !important; }
+.gmail-domain { display: flex; align-items: center; padding: 0 14px; background: #eef2f7; border-left: 1px solid #e2e8f0; color: #475569; font-size: 14px; font-weight: 600; white-space: nowrap; user-select: none; }
+
+/* Legal documents step: give the documents panel as much room as possible */
+@media (min-width: 768px) {
+  .registration-fit-screen .registration-progress { padding: 6px 16px 4px !important; margin-bottom: 6px !important; }
+  .registration-fit-screen form > .registration-legal { padding: 12px 18px !important; }
+  .registration-fit-screen .registration-actions { padding: 6px 2px !important; }
 }
 </style>

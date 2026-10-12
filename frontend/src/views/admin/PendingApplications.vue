@@ -1,21 +1,24 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
-import { ref, onMounted } from 'vue';
+import { computed, watch, ref, onMounted } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
+import { STATUS_INFO, formatDate as formatStatusDate } from '../../utils/applicantSession.js';
 
 // State Variables
 const applications = ref([]);
 const criteria = ref([]);
 const dynamicDocs = ref([]);
+const permitFiles = ref([]);
 const checklistResults = ref([]);
 const isLoading = ref(true);
 
@@ -31,6 +34,12 @@ const showEditItemModal = ref(false);
 
 // Custom confirmation modals 
 const showApproveConfirmModal = ref(false);
+// Property-first registration: one-time owner account activation link issued on approval
+const issuedCredentials = ref(null);
+const credentialsCopied = ref(false);
+// Track My Application workflow
+const rejectDecision = ref('revision');
+const applicationHistory = ref([]);
 const showRejectConfirmModal = ref(false);
 const showDeleteCriteriaConfirmModal = ref(false);
 const pendingDeleteCriteriaId = ref(null);
@@ -106,6 +115,7 @@ const fetchPendingApplications = async () => {
       applications.value = response.data.applications || [];
       criteria.value = response.data.criteria || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
+      permitFiles.value = response.data.permitFiles || [];
       checklistResults.value = response.data.checklistResults || [];
       syncChecklistState();
     }
@@ -145,6 +155,8 @@ const openChecklistModal = (app) => {
   });
 
   showChecklistModal.value = true;
+  rejectDecision.value = 'revision';
+  startReviewIfNeeded(app).then(() => loadApplicationHistory(app));
 };
 
 const closeChecklistModal = () => {
@@ -153,15 +165,51 @@ const closeChecklistModal = () => {
   adminCommentsInput.value = '';
 };
 
+// Legal documents can be PDF: open those in a new tab instead of the image preview.
+const isPdfFile = (url) => /\.pdf($|[?#])/i.test(String(url || ''));
+// Every file submitted for a legal document; falls back to the single permit column.
+const getPermitFiles = (app, key) => {
+  if (!app || !key) return [];
+  const list = permitFiles.value.filter(f => f.house_id === app.id && f.permit_key === key).map(f => f.file_path);
+  return list.length ? list : (app[key] ? [app[key]] : []);
+};
+
+// Full-screen document viewer: images fit the screen (click to zoom to actual size); PDFs show inline
+const previewZoomed = ref(false);
+// A document can have several files: the viewer pages through them (1 of 3) with Previous / Next.
+const previewFiles = ref([]);
+const previewIndex = ref(0);
 const openPreview = (url) => {
   if (!url || url.endsWith('#')) return;
+  previewFiles.value = [url];
+  previewIndex.value = 0;
   previewImageUrl.value = url;
+  previewZoomed.value = false;
   showPreviewModal.value = true;
+};
+const openPreviewSet = (files) => {
+  const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
+  if (!urls.length) return;
+  previewFiles.value = urls;
+  previewIndex.value = 0;
+  previewImageUrl.value = urls[0];
+  previewZoomed.value = false;
+  showPreviewModal.value = true;
+};
+const stepPreview = (direction) => {
+  const count = previewFiles.value.length;
+  if (count < 2) return;
+  previewIndex.value = (previewIndex.value + direction + count) % count;
+  previewImageUrl.value = previewFiles.value[previewIndex.value];
+  previewZoomed.value = false;
 };
 
 const closePreview = () => {
   showPreviewModal.value = false;
   previewImageUrl.value = '';
+  previewZoomed.value = false;
+  previewFiles.value = [];
+  previewIndex.value = 0;
 };
 
 const getFilteredCriteria = () => {
@@ -242,6 +290,10 @@ const execApprove = async () => {
     if (res.data.success) {
       showSystemAlert('Boarding house accredited successfully!', 'success');
       closeChecklistModal();
+      if (res.data.activation) {
+        issuedCredentials.value = res.data.activation;
+        credentialsCopied.value = false;
+      }
       await fetchPendingApplications();
     }
   } catch (err) {
@@ -251,6 +303,45 @@ const execApprove = async () => {
     isSubmitting.value = false;
   }
 };
+
+
+const copyCredentials = async () => {
+  if (!issuedCredentials.value) return;
+  try {
+    await navigator.clipboard.writeText(issuedCredentials.value.reference_no);
+    credentialsCopied.value = true;
+  } catch {
+    showSystemAlert('Could not copy automatically. Please select and copy the details manually.', 'warning');
+  }
+};
+
+const closeCredentialsModal = () => {
+  issuedCredentials.value = null;
+  credentialsCopied.value = false;
+};
+
+// Opening a submitted application starts SASO's review, which locks applicant edits.
+const startReviewIfNeeded = async (app) => {
+  if (!['SUBMITTED', 'RESUBMITTED'].includes(app.application_status)) return;
+  try {
+    const { data } = await axios.post(`/api/admin/applications/${app.id}/start-review`, {}, { headers: { Authorization: `Bearer ${token}` } });
+    if (data.success && data.status) app.application_status = data.status;
+  } catch (err) {
+    console.error('Could not mark the application as under review:', err);
+  }
+};
+
+const loadApplicationHistory = async (app) => {
+  applicationHistory.value = [];
+  if (!app.application_status) return;
+  try {
+    const { data } = await axios.get(`/api/admin/applications/${app.id}/history`, { headers: { Authorization: `Bearer ${token}` } });
+    applicationHistory.value = data.history || [];
+  } catch (err) {
+    console.error('Could not load the application history:', err);
+  }
+};
+
 
 const handleReject = () => {
   if (!activeApp.value) return;
@@ -267,13 +358,14 @@ const execReject = async () => {
   try {
     isSubmitting.value = true;
     const res = await axios.post(`/api/admin/reject/${activeApp.value.id}`, {
-      admin_comments: adminCommentsInput.value
+      admin_comments: adminCommentsInput.value,
+      decision: activeApp.value.application_status ? rejectDecision.value : 'revision'
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
     if (res.data.success) {
-      showSystemAlert('Application rejected. Feedback sent to owner.', 'warning');
+      showSystemAlert(rejectDecision.value === 'reject' && activeApp.value.application_status ? 'Application rejected.' : 'Revision requested. Feedback sent to the applicant.', 'warning');
       closeChecklistModal();
       await fetchPendingApplications();
     }
@@ -378,17 +470,78 @@ const isDocumentItemUpdated = (item) => {
 // Archive wording requires an archived state or recognized archive provenance.
 const getDocRecheckBadge = (app) => {
   if (!app.document_update_pending && !app.is_resubmission) return null;
-  
+
   if (app.house_status === 'accredited') {
     return { label: 'DOCUMENT RECHECK — ALREADY ACCREDITED', color: 'text-amber-600' };
   }
-  
+
   if (app.house_status === 'archived' || ['owner', 'system', 'admin'].includes(app.archived_by)) {
     return { label: 'DOCUMENT RECHECK — PREVIOUSLY ARCHIVED', color: 'text-amber-600' };
   }
-  
+
   return { label: 'DOCUMENT RECHECK', color: 'text-amber-600' };
 };
+
+// ─── New applications list: type, status, filters, paging ───
+// Application type: an accredited/archived house sending new files is a document update;
+// a returned application sent back is a resubmission; everything else is a new registration.
+const appType = (app) => {
+  if (app.document_update_pending && app.house_status !== 'pending') return { key: 'update', label: 'Document update' };
+  if (app.is_resubmission || app.application_status === 'RESUBMITTED') return { key: 'resubmission', label: 'Resubmission' };
+  return { key: 'new', label: 'New registration' };
+};
+const STATUS_TONES = { SUBMITTED: 'blue', UNDER_REVIEW: 'violet', REVISION_REQUIRED: 'amber', RESUBMITTED: 'sky', APPROVED: 'green', ACCOUNT_PENDING: 'green', ACTIVE: 'green', REJECTED: 'rose' };
+const appState = (app) => {
+  if (appType(app).key === 'update') return { key: 'RECHECK', label: 'Document recheck', tone: 'amber' };
+  const key = app.application_status || 'SUBMITTED';
+  return { key, label: STATUS_INFO[key]?.label || key, tone: STATUS_TONES[key] || 'blue' };
+};
+const statusOptions = computed(() => {
+  const seen = new Map();
+  applications.value.forEach(app => { const st = appState(app); if (!seen.has(st.key)) seen.set(st.key, st); });
+  return [...seen.values()];
+});
+const typeCount = (key) => applications.value.filter(app => appType(app).key === key).length;
+
+const naSearch = ref('');
+const naType = ref('all');
+const naStatus = ref('all');
+const naFrom = ref('');
+const naTo = ref('');
+const showDateRange = ref(false);
+const dateRangeLabel = computed(() => {
+  const f = (v) => new Date(v + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (naFrom.value && naTo.value) return `${f(naFrom.value)} – ${f(naTo.value)}`;
+  if (naFrom.value) return `From ${f(naFrom.value)}`;
+  if (naTo.value) return `Until ${f(naTo.value)}`;
+  return 'Select date range';
+});
+const clearDateRange = () => { naFrom.value = ''; naTo.value = ''; showDateRange.value = false; };
+const naPage = ref(1);
+const naPerPage = ref(10);
+const submittedAt = (app) => new Date(app.resubmitted_at || app.created_at);
+const naFiltered = computed(() => {
+  const q = naSearch.value.trim().toLowerCase();
+  return applications.value.filter(app => {
+    if (naType.value !== 'all' && appType(app).key !== naType.value) return false;
+    if (naStatus.value !== 'all' && appState(app).key !== naStatus.value) return false;
+    if (naFrom.value || naTo.value) {
+      const d = submittedAt(app);
+      if (Number.isNaN(d.getTime())) return false;
+      if (naFrom.value && d < new Date(naFrom.value + 'T00:00:00')) return false;
+      if (naTo.value && d > new Date(naTo.value + 'T23:59:59')) return false;
+    }
+    if (!q) return true;
+    return [app.name, app.owner_name, app.reference_no, app.owner_phone, app.owner_email].some(v => String(v || '').toLowerCase().includes(q));
+  });
+});
+const naTotalPages = computed(() => Math.max(1, Math.ceil(naFiltered.value.length / naPerPage.value)));
+const naPaged = computed(() => naFiltered.value.slice((naPage.value - 1) * naPerPage.value, naPage.value * naPerPage.value));
+const naStart = computed(() => (naFiltered.value.length ? (naPage.value - 1) * naPerPage.value + 1 : 0));
+const naEnd = computed(() => Math.min(naPage.value * naPerPage.value, naFiltered.value.length));
+watch([naSearch, naType, naStatus, naFrom, naTo], () => { naPage.value = 1; });
+const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+const formatTime = (v) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
 
 onMounted(() => {
   fetchPendingApplications();
@@ -398,13 +551,13 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
+  <div class="management-page bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800">
     <AdminNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-10 px-4 sm:px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
-      <PageHeader title="Accreditation applications" description="Review new submissions, resubmissions, and updated documents." />
+      <PageHeader title="New applications" description="Review new submissions, resubmissions, and updated documents." />
 
       <!-- Loading State -->
       <div v-show="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
@@ -415,125 +568,130 @@ const loadError = ref('');
         <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading pending submissions...</p>
       </div>
 
-      <!-- Responsive Container: Table for Laptop (md+), Cards for Mobile (<md) -->
-      <div v-show="!isLoading" class="w-full">
-        
-        <!-- 💻 LAPTOP / TABLET VIEW (Standard Table) -->
-        <div class="hidden md:block bg-white shadow-xl border border-slate-200 overflow-hidden rounded-lg">
-          <div class="overflow-x-auto custom-scrollbar">
-            <table class="management-review-table w-full border-collapse">
-              <thead>
-                <tr class="bg-slate-50 text-slate-700 text-[13px] font-bold tracking-wide uppercase">
-                  <th class="py-5 px-6 w-16 border-r border-slate-600">#</th>
-                  <th class="py-5 px-6 border-r border-slate-600">Owner Name</th>
-                  <th class="py-5 px-6 border-r border-slate-600">Boarding House</th>
-                  <th class="py-5 px-6 border-r border-slate-600">Date</th>
-                  <th class="py-5 px-6 border-r border-slate-600">Documents</th>
-                  <th class="py-5 px-6 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody class="text-[13px] font-medium text-slate-800">
-                <template v-if="applications.length > 0">
-                  <tr v-for="(app, index) in applications" :key="app.id" class="border-b border-slate-200 hover:bg-slate-50 transition">
-                    <td class="py-6 px-6 border-r border-slate-200 text-slate-500 font-bold">{{ index + 1 }}</td>
-                    <td class="py-6 px-6 border-r border-slate-200 font-semibold">{{ app.owner_name }}</td>
-                    <td class="py-6 px-6 border-r border-slate-200 font-semibold text-slate-900">
-                      {{ app.name }}
-                      <template v-if="getDocRecheckBadge(app)">
-                        <span :class="['block mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
-                          <i class="fa-solid fa-rotate"></i> {{ getDocRecheckBadge(app).label }}
-                        </span>
-                      </template>
-                    </td>
-                    <td class="py-6 px-6 border-r border-slate-200 text-slate-400 font-bold">
-                      <span class="block">{{ formatDate(app.resubmitted_at || app.created_at) }}</span>
-                      <span v-if="app.resubmitted_at && app.document_update_pending"
-                            class="block text-[12px] font-semibold text-blue-500 uppercase tracking-wide mt-0.5">
-                        Resubmitted
-                      </span>
-                    </td>
-                    <td class="py-6 px-6 border-r border-slate-200">
-                      <button @click="openDocumentModal(app)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition text-[12px] font-semibold uppercase tracking-wide shadow-sm management-button management-button-secondary">
-                        <i class="fa-solid fa-folder-open"></i> View Docs
-                      </button>
-                    </td>
-                    <td class="py-6 px-6">
-                      <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded px-5 py-2 flex items-center justify-center gap-2 mx-auto transition shadow-md text-[12px] font-semibold uppercase tracking-wide management-button management-button-primary">
-                        <i class="fa-solid fa-list-check"></i> Requirement Checklist
-                      </button>
-                    </td>
-                  </tr>
-                </template>
-                <template v-else>
-                  <tr class="border-b border-slate-200">
-                    <td colspan="6" class="py-12 text-center text-slate-400 italic font-semibold tracking-wider">
-                      NO PENDING APPLICATIONS AT THE MOMENT.
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+      <div v-show="!isLoading" class="na-body">
+        <!-- Summary cards -->
+        <div class="na-cards">
+          <div class="na-stat">
+            <span class="na-stat-icon is-blue" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
+            <div><p class="na-stat-label">Active applications</p><p class="na-stat-value">{{ applications.length }}</p><p class="na-stat-sub">Awaiting SASO action</p></div>
+          </div>
+          <div class="na-stat">
+            <span class="na-stat-icon is-violet" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>
+            <div><p class="na-stat-label">New submissions</p><p class="na-stat-value">{{ typeCount('new') }}</p><p class="na-stat-sub">Initial applications</p></div>
+          </div>
+          <div class="na-stat">
+            <span class="na-stat-icon is-amber" aria-hidden="true"><i class="fa-solid fa-rotate"></i></span>
+            <div><p class="na-stat-label">Resubmissions &amp; updates</p><p class="na-stat-value">{{ typeCount('resubmission') + typeCount('update') }}</p><p class="na-stat-sub">Returned or updated documents</p></div>
           </div>
         </div>
 
-        <!-- 📱 MOBILE VIEW (Stackable Cards Layout) -->
-        <div class="block md:hidden space-y-4">
-          <template v-if="applications.length > 0">
-            <div v-for="(app, index) in applications" :key="app.id" class="bg-white border border-slate-200 rounded-2xl shadow-md overflow-hidden p-5 transition">
-              
-              <div class="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wide"># {{ index + 1 }}</span>
-                <div class="text-right">
-                  <span class="block text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                    {{ formatDate(app.resubmitted_at || app.created_at) }}
-                  </span>
-                  <span v-if="app.resubmitted_at && app.document_update_pending"
-                        class="block text-[12px] font-semibold text-blue-500 uppercase tracking-wide mt-0.5">
-                    Resubmitted
-                  </span>
-                </div>
+        <!-- Filters -->
+        <div class="na-filters">
+          <div class="na-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input v-model="naSearch" type="text" aria-label="Search applications" placeholder="Search owner name, boarding house, or reference number..." />
+          </div>
+          <select v-model="naType" class="na-select" aria-label="Filter by application type">
+            <option value="all">All types</option>
+            <option value="new">New registration</option>
+            <option value="resubmission">Resubmission</option>
+            <option value="update">Document update</option>
+          </select>
+          <select v-model="naStatus" class="na-select" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option v-for="s in statusOptions" :key="s.key" :value="s.key">{{ s.label }}</option>
+          </select>
+          <div class="na-range">
+            <button type="button" class="na-range-btn" :aria-expanded="showDateRange" @click="showDateRange = !showDateRange">
+              <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+              <span>{{ dateRangeLabel }}</span>
+              <i class="fa-solid fa-chevron-down text-xs" aria-hidden="true"></i>
+            </button>
+            <div v-if="showDateRange" class="na-range-pop">
+              <label><span>From</span><input v-model="naFrom" type="date" :max="naTo || undefined" /></label>
+              <label><span>To</span><input v-model="naTo" type="date" :min="naFrom || undefined" /></label>
+              <div class="flex justify-between gap-2 pt-1">
+                <button type="button" class="na-range-clear" @click="clearDateRange">Clear</button>
+                <button type="button" class="na-range-done" @click="showDateRange = false">Done</button>
               </div>
-
-              <!-- Card Details -->
-              <div class="space-y-2 text-sm">
-                <div class="flex flex-col py-1.5 border-b border-slate-50">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Owner Name</span>
-                  <span class="font-semibold text-slate-800">{{ app.owner_name }}</span>
-                </div>
-
-                <div class="flex flex-col py-1.5 border-b border-slate-50">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Boarding House</span>
-                  <span class="font-semibold text-slate-900 text-base">{{ app.name }}</span>
-                  <template v-if="getDocRecheckBadge(app)">
-                    <span :class="['mt-1 text-[9px] font-black uppercase tracking-widest', getDocRecheckBadge(app).color]">
-                      <i class="fa-solid fa-rotate"></i> {{ getDocRecheckBadge(app).label }}
-                    </span>
-                  </template>
-                </div>
-              </div>
-
-              <!-- Action Buttons -->
-              <div class="grid grid-cols-1 gap-2.5 mt-5 pt-3 border-t border-slate-100">
-                <button @click="openDocumentModal(app)" class="text-blue-600 border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition text-[12px] font-semibold uppercase tracking-wide shadow-sm management-button">
-                  <i class="fa-solid fa-folder-open"></i> View Docs
-                </button>
-                <button @click="openChecklistModal(app)" class="bg-[#1e8b52] hover:bg-[#166c3f] text-white rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 transition shadow-md text-[12px] font-semibold uppercase tracking-wide management-button management-button-primary">
-                  <i class="fa-solid fa-list-check"></i> Requirement Checklist
-                </button>
-              </div>
-
             </div>
-          </template>
-          
-          <template v-else>
-            <div class="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm">
-              <p class="text-slate-400 italic font-semibold tracking-wider uppercase text-xs">
-                NO PENDING APPLICATIONS AT THE MOMENT.
-              </p>
-            </div>
-          </template>
+          </div>
         </div>
 
+        <!-- LAPTOP / DESKTOP: table -->
+        <div class="na-table-card hidden lg:flex lg:flex-col">
+          <TablePager position="top" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
+
+          <div class="na-scroll">
+            <table class="na-table w-full">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Boarding house<small>Address / reference no.</small></th>
+                  <th>Owner / contact</th>
+                  <th>Application type</th>
+                  <th>Date submitted</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="naPaged.length === 0">
+                  <td colspan="7" class="py-16 text-center text-slate-500 font-semibold text-sm">{{ applications.length === 0 ? 'No pending applications at the moment.' : 'No applications match these filters.' }}</td>
+                </tr>
+                <tr v-for="(app, index) in naPaged" :key="app.id">
+                  <td class="text-slate-500">{{ naStart + index }}</td>
+                  <td>
+                    <strong class="na-name">{{ app.name }}</strong>
+                    <span class="na-sub">{{ app.barangay ? 'Brgy. ' + app.barangay + ', Nabua, Camarines Sur' : (app.location || '—') }}</span>
+                    <span v-if="app.reference_no" class="na-sub">Ref: {{ app.reference_no }}</span>
+                  </td>
+                  <td>
+                    <span class="na-owner">{{ app.owner_name }}</span>
+                    <span v-if="app.owner_phone" class="na-sub"><i class="fa-solid fa-phone text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_phone }}</span>
+                    <span v-else-if="app.owner_email" class="na-sub"><i class="fa-solid fa-envelope text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_email }}</span>
+                  </td>
+                  <td><span :class="['na-type', 'is-' + appType(app).key]">{{ appType(app).label }}</span></td>
+                  <td>
+                    <span class="block text-slate-800">{{ formatDay(app.resubmitted_at || app.created_at) }}</span>
+                    <span class="na-sub">{{ formatTime(app.resubmitted_at || app.created_at) }}</span>
+                  </td>
+                  <td><span :class="['na-status', 'is-' + appState(app).tone]">{{ appState(app).label }}</span></td>
+                  <td>
+                    <button @click="openChecklistModal(app)" class="acc-checklist-btn na-action management-button">
+                      <i class="fa-solid fa-file-circle-check" aria-hidden="true"></i> Review application
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+                    <TablePager position="bottom" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
+
+        </div>
+
+        <!-- PHONE: cards -->
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <TablePager position="top" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
+        </div>
+        <div class="block lg:hidden space-y-3">
+          <div v-if="naPaged.length === 0" class="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 text-sm font-semibold">{{ applications.length === 0 ? 'No pending applications at the moment.' : 'No applications match these filters.' }}</div>
+          <div v-for="(app, index) in naPaged" :key="'m-' + app.id" class="na-mcard">
+            <div class="flex justify-between items-start gap-2">
+              <div class="min-w-0">
+                <span class="text-[12px] text-slate-400 font-semibold">#{{ naStart + index }} · {{ formatDay(app.resubmitted_at || app.created_at) }}</span>
+                <strong class="na-name">{{ app.name }}</strong>
+                <span v-if="app.reference_no" class="na-sub">Ref: {{ app.reference_no }}</span>
+              </div>
+              <span :class="['na-status', 'is-' + appState(app).tone]">{{ appState(app).label }}</span>
+            </div>
+            <p class="text-sm text-slate-700 mt-2">{{ app.owner_name }}<span v-if="app.owner_phone" class="text-slate-500"> · {{ app.owner_phone }}</span></p>
+            <div class="flex items-center justify-between gap-2 mt-3">
+              <span :class="['na-type', 'is-' + appType(app).key]">{{ appType(app).label }}</span>
+              <button @click="openChecklistModal(app)" class="acc-checklist-btn na-action management-button"><i class="fa-solid fa-file-circle-check" aria-hidden="true"></i> Review</button>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -555,11 +713,16 @@ const loadError = ref('');
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 mb-8">
             <div v-for="p in criteria.filter(c => !c.house_id && ['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
                  class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
-                <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
-                <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
+              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative p-3">
+                <div class="grid h-full gap-2" :class="getPermitFiles(activeApp, p.permit_key).length > 1 ? 'grid-cols-2 auto-rows-[minmax(0,1fr)] overflow-y-auto' : 'grid-cols-1'">
+                  <button v-for="(file, i) in getPermitFiles(activeApp, p.permit_key)" :key="file + i" type="button" @click="openPreview(getImageUrl(file))"
+                          class="relative rounded-xl overflow-hidden bg-white border border-slate-100 hover:border-blue-400 flex items-center justify-center min-h-0 transition"
+                          :aria-label="(isPdfFile(file) ? 'Open PDF ' : 'Preview image ') + (i + 1)">
+                    <span v-if="isPdfFile(file)" class="flex flex-col items-center gap-1 text-rose-600"><i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[11px] font-bold uppercase">PDF</span></span>
+                    <img v-else :src="getImageUrl(file)" class="w-full h-full object-contain" alt="" />
+                  </button>
                 </div>
+                <span v-if="getPermitFiles(activeApp, p.permit_key).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getPermitFiles(activeApp, p.permit_key).length }} files</span>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
@@ -578,11 +741,16 @@ const loadError = ref('');
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div v-for="p in criteria.filter(c => !c.house_id && !['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
                  class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
-                <img :src="getImageUrl(activeApp[p.permit_key])" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
-                <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(activeApp[p.permit_key]))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
+              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative p-3">
+                <div class="grid h-full gap-2" :class="getPermitFiles(activeApp, p.permit_key).length > 1 ? 'grid-cols-2 auto-rows-[minmax(0,1fr)] overflow-y-auto' : 'grid-cols-1'">
+                  <button v-for="(file, i) in getPermitFiles(activeApp, p.permit_key)" :key="file + i" type="button" @click="openPreview(getImageUrl(file))"
+                          class="relative rounded-xl overflow-hidden bg-white border border-slate-100 hover:border-blue-400 flex items-center justify-center min-h-0 transition"
+                          :aria-label="(isPdfFile(file) ? 'Open PDF ' : 'Preview image ') + (i + 1)">
+                    <span v-if="isPdfFile(file)" class="flex flex-col items-center gap-1 text-rose-600"><i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[11px] font-bold uppercase">PDF</span></span>
+                    <img v-else :src="getImageUrl(file)" class="w-full h-full object-contain" alt="" />
+                  </button>
                 </div>
+                <span v-if="getPermitFiles(activeApp, p.permit_key).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getPermitFiles(activeApp, p.permit_key).length }} files</span>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
@@ -731,8 +899,11 @@ const loadError = ref('');
                         </div>
                       </td>
                       <td class="p-6 text-center">
-                        <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
-                          <i class="fa-solid fa-eye"></i> Preview
+                        <!-- One button per document; it opens every file uploaded for it (images and/or PDF) -->
+                        <button type="button" v-if="item.permit_key && getPermitFiles(activeApp, item.permit_key).length" @click="openPreviewSet(getPermitFiles(activeApp, item.permit_key))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto"
+                                :aria-label="`Preview ${item.label}` + (getPermitFiles(activeApp, item.permit_key).length > 1 ? ` (${getPermitFiles(activeApp, item.permit_key).length} files)` : '')">
+                          <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
+                          <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                         </button>
                         <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
@@ -788,8 +959,11 @@ const loadError = ref('');
                 <div class="pt-2 border-t border-slate-100 flex justify-between items-center">
                   <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">File Evidence</span>
                   <div class="text-right">
-                    <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
-                      <i class="fa-solid fa-eye"></i> Preview
+                    <!-- One button per document; it opens every file uploaded for it (images and/or PDF) -->
+                    <button type="button" v-if="item.permit_key && getPermitFiles(activeApp, item.permit_key).length" @click="openPreviewSet(getPermitFiles(activeApp, item.permit_key))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button"
+                            :aria-label="`Preview ${item.label}` + (getPermitFiles(activeApp, item.permit_key).length > 1 ? ` (${getPermitFiles(activeApp, item.permit_key).length} files)` : '')">
+                      <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
+                      <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                     </button>
                     <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
                       <i class="fa-solid fa-eye"></i> Preview
@@ -799,6 +973,23 @@ const loadError = ref('');
                 </div>
 
               </div>
+            </div>
+
+            <div v-if="activeApp.application_status" class="mt-8 border border-slate-200 rounded-2xl p-5">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h3 class="text-[12px] font-bold text-slate-500 uppercase tracking-wide">
+                  Application {{ activeApp.reference_no }} ·
+                  <span :class="['px-2 py-0.5 rounded-full normal-case', STATUS_INFO[activeApp.application_status]?.badge || 'bg-slate-100 text-slate-600']">{{ STATUS_INFO[activeApp.application_status]?.label || activeApp.application_status }}</span>
+                </h3>
+              </div>
+              <ol class="border-l-2 border-slate-200 pl-4 space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                <li v-for="(h, i) in applicationHistory" :key="i" class="text-[13px]">
+                  <span class="font-semibold text-slate-800">{{ STATUS_INFO[h.to_status]?.label || h.to_status }}</span>
+                  <span class="text-slate-400"> · {{ formatStatusDate(h.created_at, true) }} · {{ h.actor_type === 'admin' ? (h.actor_name || 'SASO') : h.actor_type }}</span>
+                  <p v-if="h.remarks" class="text-[12px] text-slate-500 whitespace-pre-line">{{ h.remarks }}</p>
+                </li>
+                <li v-if="applicationHistory.length === 0" class="text-[13px] text-slate-400">No history recorded yet.</li>
+              </ol>
             </div>
 
             <div class="mt-8">
@@ -822,7 +1013,7 @@ const loadError = ref('');
 
             <!-- Primary Action Buttons (Approve / Reject) -->
             <div class="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
-              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-2 cursor-pointer management-button management-button-secondary">
+              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-red-600 hover:bg-red-700 text-white border-2 border-red-600 rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-2 cursor-pointer management-button">
                 <i class="fa-solid fa-circle-xmark"></i> Reject
               </button>
               <button type="submit" :disabled="isSubmitting" class="w-full bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-md flex items-center justify-center gap-2 cursor-pointer management-button management-button-primary">
@@ -832,13 +1023,13 @@ const loadError = ref('');
 
             <!-- Secondary Criteria Management Buttons (Add / Update / Delete) -->
             <div class="grid grid-cols-3 gap-2 w-full sm:w-auto">
-              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showAddCriteriaModal = true" class="bg-green-700 hover:bg-green-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-plus text-[12px]"></i> Add
               </button>
-              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
               </button>
-              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-red-600 hover:bg-red-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-trash-can text-[12px]"></i> Delete
               </button>
             </div>
@@ -847,22 +1038,30 @@ const loadError = ref('');
       </div>
     </div>
 
-    <!-- Lightbox Preview Modal -->
-    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4 animate-fade-in" @click="closePreview">
-      <div class="relative max-w-4xl max-h-[85vh] overflow-hidden bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center" @click.stop>
-        <button aria-label="Previous photo" @click="closePreview" class="absolute top-4 right-4 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center transition management-button">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
-        <img :src="previewImageUrl" class="max-w-full max-h-[70vh] object-contain rounded-2xl mb-4 shadow-sm" alt="Document Preview" />
-        <button 
-          @click="downloadOriginal" 
-          :disabled="isDownloading" 
-          class="bg-blue-600 hover:bg-black text-white px-8 py-3 rounded-xl text-[12px] font-semibold uppercase tracking-wide transition flex items-center gap-2 management-button management-button-primary"
-        >
-          <i v-if="isDownloading" class="fa-solid fa-spinner animate-spin"></i>
-          <i v-else class="fa-solid fa-download"></i>
-          {{ isDownloading ? 'Downloading...' : 'Download Original' }}
-        </button>
+    <!-- Full-screen Document Viewer -->
+    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview" @keydown.left="stepPreview(-1)" @keydown.right="stepPreview(1)">
+      <div class="doc-viewer-bar">
+        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
+        <div class="doc-viewer-actions">
+          <button v-if="!isPdfFile(previewImageUrl)" type="button" class="doc-viewer-btn" @click="previewZoomed = !previewZoomed" :aria-pressed="previewZoomed">
+            <i :class="previewZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'" aria-hidden="true"></i>
+            {{ previewZoomed ? 'Fit to screen' : 'Actual size' }}
+          </button>
+          <a :href="previewImageUrl" target="_blank" rel="noopener" class="doc-viewer-btn"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open in new tab</a>
+          <button type="button" @click="downloadOriginal" :disabled="isDownloading" class="doc-viewer-btn is-primary">
+            <i :class="isDownloading ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-download'" aria-hidden="true"></i>
+            {{ isDownloading ? 'Downloading...' : 'Download' }}
+          </button>
+          <button type="button" aria-label="Close preview" @click="closePreview" class="doc-viewer-close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
+        <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
+        <img v-else :src="previewImageUrl" class="doc-viewer-img" alt="Document preview" @click="previewZoomed = !previewZoomed" />
+        <template v-if="previewFiles.length > 1">
+          <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="doc-viewer-nav is-next" aria-label="Next file" @click="stepPreview(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+        </template>
       </div>
     </div>
 
@@ -880,7 +1079,7 @@ const loadError = ref('');
           </div>
           <div class="flex justify-end gap-4">
             <button @click="showAddCriteriaModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
-            <button @click="submitAddCriteria" class="bg-[#10b981] hover:bg-emerald-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Add Item</button>
+            <button @click="submitAddCriteria" class="bg-green-700 hover:bg-green-800 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button">Add Item</button>
           </div>
         </div>
       </div>
@@ -924,7 +1123,7 @@ const loadError = ref('');
           </div>
           <div class="flex justify-end gap-4">
             <button @click="showEditItemModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
-            <button @click="submitUpdateCriteria" class="bg-[#f59e0b] hover:bg-amber-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>
+            <button @click="submitUpdateCriteria" class="bg-[#245b99] hover:bg-[#194775] text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>
           </div>
         </div>
       </div>
@@ -944,7 +1143,7 @@ const loadError = ref('');
           <div class="space-y-4">
             <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-red-50 border-2 border-red-100 rounded-2xl hover:border-red-400 transition group">
               <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
-              <button @click="submitDeleteCriteria(item.id)" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
+              <button @click="submitDeleteCriteria(item.id)" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
             </div>
             <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
@@ -971,6 +1170,9 @@ const loadError = ref('');
           <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">
             This action will accredit <span class="text-slate-700">{{ activeApp?.name }}</span> and notify the owner.
           </p>
+          <p v-if="activeApp?.awaiting_credentials" class="mt-4 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-[12px] font-semibold leading-relaxed">
+            <i class="fa-solid fa-key mr-1"></i> This is a new owner registration. Approving creates a one-time account activation link for the applicant (no password is generated).
+          </p>
         </div>
         <div class="px-10 pb-8 flex justify-end gap-4">
           <button @click="showApproveConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
@@ -992,9 +1194,20 @@ const loadError = ref('');
           <h3 class="text-white font-semibold text-base uppercase tracking-tight">Confirm Rejection</h3>
         </div>
         <div class="px-10 py-8">
-          <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
+          <p v-if="!activeApp?.application_status" class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
             Are you sure you want to <strong class="text-red-600">reject</strong> this application? The owner will receive your feedback for resubmission.
           </p>
+          <fieldset v-else class="mb-3 space-y-2">
+            <legend class="text-slate-700 font-semibold text-sm mb-2">What should happen to this application?</legend>
+            <label class="flex items-start gap-3 border rounded-xl p-3 cursor-pointer" :class="rejectDecision === 'revision' ? 'border-amber-400 bg-amber-50' : 'border-slate-200'">
+              <input v-model="rejectDecision" type="radio" value="revision" class="mt-1 accent-amber-500" />
+              <span class="text-sm"><strong class="text-slate-800">Request revision</strong><span class="block text-[12px] text-slate-500">The applicant corrects it and resubmits from Track My Application.</span></span>
+            </label>
+            <label class="flex items-start gap-3 border rounded-xl p-3 cursor-pointer" :class="rejectDecision === 'reject' ? 'border-red-400 bg-red-50' : 'border-slate-200'">
+              <input v-model="rejectDecision" type="radio" value="reject" class="mt-1 accent-red-500" />
+              <span class="text-sm"><strong class="text-slate-800">Reject application</strong><span class="block text-[12px] text-slate-500">Closes this application. It stays on record; the applicant can submit a new one.</span></span>
+            </label>
+          </fieldset>
           <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">
             Property: <span class="text-slate-700">{{ activeApp?.name }}</span>
           </p>
@@ -1003,7 +1216,7 @@ const loadError = ref('');
           <button @click="showRejectConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
             Cancel
           </button>
-          <button @click="execReject" class="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
+          <button @click="execReject" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
             <i class="fa-solid fa-circle-xmark mr-2"></i>Confirm Rejection
           </button>
         </div>
@@ -1070,6 +1283,48 @@ const loadError = ref('');
       </div>
     </div>
 
+    <!-- Owner account activation link issued on approval (property-first registration) -->
+    <div v-management-dialog="{ close: () => closeCredentialsModal() }" v-if="issuedCredentials" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div class="bg-emerald-600 px-8 py-5 flex items-center gap-4">
+          <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-key text-white text-lg"></i>
+          </div>
+          <div>
+            <h3 class="text-white font-semibold text-base uppercase tracking-tight">Application approved</h3>
+            <p class="text-emerald-100 text-[12px] font-semibold">{{ issuedCredentials.house_name }} is now accredited</p>
+          </div>
+        </div>
+        <div class="px-8 py-6 space-y-4">
+          <p class="text-blue-900 bg-blue-50 border border-blue-200 rounded-xl p-3 text-[12px] font-semibold leading-relaxed">
+            <i class="fa-solid fa-circle-info mr-1"></i> Account activation is ready. The owner opens Track My Application with their reference number, sets a login email and password, and can then manage the property.
+          </p>
+          <dl class="bg-slate-50 border border-slate-200 rounded-2xl divide-y divide-slate-200 text-sm">
+            <div class="flex justify-between gap-4 px-5 py-3">
+              <dt class="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Reference No.</dt>
+              <dd class="font-bold text-slate-900 select-all">{{ issuedCredentials.reference_no }}</dd>
+            </div>
+            <div class="flex justify-between gap-4 px-5 py-3">
+              <dt class="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Owner</dt>
+              <dd class="font-semibold text-slate-800 text-right">{{ issuedCredentials.name }}</dd>
+            </div>
+            <div class="flex justify-between gap-4 px-5 py-3">
+              <dt class="text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Activation</dt>
+              <dd class="font-semibold text-emerald-700 text-right">Ready · valid {{ issuedCredentials.expires_in_days || 7 }} days</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="px-8 pb-8 flex flex-col sm:flex-row gap-3">
+          <button type="button" @click="copyCredentials" class="flex-1 px-6 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-600 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
+            <i :class="credentialsCopied ? 'fa-solid fa-check mr-2' : 'fa-solid fa-copy mr-2'"></i>{{ credentialsCopied ? 'Copied' : 'Copy reference number' }}
+          </button>
+          <button type="button" @click="closeCredentialsModal" class="px-6 py-3 bg-slate-900 hover:bg-slate-700 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -1084,5 +1339,111 @@ const loadError = ref('');
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 10px;
+}
+
+/* Full-screen document viewer */
+.doc-viewer { position: fixed; inset: 0; z-index: 150; display: flex; flex-direction: column; background: rgba(15, 23, 42, .92); backdrop-filter: blur(4px); }
+.doc-viewer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; background: rgba(15, 23, 42, .85); border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.doc-viewer-title { display: inline-flex; align-items: center; gap: 8px; color: #fff; font-size: 14px; font-weight: 600; }
+.doc-viewer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.doc-viewer-btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; min-height: 36px !important; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.doc-viewer-btn:hover { background: rgba(255, 255, 255, .18); }
+.doc-viewer-btn.is-primary { background: #3b82f6; border-color: #3b82f6; }
+.doc-viewer-btn.is-primary:hover { background: #2563eb; }
+.doc-viewer-btn:disabled { opacity: .6; cursor: default; }
+.doc-viewer-close { width: 36px; height: 36px; min-height: 36px !important; border-radius: 10px; border: 0; background: rgba(255, 255, 255, .12); color: #fff; font-size: 16px; cursor: pointer; }
+.doc-viewer-close:hover { background: #f43f5e; }
+.doc-viewer-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: hidden; }
+.doc-viewer-img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 6px; background: #fff; box-shadow: 0 20px 50px rgba(0, 0, 0, .45); cursor: zoom-in; }
+.doc-viewer-stage.is-zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; }
+.doc-viewer-stage.is-zoomed .doc-viewer-img { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
+.doc-viewer-pdf { width: 100%; height: 100%; border: 0; border-radius: 6px; background: #fff; }
+.doc-viewer-stage { position: relative; }
+.doc-viewer-count { margin-left: 4px; padding: 2px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: 12.5px; font-weight: 600; }
+.doc-viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; min-height: 46px !important; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 23, 42, .7); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+.doc-viewer-nav:hover { background: #2563eb; border-color: #2563eb; }
+.doc-viewer-nav:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.doc-viewer-nav.is-prev { left: 16px; }
+.doc-viewer-nav.is-next { right: 16px; }
+
+
+/* Requirement Checklist: bright amber so it stands out */
+.management-page .acc-checklist-btn { background: #ff9f0a !important; border: 1px solid #ff9f0a !important; color: #fff !important; box-shadow: none !important; }
+.management-page .acc-checklist-btn:hover { background: #ffad33 !important; border-color: #ffad33 !important; box-shadow: none !important; }
+
+/* ───── New applications list ───── */
+@media (min-width: 1024px) {
+  .na-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
+  .na-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
+  .na-fit > main > * { flex-shrink: 0; }
+  .na-fit > main > .na-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .na-body > * { flex-shrink: 0; }
+  .na-body > .na-table-card { flex: 1 1 auto; min-height: 0; }
+  .na-scroll { flex: 1; min-height: 0; overflow: auto; }
+}
+.na-fit > main .management-page-header { margin-bottom: 16px; }
+.na-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 16px; }
+@media (min-width: 640px) { .na-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.na-stat { display: flex; align-items: center; gap: 18px; padding: 18px 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.na-stat-icon { width: 64px; height: 64px; flex-shrink: 0; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.na-stat-icon.is-blue { background: #e0ecff; color: #2563eb; }
+.na-stat-icon.is-violet { background: #ede9fe; color: #7c3aed; }
+.na-stat-icon.is-amber { background: #fff3d6; color: #f59e0b; }
+.na-stat-label { margin: 0; font-size: 14px; font-weight: 600; color: #334155; }
+.na-stat-value { margin: 2px 0; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.1; }
+.na-stat-sub { margin: 0; font-size: 12.5px; color: #64748b; }
+.na-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.na-search { position: relative; flex: 1 1 320px; min-width: 0; }
+.na-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #475569; font-size: 14px; pointer-events: none; }
+.na-search input { width: 100%; height: 50px; padding: 0 16px 0 44px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; color: #334155; outline: none; }
+.na-search input:focus, .na-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.na-select { height: 50px; min-height: 50px !important; padding: 0 36px 0 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 500; color: #0f172a; outline: none; cursor: pointer; }
+.na-reset { display: inline-flex; align-items: center; gap: 8px; height: 50px; min-height: 50px !important; padding: 0 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 600; color: #0f172a; cursor: pointer; }
+.na-reset:hover { background: #f8fafc; }
+@media (max-width: 767px) { .na-select, .na-reset { flex: 1 1 45%; } }
+.na-table-card { flex-direction: column; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; }
+.na-scroll { overflow-x: auto; }
+.na-table { border-collapse: collapse; min-width: 980px; font-size: 14px; color: #0f172a; }
+.na-table thead th { position: sticky; top: 0; z-index: 1; padding: 14px 16px; background: #f8fafc; text-align: left; font-size: 13.5px; font-weight: 700; color: #0f172a; border-bottom: 1px solid #e2e8f0; text-transform: none; white-space: nowrap; }
+.na-table thead th small { display: block; font-size: 12px; font-weight: 500; color: #64748b; }
+.na-table tbody td { padding: 14px 16px; vertical-align: middle; border-bottom: 1px solid #eef2f7; }
+.na-name { display: block; font-size: 15px; font-weight: 700; color: #0f172a; }
+.na-owner { display: block; font-size: 15px; font-weight: 600; color: #0f172a; }
+.na-sub { display: block; margin-top: 3px; font-size: 13px; color: #64748b; }
+.na-type { display: inline-flex; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.na-type.is-new { background: #dcfce7; color: #15803d; }
+.na-type.is-resubmission { background: #e0f2fe; color: #0369a1; }
+.na-type.is-update { background: #fff7ed; color: #c2410c; }
+.na-status { display: inline-flex; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.na-status.is-blue { background: #dbeafe; color: #1d4ed8; }
+.na-status.is-violet { background: #ede9fe; color: #6d28d9; }
+.na-status.is-amber { background: #fff3d6; color: #b45309; }
+.na-status.is-sky { background: #e0f2fe; color: #0369a1; }
+.na-status.is-green { background: #dcfce7; color: #15803d; }
+.na-status.is-rose { background: #ffe4e6; color: #be123c; }
+.na-action { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; min-height: 42px !important; border-radius: 10px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.na-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid #eef2f7; font-size: 14px; color: #475569; }
+.na-pages { display: flex; gap: 8px; }
+.na-pages button { min-width: 42px; height: 42px; min-height: 42px !important; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-weight: 700; cursor: pointer; }
+.na-pages button.is-active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.na-pages button:disabled { opacity: .45; cursor: default; }
+.na-mcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+
+.na-range { position: relative; }
+.na-range-btn { display: inline-flex; align-items: center; gap: 10px; height: 50px; min-height: 50px !important; padding: 0 14px; min-width: 230px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 500; color: #334155; cursor: pointer; }
+.na-range-btn span { flex: 1; text-align: left; }
+.na-range-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 260px; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 12px 30px rgba(15, 23, 42, .15); display: flex; flex-direction: column; gap: 10px; }
+.na-range-pop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #64748b; }
+.na-range-pop input { height: 40px; padding: 0 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; color: #0f172a; }
+.na-range-clear, .na-range-done { padding: 0 14px; min-height: 36px !important; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.na-range-clear { border: 1px solid #e2e8f0; background: #fff; color: #475569; }
+.na-range-done { border: 0; background: #2563eb; color: #fff; }
+@media (max-width: 767px) { .na-range { flex: 1 1 100%; } .na-range-btn { width: 100%; } }
+
+/* New applications: the page scrolls. The table scrolls sideways when it is wider than the card,
+   so no column is cut off (phones and tablets use the card list instead). */
+@media (min-width: 1024px) {
+  .na-table-card { overflow: hidden !important; }
+  .na-scroll { overflow-x: auto !important; overflow-y: hidden; }
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
@@ -223,237 +224,139 @@ onMounted(() => {
 });
 
 const loadError = ref('');
+
+// Summary tiles (follow the selected filter)
+const houseCount = computed(() => new Set(residents.value.map(r => r.house_id).filter(Boolean)).size);
+const courseCount = computed(() => new Set(residents.value.map(r => (r.course || '').trim()).filter(Boolean)).size);
+const sexTone = (sex) => {
+  const v = (sex || '').trim().toLowerCase();
+  return v === 'male' ? 'is-male' : v === 'female' ? 'is-female' : '';
+};
 </script>
 
 <template>
-  <div class="management-page bg-slate-50 min-h-screen pb-10 text-left font-sans">
+  <div class="management-page registry-fit bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
     <AdminNav />
 
-    <main id="management-content" tabindex="-1" class="max-w-[1400px] mx-auto pt-4 md:pt-10 px-4 md:px-6">
+    <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-12 px-4 sm:px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
-      
-      <!-- Header Section -->
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6 mb-8">
-        <PageHeader title="Residency registry" description="Locate student residents and emergency contacts by property, barangay, and course." />
+      <PageHeader title="Emergency registry residence report" description="Locate student residents and emergency contacts by property, barangay, and course." />
 
-        <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <!-- Barangay Filter -->
-          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
-            <div class="pl-3 text-slate-400"><i class="fa-solid fa-filter text-xs"></i></div>
-            <select aria-label="selected Barangay" v-model="selectedBarangay" @change="onBarangayChange" class="bg-transparent border-none w-full text-[12px] font-bold text-slate-600 outline-none pr-2 cursor-pointer">
-              <option value="">All Barangays</option>
-              <option v-for="b in barangays" :key="b" :value="b">{{ b }}</option>
-            </select>
-          </div>
-
-          <!-- Boarding House Filter -->
-          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
-            <div class="pl-3 text-slate-400"><i class="fa-solid fa-house text-xs"></i></div>
-            <select aria-label="selected House" v-model="selectedHouse" @change="onHouseChange" class="bg-transparent border-none w-full text-[12px] font-bold text-slate-600 outline-none pr-2 cursor-pointer">
-              <option value="">All Boarding Houses</option>
-              <option v-for="h in boardingHouses" :key="h.id" :value="h.id">{{ h.name }}</option>
-            </select>
-          </div>
-
-          <!-- Course Filter -->
-          <div class="flex-grow flex items-center gap-2 bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm">
-            <div class="pl-3 text-slate-400"><i class="fa-solid fa-graduation-cap text-xs"></i></div>
-            <select aria-label="selected Course" v-model="selectedCourse" @change="onCourseChange" class="bg-transparent border-none w-full text-[12px] font-bold text-slate-600 outline-none pr-2 cursor-pointer">
-              <option value="">All Courses</option>
-              <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">{{ c.course_code }}</option>
-            </select>
-          </div>
-
-          <!-- Export/Print Button -->
-          <button @click="handleExport"
-             class="w-full md:w-auto justify-center bg-red-600 border border-red-700 text-white px-5 py-3 rounded-xl text-[12px] font-semibold uppercase tracking-wide hover:bg-red-700 transition shadow-sm flex items-center gap-2 management-button">
-            <i class="fa-solid fa-print"></i> {{ printLabel }}
-          </button>
+      <!-- Summary tiles (counts follow the selected filter) -->
+      <dl class="reg-tiles no-print">
+        <div>
+          <dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> Residents</dt>
+          <dd>{{ isLoading ? '…' : residents.length }}</dd>
+          <span class="reg-tile-sub"><span class="text-blue-600">{{ genderCounts.male }} male</span> · <span class="text-pink-600">{{ genderCounts.female }} female</span></span>
         </div>
+        <div>
+          <dt><i class="fa-solid fa-house" aria-hidden="true"></i> Boarding houses</dt>
+          <dd>{{ isLoading ? '…' : houseCount }}</dd>
+          <span class="reg-tile-sub">with active residents</span>
+        </div>
+        <div>
+          <dt><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i> Courses</dt>
+          <dd>{{ isLoading ? '…' : courseCount }}</dd>
+          <span class="reg-tile-sub">represented</span>
+        </div>
+        <div class="is-primary">
+          <dt><i class="fa-solid fa-filter" aria-hidden="true"></i> Viewing</dt>
+          <dd class="reg-tile-text" :title="activeFilterLabel">{{ activeFilterLabel }}</dd>
+        </div>
+      </dl>
+
+      <!-- Filters -->
+      <div class="reg-filters no-print">
+        <div class="reg-search">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input v-model="searchQuery" type="text" aria-label="Search residents" placeholder="Search by name, email, course, home address, or emergency contact..." />
+          <button v-if="searchQuery" type="button" class="reg-search-clear" aria-label="Clear search" @click="searchQuery = ''"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <label class="reg-select"><i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+          <select aria-label="Filter by barangay" v-model="selectedBarangay" @change="onBarangayChange">
+            <option value="">All barangays</option>
+            <option v-for="b in barangays" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </label>
+        <label class="reg-select"><i class="fa-solid fa-house" aria-hidden="true"></i>
+          <select aria-label="Filter by boarding house" v-model="selectedHouse" @change="onHouseChange">
+            <option value="">All boarding houses</option>
+            <option v-for="h in boardingHouses" :key="h.id" :value="h.id">{{ h.name }}</option>
+          </select>
+        </label>
+        <label class="reg-select"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>
+          <select aria-label="Filter by course" v-model="selectedCourse" @change="onCourseChange">
+            <option value="">All courses</option>
+            <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">{{ c.course_code }}</option>
+          </select>
+        </label>
+        <button type="button" class="reg-btn-primary reg-btn-print" @click="handleExport"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> {{ printLabel }}</button>
       </div>
 
-      <!-- Dedicated Flexible Search Control Bar (Relocated Below Filters for Spacious Layout) -->
-      <div class="bg-white rounded-2xl border border-slate-200 px-5 py-3.5 mb-8 shadow-sm flex items-center gap-3 no-print">
-        <div class="text-slate-400 pl-1"><i class="fa-solid fa-magnifying-glass text-sm"></i></div>
-        <input aria-label="SEARCH RESIDENTS BY NAME, EMAIL, COURSE, ROOM, HOME ADDRESS, OR EMERGENCY CONTACT..." 
-          type="text" 
-          v-model="searchQuery" 
-          placeholder="SEARCH RESIDENTS BY NAME, EMAIL, COURSE, ROOM, HOME ADDRESS, OR EMERGENCY CONTACT..." 
-          class="bg-transparent border-none w-full text-[12px] font-bold text-slate-800 outline-none placeholder:text-slate-400 tracking-wide" 
-        />
-        <button v-if="searchQuery" @click="searchQuery = ''" class="text-slate-400 hover:text-slate-600 text-[12px] font-semibold uppercase tracking-wide px-2 transition">
-          Clear
-        </button>
+      <!-- Loading -->
+      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 px-6 gap-6">
+        <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
 
-      <!-- Loading State Indicator (PWA inline SVG Loader) -->
-      <div v-if="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
-        <svg class="animate-spin h-10 w-10 text-[#1e4a8d] mb-4 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading residency records...</p>
-      </div>
+      <div v-else class="registry-body">
+        <!-- LAPTOP / DESKTOP: table grouped by boarding house -->
+        <div class="registry-table-card hidden lg:flex lg:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
-      <div v-else class="animate-in fade-in duration-300 space-y-6 md:space-y-8">
-        
-        <!-- Compact Stats Bar -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 no-print">
-          <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-slate-400 text-[12px] md:text-[12px] font-semibold uppercase tracking-wide mb-1">Total Residents</div>
-            <div class="text-xl md:text-2xl font-semibold text-slate-800">{{ residents.length }}</div>
-            <div class="flex items-center gap-2.5 mt-1">
-              <span class="inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wide text-blue-600">
-                <span class="w-2 h-2 rounded-full bg-blue-500"></span>{{ genderCounts.male }}
-              </span>
-              <span class="inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wide text-pink-600">
-                <span class="w-2 h-2 rounded-full bg-pink-500"></span>{{ genderCounts.female }}
-              </span>
-            </div>
-          </div>
-          <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-slate-400 text-[12px] md:text-[12px] font-semibold uppercase tracking-wide mb-1">Active Filter</div>
-            <div class="text-xs md:text-sm font-semibold text-blue-600 uppercase truncate" :title="activeFilterLabel">{{ activeFilterLabel }}</div>
-          </div>
-          <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-slate-400 text-[12px] md:text-[12px] font-semibold uppercase tracking-wide mb-1">Safety Status</div>
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-              <span class="text-[12px] md:text-[12px] font-semibold text-emerald-600 uppercase">System Active</span>
-            </div>
-          </div>
-          <div class="bg-slate-900 p-4 md:p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center justify-between">
-            <div>
-              <div class="text-slate-500 text-[12px] md:text-[12px] font-semibold uppercase tracking-wide mb-1">Last Update</div>
-              <div class="text-[12px] md:text-[12px] font-bold text-white uppercase">{{ new Date().toLocaleDateString() }}</div>
-            </div>
-            <i class="fa-solid fa-clock-rotate-left text-slate-700"></i>
-          </div>
-        </div>
-
-        <!-- Top Pagination Bar -->
-        <div v-if="filteredResidents.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
-          <div class="flex items-center gap-4">
-            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredResidents.length }} entries</span>
-            <div class="flex items-center gap-2">
-              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-              <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                <option :value="10">10</option>
-                <option :value="25">25</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              @click="currentPage > 1 && currentPage--" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-            </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
-              {{ currentPage }} / {{ totalPages }}
-            </span>
-            <button 
-              @click="currentPage < totalPages && currentPage++" 
-              :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-            </button>
-          </div>
-        </div>
-
-        <!-- ================= DESKTOP TABLE VIEW ================= -->
-        <div class="hidden md:block print:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse" id="emergencyTable">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 text-[12px] font-semibold uppercase tracking-wide">
-                  <th class="px-6 py-4">Student Identity</th>
-                  <th class="px-6 py-4 text-center">Sex</th>
-                  <th class="px-6 py-4">Course / Year</th>
-                  <th class="px-6 py-4">Current Residence</th>
-                  <th class="px-6 py-4">Emergency Contact</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 text-[12px]">
-                <!-- No results at all -->
-                <tr v-if="filteredResidents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse && !searchQuery">
-                  <td colspan="5" class="px-6 py-20 text-center">
-                    <p class="text-slate-400 font-bold uppercase tracking-wide text-[12px]">No active residents registered across all boarding houses.</p>
-                  </td>
-                </tr>
-                <!-- Filter applied but no matches -->
-                <tr v-else-if="filteredResidents.length === 0">
-                  <td colspan="5" class="px-6 py-16 text-center">
-                    <p class="text-slate-700 font-semibold uppercase tracking-wide text-[12px] mb-2">No Active Residents on Record</p>
-                    <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wider">Selected filter or search query has no matching residents at this time.</p>
+          <div class="registry-table-scroll overflow-x-auto">
+            <table class="management-registry-table w-full border-collapse" id="emergencyTable">
+              <tbody class="divide-y divide-slate-100">
+                <tr v-if="filteredResidents.length === 0">
+                  <td colspan="5" class="py-20 text-center">
+                    <p class="text-slate-500 font-semibold text-sm">{{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}</p>
                   </td>
                 </tr>
                 <template v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="group.house_name">
-                  <!-- House Group Header Banner -->
-                  <tr class="bg-blue-50/70 border-y border-blue-100">
-                    <td colspan="5" class="px-6 py-3.5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                          <div class="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xs shadow-sm">
-                            <i class="fa-solid fa-house-chimney"></i>
-                          </div>
-                          <div>
-                            <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide leading-none mb-1 flex items-center gap-2">
+                  <tr class="reg-group-row">
+                    <td colspan="5">
+                      <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-3 min-w-0">
+                          <span class="reg-group-icon" aria-hidden="true"><i class="fa-solid fa-house-chimney"></i></span>
+                          <div class="min-w-0">
+                            <p class="reg-group-name">
                               {{ group.house_name }}
-                              <span v-if="group.house_status !== 'accredited'" class="bg-amber-100 text-amber-700 text-[12px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide" title="This property is no longer accredited, but its residents are still tracked here for safety.">
-                                Archived Property
-                              </span>
-                            </h3>
-                            <p class="text-[12px] text-slate-500 font-bold uppercase tracking-wider">
-                              <i class="fa-solid fa-location-dot text-blue-500 mr-1"></i>
+                              <span v-if="group.house_status !== 'accredited'" class="reg-chip is-warning" title="This property is no longer accredited, but its residents are still tracked here for safety.">Archived property</span>
+                            </p>
+                            <p class="reg-group-sub">
+                              <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
                               {{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}
-                              <span v-if="group.house_owner_phone" class="ml-2 text-slate-400">| Contact: {{ group.house_owner_phone }}</span>
+                              <span v-if="group.house_owner_phone"> · Owner contact: {{ group.house_owner_phone }}</span>
                             </p>
                           </div>
                         </div>
-                        <span class="bg-blue-600/10 text-blue-700 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide border border-blue-200/50">
-                          {{ group.residents.length }} {{ group.residents.length === 1 ? 'Active Resident' : 'Active Residents' }}
-                        </span>
+                        <span class="reg-chip is-primary">{{ group.residents.length }} {{ group.residents.length === 1 ? 'resident' : 'residents' }}</span>
                       </div>
                     </td>
                   </tr>
-                  <!-- Boarders under this Boarding House -->
-                  <tr v-for="r in group.residents" :key="r.id" class="hover:bg-slate-50/50 transition-colors group">
-                    <td class="px-6 py-5">
-                      <div class="font-bold text-slate-800 uppercase tracking-tight text-sm">{{ r.resident_name }}</div>
-                      <div class="text-[12px] font-medium text-slate-400">{{ r.student_email }}</div>
-                      <div class="text-[12px] font-bold text-blue-600 uppercase mt-0.5"><i class="fa-solid fa-house-user mr-1 text-[12px]"></i>Home: {{ r.home_address || 'N/A' }}</div>
+                  <tr class="reg-col-head">
+                    <th scope="col">Student</th><th scope="col">Sex</th><th scope="col">Course / year</th><th scope="col">Residence</th><th scope="col">Emergency contact</th>
+                  </tr>
+                  <tr v-for="r in group.residents" :key="r.id">
+                    <td>
+                      <strong class="block text-slate-900 font-semibold">{{ r.resident_name }}</strong>
+                      <span class="block text-slate-500 text-xs mt-0.5">{{ r.student_email }}</span>
+                      <span class="block text-slate-500 text-xs mt-0.5"><i class="fa-solid fa-house-user text-slate-400 mr-1" aria-hidden="true"></i>Home: {{ r.home_address || 'N/A' }}</span>
                     </td>
-                    <td class="px-6 py-5 text-center">
-                      <span class="px-2 py-0.5 rounded-full border text-[12px] font-semibold uppercase tracking-wide"
-                            :class="{
-                              'bg-blue-50 text-blue-600 border-blue-100': (r.sex || '').trim().toLowerCase() === 'male',
-                              'bg-pink-50 text-pink-600 border-pink-100': (r.sex || '').trim().toLowerCase() === 'female',
-                              'bg-slate-50 text-slate-400 border-slate-200': !['male', 'female'].includes((r.sex || '').trim().toLowerCase())
-                            }">
-                        {{ r.sex || 'N/A' }}
-                      </span>
+                    <td>
+                      <span :class="['reg-chip', sexTone(r.sex)]">{{ r.sex || 'N/A' }}</span>
                     </td>
-                    <td class="px-6 py-5">
-                      <div class="font-bold text-slate-700 uppercase tracking-tighter">{{ r.course || 'N/A' }}</div>
-                      <div class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Year Level: {{ r.year_level || 'N/A' }}</div>
+                    <td>
+                      <span class="block text-slate-800 font-medium">{{ r.course || 'N/A' }}</span>
+                      <span class="block text-slate-500 text-xs mt-0.5">Year {{ r.year_level || 'N/A' }}</span>
                     </td>
-                    <td class="px-6 py-5">
-                      <div class="font-bold text-slate-700 uppercase tracking-tighter">{{ r.house_name }}</div>
-                      <div class="text-[12px] font-bold text-blue-500 uppercase tracking-wide mt-0.5">Room #{{ r.room_number || 'N/A' }}</div>
+                    <td>
+                      <span class="block text-slate-800 font-medium">{{ r.house_name }}</span>
+                      <span class="block text-slate-500 text-xs mt-0.5">Room {{ r.room_number || 'N/A' }}</span>
                     </td>
-                    <td class="px-6 py-5">
-                      <div class="flex items-center gap-3">
-                        <div class="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg border border-red-100 flex flex-col min-w-[140px]">
-                          <span class="text-[12px] font-semibold uppercase tracking-wide opacity-60">{{ r.guardian_name }}</span>
-                          <span class="text-[12px] font-bold tracking-tight">{{ r.emergency_contact }}</span>
-                        </div>
+                    <td>
+                      <div class="reg-emergency">
+                        <span>{{ r.guardian_name || '—' }}</span>
+                        <strong><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ r.emergency_contact || '—' }}</strong>
                       </div>
                     </td>
                   </tr>
@@ -462,132 +365,50 @@ const loadError = ref('');
             </table>
           </div>
 
-          <!-- Bottom Pagination Bar -->
-          <div v-if="filteredResidents.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print">
-            <div class="flex items-center gap-4">
-              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredResidents.length }} entries</span>
-              <div class="flex items-center gap-2">
-                <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-                <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
-                  <option :value="10">10</option>
-                  <option :value="25">25</option>
-                  <option :value="50">50</option>
-                  <option :value="100">100</option>
-                </select>
-              </div>
-            </div>
+          <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
-            <div class="flex items-center gap-2">
-              <button 
-                @click="currentPage > 1 && currentPage--" 
-                :disabled="currentPage === 1"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold management-button management-button-secondary"
-              >
-                <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-              </button>
-              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-semibold text-xs">
-                {{ currentPage }} / {{ totalPages }}
-              </span>
-              <button 
-                @click="currentPage < totalPages && currentPage++" 
-                :disabled="currentPage === totalPages"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold management-button management-button-secondary"
-              >
-                Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-              </button>
-            </div>
-          </div>
         </div>
 
-        <!-- ================= MOBILE PORTRAIT CARD VIEW (STRICTLY HIDDEN IN PRINT) ================= -->
-        <div class="block md:hidden print:hidden space-y-6">
-          <!-- No results at all -->
-          <div v-if="residents.length === 0 && !selectedBarangay && !selectedHouse && !selectedCourse" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
-            <p class="text-slate-400 font-bold uppercase tracking-wide text-[12px]">No active residents registered across all boarding houses.</p>
+        <!-- PHONE: cards grouped by boarding house -->
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+        </div>
+        <div class="block lg:hidden print:hidden space-y-4">
+          <div v-if="filteredResidents.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">
+            {{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}
           </div>
-          <!-- Filter applied but no matches -->
-          <div v-else-if="residents.length === 0 && (selectedBarangay || selectedHouse || selectedCourse)" class="bg-white p-10 rounded-2xl border border-slate-200 text-center shadow-sm">
-            <p class="text-slate-700 font-semibold uppercase tracking-wide text-[12px] mb-2">No Active Residents on Record</p>
-            <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wider">Selected area has no registered residents at this time.</p>
-          </div>
-          <div v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="group.house_name" class="space-y-3">
-            <!-- Mobile House Group Header Banner -->
-            <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl flex justify-between items-center">
-              <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xs">
-                  <i class="fa-solid fa-house-chimney"></i>
-                </div>
-                <div>
-                  <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-wide leading-none mb-1 flex items-center gap-1.5 flex-wrap">
-                    {{ group.house_name }}
-                    <span v-if="group.house_status !== 'accredited'" class="bg-amber-100 text-amber-700 text-[12px] font-semibold px-1.5 py-0.5 rounded-full uppercase tracking-wide">
-                      Archived
-                    </span>
-                  </h3>
-                  <p class="text-[12px] text-slate-500 font-bold uppercase tracking-wider">
-                    {{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}
-                  </p>
-                </div>
+          <div v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="'m-' + group.house_name" class="space-y-2">
+            <div class="reg-group-card">
+              <div class="min-w-0">
+                <p class="reg-group-name">{{ group.house_name }} <span v-if="group.house_status !== 'accredited'" class="reg-chip is-warning">Archived</span></p>
+                <p class="reg-group-sub">{{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}</p>
               </div>
-              <span class="bg-blue-600 text-white text-[12px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide">
-                {{ group.residents.length }}
-              </span>
+              <span class="reg-chip is-primary">{{ group.residents.length }}</span>
             </div>
-            <!-- Student Boarder Cards under this house -->
-            <div v-for="r in group.residents" :key="r.id" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-              <div class="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center text-[12px] font-semibold text-slate-400 uppercase tracking-wide">
-                <span>Student Identity</span>
-                <span class="px-2 py-0.5 rounded-full border text-[12px] font-semibold uppercase tracking-wide"
-                      :class="{
-                        'bg-blue-50 text-blue-600 border-blue-100': (r.sex || '').trim().toLowerCase() === 'male',
-                        'bg-pink-50 text-pink-600 border-pink-100': (r.sex || '').trim().toLowerCase() === 'female',
-                        'bg-slate-50 text-slate-400 border-slate-200': !['male', 'female'].includes((r.sex || '').trim().toLowerCase())
-                      }">
-                  {{ r.sex || 'N/A' }}
-                </span>
+            <div v-for="r in group.residents" :key="'m-' + r.id" class="reg-card">
+              <div class="flex justify-between items-start gap-2">
+                <div class="min-w-0">
+                  <p class="font-semibold text-slate-900 truncate">{{ r.resident_name }}</p>
+                  <p class="text-xs text-slate-500 truncate">{{ r.student_email }}</p>
+                </div>
+                <span :class="['reg-chip', sexTone(r.sex)]">{{ r.sex || 'N/A' }}</span>
               </div>
-              <div class="divide-y divide-slate-100 text-xs w-full">
-                <div class="px-4 py-3 flex justify-between items-center gap-2">
-                  <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider shrink-0">Name</span>
-                  <div class="text-right truncate">
-                    <p class="font-semibold text-slate-900 uppercase text-[12px] truncate">{{ r.resident_name }}</p>
-                    <p class="text-[12px] text-slate-400 truncate">{{ r.student_email }}</p>
-                    <p class="text-[12px] font-bold text-blue-600 uppercase truncate mt-0.5">Home: {{ r.home_address || 'N/A' }}</p>
-                  </div>
-                </div>
-                <div class="px-4 py-3 flex justify-between items-center gap-2">
-                  <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider shrink-0">Course / Yr</span>
-                  <div class="text-right truncate">
-                    <p class="text-slate-700 uppercase text-[12px] truncate">{{ r.course || 'N/A' }}</p>
-                    <p class="text-[12px] text-slate-400">Year: {{ r.year_level || 'N/A' }}</p>
-                  </div>
-                </div>
-                <div class="px-4 py-3 flex justify-between items-center gap-2">
-                  <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider shrink-0">Room</span>
-                  <span class="font-bold text-blue-600 text-[12px]">Room #{{ r.room_number || 'N/A' }}</span>
-                </div>
-                <div class="px-4 py-3 flex justify-between items-center gap-2">
-                  <span class="font-bold text-slate-400 text-[12px] uppercase tracking-wider shrink-0">Check-In</span>
-                  <span class="font-bold text-slate-500 text-[12px] text-right truncate">
-                    {{ new Date(r.booking_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
-                  </span>
-                </div>
-                <div class="px-4 py-3 flex justify-between items-center bg-red-50/50 gap-2">
-                  <span class="font-bold text-red-500 text-[12px] uppercase tracking-wider shrink-0">Emergency Contact</span>
-                  <div class="text-right">
-                    <p class="text-[12px] font-semibold uppercase tracking-wide text-red-400/80">{{ r.guardian_name }}</p>
-                    <p class="bg-red-50 text-red-600 px-2.5 py-1 mt-1 inline-block rounded-md text-[12px] font-semibold tracking-wider border border-red-100 shadow-sm truncate">
-                      {{ r.emergency_contact }}
-                    </p>
-                  </div>
-                </div>
+              <dl class="reg-card-facts">
+                <div><dt>Course / year</dt><dd>{{ r.course || 'N/A' }} · Year {{ r.year_level || 'N/A' }}</dd></div>
+                <div><dt>Room</dt><dd>Room {{ r.room_number || 'N/A' }}</dd></div>
+                <div><dt>Check-in</dt><dd>{{ r.booking_date ? new Date(r.booking_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' }}</dd></div>
+                <div><dt>Home address</dt><dd>{{ r.home_address || 'N/A' }}</dd></div>
+              </dl>
+              <div class="reg-emergency mt-3">
+                <span>Emergency contact · {{ r.guardian_name || '—' }}</span>
+                <strong><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ r.emergency_contact || '—' }}</strong>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Signatories (Single Line Row Layout with Generous Spacing) -->
-        <div class="grid grid-cols-2 gap-8 mt-16 sm:mt-24 pt-10 sm:pt-12 mt-auto text-center signatories-block">
+        <!-- Signatories (printed report only) -->
+        <div class="hidden print:grid grid-cols-2 gap-8 text-center signatories-block">
           <div>
             <div class="border-b border-slate-900 mx-auto w-3/4 mb-2"></div>
             <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-600">PREPARED BY: SASO COORDINATOR</p>
@@ -597,7 +418,6 @@ const loadError = ref('');
             <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-600">APPROVED BY: SASO DIRECTOR</p>
           </div>
         </div>
-
       </div>
     </main>
   </div>
@@ -654,4 +474,106 @@ const loadError = ref('');
     page-break-inside: avoid !important;
   }
 }
+</style>
+
+<style scoped>
+/* Registry pages: same layout as Registered properties (one screen on laptop, table scrolls inside its card) */
+@media (min-width: 1024px) {
+  .registry-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
+  .registry-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
+  .registry-fit > main :deep(.management-page-header) { margin-bottom: 14px; }
+  .registry-fit > main > * { flex-shrink: 0; }
+  .registry-fit > main > .registry-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .registry-table-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .registry-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .registry-table-scroll thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+  .registry-table-scroll :deep(td) { padding-top: 10px; padding-bottom: 10px; vertical-align: middle; }
+}
+
+/* Summary tiles */
+.reg-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+@media (min-width: 1024px) { .reg-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.reg-tiles > div { padding: 12px 16px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; min-width: 0; }
+.reg-tiles dt { font-size: 12px; font-weight: 600; color: #64748b; }
+.reg-tiles dt i { color: #94a3b8; margin-right: 4px; }
+.reg-tiles dd { margin: 4px 0 0; font-size: 22px; font-weight: 700; color: #142b4a; line-height: 1.2; }
+.reg-tiles .reg-tile-text { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reg-tile-sub { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+.reg-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
+.reg-tiles > div.is-primary dd, .reg-tiles > div.is-primary dt i { color: #1e4a8d; }
+.reg-tiles > div.is-danger { background: #fff1f2; border-color: #fecdd3; }
+.reg-tiles > div.is-danger dd { color: #be123c; }
+
+/* Filter bar */
+.reg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.reg-search { position: relative; flex: 1 1 280px; min-width: 0; }
+.reg-search > i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
+.reg-search input { width: 100%; padding: 12px 40px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-search input::placeholder { font-weight: 400; color: #94a3b8; }
+.reg-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.reg-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-height: 28px !important; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer; }
+.reg-search-clear:hover { background: #f1f5f9; color: #475569; }
+.reg-select { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 46px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-select i { color: #94a3b8; font-size: 12px; }
+.reg-select select { border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; cursor: pointer; min-height: 0 !important; max-width: 220px; }
+.reg-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.reg-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #1e4a8d; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.reg-btn-primary:hover { background: #163870; }
+@media (max-width: 767px) { .reg-select, .reg-btn-primary { flex: 1 1 100%; justify-content: center; } .reg-select select { max-width: none; width: 100%; } }
+
+/* Chips, buttons */
+.reg-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; text-transform: capitalize; }
+.reg-chip.is-primary { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.reg-chip.is-violet { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+.reg-chip.is-success { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.reg-chip.is-warning { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.reg-chip.is-danger { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.reg-chip.is-male { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.reg-chip.is-female { background: #fdf2f8; color: #be185d; border-color: #fbcfe8; }
+.reg-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.reg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; min-height: 36px !important; border-radius: 10px; border: 1px solid #bfdbfe; background: #fff; color: #1d4ed8; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.reg-btn:hover { background: #eff6ff; }
+.reg-btn.is-icon { width: 36px; padding: 0; }
+.reg-btn.is-danger { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+.reg-btn.is-danger:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+.reg-btn.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.reg-btn.is-success:hover { background: #22c55e; border-color: #22c55e; color: #fff; }
+.reg-avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0; background: #f1f5f9; }
+
+/* Residency groups */
+.reg-group-row td { background: #f5f8fd; }
+.reg-group-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #1e4a8d; color: #fff; font-size: 13px; }
+.reg-group-name { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; font-weight: 700; color: #142b4a; }
+.reg-group-sub { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+.reg-group-sub i { color: #94a3b8; margin-right: 2px; }
+.reg-emergency { display: inline-flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-radius: 10px; background: #fff1f2; border: 1px solid #fecdd3; min-width: 150px; }
+.reg-emergency span { font-size: 12px; color: #9f1239; font-weight: 600; }
+.reg-emergency strong { font-size: 13px; color: #be123c; font-weight: 700; }
+.reg-group-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #e7eef8; border: 1px solid #c9d7ec; }
+.reg-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+.reg-card-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 10px 0 0; }
+.reg-card-facts dt { font-size: 11.5px; color: #64748b; }
+.reg-card-facts dd { margin: 1px 0 0; font-size: 13px; font-weight: 600; color: #142b4a; }
+
+/* Grid lines on every row and column */
+.registry-table-scroll :deep(table) { border-collapse: collapse; }
+.registry-table-scroll :deep(th),
+.registry-table-scroll :deep(td) { border: 1px solid #e2e8f0 !important; }
+.registry-table-scroll :deep(thead th) { border-top: 0 !important; }
+.registry-table-scroll :deep(tr > :first-child) { border-left: 0 !important; }
+.registry-table-scroll :deep(tr > :last-child) { border-right: 0 !important; }
+
+/* Center every column's content (group banners in the residency table stay left-aligned) */
+.registry-table-scroll :deep(th),
+.registry-table-scroll :deep(td) { text-align: center !important; vertical-align: middle !important; }
+.registry-table-scroll :deep(.reg-group-row td) { text-align: left !important; }
+/* Student column stays left-aligned; Sex to Emergency contact are centered */
+.registry-table-scroll :deep(tr > th:first-child),
+.registry-table-scroll :deep(tr:not(.reg-group-row) > td:first-child) { text-align: left !important; }
+
+/* Column titles repeat under each boarding house name */
+.reg-col-head th { background: #f8fafc; font-size: 12px; font-weight: 700; color: #475569; padding-top: 8px !important; padding-bottom: 8px !important; }
+
+.reg-btn-print { background: #dc2626 !important; }
+.reg-btn-print:hover { background: #b91c1c !important; }
 </style>

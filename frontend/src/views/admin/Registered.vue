@@ -1,10 +1,11 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
 import '../../styles/management.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
@@ -24,6 +25,8 @@ const getAdminCheckoutDate = (occ) => {
 const houses = ref([]);
 const dynamicDocs = ref([]);
 const housePhotos = ref([]);
+// Every file uploaded per legal document (several images and/or PDF)
+const permitFiles = ref([]);
 
 const isLoading = ref(true);
 const alertRef = ref(null);
@@ -110,15 +113,45 @@ const isDownloading = ref(false);
 const showPreviewModal = ref(false);
 const previewImageUrl = ref('');
 
+// Legal documents can be PDF: open those in a new tab instead of the image preview.
+const isPdfFile = (url) => /\.pdf($|[?#])/i.test(String(url || ''));
+
+// Full-screen document viewer: images fit the screen (click to zoom to actual size); PDFs show inline
+const previewZoomed = ref(false);
+// A document can have several files: the viewer pages through them (1 of 3) with Previous / Next.
+const previewFiles = ref([]);
+const previewIndex = ref(0);
 const openPreview = (url) => {
   if (!url || url.endsWith('#')) return;
+  previewFiles.value = [url];
+  previewIndex.value = 0;
   previewImageUrl.value = url;
+  previewZoomed.value = false;
   showPreviewModal.value = true;
+};
+const openPreviewSet = (files) => {
+  const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
+  if (!urls.length) return;
+  previewFiles.value = urls;
+  previewIndex.value = 0;
+  previewImageUrl.value = urls[0];
+  previewZoomed.value = false;
+  showPreviewModal.value = true;
+};
+const stepPreview = (direction) => {
+  const count = previewFiles.value.length;
+  if (count < 2) return;
+  previewIndex.value = (previewIndex.value + direction + count) % count;
+  previewImageUrl.value = previewFiles.value[previewIndex.value];
+  previewZoomed.value = false;
 };
 
 const closePreview = () => {
   showPreviewModal.value = false;
   previewImageUrl.value = '';
+  previewZoomed.value = false;
+  previewFiles.value = [];
+  previewIndex.value = 0;
 };
 
 const downloadOriginal = () => {
@@ -136,10 +169,6 @@ const downloadOriginal = () => {
 };
 
 // Modals
-const showProfileModal = ref(false);
-const showBhModal = ref(false);
-const showDocModal = ref(false);
-const showRoomsModal = ref(false);
 const showConfirmModal = ref(false);
 
 // Active objects (Guarded safely with v-if checks to prevent early render crashes)
@@ -229,6 +258,7 @@ const fetchRegisteredHouses = async () => {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
       housePhotos.value = response.data.housePhotos || [];
+      permitFiles.value = response.data.permitFiles || [];
     }
   } catch (error) {
     loadError.value = 'The server did not return these records. Refresh the page to try again.';
@@ -275,6 +305,7 @@ const execArchive = async () => {
     });
     if (response.data.success) {
       showSystemAlert('Boarding house archived successfully.', 'success');
+      if (showDetail.value) closeDetail();
       fetchRegisteredHouses();
     }
   } catch (error) {
@@ -286,35 +317,98 @@ const execArchive = async () => {
   }
 };
 
-// Owner Profile Viewer
-const openProfile = (house) => {
-  activeHouse.value = house;
-  showProfileModal.value = true;
+// ─── Property details panel: owner, property, documents and rooms in one place (tabs) ───
+const REQUIRED_PERMITS = [
+  { label: 'Business Permit Application Form', key: 'permit_business_form' },
+  { label: 'Barangay Business Clearance', key: 'permit_barangay' },
+  { label: 'Sanitary Permit / Health Clearance', key: 'permit_sanitary' },
+  { label: 'Valid Fire Safety Inspection Certificate', key: 'permit_fire' }
+];
+const OPTIONAL_PERMITS = [
+  { label: 'Community Tax Certificate (Cedula)', key: 'permit_cedula' },
+  { label: 'DTI Registration Certificate', key: 'permit_dti' },
+  { label: 'Certificate of Building Inspection', key: 'permit_building' },
+  { label: 'Zoning Certificate / Locational Clearance', key: 'permit_zoning' }
+];
+
+// Days until a date (negative once passed), counted in calendar days
+const daysUntil = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / 86400000);
+};
+const expiryTone = (value) => {
+  const days = daysUntil(value);
+  if (days === null) return 'none';
+  if (days < 0) return 'danger';
+  if (days <= 30) return 'warning';
+  return 'success';
 };
 
-const closeProfile = () => {
-  showProfileModal.value = false;
-  activeHouse.value = null;
+// Row summary: how many required permits are on file and the earliest required expiry
+const requiredOnFile = (h) => REQUIRED_PERMITS.filter(p => h[p.key]).length;
+const nextRequiredExpiry = (h) => {
+  const dates = REQUIRED_PERMITS.map(p => h['expiry_' + p.key]).filter(v => daysUntil(v) !== null);
+  if (!dates.length) return null;
+  return dates.sort((a, b) => new Date(a) - new Date(b))[0];
+};
+const permitSummary = (h) => {
+  const onFile = requiredOnFile(h);
+  if (onFile < REQUIRED_PERMITS.length) return { label: `${onFile}/${REQUIRED_PERMITS.length} required on file`, tone: 'danger', icon: 'fa-circle-exclamation' };
+  const tone = expiryTone(nextRequiredExpiry(h));
+  if (tone === 'danger') return { label: 'Permit expired', tone, icon: 'fa-circle-exclamation' };
+  if (tone === 'warning') return { label: 'Expiring soon', tone, icon: 'fa-clock' };
+  return { label: 'Permits complete', tone: 'success', icon: 'fa-circle-check' };
+};
+const expiryNote = (value) => {
+  const days = daysUntil(value);
+  if (days === null) return '';
+  if (days < 0) return `Expired ${formatDate(value)}`;
+  if (days === 0) return 'Expires today';
+  return `Expires ${formatDate(value)}`;
 };
 
-// BH Info Modal (Student style preview)
-const openBhInfo = async (house) => {
-  activeHouse.value = house;
+const showDetail = ref(false);
+const detailTab = ref('overview');
+const roomsChanged = ref(false);
+const isLoadingRooms = ref(false);
+const DETAIL_TABS = [
+  { key: 'overview', label: 'Overview', icon: 'fa-house' },
+  { key: 'documents', label: 'Documents', icon: 'fa-file-lines' },
+  { key: 'rooms', label: 'Rooms & occupants', icon: 'fa-door-open' }
+];
+
+const buildDocs = (house) => {
+  // All files for a permit; falls back to the single permit column for older records.
+  const toDoc = (p) => {
+    const listed = permitFiles.value.filter(f => f.house_id === house.id && f.permit_key === p.key).map(f => f.file_path);
+    const files = listed.length ? listed : (house[p.key] ? [house[p.key]] : []);
+    return { label: p.label, file: files[0] || null, files, expiry: house['expiry_' + p.key] || null };
+  };
+  requiredDocs.value = REQUIRED_PERMITS.map(toDoc);
+  const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, files: [house.img], expiry: null }] : [];
+  const dynamicUploaded = dynamicDocs.value
+    .filter(d => d.house_id === house.id)
+    .map(d => ({ label: d.criteria_label || 'Additional document', file: d.file_path, files: [d.file_path], expiry: null }));
+  optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded];
+};
+
+const buildPhotos = (house) => {
   // Prefer house_photos table entries (supports > 4 photos), fall back to legacy img columns
-  const photosFromTable = housePhotos.value
-    .filter(p => p.house_id === house.id)
-    .map(p => p.photo_url);
+  const photosFromTable = housePhotos.value.filter(p => p.house_id === house.id).map(p => p.photo_url);
   const legacyPhotos = [house.img, house.img_1, house.img_2, house.img_3].filter(i => i && i !== 'null');
   bhPhotos.value = photosFromTable.length > 0 ? photosFromTable : legacyPhotos;
   currentPhotoIndex.value = 0;
-  showBhModal.value = true;
+};
 
-  // Load verified reviews
+const loadReviews = async (house) => {
   try {
     isLoadingReviews.value = true;
-    const response = await axios.get(`/api/admin/reviews/${house.id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await axios.get(`/api/admin/reviews/${house.id}`, { headers: { Authorization: `Bearer ${token}` } });
     reviews.value = response.data.reviews || [];
   } catch (e) {
     console.error('Failed to fetch reviews:', e);
@@ -322,111 +416,75 @@ const openBhInfo = async (house) => {
   } finally {
     isLoadingReviews.value = false;
   }
-
-  // Load Google Map dynamically
-  setTimeout(async () => {
-    try {
-      const lat = parseFloat(house.latitude) || 13.4079;
-      const lng = parseFloat(house.longitude) || 123.3745;
-      const bhLocation = { lat, lng };
-      
-      const { Map } = await googleInstance.maps.importLibrary("maps");
-      const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary("marker");
-
-      const mapContainer = mapElement.value;
-      if (mapContainer) {
-        const map = new Map(mapContainer, {
-          center: bhLocation,
-          zoom: 16,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: true,
-          mapId: 'CSPC_ADMIN_REGISTERED_PREVIEW'
-        });
-
-        new AdvancedMarkerElement({
-          position: bhLocation,
-          map: map,
-          title: house.name
-        });
-      }
-    } catch (err) {
-      console.warn('Map loader error:', err);
-    }
-  }, 200);
 };
 
-const closeBhInfo = () => {
-  showBhModal.value = false;
-  activeHouse.value = null;
-  reviews.value = [];
-};
-
-
-
-// Documents Viewer
-const openDocs = (house) => {
-  activeHouse.value = house;
-
-  const requiredList = [
-    { label: 'BUSINESS PERMIT APPLICATION FORM', key: 'permit_business_form' },
-    { label: 'BARANGAY BUSINESS CLEARANCE', key: 'permit_barangay' },
-    { label: 'SANITARY PERMIT / HEALTH CLEARANCE', key: 'permit_sanitary' },
-    { label: 'VALID FIRE SAFETY INSPECTION CERTIFICATE', key: 'permit_fire' }
-  ];
-
-  const optionalList = [
-    { label: 'COMMUNITY TAX CERTIFICATE (CEDULA)', key: 'permit_cedula' },
-    { label: 'DTI REGISTRATION CERTIFICATE', key: 'permit_dti' },
-    { label: 'CERTIFICATE OF BUILDING INSPECTION', key: 'permit_building' },
-    { label: 'ZONING CERTIFICATE / LOCATIONAL CLEARANCE', key: 'permit_zoning' }
-  ];
-
-  requiredDocs.value = requiredList.map(p => ({
-    label: p.label,
-    file: house[p.key] || null
-  }));
-
-  const standardOptional = optionalList.map(p => ({
-    label: p.label,
-    file: house[p.key] || null
-  }));
-
-  const facadeDoc = house.img ? [{ label: 'FACADE PHOTO', file: house.img }] : [];
-
-  const dynamicUploaded = dynamicDocs.value
-    .filter(d => d.house_id === house.id)
-    .map(d => ({
-      label: (d.criteria_label || 'ADDITIONAL DOCUMENT').toUpperCase(),
-      file: d.file_path
-    }));
-
-  optionalDocs.value = [...standardOptional, ...facadeDoc, ...dynamicUploaded];
-  showDocModal.value = true;
-};
-
-const closeDocs = () => {
-  showDocModal.value = false;
-  activeHouse.value = null;
-  requiredDocs.value = [];
-  optionalDocs.value = [];
-};
-
-// Rooms Matrix Modal
-const openRoomsMatrix = async (house) => {
-  activeHouse.value = house;
-  isOccupantsView.value = false;
-  showRoomsModal.value = true;
-
+const loadRooms = async (house) => {
   try {
-    const response = await axios.get(`/api/admin/rooms/${house.id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    isLoadingRooms.value = true;
+    const response = await axios.get(`/api/admin/rooms/${house.id}`, { headers: { Authorization: `Bearer ${token}` } });
     activeRooms.value = response.data.rooms || [];
   } catch (error) {
     console.error('Failed to load rooms:', error);
     showSystemAlert('Could not fetch room matrix.', 'error');
+  } finally {
+    isLoadingRooms.value = false;
   }
+};
+
+const drawMap = async () => {
+  await nextTick();
+  const house = activeHouse.value;
+  const mapContainer = mapElement.value;
+  if (!house || !mapContainer || !googleInstance) return;
+  try {
+    const bhLocation = { lat: parseFloat(house.latitude) || 13.4079, lng: parseFloat(house.longitude) || 123.3745 };
+    const { Map } = await googleInstance.maps.importLibrary('maps');
+    const { AdvancedMarkerElement } = await googleInstance.maps.importLibrary('marker');
+    const map = new Map(mapContainer, {
+      center: bhLocation,
+      zoom: 16,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true,
+      mapId: 'DEMO_MAP_ID'
+    });
+    new AdvancedMarkerElement({ position: bhLocation, map, title: house.name });
+  } catch (err) {
+    console.warn('Map loader error:', err);
+  }
+};
+
+const openDetail = (house, tab = 'overview') => {
+  activeHouse.value = house;
+  buildPhotos(house);
+  buildDocs(house);
+  activeRooms.value = [];
+  activeRoomOccupants.value = [];
+  isOccupantsView.value = false;
+  roomsChanged.value = false;
+  detailTab.value = tab;
+  showDetail.value = true;
+  loadReviews(house);
+  loadRooms(house);
+  if (tab === 'overview') drawMap();
+};
+
+watch(detailTab, (tab) => {
+  if (tab === 'overview' && showDetail.value) drawMap();
+});
+
+const closeDetail = () => {
+  showDetail.value = false;
+  activeHouse.value = null;
+  reviews.value = [];
+  activeRooms.value = [];
+  activeRoomOccupants.value = [];
+  isOccupantsView.value = false;
+  requiredDocs.value = [];
+  optionalDocs.value = [];
+  // A boarder checkout changes room counts, so refresh the list
+  if (roomsChanged.value) fetchRegisteredHouses();
+  roomsChanged.value = false;
 };
 
 const viewBoarderDetails = async (room) => {
@@ -450,6 +508,7 @@ const handleCheckoutOccupant = async (occId) => {
     });
     if (response.data.success) {
       showSystemAlert('Boarder checked out successfully.', 'success');
+      roomsChanged.value = true;
       viewBoarderDetails(activeRoomData.value);
     }
   } catch (error) {
@@ -458,14 +517,10 @@ const handleCheckoutOccupant = async (occId) => {
   }
 };
 
-const closeRoomsModal = () => {
-  showRoomsModal.value = false;
-  activeHouse.value = null;
-  activeRooms.value = [];
-  activeRoomOccupants.value = [];
-  isOccupantsView.value = false;
-  fetchRegisteredHouses(); 
-};
+const totalOccupants = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.occupant_count || 0), 0));
+const totalCapacity = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.capacity || 0), 0));
+const totalCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.cspc_count || 0), 0));
+const totalNonCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.non_cspc_count || 0), 0));
 
 const parseAmenities = (val) => {
   if (!val) return [];
@@ -543,16 +598,16 @@ const loadError = ref('');
             v-model="searchQuery"
             type="text"
             placeholder="Search by boarding house name, date, location..."
-            class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
+            class="w-full h-[46px] pl-10 pr-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
           />
         </div>
 
         <!-- Barangay Filter Dropdown -->
-        <div class="flex items-center gap-2 bg-white border border-slate-200 px-4 py-3 rounded-2xl shadow-sm min-w-[220px] w-full sm:w-auto">
+        <div class="flex items-center gap-2 bg-white border border-slate-200 px-4 h-[46px] rounded-2xl shadow-sm min-w-[220px] w-full sm:w-auto">
           <i class="fa-solid fa-filter text-slate-400 text-xs flex-shrink-0"></i>
           <select aria-label="selected Barangay"
             v-model="selectedBarangay"
-            class="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer"
+            class="flex-1 h-full bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer barangay-select"
           >
             <option value="">All Barangays</option>
             <option v-for="b in barangays" :key="b" :value="b">{{ b }}</option>
@@ -576,606 +631,301 @@ const loadError = ref('');
       </div>
 
       <!-- Table Container & Card Layout -->
-      <div v-if="!isLoading" class="animate-fade-in">
+      <div v-if="!isLoading" class="registered-body animate-fade-in">
         
-        <!-- Top Pagination Bar -->
-        <div v-if="filteredHouses.length > 0" class="mb-4 px-6 py-3.5 bg-white rounded-2xl border border-slate-200/60 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
-          <div class="flex items-center gap-4">
-            <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
-            <div class="flex items-center gap-2">
-              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-              <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                <option :value="10">10</option>
-                <option :value="25">25</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              @click="currentPage > 1 && currentPage--" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-            </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
-              {{ currentPage }} / {{ totalPages }}
-            </span>
-            <button 
-              @click="currentPage < totalPages && currentPage++" 
-              :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-            </button>
-          </div>
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
-        <div class="block md:hidden space-y-4">
-          <div v-if="filteredHouses.length === 0" class="bg-white rounded-2xl p-8 text-center border border-slate-200/60 text-slate-400 italic text-sm font-semibold uppercase tracking-wide">
+
+        <!-- PHONE VIEW: one card per property -->
+        <div class="block lg:hidden space-y-3">
+          <div v-if="filteredHouses.length === 0" class="bg-white rounded-2xl p-8 text-center border border-slate-200/60 text-slate-400 italic text-sm font-semibold">
             <span v-if="selectedBarangay || searchQuery">No boarding houses match the selected filter.</span>
             <span v-else>No registered boarding houses found.</span>
           </div>
-          
-          <div v-for="(house, index) in paginatedHouses" :key="'mob-' + house.id" class="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm space-y-4">
+          <div v-for="(house, index) in paginatedHouses" :key="'mob-' + house.id" class="rp-card">
             <div class="flex justify-between items-start gap-3">
-              <div>
-                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">#{{ startItemIndex + index }}</span>
-                <h3 class="font-semibold text-slate-900 uppercase text-base leading-tight mt-0.5">{{ house.name }}</h3>
+              <div class="min-w-0">
+                <span class="text-[12px] font-semibold text-slate-400">#{{ startItemIndex + index }}</span>
+                <h3 class="font-semibold text-slate-900 text-base leading-tight">{{ house.name }}</h3>
+                <p class="text-xs text-slate-500 mt-1">{{ formatAddress(house) || '—' }}</p>
               </div>
-              <span class="text-[12px] font-semibold text-slate-400 uppercase bg-slate-100 px-2.5 py-1 rounded-full whitespace-nowrap">
-                {{ formatDate(house.created_at) }}
-              </span>
+              <span :class="['rp-chip', 'is-' + permitSummary(house).tone]"><i :class="['fa-solid', permitSummary(house).icon]" aria-hidden="true"></i>{{ permitSummary(house).label }}</span>
             </div>
-
-            <div class="grid grid-cols-3 gap-2 pt-1">
-              <button @click="openProfile(house)" class="text-blue-500 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95 management-button management-button-secondary">
-                <i class="fa-solid fa-user-tie text-[13px] text-blue-500"></i>
-                <span class="text-[12px] font-semibold uppercase tracking-wide text-blue-900">Profile</span>
-              </button>
-              
-              <button @click="openBhInfo(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95 management-button management-button-secondary">
-                <i class="fa-solid fa-hotel text-[13px] text-blue-500"></i>
-                <span class="text-[12px] font-semibold uppercase tracking-wide text-blue-900">BH Info</span>
-              </button>
-
-              <button @click="openDocs(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-2.5 flex flex-col items-center justify-center gap-1 transition shadow-xs group cursor-pointer active:scale-95 management-button management-button-secondary">
-                <i class="fa-solid fa-file-invoice text-[13px] text-blue-500"></i>
-                <span class="text-[12px] font-semibold uppercase tracking-wide text-blue-900">Docs</span>
-              </button>
-            </div>
-
-            <div class="pt-2">
-              <button @click="openRoomsMatrix(house)" class="w-full text-blue-700 border border-blue-200 bg-blue-50/60 hover:bg-blue-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-2 transition font-semibold text-[12px] uppercase tracking-wide shadow-2xs active:scale-95 cursor-pointer management-button">
-                <i class="fa-solid fa-door-open text-[12px] text-blue-600"></i>
-                <span>View Rooms & Occupants</span>
-              </button>
-            </div>
-
-            <div class="pt-2 border-t border-slate-100 flex justify-end">
-              <button @click="openArchiveModal(house)"
-                      class="w-full bg-red-500 hover:bg-red-600 text-white rounded-xl py-2.5 font-semibold text-[12px] uppercase tracking-wide transition shadow-sm active:scale-95 cursor-pointer text-center management-button">
-                Archive Property
-              </button>
-            </div>
+            <p class="text-xs text-slate-600 mt-3"><i class="fa-solid fa-user-tie text-slate-400 mr-1.5" aria-hidden="true"></i>{{ house.owner_name }} <span v-if="house.owner_phone || house.phone_contact" class="text-slate-400">· {{ house.owner_phone || house.phone_contact }}</span></p>
+            <button type="button" class="rp-view-btn w-full mt-3" @click="openDetail(house)"><i class="fa-solid fa-eye" aria-hidden="true"></i> View details</button>
           </div>
         </div>
 
         <!-- LAPTOP / DESKTOP VIEW: Table Layout -->
-        <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
-          <div class="overflow-x-auto">
-            <table class="management-registry-table w-full border-collapse"><thead class="bg-slate-50"><tr><th scope="col">#</th><th scope="col">Boarding house / date</th><th scope="col">Inspect records</th><th scope="col">Archive</th></tr></thead><tbody class="divide-y divide-slate-100"><tr v-if="filteredHouses.length === 0">
-                  <td colspan="4" class="py-20 text-slate-400 italic text-sm text-center font-semibold uppercase tracking-wide">
+        <div class="registered-table-card hidden lg:flex lg:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+          <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+
+          <div class="registered-table-scroll overflow-x-auto">
+            <table class="management-registry-table w-full border-collapse">
+              <thead class="bg-slate-50">
+                <tr><th scope="col">#</th><th scope="col">Boarding house</th><th scope="col">Owner</th><th scope="col">Permits</th><th scope="col">Registered</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-if="filteredHouses.length === 0">
+                  <td colspan="6" class="py-20 text-slate-400 italic text-sm text-center font-semibold">
                     <span v-if="selectedBarangay || searchQuery">No boarding houses match the selected filter.</span>
                     <span v-else>No registered boarding houses found.</span>
                   </td>
-                </tr><tr v-for="(house, index) in paginatedHouses" :key="house.id"><td class="text-slate-500">{{ startItemIndex + index }}</td><td><strong class="block text-slate-900 font-semibold">{{ house.name }}</strong><span class="block text-slate-500 text-xs mt-2">Registered 
-                    {{ formatDate(house.created_at) }}
-                  </span></td><td><div class="management-row-actions">
-                    <button @click="openProfile(house)" class="text-blue-500 border border-blue-100 bg-white hover:bg-blue-50 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 mx-auto transition w-20 shadow-sm group cursor-pointer active:scale-95 management-button management-button-secondary">
-                      <i class="fa-solid fa-user-tie text-[16px] text-blue-500 group-hover:scale-110 transition duration-300"></i>
-                      <span class="leading-tight text-[12px] font-semibold uppercase tracking-wide text-center text-blue-900">Owner</span>
-                    </button>
-                  
-
-                    <button @click="openBhInfo(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 mx-auto transition w-20 shadow-sm group cursor-pointer active:scale-95 management-button management-button-secondary">
-                      <i class="fa-solid fa-hotel text-[16px] text-blue-500 group-hover:scale-110 transition duration-300"></i>
-                      <span class="leading-tight text-[12px] font-semibold uppercase tracking-wide text-center text-blue-900">Property</span>
-                    </button>
-                  
-
-                    <button @click="openDocs(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 mx-auto transition w-20 shadow-sm group cursor-pointer active:scale-95 management-button management-button-secondary">
-                      <i class="fa-solid fa-file-invoice text-[16px] text-blue-500 group-hover:scale-110 transition duration-300"></i>
-                      <span class="leading-tight text-[12px] font-semibold uppercase tracking-wide text-center text-blue-900">Documents</span>
-                    </button>
-                  
-
-                    <button @click="openRoomsMatrix(house)" class="text-blue-500 border border-blue-200 bg-white hover:bg-blue-50 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 mx-auto transition w-20 shadow-sm group cursor-pointer active:scale-95 management-button management-button-secondary">
-                      <i class="fa-solid fa-door-open text-[16px] text-blue-500 group-hover:scale-110 transition duration-300"></i>
-                      <span class="leading-tight text-[12px] font-semibold uppercase tracking-wide text-center text-blue-900">Rooms</span>
-                    </button>
-                  </div></td><td>
-                    <button @click="openArchiveModal(house)"
-                            class="bg-red-500 hover:bg-red-600 text-white rounded-xl px-4 py-2 font-semibold text-[12px] uppercase tracking-wide transition shadow-md active:scale-95 cursor-pointer management-button">
-                      Archive
-                    </button>
-                  </td></tr></tbody></table>
+                </tr>
+                <tr v-for="(house, index) in paginatedHouses" :key="house.id" class="rp-row">
+                  <td class="text-slate-500">{{ startItemIndex + index }}</td>
+                  <td>
+                    <strong class="block text-slate-900 font-semibold">{{ house.name }}</strong>
+                    <span class="block text-slate-500 text-xs mt-1">{{ formatAddress(house) || '—' }}</span>
+                  </td>
+                  <td>
+                    <span class="block text-slate-800 font-medium">{{ house.owner_name }}</span>
+                    <span class="block text-slate-500 text-xs mt-1">{{ house.owner_phone || house.phone_contact || '—' }}</span>
+                  </td>
+                  <td>
+                    <span :class="['rp-chip', 'is-' + permitSummary(house).tone]"><i :class="['fa-solid', permitSummary(house).icon]" aria-hidden="true"></i>{{ permitSummary(house).label }}</span>
+                    <span v-if="nextRequiredExpiry(house)" class="block text-slate-500 text-xs mt-1">Next: {{ expiryNote(nextRequiredExpiry(house)) }}</span>
+                  </td>
+                  <td class="text-slate-500 text-xs">{{ formatDate(house.created_at) }}</td>
+                  <td class="text-right">
+                    <button type="button" class="rp-view-btn" @click="openDetail(house)" :aria-label="'View details of ' + house.name"><i class="fa-solid fa-eye" aria-hidden="true"></i> View details</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <!-- Pure Vue Reactive Pagination Bar -->
-          <div v-if="filteredHouses.length > 0" class="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500">
-            <div class="flex items-center gap-4">
-              <span>Showing {{ startItemIndex }} to {{ endItemIndex }} of {{ filteredHouses.length }} entries</span>
-              <div class="flex items-center gap-2">
-                <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-                <select aria-label="items Per Page" v-model="itemsPerPage" class="bg-white border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none">
-                  <option :value="10">10</option>
-                  <option :value="25">25</option>
-                  <option :value="50">50</option>
-                  <option :value="100">100</option>
-                </select>
-              </div>
-            </div>
+          <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
-            <div class="flex items-center gap-2">
-              <button 
-                @click="currentPage > 1 && currentPage--" 
-                :disabled="currentPage === 1"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold management-button management-button-secondary"
-              >
-                <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-              </button>
-              <span class="px-3 py-1 bg-blue-600 text-white rounded-lg font-semibold text-xs">
-                {{ currentPage }} / {{ totalPages }}
-              </span>
-              <button 
-                @click="currentPage < totalPages && currentPage++" 
-                :disabled="currentPage === totalPages"
-                class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold management-button management-button-secondary"
-              >
-                Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-              </button>
-            </div>
-          </div>
         </div>
 
       </div>
     </main>
 
-    <!-- Modals (Profile, BH Info, Docs, Rooms, Confirm, Preview) -->
-   <!-- Owner Profile Modal -->
-<div v-management-dialog="{ close: () => closeProfile() }" v-if="showProfileModal && activeHouse" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-  <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden text-left border border-slate-100 animate-in zoom-in-95 duration-200">
-    <div class="bg-slate-50 border-b border-slate-100 px-8 py-6 flex justify-between items-center shrink-0">
-      <h1 class="text-[12px] font-semibold tracking-normal uppercase text-slate-400">Owner Information Profile</h1>
-      <button aria-label="Close dialog" @click="closeProfile" class="text-slate-400 hover:text-red-500 transition text-2xl focus:outline-none cursor-pointer">&times;</button>
-    </div>
-    
-    <div class="flex-1 overflow-y-auto bg-white p-8 sm:p-12 scrollbar-thin">
-      <!-- Profile Header Wrapper -->
-      <div class="flex flex-col sm:flex-row items-center gap-6 mb-10 pb-8 border-b border-slate-100 text-center sm:text-left">
-        <div class="w-24 h-24 rounded-3xl bg-[#2a528a] flex items-center justify-center shadow-md shrink-0 overflow-hidden border-2 border-slate-100">
-          <img v-if="activeHouse.profile_pic" :src="getImageUrl(activeHouse.profile_pic)" class="w-full h-full object-cover" />
-          <span v-else class="text-white text-4xl font-semibold">{{ activeHouse.owner_name.charAt(0).toUpperCase() }}</span>
-        </div>
-        <div>
-          <h2 class="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight leading-tight mb-1">{{ activeHouse.owner_name }}</h2>
-          <p class="text-[12px] font-semibold text-blue-600 uppercase tracking-normal">Boarding House Owner</p>
-        </div>
-      </div>
-
-      <!-- Information Grid Layout -->
-      <div class="space-y-8 max-w-2xl mx-auto">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 items-center">
-          <div class="md:col-span-1">
-            <h3 class="text-[12px] font-semibold text-slate-900 uppercase tracking-normal">Contact Details</h3>
-            <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Primary Information</p>
-          </div>
-          <div class="md:col-span-2 space-y-4">
-            <div class="space-y-1">
-              <label class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Full Name</label>
-              <div class="bg-slate-50 border border-slate-200/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-800">{{ activeHouse.owner_name }}</div>
-            </div>
-            <div class="space-y-1">
-              <label class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Phone Number</label>
-              <div class="bg-slate-50 border border-slate-200/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-800">{{ activeHouse.owner_phone || activeHouse.phone_contact || 'N/A' }}</div>
-            </div>
-            <div class="space-y-1">
-              <label class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Residential Address</label>
-              <div class="bg-slate-50 border border-slate-200/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-800">{{ activeHouse.owner_address || 'N/A' }}</div>
-            </div>
-          </div>
+    <!-- Property details page (opens in the admin content area; replaces the separate Owner / Property / Documents / Rooms pop-ups) -->
+    <div v-management-dialog="{ close: () => closeDetail() }" v-if="showDetail && activeHouse" class="rp-page" :aria-label="activeHouse.name + ' details'">
+      <div class="rp-page-inner">
+        <!-- Back link + main action -->
+        <div class="rp-topline">
+          <button type="button" class="rp-back is-main" @click="closeDetail"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back</button>
+          <button type="button" class="rp-archive-btn" @click="openArchiveModal(activeHouse)"><i class="fa-solid fa-box-archive" aria-hidden="true"></i> Archive property</button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 items-center pt-6 border-t border-slate-50">
-          <div class="md:col-span-1">
-            <h3 class="text-[12px] font-semibold text-slate-900 uppercase tracking-normal">Security</h3>
-            <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Credentials</p>
-          </div>
-          <div class="md:col-span-2">
-            <div class="space-y-1">
-              <label class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide ml-1">Email Address</label>
-              <div class="bg-slate-50 border border-slate-200/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-400 italic break-all">{{ activeHouse.owner_email }}</div>
+        <!-- Summary card -->
+        <section class="rp-card rp-hero">
+          <div class="rp-hero-main">
+            <img v-if="bhPhotos.length" :src="getImageUrl(bhPhotos[0])" class="rp-hero-photo" alt="" @click="currentPhotoIndex = 0; showLightbox = true" />
+            <span v-else class="rp-hero-photo is-empty" aria-hidden="true"><i class="fa-solid fa-house"></i></span>
+            <div class="min-w-0">
+              <h1 class="rp-hero-title">{{ activeHouse.name }}</h1>
+              <p class="rp-hero-sub"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ formatAddress(activeHouse) || '—' }}</p>
+              <p class="rp-hero-sub"><i class="fa-solid fa-user-tie" aria-hidden="true"></i> {{ activeHouse.owner_name }}<span v-if="activeHouse.owner_phone || activeHouse.phone_contact"> · {{ activeHouse.owner_phone || activeHouse.phone_contact }}</span></p>
+              <div class="rp-chips">
+                <span :class="['rp-chip', 'is-' + permitSummary(activeHouse).tone]"><i :class="['fa-solid', permitSummary(activeHouse).icon]" aria-hidden="true"></i>{{ permitSummary(activeHouse).label }}</span>
+                <span class="rp-chip"><i class="fa-regular fa-calendar" aria-hidden="true"></i>Registered {{ formatDate(activeHouse.created_at) }}</span>
+                <span v-if="activeHouse.avg_rating" class="rp-chip is-star"><i class="fa-solid fa-star" aria-hidden="true"></i>{{ Number(activeHouse.avg_rating).toFixed(1) }} ({{ activeHouse.review_count || 0 }})</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+          <dl class="rp-stats">
+            <div><dt><i class="fa-solid fa-door-open" aria-hidden="true"></i> Rooms</dt><dd>{{ isLoadingRooms ? '…' : activeRooms.length }}</dd></div>
+            <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> CSPC students</dt><dd>{{ isLoadingRooms ? '…' : totalCspc }}</dd><span v-if="!isLoadingRooms && totalNonCspc > 0" class="rp-stat-sub">+ {{ totalNonCspc }} non-CSPC</span></div>
+            <div><dt><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Required permits</dt><dd>{{ requiredOnFile(activeHouse) }} / {{ REQUIRED_PERMITS.length }}</dd></div>
+            <div :class="'is-' + expiryTone(nextRequiredExpiry(activeHouse))"><dt><i class="fa-regular fa-calendar-xmark" aria-hidden="true"></i> Next permit expiry</dt><dd>{{ nextRequiredExpiry(activeHouse) ? formatDate(nextRequiredExpiry(activeHouse)) : '—' }}</dd></div>
+          </dl>
+        </section>
 
-    <div class="border-t border-slate-100 px-8 py-5 flex justify-end bg-slate-50/50 shrink-0">
-      <button @click="closeProfile" class="bg-slate-900 text-white text-[12px] font-semibold uppercase tracking-normal px-8 py-3 rounded-xl hover:bg-blue-600 transition shadow-md focus:outline-none cursor-pointer management-button">Close Profile</button>
-    </div>
-  </div>
-</div>
+        <!-- Tabs -->
+        <nav class="rp-tabs" role="tablist" aria-label="Property details">
+          <button v-for="t in DETAIL_TABS" :key="t.key" type="button" role="tab" :aria-selected="detailTab === t.key" :class="['rp-tab', { 'is-active': detailTab === t.key }]" @click="detailTab = t.key">
+            <i :class="['fa-solid', t.icon]" aria-hidden="true"></i>{{ t.label }}
+            <span v-if="t.key === 'documents'" class="rp-tab-count">{{ requiredOnFile(activeHouse) }}/{{ REQUIRED_PERMITS.length }}</span>
+            <span v-else-if="t.key === 'rooms' && !isLoadingRooms" class="rp-tab-count">{{ activeRooms.length }}</span>
+          </button>
+        </nav>
 
-    <!-- Boarding House Info Modal -->
-<div v-management-dialog="{ close: () => closeBhInfo() }" v-if="showBhModal && activeHouse" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-  <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-6xl flex flex-col max-h-[92vh] overflow-hidden text-left border border-slate-100 animate-in zoom-in-95 duration-200">
-    <div class="bg-slate-900 text-white px-8 py-5 flex justify-between items-center rounded-t-[2.5rem] shrink-0">
-      <div class="flex items-center gap-3">
-        <img src="/img/CSPC_logo.png" alt="Logo" class="w-7 h-7 object-contain" />
-        <h2 class="text-sm font-semibold tracking-tight uppercase">Boarding House Information</h2>
-      </div>
-      <button aria-label="Close dialog" @click="closeBhInfo" class="text-white hover:text-blue-100 transition flex items-center justify-center h-8 w-8 rounded-full hover:bg-white/10 text-xl focus:outline-none cursor-pointer management-button">&times;</button>
-    </div>
-    
-    <div class="flex-1 overflow-y-auto bg-white p-8 md:p-12 space-y-8">
-      <!-- Header Info -->
-      <div class="max-w-none">
-        <h1 class="text-3xl md:text-4xl font-semibold text-slate-900 uppercase tracking-tight leading-tight">{{ activeHouse.name }}</h1>
-        <div class="flex items-center gap-4 mt-3 flex-wrap">
-          <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <p class="font-bold text-[12px] uppercase tracking-wide text-slate-600">
-              {{ formatAddress(activeHouse) || `Near ${activeHouse.name}` }}
-            </p>
-          </div>
-          <div v-if="activeHouse.avg_rating" class="flex items-center gap-1.5 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20">
-            <span class="text-[12px] font-semibold text-yellow-700">{{ Number(activeHouse.avg_rating).toFixed(1) }} Rating ({{ activeHouse.review_count || 0 }})</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Content Box Wrapper -->
-      <div class="max-w-none space-y-8 w-full">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <!-- Map Container -->
-          <div class="bg-slate-50 rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col">
-            <h2 class="text-[12px] font-semibold uppercase tracking-normal text-blue-600 mb-3">Location Map</h2>
-            <div class="rounded-2xl overflow-hidden border border-slate-200 shadow-inner bg-white relative w-full flex-1 min-h-[320px]">
-              <div ref="mapElement" class="w-full h-full min-h-[320px]"></div>
-            </div>
-          </div>
-
-          <!-- Enhanced Property Gallery Section -->
-          <div class="bg-slate-50 rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between mb-3">
-                <h2 class="text-[12px] font-semibold uppercase tracking-normal text-blue-600">Property Gallery</h2>
-                <span v-if="bhPhotos.length > 0" class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide bg-white px-2.5 py-1 rounded-full border border-slate-200 shadow-2xs">
-                  {{ currentPhotoIndex + 1 }} of {{ bhPhotos.length }}
+        <!-- OVERVIEW -->
+        <div v-if="detailTab === 'overview'" class="rp-grid">
+          <div class="rp-col">
+            <section class="rp-card">
+              <h2 class="rp-card-title">Owner</h2>
+              <div class="flex items-center gap-4 mb-4">
+                <span class="rp-avatar">
+                  <img v-if="activeHouse.profile_pic" :src="getImageUrl(activeHouse.profile_pic)" alt="" />
+                  <span v-else>{{ (activeHouse.owner_name || '?').charAt(0).toUpperCase() }}</span>
                 </span>
-              </div>
-
-              <!-- Main Stage Photo Viewer -->
-              <div v-if="bhPhotos.length > 0" class="relative group rounded-2xl overflow-hidden border border-slate-200 shadow-inner bg-slate-900 aspect-video w-full flex items-center justify-center cursor-pointer" @click="showLightbox = true">
-                <img :src="getImageUrl(bhPhotos[currentPhotoIndex])" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="Property Photo" />
-                
-                <!-- Badge Overlay -->
-                <div class="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-3 py-1 rounded-full text-[12px] font-semibold uppercase tracking-wide border border-white/20 shadow-md">
-                  <i class="fa-solid fa-camera mr-1.5 text-blue-400"></i> {{ getPhotoLabel(currentPhotoIndex) }}
+                <div>
+                  <p class="rp-strong">{{ activeHouse.owner_name }}</p>
+                  <p class="rp-muted">Boarding house owner</p>
                 </div>
-
-                <!-- Lightbox Hint Overlay -->
-                <div class="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-md text-white px-2.5 py-1 rounded-full text-[12px] font-semibold uppercase tracking-wide border border-white/20 opacity-0 group-hover:opacity-100 transition shadow-md">
-                  <i class="fa-solid fa-expand mr-1"></i> Expand Photo
-                </div>
-
-                <!-- Nav Controls -->
-                <button v-if="bhPhotos.length > 1" @click.stop="prevPhoto" class="absolute left-2.5 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shadow-lg transition cursor-pointer active:scale-95 z-10 management-button">&lsaquo;</button>
-                <button v-if="bhPhotos.length > 1" @click.stop="nextPhoto" class="absolute right-2.5 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shadow-lg transition cursor-pointer active:scale-95 z-10 management-button">&rsaquo;</button>
               </div>
+              <dl class="rp-facts">
+                <div><dt>Phone number</dt><dd>{{ activeHouse.owner_phone || activeHouse.phone_contact || 'N/A' }}</dd></div>
+                <div><dt>Email address</dt><dd class="break-all">{{ activeHouse.owner_email || 'N/A' }}</dd></div>
+                <div class="rp-span-2"><dt>Residential address</dt><dd>{{ activeHouse.owner_address || 'N/A' }}</dd></div>
+              </dl>
+            </section>
 
-              <!-- Fallback Empty Photos -->
-              <div v-else class="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center flex flex-col items-center justify-center min-h-[220px]">
-                <i class="fa-solid fa-image text-slate-300 text-3xl mb-2"></i>
-                <p class="text-slate-400 text-[12px] font-bold uppercase tracking-wide">No Property Photos Uploaded</p>
-              </div>
-            </div>
-
-            <!-- Interactive Thumbnails Carousel Row -->
-            <div v-if="bhPhotos.length > 1" class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-200/60 overflow-x-auto pb-1">
-              <button aria-label="current Photo Index = idx" v-for="(img, idx) in bhPhotos" :key="idx" @click="currentPhotoIndex = idx"
-                      class="relative w-16 h-12 rounded-xl overflow-hidden border-2 transition shrink-0 cursor-pointer focus:outline-none"
-                      :class="currentPhotoIndex === idx ? 'border-blue-600 ring-2 ring-blue-400/30 scale-105 shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'">
-                <img :src="getImageUrl(img)" class="w-full h-full object-cover" />
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Amenities -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-            <h3 class="text-[12px] font-semibold text-emerald-600 uppercase mb-3 tracking-wide">Free Amenities</h3>
-            <ul class="text-xs font-bold text-slate-600 space-y-2">
-              <template v-if="parseAmenities(activeHouse.amenities_free).length > 0">
-                <li v-for="a in parseAmenities(activeHouse.amenities_free)" :key="a" class="flex items-center gap-2">
-                  <span class="w-2 h-2 bg-emerald-500 rounded-full"></span> {{ a }}
-                </li>
-              </template>
-              <li v-else class="italic text-slate-400">Basic facilities</li>
-            </ul>
-          </div>
-          <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-            <h3 class="text-[12px] font-semibold text-rose-500 uppercase mb-3 tracking-wide">Paid Add-ons</h3>
-            <ul class="text-xs font-bold text-slate-600 space-y-2">
-              <template v-if="parseAmenities(activeHouse.amenities_paid).length > 0">
-                <li v-for="a in parseAmenities(activeHouse.amenities_paid)" :key="a" class="flex items-center gap-2">
-                  <span class="w-2 h-2 bg-blue-400 rounded-full"></span> {{ a }}
-                </li>
-              </template>
-              <li v-else class="italic text-slate-400">No paid add-ons listed.</li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Description -->
-        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-          <h3 class="text-[12px] font-semibold text-slate-400 uppercase tracking-normal mb-2">Description</h3>
-          <p class="text-sm font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">{{ activeHouse.description || 'No description provided.' }}</p>
-        </div>
-
-        <!-- Student Reviews & Ratings -->
-        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-[12px] font-semibold text-slate-400 uppercase tracking-normal">Student Reviews &amp; Ratings</h3>
-            <div v-if="activeHouse.avg_rating" class="flex items-center gap-1.5 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20 shrink-0">
-              <i class="fa-solid fa-star text-yellow-500 text-[12px]"></i>
-              <span class="text-[12px] font-semibold text-yellow-700">{{ Number(activeHouse.avg_rating).toFixed(1) }} average ({{ activeHouse.review_count || 0 }} {{ (activeHouse.review_count || 0) === 1 ? 'review' : 'reviews' }})</span>
-            </div>
-          </div>
-
-          <div v-if="isLoadingReviews" class="py-8 flex justify-center">
-            <div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-          <div v-else-if="reviews.length === 0" class="py-8 text-center">
-            <p class="text-slate-400 italic text-xs font-semibold uppercase tracking-wide">No reviews submitted yet — rating shown on the dashboard is not yet backed by any review.</p>
-          </div>
-          <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
-            <div v-for="r in reviews" :key="r.id" class="bg-white rounded-2xl p-4 border border-slate-100 flex gap-3">
-              <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden border border-slate-100">
-                <img v-if="r.profile_pic" :src="getImageUrl(r.profile_pic)" class="w-full h-full object-cover" />
-                <i v-else class="fa-solid fa-user text-xs"></i>
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center justify-between gap-2 flex-wrap">
-                  <span class="font-semibold text-slate-800 text-xs uppercase tracking-tight">{{ r.student_name }}</span>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <div class="flex gap-0.5">
-                      <i v-for="star in 5" :key="star" class="fa-solid fa-star text-[12px]" :class="star <= r.rating ? 'text-yellow-400' : 'text-slate-200'"></i>
-                    </div>
-                    <span class="text-[12px] font-bold text-slate-400">{{ formatDate(r.created_at) }}</span>
+            <section class="rp-card">
+              <h2 class="rp-card-title">Property</h2>
+              <dl class="rp-facts">
+                <div><dt>Monthly rate</dt><dd>{{ Number(activeHouse.price) > 0 ? '₱' + Number(activeHouse.price).toLocaleString('en-PH') : '—' }}</dd></div>
+                <div><dt>Property contact</dt><dd>{{ activeHouse.phone_contact || '—' }}</dd></div>
+                <div><dt>Advance payment</dt><dd>{{ activeHouse.advance_months ? activeHouse.advance_months + ' month(s)' : '—' }}</dd></div>
+                <div><dt>Deposit</dt><dd>{{ activeHouse.deposit_months ? activeHouse.deposit_months + ' month(s)' : '—' }}<span v-if="activeHouse.deposit_type" class="capitalize"> · {{ activeHouse.deposit_type }}</span></dd></div>
+              </dl>
+              <h3 class="rp-sub-title">Description</h3>
+              <p class="rp-text">{{ activeHouse.description || 'No description provided.' }}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <h3 class="rp-sub-title">Free amenities</h3>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span v-for="a in parseAmenities(activeHouse.amenities_free)" :key="a" class="rp-tag is-free">{{ a }}</span>
+                    <span v-if="!parseAmenities(activeHouse.amenities_free).length" class="rp-muted italic">Basic facilities</span>
                   </div>
                 </div>
-                <p class="text-xs text-slate-600 font-medium mt-1.5 leading-relaxed">{{ r.comment || 'No written comment.' }}</p>
+                <div>
+                  <h3 class="rp-sub-title">Paid add-ons</h3>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span v-for="a in parseAmenities(activeHouse.amenities_paid)" :key="a" class="rp-tag is-paid">{{ a }}</span>
+                    <span v-if="!parseAmenities(activeHouse.amenities_paid).length" class="rp-muted italic">No paid add-ons listed.</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            </section>
 
-    <div class="border-t border-slate-100 px-8 py-4 flex justify-end bg-slate-50/50 shrink-0">
-      <button @click="closeBhInfo" class="bg-[#2a528a] text-white text-[12px] font-semibold uppercase tracking-normal px-8 py-3 rounded-full hover:bg-slate-900 transition shadow-md focus:outline-none cursor-pointer management-button management-button-primary">Close Preview</button>
-    </div>
-  </div>
-</div>
-
-   <!-- Document Viewer Modal -->
-<div v-management-dialog="{ close: () => closeDocs() }" v-if="showDocModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex justify-center items-center p-4">
-  <div class="bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-left border border-slate-100 animate-in fade-in duration-300">
-    
-    <!-- Modal Header -->
-    <div class="bg-[#2a528a] text-white px-8 py-5 flex items-center shrink-0">
-      <div class="flex items-center gap-3 min-w-0 pr-4">
-        <div class="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m22 8-6 4 6 4V8Z" /><rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
-          </svg>
-        </div>
-        <h2 class="text-sm sm:text-lg font-semibold uppercase tracking-tight truncate">
-          {{ activeHouse ? activeHouse.owner_name : '' }} - Legal Documents
-        </h2>
-      </div>
-      
-      <button aria-label="Close dialog" @click="closeDocs" class="ml-auto text-white/80 hover:text-white bg-white/10 hover:bg-red-500 transition flex items-center justify-center h-9 w-9 rounded-full text-xl focus:outline-none cursor-pointer shrink-0 management-button">&times;</button>
-    </div>
-    
-    <!-- Modal Content -->
-    <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left space-y-8">
-      
-      <!-- Required Documents Section -->
-      <div>
-        <p class="text-[12px] font-semibold text-rose-500 uppercase tracking-wide mb-4 flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> REQUIRED DOCUMENTS
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-          <div v-for="doc in requiredDocs" :key="doc.label"
-               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
-              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
-              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer management-button">Preview</button>
+            <section class="rp-card">
+              <div class="rp-card-head">
+                <h2 class="rp-card-title !mb-0">Student reviews</h2>
+                <span v-if="activeHouse.avg_rating" class="rp-chip is-star"><i class="fa-solid fa-star" aria-hidden="true"></i>{{ Number(activeHouse.avg_rating).toFixed(1) }} average · {{ activeHouse.review_count || 0 }} {{ (activeHouse.review_count || 0) === 1 ? 'review' : 'reviews' }}</span>
               </div>
-            </div>
-            <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
-              <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
-              <h3 class="font-semibold text-[12px] text-rose-400 uppercase tracking-wide">NOT SUBMITTED</h3>
-            </div>
-            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
-              <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Optional Documents Section -->
-      <div>
-        <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-4 flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> OPTIONAL DOCUMENTS
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-          <div v-for="doc in optionalDocs" :key="doc.label"
-               class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-            <div v-if="doc.file" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
-              <img :src="getImageUrl(doc.file)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
-              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                <button @click="openPreview(getImageUrl(doc.file))" type="button" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg hover:bg-blue-600 hover:text-white transition cursor-pointer management-button">Preview</button>
+              <div v-if="isLoadingReviews" class="py-6 flex justify-center"><div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>
+              <p v-else-if="reviews.length === 0" class="rp-muted italic">No reviews submitted yet.</p>
+              <div v-else class="space-y-2">
+                <div v-for="r in reviews" :key="r.id" class="rp-review">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <span class="rp-strong">{{ r.student_name }}</span>
+                    <span class="rp-muted"><i v-for="star in 5" :key="star" class="fa-solid fa-star text-[11px]" :class="star <= r.rating ? 'text-amber-400' : 'text-slate-200'"></i> · {{ formatDate(r.created_at) }}</span>
+                  </div>
+                  <p class="rp-text mt-1">{{ r.comment || 'No written comment.' }}</p>
+                </div>
               </div>
-            </div>
-            <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
-              <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
-              <h3 class="font-semibold text-[12px] text-slate-400 uppercase tracking-wide">NOT SUBMITTED</h3>
-            </div>
-            <div class="p-4 border-t border-slate-50 text-center flex-1 flex items-center justify-center">
-              <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.label }}</h3>
-            </div>
+            </section>
           </div>
+
+          <div class="rp-col">
+            <section class="rp-card">
+              <h2 class="rp-card-title">Location</h2>
+              <div ref="mapElement" class="rp-map"></div>
+            </section>
+            <section class="rp-card">
+              <div class="rp-card-head">
+                <h2 class="rp-card-title !mb-0">Photos</h2>
+                <span v-if="bhPhotos.length" class="rp-muted">{{ currentPhotoIndex + 1 }} of {{ bhPhotos.length }} · {{ getPhotoLabel(currentPhotoIndex) }}</span>
+              </div>
+              <div v-if="bhPhotos.length" class="rp-photo" @click="showLightbox = true">
+                <img :src="getImageUrl(bhPhotos[currentPhotoIndex])" alt="Property photo" />
+                <span class="rp-photo-hint"><i class="fa-solid fa-expand" aria-hidden="true"></i> Expand</span>
+                <button v-if="bhPhotos.length > 1" type="button" class="rp-photo-nav is-prev" aria-label="Previous photo" @click.stop="prevPhoto">&lsaquo;</button>
+                <button v-if="bhPhotos.length > 1" type="button" class="rp-photo-nav is-next" aria-label="Next photo" @click.stop="nextPhoto">&rsaquo;</button>
+              </div>
+              <div v-else class="rp-empty">No property photos uploaded</div>
+              <div v-if="bhPhotos.length > 1" class="flex gap-2 mt-3 overflow-x-auto pb-1">
+                <button v-for="(img, idx) in bhPhotos" :key="idx" type="button" :aria-label="'Show photo ' + (idx + 1)" @click="currentPhotoIndex = idx"
+                        :class="['rp-thumb-btn', { 'is-active': currentPhotoIndex === idx }]"><img :src="getImageUrl(img)" alt="" /></button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- DOCUMENTS -->
+        <div v-else-if="detailTab === 'documents'" class="rp-col">
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
+            <div class="rp-card-head">
+              <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
+              <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === REQUIRED_PERMITS.length ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
+            </div>
+            <ul class="rp-doc-grid">
+              <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
+                <button v-if="doc.file" type="button" class="rp-doc-preview" :aria-label="'View ' + doc.label + (doc.files.length > 1 ? ` (${doc.files.length} files)` : '')" @click="openPreviewSet(doc.files)">
+                  <img v-if="!isPdfFile(doc.file)" :src="getImageUrl(doc.file)" alt="" />
+                  <span v-else class="rp-doc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF</span>
+                  <span v-if="doc.files.length > 1" class="rp-doc-count" aria-hidden="true">{{ doc.files.length }} files</span>
+                </button>
+                <span v-else class="rp-doc-preview is-empty" aria-hidden="true"><i class="fa-regular fa-file"></i></span>
+                <div class="min-w-0 flex-1">
+                  <p class="rp-doc-name">{{ doc.label }}</p>
+                  <p class="rp-doc-meta">
+                    <span v-if="!doc.file" :class="group.required ? 'text-rose-600 font-semibold' : 'text-slate-400'">Not submitted</span>
+                    <template v-else>
+                      <span class="text-emerald-700 font-semibold"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
+                      <span v-if="doc.expiry" :class="['rp-exp', 'is-' + expiryTone(doc.expiry)]"> · {{ expiryNote(doc.expiry) }}</span>
+                    </template>
+                  </p>
+                  <button v-if="doc.file" type="button" class="rp-link-btn" @click="openPreviewSet(doc.files)"><i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View all ${doc.files.length} files` : 'View full screen' }}</button>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <!-- ROOMS & OCCUPANTS -->
+        <div v-else class="rp-col">
+          <template v-if="!isOccupantsView">
+            <section class="rp-card">
+              <div class="rp-card-head">
+                <h2 class="rp-card-title !mb-0">Rooms</h2>
+                <span class="rp-muted">{{ totalOccupants }} of {{ totalCapacity }} beds occupied · {{ Math.max(totalCapacity - totalOccupants, 0) }} vacant</span>
+              </div>
+              <div v-if="isLoadingRooms" class="py-8 flex justify-center"><div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>
+              <div v-else-if="activeRooms.length === 0" class="rp-empty">No rooms listed for this boarding house.</div>
+              <div v-else class="rp-room-grid">
+                <div v-for="room in activeRooms" :key="room.id" class="rp-room">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="rp-strong">Room {{ room.room_number }}</span>
+                    <span :class="['rp-chip', room.occupant_count >= room.capacity ? 'is-danger' : 'is-success']">{{ room.occupant_count >= room.capacity ? 'Full' : 'Available' }}</span>
+                  </div>
+                  <span class="rp-tag mt-2" :class="room.gender_type === 'female' ? 'is-female' : 'is-male'">{{ room.gender_type }}</span>
+                  <div class="rp-bar" aria-hidden="true"><span :style="{ width: Math.min(100, (room.occupant_count / Math.max(room.capacity, 1)) * 100) + '%' }"></span></div>
+                  <p class="rp-muted mt-1">{{ room.occupant_count }} / {{ room.capacity }} occupied ({{ room.capacity - room.occupant_count }} vacant)</p>
+                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span><span v-if="room.non_cspc_count > 0"> + {{ room.non_cspc_count }} non-CSPC</span></p>
+                  <button type="button" class="rp-link-btn mt-2" @click="viewBoarderDetails(room)">View occupants <i class="fa-solid fa-chevron-right text-[10px]" aria-hidden="true"></i></button>
+                </div>
+              </div>
+            </section>
+          </template>
+
+          <template v-else>
+            <section class="rp-card">
+              <div class="rp-card-head">
+                <button type="button" class="rp-back" @click="isOccupantsView = false"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back to rooms</button>
+                <h2 class="rp-card-title !mb-0">Room {{ activeRoomData ? activeRoomData.room_number : '' }} occupants</h2>
+              </div>
+              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active CSPC student boarders in this room.</div>
+              <div v-else class="rp-room-grid">
+                <div v-for="(occ, i) in activeRoomOccupants" :key="occ.id" class="rp-room">
+                  <div class="flex items-center justify-between gap-2 mb-3">
+                    <div>
+                      <p class="rp-strong">{{ occ.name }}</p>
+                      <p class="rp-muted">CSPC resident #{{ i + 1 }}</p>
+                    </div>
+                    <span :class="['rp-chip', occ.payment_status === 'Paid' ? 'is-success' : 'is-danger']">{{ occ.payment_status }}</span>
+                  </div>
+                  <dl class="rp-facts">
+                    <div><dt>Age / contact</dt><dd>{{ occ.age ? `${occ.age} yrs old` : '—' }} · {{ occ.contact_number || 'No contact' }}</dd></div>
+                    <div><dt>Duration &amp; ledger</dt><dd>{{ occ.months }} month{{ occ.months > 1 ? 's' : '' }} — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</dd></div>
+                    <div><dt>Check-in</dt><dd>{{ occ.check_in_date ? new Date(occ.check_in_date).toLocaleDateString() : '—' }}</dd></div>
+                    <div><dt>Check-out</dt><dd>{{ getAdminCheckoutDate(occ) }}</dd></div>
+                    <div v-if="occ.emergency_contact" class="rp-span-2"><dt>Emergency contact</dt><dd>{{ occ.emergency_contact }}</dd></div>
+                  </dl>
+                </div>
+              </div>
+            </section>
+          </template>
         </div>
       </div>
-
     </div>
-
-  </div>
-</div>
-
-   <!-- Rooms Matrix Modal -->
-<div v-management-dialog="{ close: () => closeRoomsModal() }" v-if="showRoomsModal" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-  <div class="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden text-left border border-slate-100 animate-in zoom-in-95 duration-200">
-    
-    <!-- Modal Header -->
-    <div class="bg-[#2a528a] text-white py-5 px-6 sm:px-8 flex justify-between items-center rounded-t-[2.5rem] shrink-0">
-      <div class="flex items-center gap-2.5 min-w-0 pr-4">
-        <div class="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-        </div>
-        <h2 class="text-[12px] sm:text-xs font-semibold uppercase tracking-wider leading-snug">
-          Rooms & Occupants <span class="block sm:inline">Monitoring</span>
-        </h2>
-      </div>
-      <button aria-label="Close dialog" @click="closeRoomsModal" class="text-white hover:text-red-300 transition flex items-center justify-center h-9 w-9 rounded-full hover:bg-white/10 text-xl focus:outline-none cursor-pointer shrink-0 management-button">&times;</button>
-    </div>
-
-    <!-- Main Content Area -->
-    <div class="flex-1 overflow-y-auto bg-slate-50/50 p-6 md:p-8">
-      
-      <!-- 1. Rooms Matrix List View -->
-      <div v-if="!isOccupantsView" class="space-y-4 max-w-2xl mx-auto font-sans">
-        <div class="text-center pb-3">
-          <h1 class="text-xl font-semibold text-slate-900 uppercase tracking-tight mb-1">Room Status Matrix</h1>
-          <p class="text-blue-600 font-semibold uppercase text-[12px] tracking-wide">{{ activeHouse ? activeHouse.name : '' }}</p>
-        </div>
-
-        <div v-if="activeRooms.length === 0" class="bg-white rounded-3xl p-8 text-center text-slate-400 font-bold uppercase tracking-wide text-xs border border-slate-100">
-          No rooms listed for this boarding house.
-        </div>
-
-        <div v-for="room in activeRooms" :key="room.id" class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition hover:shadow-md">
-          <div class="space-y-1">
-            <div class="flex items-center gap-3">
-              <span class="text-lg font-semibold text-slate-900">Room {{ room.room_number }}</span>
-              <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
-                {{ room.gender_type }}
-              </span>
-            </div>
-            <p class="text-[12px] font-bold text-slate-500 uppercase tracking-wider">
-              Occupancy: <span class="text-slate-900 font-semibold">{{ room.occupant_count }} / {{ room.capacity }}</span>
-              <span class="text-slate-400">({{ room.capacity - room.occupant_count }} Vacant)</span>
-            </p>
-            <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wider">
-              <span class="text-blue-600 font-semibold">{{ room.cspc_count }} CSPC</span>
-              <span v-if="room.non_cspc_count > 0" class="ml-2 text-slate-400">+ {{ room.non_cspc_count }} Non-CSPC</span>
-            </p>
-          </div>
-
-          <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-            <span class="inline-block border text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wider" :class="room.occupant_count >= room.capacity ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'">
-              {{ room.occupant_count >= room.capacity ? 'Full' : 'Available' }}
-            </span>
-            <button @click="viewBoarderDetails(room)" class="bg-[#2a528a] hover:bg-slate-900 text-white text-[12px] font-semibold px-5 py-2.5 rounded-xl uppercase tracking-wide transition shadow-sm cursor-pointer management-button management-button-primary">
-              View Details
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 2. Room Occupants Card View -->
-      <div v-else class="space-y-6 max-w-2xl mx-auto font-sans">
-        <div class="flex items-center justify-between">
-          <button @click="isOccupantsView = false" class="text-blue-500 hover:text-blue-700 font-semibold text-xs uppercase tracking-wide flex items-center gap-1 cursor-pointer">
-            &lsaquo; Back to Rooms
-          </button>
-          <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Room {{ activeRoomData ? activeRoomData.room_number : '' }} Occupants
-          </h2>
-        </div>
-
-        <div v-if="activeRoomOccupants.length === 0" class="bg-white rounded-3xl p-8 text-center text-slate-400 uppercase font-semibold tracking-wide text-xs border border-slate-100">
-          No active CSPC student boarders in this room.
-        </div>
-
-        <div v-for="(occ, i) in activeRoomOccupants" :key="occ.id" class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="bg-slate-900 px-6 py-3.5 border-b border-slate-800 flex justify-between items-center">
-            <span class="text-[12px] font-semibold uppercase tracking-normal text-white">CSPC Resident #{{ i + 1 }}</span>
-            <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="occ.payment_status === 'Paid' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'">
-              {{ occ.payment_status }}
-            </span>
-          </div>
-
-          <div class="divide-y divide-slate-50 px-6 text-xs font-bold text-slate-700">
-            <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Name</span>
-              <span class="font-semibold text-slate-900 uppercase text-sm">{{ occ.name }}</span>
-            </div>
-            <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Age / Contact</span>
-              <span class="text-slate-800">{{ occ.age ? `${occ.age} yrs old` : '—' }} • {{ occ.contact_number || 'No contact' }}</span>
-            </div>
-            <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Check-in Date</span>
-              <span>{{ occ.check_in_date ? new Date(occ.check_in_date).toLocaleDateString() : '—' }}</span>
-            </div>
-            <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Duration & Ledger</span>
-              <span class="text-blue-600 font-semibold">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }} — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span>
-            </div>
-            <div class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Check-out Date</span>
-              <span class="text-blue-600 font-semibold">{{ getAdminCheckoutDate(occ) }}</span>
-            </div>
-            <div v-if="occ.emergency_contact" class="py-3.5 flex justify-between items-center">
-              <span class="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Emergency Contact</span>
-              <span class="text-slate-700">{{ occ.emergency_contact }}</span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-    </div>
-
-    <div class="border-t border-slate-100 px-8 py-4 flex justify-end bg-white shrink-0">
-      <button @click="closeRoomsModal" class="bg-slate-900 text-white px-8 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition shadow-md focus:outline-none cursor-pointer management-button">Close Monitor</button>
-    </div>
-
-  </div>
-</div>
 
     <!-- Custom Confirmation Modal -->
     <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
@@ -1199,24 +949,36 @@ const loadError = ref('');
         <textarea aria-label="Reason (optional) — e.g. Owner requested, currently at full capacity" v-model="archiveReasonInput" rows="3" placeholder="Reason (optional) — e.g. Owner requested, currently at full capacity"
                   class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl text-xs font-semibold text-slate-700 outline-none transition mb-6 text-left"></textarea>
         <div class="flex gap-3">
-          <button @click="execArchive" class="flex-1 bg-red-500 hover:bg-red-600 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Confirm Archive</button>
+          <button @click="execArchive" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Confirm Archive</button>
           <button @click="closeArchiveModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Cancel</button>
         </div>
       </div>
     </div>
 
-    <!-- Dynamic Lightbox Preview Modal -->
-    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[250] flex items-center justify-center p-4 animate-fade-in" @click="closePreview">
-      <div class="relative max-w-4xl max-h-[85vh] overflow-hidden bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center" @click.stop>
-        <button aria-label="Previous photo" @click="closePreview" class="absolute top-4 right-4 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center transition management-button">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
-        <img :src="previewImageUrl" class="max-w-full max-h-[70vh] object-contain rounded-2xl mb-4 shadow-sm" alt="Document Preview" />
-        <button @click="downloadOriginal" :disabled="isDownloading" class="bg-blue-600 hover:bg-black text-white px8 py-3 rounded-xl text-[12px] font-semibold uppercase tracking-wide transition flex items-center gap-2 management-button management-button-primary">
-          <i v-if="isDownloading" class="fa-solid fa-spinner animate-spin"></i>
-          <i v-else class="fa-solid fa-download"></i>
-          {{ isDownloading ? 'Downloading...' : 'Download Original' }}
-        </button>
+    <!-- Full-screen Document Viewer -->
+    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview" @keydown.left="stepPreview(-1)" @keydown.right="stepPreview(1)">
+      <div class="doc-viewer-bar">
+        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
+        <div class="doc-viewer-actions">
+          <button v-if="!isPdfFile(previewImageUrl)" type="button" class="doc-viewer-btn" @click="previewZoomed = !previewZoomed" :aria-pressed="previewZoomed">
+            <i :class="previewZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'" aria-hidden="true"></i>
+            {{ previewZoomed ? 'Fit to screen' : 'Actual size' }}
+          </button>
+          <a :href="previewImageUrl" target="_blank" rel="noopener" class="doc-viewer-btn"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open in new tab</a>
+          <button type="button" @click="downloadOriginal" :disabled="isDownloading" class="doc-viewer-btn is-primary">
+            <i :class="isDownloading ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-download'" aria-hidden="true"></i>
+            {{ isDownloading ? 'Downloading...' : 'Download' }}
+          </button>
+          <button type="button" aria-label="Close preview" @click="closePreview" class="doc-viewer-close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
+        <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
+        <img v-else :src="previewImageUrl" class="doc-viewer-img" alt="Document preview" @click="previewZoomed = !previewZoomed" />
+        <template v-if="previewFiles.length > 1">
+          <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="doc-viewer-nav is-next" aria-label="Next file" @click="stepPreview(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+        </template>
       </div>
     </div>
 
@@ -1236,3 +998,205 @@ const loadError = ref('');
 
   </div>
 </template>
+<style scoped>
+/* Laptop/desktop: keep the whole registry on one screen. The page itself does not scroll;
+   only the table rows scroll inside the card, with the pagination bar always visible. */
+@media (min-width: 1024px) {
+  .registered-fit {
+    height: 100dvh;
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+  .registered-fit > main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-top: 24px !important;
+    padding-bottom: 20px !important;
+  }
+  .registered-fit > main :deep(.management-page-header) {
+    margin-bottom: 16px;
+  }
+  .registered-body,
+  .registered-table-card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .registered-table-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .registered-table-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+  }
+  .registered-table-scroll :deep(td) {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+
+/* Registry rows: the whole row opens the details panel */
+.rp-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.rp-chip.is-success { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.rp-chip.is-warning { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.rp-chip.is-danger { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.rp-chip.is-star { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.rp-view-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; min-height: 38px; border-radius: 10px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+.rp-view-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.rp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+
+/* Property details page: fills the admin content area (beside the sidebar, below the top bar) */
+.rp-page {
+  --a-primary: #1E4A8D; --a-primary-soft: #E7EEF8; --a-primary-tint: #C9D7EC;
+  --a-gold: #E0A526; --a-bg: #EEF3FA; --a-surface: #FFFFFF; --a-surface-2: #F6F9FD; --a-border: #DFE7F2;
+  --a-heading: #142B4A; --a-text: #33475F; --a-muted: #5B6E86; --a-faint: #8597AD;
+  position: fixed; top: 72px; right: 0; bottom: 0; left: 0; z-index: 45;
+  overflow-y: auto; background: var(--a-bg); color: var(--a-text); text-align: left;
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  animation: rp-fade .18s ease-out;
+}
+@media (min-width: 1180px) { .rp-page { left: 248px; } }
+@keyframes rp-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rp-page-inner { max-width: 1440px; margin: 0 auto; padding: 20px clamp(16px, 2.6vw, 36px) 40px; display: flex; flex-direction: column; gap: 16px; }
+.rp-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rp-back { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; min-height: 38px !important; border-radius: 10px; border: 1px solid var(--a-border); background: var(--a-surface); color: var(--a-primary); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.rp-back:hover { background: var(--a-primary-soft); border-color: var(--a-primary-tint); }
+.rp-archive-btn { display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; min-height: 40px !important; border-radius: 10px; border: 1px solid #ef4444; background: #ef4444; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(239, 68, 68, .25); }
+.rp-back.is-main { padding: 0 18px; min-height: 40px !important; background: var(--a-primary); border-color: var(--a-primary); color: #fff; font-weight: 700; }
+.rp-back.is-main:hover { background: #163870; border-color: #163870; }
+
+.rp-card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 20px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04), 0 8px 24px rgba(20, 43, 74, .05); padding: 22px 24px; min-width: 0; }
+.rp-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.rp-card-title { margin: 0 0 14px; font-size: 16px; font-weight: 700; color: var(--a-heading); letter-spacing: -.01em; }
+.rp-sub-title { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--a-muted); }
+.rp-strong { margin: 0; font-size: 15px; font-weight: 700; color: var(--a-heading); }
+.rp-muted { margin: 0; font-size: 13px; color: var(--a-muted); }
+.rp-text { margin: 0; font-size: 14px; line-height: 1.65; color: var(--a-text); white-space: pre-wrap; }
+
+/* Summary card */
+.rp-hero { display: flex; flex-direction: column; gap: 18px; border-top: 4px solid var(--a-gold); }
+.rp-hero-main { display: flex; gap: 20px; align-items: flex-start; }
+.rp-hero-photo { width: 168px; height: 120px; flex-shrink: 0; border-radius: 14px; object-fit: cover; border: 1px solid var(--a-border); cursor: zoom-in; }
+.rp-hero-photo.is-empty { display: flex; align-items: center; justify-content: center; background: var(--a-primary-soft); color: var(--a-primary); font-size: 32px; cursor: default; }
+.rp-hero-title { margin: 0; font-size: clamp(22px, 2.2vw, 28px); font-weight: 700; color: var(--a-heading); letter-spacing: -.02em; line-height: 1.2; }
+.rp-hero-sub { margin: 6px 0 0; font-size: 14px; color: var(--a-muted); display: flex; align-items: center; gap: 8px; }
+.rp-hero-sub i { color: var(--a-faint); width: 14px; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.rp-stats dt i { color: var(--a-faint); margin-right: 4px; }
+.rp-stat-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--a-muted); }
+.rp-stats > div.is-primary { background: var(--a-primary-soft); border-color: var(--a-primary-tint); }
+.rp-stats > div.is-primary dd, .rp-stats > div.is-primary dt i { color: var(--a-primary); }
+.rp-stats > div.is-success dd { color: #15803d; }
+.rp-stats > div { padding: 12px 14px; border-radius: 14px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
+.rp-stats dt { font-size: 12px; font-weight: 600; color: var(--a-muted); }
+.rp-stats dd { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: var(--a-heading); }
+.rp-stats > div.is-warning { background: #fff7ed; border-color: #fdba74; }
+.rp-stats > div.is-warning dd { color: #ea580c; }
+.rp-stats > div.is-danger { background: #fff1f2; border-color: #fecdd3; }
+.rp-stats > div.is-danger dd { color: #be123c; }
+@media (max-width: 1023px) { .rp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .rp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .rp-hero-main { flex-direction: column; } .rp-hero-photo { width: 100%; height: 180px; } }
+
+/* Tabs (admin pill style) */
+.rp-tabs { display: flex; flex-shrink: 0; gap: 6px; padding: 6px; border-radius: 14px; background: var(--a-surface); border: 1px solid var(--a-border); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.rp-tabs::-webkit-scrollbar { display: none; }
+.rp-page-inner > * { flex-shrink: 0; }
+.rp-tab { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 0 16px; height: 40px; min-height: 40px !important; line-height: 1; border: 0; border-radius: 10px; background: transparent; color: var(--a-muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.rp-tab:hover { background: var(--a-surface-2); color: var(--a-primary); }
+.rp-tab.is-active { background: var(--a-primary); color: #fff; }
+.rp-tab-count { padding: 1px 8px; border-radius: 999px; background: var(--a-primary-soft); color: var(--a-primary); font-size: 11.5px; font-weight: 700; }
+.rp-tab.is-active .rp-tab-count { background: rgba(255, 255, 255, .2); color: #fff; }
+
+.rp-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (min-width: 1024px) { .rp-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } }
+.rp-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.rp-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin: 0; }
+.rp-span-2 { grid-column: 1 / -1; }
+@media (max-width: 640px) { .rp-facts { grid-template-columns: minmax(0, 1fr); } }
+.rp-facts dt { font-size: 12.5px; color: var(--a-muted); font-weight: 500; }
+.rp-facts dd { margin: 3px 0 0; font-size: 14.5px; color: var(--a-heading); font-weight: 600; }
+.rp-avatar { width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--a-primary); color: #fff; font-size: 22px; font-weight: 700; }
+.rp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.rp-tag { display: inline-block; padding: 4px 11px; border-radius: 999px; background: var(--a-surface-2); border: 1px solid var(--a-border); color: var(--a-text); font-size: 12.5px; font-weight: 600; text-transform: capitalize; }
+.rp-tag.is-free { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.rp-tag.is-paid { background: var(--a-primary-soft); border-color: var(--a-primary-tint); color: var(--a-primary); }
+.rp-tag.is-female { background: #fdf2f8; border-color: #fbcfe8; color: #be185d; }
+.rp-tag.is-male { background: var(--a-primary-soft); border-color: var(--a-primary-tint); color: var(--a-primary); }
+.rp-map { height: 320px; border-radius: 14px; overflow: hidden; border: 1px solid var(--a-border); background: var(--a-surface-2); }
+.rp-photo { position: relative; height: 320px; border-radius: 14px; overflow: hidden; background: #0f172a; cursor: zoom-in; }
+.rp-photo img { width: 100%; height: 100%; object-fit: cover; }
+.rp-photo-hint { position: absolute; right: 10px; bottom: 10px; padding: 4px 10px; border-radius: 999px; background: rgba(15, 23, 42, .75); color: #fff; font-size: 12px; font-weight: 600; }
+.rp-photo-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; min-height: 36px !important; border-radius: 999px; border: 0; background: rgba(255, 255, 255, .92); color: var(--a-heading); font-size: 20px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
+.rp-photo-nav.is-prev { left: 10px; }
+.rp-photo-nav.is-next { right: 10px; }
+.rp-thumb-btn { width: 72px; height: 54px; min-height: 0 !important; flex-shrink: 0; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid var(--a-border); opacity: .7; cursor: pointer; }
+.rp-thumb-btn.is-active { border-color: var(--a-primary); opacity: 1; }
+.rp-thumb-btn img { width: 100%; height: 100%; object-fit: cover; }
+.rp-empty { padding: 28px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 14px; background: var(--a-surface-2); color: var(--a-faint); font-size: 14px; font-weight: 600; }
+.rp-review { padding: 12px 14px; border-radius: 12px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
+
+/* Documents */
+.rp-doc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 900px) { .rp-doc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rp-doc { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: 16px; border: 1px solid var(--a-border); background: var(--a-surface-2); }
+.rp-doc.is-missing { background: #fff; border-style: dashed; }
+.rp-doc-preview { width: 112px; height: 84px; flex-shrink: 0; padding: 0; min-height: 0 !important; border-radius: 12px; overflow: hidden; border: 1px solid var(--a-border); background: #fff; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+.rp-doc-preview img { width: 100%; height: 100%; object-fit: cover; }
+.rp-doc-preview.is-empty { background: var(--a-surface-2); color: var(--a-faint); font-size: 26px; cursor: default; border-style: dashed; }
+.rp-doc-pdf { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #e11d48; font-size: 12px; font-weight: 700; }
+.rp-doc-pdf i { font-size: 28px; }
+.rp-doc-name { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--a-heading); line-height: 1.35; }
+.rp-doc-meta { margin: 4px 0 0; font-size: 13px; }
+.rp-doc-preview { position: relative; }
+.rp-doc-count { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.rp-exp.is-success, .rp-exp.is-none { color: var(--a-muted); }
+.rp-exp.is-warning { color: #ea580c; font-weight: 600; }
+.rp-exp.is-danger { color: #be123c; font-weight: 600; }
+.rp-link-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 0 12px; min-height: 32px !important; border-radius: 9px; border: 1px solid var(--a-primary-tint); background: #fff; color: var(--a-primary); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.rp-link-btn:hover { background: var(--a-primary); border-color: var(--a-primary); color: #fff; }
+
+/* Rooms */
+.rp-room-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 768px) { .rp-room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .rp-room-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.rp-room { padding: 16px; border-radius: 16px; border: 1px solid var(--a-border); background: var(--a-surface-2); }
+.rp-bar { height: 8px; margin-top: 12px; border-radius: 999px; background: var(--a-border); overflow: hidden; }
+.rp-bar span { display: block; height: 100%; border-radius: 999px; background: var(--a-primary); }
+
+/* Full-screen document viewer */
+.doc-viewer { position: fixed; inset: 0; z-index: 260; display: flex; flex-direction: column; background: rgba(15, 23, 42, .92); backdrop-filter: blur(4px); }
+.doc-viewer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; background: rgba(15, 23, 42, .85); border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.doc-viewer-title { display: inline-flex; align-items: center; gap: 8px; color: #fff; font-size: 14px; font-weight: 600; }
+.doc-viewer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.doc-viewer-btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; min-height: 36px !important; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.doc-viewer-btn:hover { background: rgba(255, 255, 255, .18); }
+.doc-viewer-btn.is-primary { background: #3b82f6; border-color: #3b82f6; }
+.doc-viewer-btn.is-primary:hover { background: #2563eb; }
+.doc-viewer-btn:disabled { opacity: .6; cursor: default; }
+.doc-viewer-close { width: 36px; height: 36px; min-height: 36px !important; border-radius: 10px; border: 0; background: rgba(255, 255, 255, .12); color: #fff; font-size: 16px; cursor: pointer; }
+.doc-viewer-close:hover { background: #f43f5e; }
+.doc-viewer-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: hidden; }
+.doc-viewer-img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 6px; background: #fff; box-shadow: 0 20px 50px rgba(0, 0, 0, .45); cursor: zoom-in; }
+.doc-viewer-stage.is-zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; }
+.doc-viewer-stage.is-zoomed .doc-viewer-img { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
+.doc-viewer-pdf { width: 100%; height: 100%; border: 0; border-radius: 6px; background: #fff; }
+.doc-viewer-stage { position: relative; }
+.doc-viewer-count { margin-left: 4px; padding: 2px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: 12.5px; font-weight: 600; }
+.doc-viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; min-height: 46px !important; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 23, 42, .7); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+.doc-viewer-nav:hover { background: #2563eb; border-color: #2563eb; }
+.doc-viewer-nav:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.doc-viewer-nav.is-prev { left: 16px; }
+.doc-viewer-nav.is-next { right: 16px; }
+
+/* Barangay dropdown: no extra min-height so the box matches the search field */
+.barangay-select { min-height: 0 !important; padding: 0; }
+</style>

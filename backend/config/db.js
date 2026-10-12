@@ -69,10 +69,79 @@ async function ensureSchemaColumns() {
             await pool.query("ALTER TABLE boarding_houses ADD COLUMN archived_by VARCHAR(50) DEFAULT NULL, ADD COLUMN archive_reason TEXT DEFAULT NULL, ADD COLUMN archived_at DATETIME DEFAULT NULL");
             console.log("✅ Auto-migrated: Added archived_by, archive_reason, and archived_at columns to boarding_houses table.");
         }
+
+        const [refCols] = await pool.query("SHOW COLUMNS FROM boarding_houses LIKE 'reference_no'");
+        if (refCols.length === 0) {
+            await pool.query("ALTER TABLE boarding_houses ADD COLUMN reference_no VARCHAR(30) NULL DEFAULT NULL, ADD UNIQUE KEY reference_no (reference_no)");
+            console.log("✅ Auto-migrated: Added reference_no to boarding_houses table for property-first owner registration.");
+        }
+
+        // Every file uploaded for a legal document (images or PDF). The first file is also
+        // kept in the boarding_houses permit column so existing compliance logic is unchanged.
+        await pool.query(`CREATE TABLE IF NOT EXISTS house_permit_files (
+            id INT NOT NULL AUTO_INCREMENT,
+            house_id INT NOT NULL,
+            permit_key VARCHAR(50) NOT NULL,
+            file_path VARCHAR(255) NOT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY house_permit (house_id, permit_key),
+            CONSTRAINT house_permit_files_house FOREIGN KEY (house_id) REFERENCES boarding_houses (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+
+        await ensureApplicationTrackingSchema();
     } catch (err) {
         console.warn("⚠️ Auto-migration check warning:", err.message);
     }
     await ensureSiteContentTables();
+}
+
+// Accountless application tracking (all additive and nullable, so existing rows stay valid):
+// - users.applicant_key_hash: unused since tracking uses the reference number only (kept for compatibility)
+// - boarding_houses.application_status: application workflow status (NULL for legacy rows)
+// - house_photos.category: gallery photo category (NULL = uncategorised / legacy)
+// - application_status_history: audit trail of status changes with a snapshot of the application
+// - account_activation_tokens: one-time owner account activation links (hashed)
+async function ensureApplicationTrackingSchema() {
+    const addColumn = async (table, column, definition) => {
+        const [cols] = await pool.query(`SHOW COLUMNS FROM ${table} LIKE ?`, [column]);
+        if (cols.length === 0) {
+            await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+            console.log(`✅ Auto-migrated: Added ${column} to ${table}.`);
+        }
+    };
+    await addColumn('users', 'applicant_key_hash', 'VARCHAR(255) NULL DEFAULT NULL');
+    await addColumn('boarding_houses', 'application_status', 'VARCHAR(30) NULL DEFAULT NULL');
+    await addColumn('house_photos', 'category', 'VARCHAR(30) NULL DEFAULT NULL');
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS application_status_history (
+        id INT NOT NULL AUTO_INCREMENT,
+        house_id INT NOT NULL,
+        from_status VARCHAR(30) NULL DEFAULT NULL,
+        to_status VARCHAR(30) NOT NULL,
+        remarks TEXT NULL,
+        actor_type VARCHAR(20) NOT NULL,
+        actor_id INT NULL DEFAULT NULL,
+        snapshot JSON NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY application_status_history_house (house_id, created_at),
+        CONSTRAINT application_status_history_house FOREIGN KEY (house_id) REFERENCES boarding_houses (id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS account_activation_tokens (
+        id INT NOT NULL AUTO_INCREMENT,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME NULL DEFAULT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY account_activation_token_hash (token_hash),
+        KEY account_activation_user (user_id),
+        CONSTRAINT account_activation_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
 }
 
 // Landing page content (Admin > Landing page). Defaults are seeded only when the

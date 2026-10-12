@@ -16,7 +16,7 @@ cloudinary.config({
  */
 export const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024, files: 19 } // 10MB limit
+    limits: { fileSize: 10 * 1024 * 1024, files: 60 } // 10MB per file; up to 5 files per legal document plus photos
 });
 
 /**
@@ -112,6 +112,7 @@ export async function cleanupOrphanedUploads(pool) {
         UNION SELECT profile_pic FROM users WHERE profile_pic IS NOT NULL
         UNION SELECT photo_url FROM house_photos WHERE photo_url IS NOT NULL
         UNION SELECT file_path FROM house_documents WHERE file_path IS NOT NULL
+        UNION SELECT file_path FROM house_permit_files WHERE file_path IS NOT NULL
     `);
 
     const referenced = new Set(rows.map(r => path.basename(String(r.path))));

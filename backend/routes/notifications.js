@@ -36,6 +36,16 @@ router.post('/read/:id', authenticateToken, validateBody('ids'), async (req, res
     }
 });
 
+// 2.5 [POST] - Mark all of the signed-in user's notifications as read
+router.post('/read-all', authenticateToken, async (req, res) => {
+    try {
+        const [result] = await pool.query('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0', [req.user.id]);
+        res.json({ success: true, updated: result.affectedRows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Failed to update status.' });
+    }
+});
+
 // 3. [GET] - Count unread notifications (for Navbar badges)
 router.get('/unread-count', authenticateToken, async (req, res) => {
     try {

@@ -137,6 +137,14 @@ export function validateInput(scope, data, context = {}) {
         }
         for (const key of ['existing_profile_pic','profile_pic']) add(text(data[key],'Profile photo reference',255));
     }
+    if (scope === 'ownerApplicant') {
+        add(text(data.owner_name,'Owner full name',255,true));
+        add(text(data.owner_email,'Owner email address',255,true));
+        if (typeof data.owner_email === 'string' && data.owner_email.trim() && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(data.owner_email.trim())) add('Please enter a valid owner email address (e.g., name@gmail.com).');
+        else if (typeof data.owner_email === 'string' && /@(my\.)?cspc\.edu\.ph$/i.test(data.owner_email.trim())) add('Property owners must register with a personal email address, not a CSPC institutional email.');
+        add(phone(data.owner_phone,'Owner phone number',true));
+        add(text(data.owner_address,'Owner residential address',16000,true));
+    }
     if (scope === 'review') {
         if (!validWhole(data.rating,1,5)) add('Star rating must be a whole number from 1 to 5.');
         add(text(data.comment,'Review comment',16000));
@@ -164,12 +172,32 @@ export function validateInput(scope, data, context = {}) {
         for (const [key,label] of [['footer_facebook','Facebook page link'],['footer_website','Website link']]) {
             if (typeof data[key] === 'string' && data[key].trim() && !/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(data[key].trim())) add(`${label} must be a full web address starting with http:// or https://.`);
         }
+        // Custom footer lines: JSON list of { label, text }, at most 8 lines
+        if (typeof data.footer_custom === 'string' && data.footer_custom.trim()) {
+            let lines = null;
+            try { lines = JSON.parse(data.footer_custom); } catch (e) { lines = null; }
+            if (!Array.isArray(lines) || lines.length > 8 || lines.some(l => !l || typeof l !== 'object' || typeof l.text !== 'string' || !l.text.trim() || l.text.length > 255 || (l.label != null && (typeof l.label !== 'string' || l.label.length > 60)))) {
+                add('Custom footer lines must be at most 8 lines, each with text up to 255 characters and an optional label up to 60 characters.');
+            }
+        }
     }
     if (scope === 'approval') {
         add(text(data.admin_comments,'Administrative comments',16000));
         if (!missing(data.checklist) && (!Array.isArray(data.checklist) || data.checklist.length > 1000 || data.checklist.some(id => !validWhole(id,1,2147483647)) || new Set(data.checklist.map(Number)).size !== data.checklist.length)) add('The selected checklist is invalid. Please refresh the application and select the requirements again.');
     }
-    if (scope === 'rejection') add(text(data.admin_comments,'Administrative feedback',16000,true));
+    if (scope === 'rejection') {
+        add(text(data.admin_comments,'Administrative feedback',16000,true));
+        add(choice(data.decision,['revision','reject'],'review decision'));
+    }
+    if (scope === 'applicationAccess') {
+        add(text(data.reference_no,'Reference number',40,true));
+    }
+    if (scope === 'activation') {
+        add(text(data.token,'Activation link',200,true));
+        add(text(data.email,'Login email',255,true));
+        if (typeof data.password !== 'string' || data.password.length < 8 || new TextEncoder().encode(data.password).length > 72) add('Password must contain at least 8 characters and fit within 72 UTF-8 bytes.');
+        else if (!/[A-Za-z]/.test(data.password) || !/\d/.test(data.password)) add('Password must include at least one letter and one number.');
+    }
     if (scope === 'archive') add(text(data.reason,'Archive reason',16000));
     if (scope === 'monthlyRent') add(choice(data.status,['Paid','Not Paid'],'monthly rent status',true));
     if (scope === 'bookingPayment') add(choice(data.status,['paid','unpaid'],'payment status',true));

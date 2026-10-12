@@ -118,7 +118,8 @@ router.get('/dashboard', authenticateToken, verifyOwner, async (req, res) => {
     try {
         const [houseRows] = await pool.query(
             `SELECT bh.*, bh.compliance_status AS compliance,
-                    (SELECT COUNT(*) FROM bookings WHERE house_id = bh.id AND status = 'pending') AS pending_count
+                    (SELECT COUNT(*) FROM bookings WHERE house_id = bh.id AND status = 'pending') AS pending_count,
+                    (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count
              FROM boarding_houses bh
              WHERE bh.owner_id = ?`,
             [req.user.id]
@@ -1201,9 +1202,49 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
             };
         });
 
-        const houseName = processedBookings.length > 0 && houseId ? processedBookings[0].house_name : '';
+        // Non-CSPC boarders are added straight into occupants (no booking row),
+        // so surface them here too, shaped like bookings, for the monitoring list.
+        let walkInQuery = `
+            SELECT o.id, o.reference_no, o.name AS student_name, o.contact_number, o.address,
+                   o.emergency_contact, o.guardian_name, o.check_in_date, o.check_out_date,
+                   o.months, o.amount, o.payment_status, o.payment_method,
+                   o.created_at AS booking_date,
+                   r.room_number, r.gender_type AS room_gender, r.price AS monthly_rent,
+                   bh.name AS house_name, bh.location AS house_location,
+                   bh.advance_months, bh.deposit_months, bh.deposit_type
+            FROM occupants o
+            JOIN rooms r ON o.room_id = r.id
+            JOIN boarding_houses bh ON r.house_id = bh.id
+            WHERE bh.owner_id = ? AND o.is_non_cspc = 1
+        `;
+        const walkInParams = [req.user.id];
+        if (houseId) {
+            walkInQuery += ' AND bh.id = ?';
+            walkInParams.push(houseId);
+        }
+        const [walkIns] = await pool.query(walkInQuery, walkInParams);
 
-        res.json({ success: true, bookings: processedBookings, houseName });
+        const today = new Date().toISOString().split('T')[0];
+        const walkInRows = walkIns.map(o => {
+            const checkOut = o.check_out_date ? new Date(o.check_out_date).toISOString().split('T')[0] : null;
+            const rent = parseFloat(o.monthly_rent || 0);
+            return {
+                ...o,
+                is_non_cspc: 1,
+                status: checkOut && checkOut <= today ? 'completed' : 'confirmed',
+                payment_status: String(o.payment_status || '').toLowerCase() === 'paid' ? 'paid' : 'unpaid',
+                payment_method: o.payment_method || 'cash',
+                total_amount: o.amount,
+                initial_payment: (Math.max(1, parseInt(o.advance_months || 0)) * rent) + (parseInt(o.deposit_months || 0) * rent)
+            };
+        });
+
+        const allRows = [...processedBookings, ...walkInRows]
+            .sort((a, b) => new Date(b.booking_date || 0) - new Date(a.booking_date || 0));
+
+        const houseName = allRows.length > 0 && houseId ? allRows[0].house_name : '';
+
+        res.json({ success: true, bookings: allRows, houseName });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

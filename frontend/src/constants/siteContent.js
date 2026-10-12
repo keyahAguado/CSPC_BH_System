@@ -44,6 +44,7 @@ export const SITE_SETTING_DEFAULTS = {
     footer_hours: '',
     footer_facebook: '',
     footer_website: '',
+    footer_custom: '[]',
     footer_copyright: '© 2026 CSPC Boarding House Selection & Management System. All rights reserved.'
 };
 
