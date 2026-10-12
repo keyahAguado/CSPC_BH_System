@@ -3,6 +3,7 @@
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test'), assert = require('node:assert/strict');
+process.env.JWT_SECRET = 'isolated-application-workflow-secret';
 const source = fs.readFileSync(path.join(__dirname, '../routes/admin.js'), 'utf8');
 const workflow = import(pathToFileURL(path.join(__dirname, '../config/applicationWorkflow.js')).href);
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
@@ -96,7 +97,7 @@ test('Reference numbers are random, unguessable and match the accepted pattern (
 });
 test('Tracking session token cannot be used as a login token and rejects tampering', async () => {
     const w = await workflow; const jwt = require('jsonwebtoken');
-    const token = w.signApplicantToken(5);
+    const token = w.signApplicantToken(5, 'applicant@example.test');
     assert.equal(jwt.decode(token).id, undefined, 'no user id claim for authenticateToken');
     let req = { headers: { authorization: 'Bearer ' + token } }; let passed = false;
     w.verifyApplicant(req, response(), () => { passed = true; });

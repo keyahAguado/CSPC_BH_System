@@ -176,17 +176,40 @@ const getPermitFiles = (app, key) => {
 
 // Full-screen document viewer: images fit the screen (click to zoom to actual size); PDFs show inline
 const previewZoomed = ref(false);
+// A document can have several files: the viewer pages through them (1 of 3) with Previous / Next.
+const previewFiles = ref([]);
+const previewIndex = ref(0);
 const openPreview = (url) => {
   if (!url || url.endsWith('#')) return;
+  previewFiles.value = [url];
+  previewIndex.value = 0;
   previewImageUrl.value = url;
   previewZoomed.value = false;
   showPreviewModal.value = true;
+};
+const openPreviewSet = (files) => {
+  const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
+  if (!urls.length) return;
+  previewFiles.value = urls;
+  previewIndex.value = 0;
+  previewImageUrl.value = urls[0];
+  previewZoomed.value = false;
+  showPreviewModal.value = true;
+};
+const stepPreview = (direction) => {
+  const count = previewFiles.value.length;
+  if (count < 2) return;
+  previewIndex.value = (previewIndex.value + direction + count) % count;
+  previewImageUrl.value = previewFiles.value[previewIndex.value];
+  previewZoomed.value = false;
 };
 
 const closePreview = () => {
   showPreviewModal.value = false;
   previewImageUrl.value = '';
   previewZoomed.value = false;
+  previewFiles.value = [];
+  previewIndex.value = 0;
 };
 
 const getFilteredCriteria = () => {
@@ -596,7 +619,7 @@ const loadError = ref('');
         </div>
 
         <!-- LAPTOP / DESKTOP: table -->
-        <div class="na-table-card hidden md:flex md:flex-col">
+        <div class="na-table-card hidden lg:flex lg:flex-col">
           <TablePager position="top" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
 
           <div class="na-scroll">
@@ -648,10 +671,10 @@ const loadError = ref('');
         </div>
 
         <!-- PHONE: cards -->
-        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
           <TablePager position="top" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
         </div>
-        <div class="block md:hidden space-y-3">
+        <div class="block lg:hidden space-y-3">
           <div v-if="naPaged.length === 0" class="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 text-sm font-semibold">{{ applications.length === 0 ? 'No pending applications at the moment.' : 'No applications match these filters.' }}</div>
           <div v-for="(app, index) in naPaged" :key="'m-' + app.id" class="na-mcard">
             <div class="flex justify-between items-start gap-2">
@@ -876,8 +899,11 @@ const loadError = ref('');
                         </div>
                       </td>
                       <td class="p-6 text-center">
-                        <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
-                          <i class="fa-solid fa-eye"></i> Preview
+                        <!-- One button per document; it opens every file uploaded for it (images and/or PDF) -->
+                        <button type="button" v-if="item.permit_key && getPermitFiles(activeApp, item.permit_key).length" @click="openPreviewSet(getPermitFiles(activeApp, item.permit_key))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto"
+                                :aria-label="`Preview ${item.label}` + (getPermitFiles(activeApp, item.permit_key).length > 1 ? ` (${getPermitFiles(activeApp, item.permit_key).length} files)` : '')">
+                          <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
+                          <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                         </button>
                         <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
@@ -933,8 +959,11 @@ const loadError = ref('');
                 <div class="pt-2 border-t border-slate-100 flex justify-between items-center">
                   <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">File Evidence</span>
                   <div class="text-right">
-                    <button type="button" v-if="item.permit_key && activeApp[item.permit_key]" @click="openPreview(getImageUrl(activeApp[item.permit_key]))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
-                      <i class="fa-solid fa-eye"></i> Preview
+                    <!-- One button per document; it opens every file uploaded for it (images and/or PDF) -->
+                    <button type="button" v-if="item.permit_key && getPermitFiles(activeApp, item.permit_key).length" @click="openPreviewSet(getPermitFiles(activeApp, item.permit_key))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button"
+                            :aria-label="`Preview ${item.label}` + (getPermitFiles(activeApp, item.permit_key).length > 1 ? ` (${getPermitFiles(activeApp, item.permit_key).length} files)` : '')">
+                      <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
+                      <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                     </button>
                     <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
                       <i class="fa-solid fa-eye"></i> Preview
@@ -984,7 +1013,7 @@ const loadError = ref('');
 
             <!-- Primary Action Buttons (Approve / Reject) -->
             <div class="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
-              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-white hover:bg-red-50 text-red-500 border-2 border-red-200 rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-2 cursor-pointer management-button management-button-secondary">
+              <button type="button" @click="handleReject" :disabled="isSubmitting" class="w-full bg-red-600 hover:bg-red-700 text-white border-2 border-red-600 rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-2 cursor-pointer management-button">
                 <i class="fa-solid fa-circle-xmark"></i> Reject
               </button>
               <button type="submit" :disabled="isSubmitting" class="w-full bg-[#2563eb] hover:bg-blue-700 text-white rounded-xl px-5 py-3 font-bold text-[12px] uppercase tracking-wide transition shadow-md flex items-center justify-center gap-2 cursor-pointer management-button management-button-primary">
@@ -994,13 +1023,13 @@ const loadError = ref('');
 
             <!-- Secondary Criteria Management Buttons (Add / Update / Delete) -->
             <div class="grid grid-cols-3 gap-2 w-full sm:w-auto">
-              <button type="button" @click="showAddCriteriaModal = true" class="bg-[#166534] hover:bg-emerald-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showAddCriteriaModal = true" class="bg-green-700 hover:bg-green-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-plus text-[12px]"></i> Add
               </button>
-              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-[#d97706] hover:bg-amber-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
               </button>
-              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-[#b91c1c] hover:bg-red-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button management-button-primary">
+              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-red-600 hover:bg-red-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
                 <i class="fa-solid fa-trash-can text-[12px]"></i> Delete
               </button>
             </div>
@@ -1010,9 +1039,9 @@ const loadError = ref('');
     </div>
 
     <!-- Full-screen Document Viewer -->
-    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview">
+    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview" @keydown.left="stepPreview(-1)" @keydown.right="stepPreview(1)">
       <div class="doc-viewer-bar">
-        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview</span>
+        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
         <div class="doc-viewer-actions">
           <button v-if="!isPdfFile(previewImageUrl)" type="button" class="doc-viewer-btn" @click="previewZoomed = !previewZoomed" :aria-pressed="previewZoomed">
             <i :class="previewZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'" aria-hidden="true"></i>
@@ -1029,6 +1058,10 @@ const loadError = ref('');
       <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
         <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
         <img v-else :src="previewImageUrl" class="doc-viewer-img" alt="Document preview" @click="previewZoomed = !previewZoomed" />
+        <template v-if="previewFiles.length > 1">
+          <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="doc-viewer-nav is-next" aria-label="Next file" @click="stepPreview(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+        </template>
       </div>
     </div>
 
@@ -1046,7 +1079,7 @@ const loadError = ref('');
           </div>
           <div class="flex justify-end gap-4">
             <button @click="showAddCriteriaModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
-            <button @click="submitAddCriteria" class="bg-[#10b981] hover:bg-emerald-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Add Item</button>
+            <button @click="submitAddCriteria" class="bg-green-700 hover:bg-green-800 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button">Add Item</button>
           </div>
         </div>
       </div>
@@ -1090,7 +1123,7 @@ const loadError = ref('');
           </div>
           <div class="flex justify-end gap-4">
             <button @click="showEditItemModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
-            <button @click="submitUpdateCriteria" class="bg-[#f59e0b] hover:bg-amber-600 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>
+            <button @click="submitUpdateCriteria" class="bg-[#245b99] hover:bg-[#194775] text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>
           </div>
         </div>
       </div>
@@ -1110,7 +1143,7 @@ const loadError = ref('');
           <div class="space-y-4">
             <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-red-50 border-2 border-red-100 rounded-2xl hover:border-red-400 transition group">
               <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
-              <button @click="submitDeleteCriteria(item.id)" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
+              <button @click="submitDeleteCriteria(item.id)" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
             </div>
             <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
@@ -1183,7 +1216,7 @@ const loadError = ref('');
           <button @click="showRejectConfirmModal = false" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-semibold text-[12px] uppercase tracking-wide rounded-xl transition management-button management-button-secondary">
             Cancel
           </button>
-          <button @click="execReject" class="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
+          <button @click="execReject" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold text-[12px] uppercase tracking-wide rounded-xl shadow-md transition management-button">
             <i class="fa-solid fa-circle-xmark mr-2"></i>Confirm Rejection
           </button>
         </div>
@@ -1325,6 +1358,13 @@ const loadError = ref('');
 .doc-viewer-stage.is-zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; }
 .doc-viewer-stage.is-zoomed .doc-viewer-img { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
 .doc-viewer-pdf { width: 100%; height: 100%; border: 0; border-radius: 6px; background: #fff; }
+.doc-viewer-stage { position: relative; }
+.doc-viewer-count { margin-left: 4px; padding: 2px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: 12.5px; font-weight: 600; }
+.doc-viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; min-height: 46px !important; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 23, 42, .7); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+.doc-viewer-nav:hover { background: #2563eb; border-color: #2563eb; }
+.doc-viewer-nav:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.doc-viewer-nav.is-prev { left: 16px; }
+.doc-viewer-nav.is-next { right: 16px; }
 
 
 /* Requirement Checklist: bright amber so it stands out */
@@ -1332,7 +1372,7 @@ const loadError = ref('');
 .management-page .acc-checklist-btn:hover { background: #ffad33 !important; border-color: #ffad33 !important; box-shadow: none !important; }
 
 /* ───── New applications list ───── */
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .na-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
   .na-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
   .na-fit > main > * { flex-shrink: 0; }
@@ -1343,7 +1383,7 @@ const loadError = ref('');
 }
 .na-fit > main .management-page-header { margin-bottom: 16px; }
 .na-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 16px; }
-@media (min-width: 900px) { .na-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 640px) { .na-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .na-stat { display: flex; align-items: center; gap: 18px; padding: 18px 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 .na-stat-icon { width: 64px; height: 64px; flex-shrink: 0; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
 .na-stat-icon.is-blue { background: #e0ecff; color: #2563eb; }
@@ -1400,10 +1440,10 @@ const loadError = ref('');
 .na-range-done { border: 0; background: #2563eb; color: #fff; }
 @media (max-width: 767px) { .na-range { flex: 1 1 100%; } .na-range-btn { width: 100%; } }
 
-/* New applications: the page scrolls (no inner scroll box); the column header stays pinned below the top bar */
-@media (min-width: 768px) {
-  .na-table-card { overflow: clip !important; }
-  .na-scroll { overflow: visible !important; }
-  .na-table thead th { position: sticky; top: 72px; z-index: 5; box-shadow: inset 0 -1px 0 #e2e8f0; }
+/* New applications: the page scrolls. The table scrolls sideways when it is wider than the card,
+   so no column is cut off (phones and tablets use the card list instead). */
+@media (min-width: 1024px) {
+  .na-table-card { overflow: hidden !important; }
+  .na-scroll { overflow-x: auto !important; overflow-y: hidden; }
 }
 </style>

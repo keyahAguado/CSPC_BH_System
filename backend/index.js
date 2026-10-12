@@ -1,3 +1,4 @@
+import { createNotificationEmailWorker } from './config/notificationEmail.js';
 import { uploadErrorHandler } from './config/uploadValidation.js';
 // =========================================================================
 // SECTION 1: GLOBAL IMPORTS & CONFIGURATION
@@ -229,6 +230,9 @@ app.get('/api/test', (req, res) => {
 // ===================================================
 // AUTOMATED COMPLIANCE & BOOKING SCHEDULER (DAILY)
 // ===================================================
+const runNotificationEmails = createNotificationEmailWorker({ pool });
+cron.schedule('* * * * *', () => { void runNotificationEmails(); });
+
 cron.schedule('0 0 * * *', async () => {
     console.log('[CRON EXECUTION] Running daily compliance check...');
     try {

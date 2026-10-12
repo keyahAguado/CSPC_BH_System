@@ -255,7 +255,7 @@ onMounted(fetchContent);
                 <div class="admin-feature-actions">
                   <button type="button" class="admin-icon-btn" :disabled="index === 0 || busyFeatureId !== null" :aria-label="`Move ${feature.title} up`" title="Move up" @click="moveFeature(feature, 'up')"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
                   <button type="button" class="admin-icon-btn" :disabled="index === features.length - 1 || busyFeatureId !== null" :aria-label="`Move ${feature.title} down`" title="Move down" @click="moveFeature(feature, 'down')"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i></button>
-                  <button type="button" class="admin-icon-btn" :aria-label="`Edit ${feature.title}`" title="Edit" @click="openEditFeature(feature)"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
+                  <button type="button" class="admin-icon-btn is-edit" :aria-label="`Edit ${feature.title}`" title="Edit" @click="openEditFeature(feature)"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
                   <button type="button" class="admin-icon-btn" :disabled="busyFeatureId !== null" :aria-label="(feature.is_active ? 'Hide ' : 'Show ') + feature.title" :title="feature.is_active ? 'Hide from landing page' : 'Show on landing page'" @click="toggleFeature(feature)"><i class="fa-solid" :class="feature.is_active ? 'fa-eye' : 'fa-eye-slash'" aria-hidden="true"></i></button>
                   <button type="button" class="admin-icon-btn is-danger" :disabled="busyFeatureId !== null" :aria-label="`Delete ${feature.title}`" title="Delete" @click="askDeleteFeature(feature)"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                 </div>
@@ -305,7 +305,7 @@ onMounted(fetchContent);
                     <option value="">Choose a detail to add…</option>
                     <option v-for="f in addableOptionalFields" :key="f.key" :value="f.key">{{ f.label }}</option>
                   </select>
-                  <button type="button" class="admin-btn admin-btn-secondary" :disabled="!footerFieldToAdd" @click="addFooterDetail"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button>
+                  <button type="button" class="admin-btn admin-btn-success" :disabled="!footerFieldToAdd" @click="addFooterDetail"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button>
                 </div>
               </div>
 
@@ -327,7 +327,7 @@ onMounted(fetchContent);
                   <button type="button" class="admin-icon-btn is-danger" :aria-label="'Remove custom line ' + (index + 1)" title="Remove line" @click="removeCustomLine(index)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
                 </div>
                 <div>
-                  <button type="button" class="admin-btn admin-btn-secondary" :disabled="customLines.length >= MAX_CUSTOM_LINES" @click="addCustomLine"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add custom line</button>
+                  <button type="button" class="admin-btn admin-btn-success" :disabled="customLines.length >= MAX_CUSTOM_LINES" @click="addCustomLine"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add custom line</button>
                 </div>
               </div>
 
@@ -397,7 +397,7 @@ onMounted(fetchContent);
           </fieldset>
           <div class="flex justify-end gap-2 pt-2">
             <button type="button" class="admin-btn admin-btn-ghost" @click="showFeatureModal = false">Cancel</button>
-            <button type="submit" class="admin-btn admin-btn-primary" :disabled="isSavingFeature">{{ featureForm.id ? 'Save feature' : 'Add feature' }}</button>
+            <button type="submit" :class="['admin-btn', featureForm.id ? 'admin-btn-primary' : 'admin-btn-success']" :disabled="isSavingFeature">{{ featureForm.id ? 'Save feature' : 'Add feature' }}</button>
           </div>
         </form>
       </div>

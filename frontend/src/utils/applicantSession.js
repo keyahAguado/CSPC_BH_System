@@ -1,17 +1,43 @@
 // Track My Application session (accountless applicants). Kept in sessionStorage only and
 // separate from the normal login token; the server limits it to 2 hours.
 const KEY = 'cspc_applicant_token';
+let channel = null;
+try { if (typeof BroadcastChannel === 'function') channel = new BroadcastChannel('cspc-applicant-verification'); } catch { /* browser restrictions: this tab still works */ }
+channel?.addEventListener('message', ({ data }) => {
+  if (typeof data !== 'string') return;
+  try { sessionStorage.setItem(KEY, data); } catch { return; }
+  window.dispatchEvent(new Event('applicant-session-updated'));
+});
 
 export const applicantToken = () => {
   try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; }
 };
 export const setApplicantToken = (token) => {
   try { sessionStorage.setItem(KEY, token); } catch { /* storage unavailable */ }
+  try { channel?.postMessage(token); } catch { /* synchronization is optional */ }
+  window.dispatchEvent(new Event('applicant-session-updated'));
 };
 export const clearApplicantToken = () => {
   try { sessionStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+  try { channel?.postMessage(''); } catch { /* synchronization is optional */ }
 };
 export const applicantHeaders = () => ({ Authorization: `Bearer ${applicantToken()}` });
+
+// Display only. The server verifies the signature, expiry and current identity.
+export const verifiedApplicantEmail = () => {
+  try {
+    const raw = applicantToken().split('.')[1];
+    const payload = JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.scope === 'verified-applicant' && payload.exp * 1000 > Date.now() ? payload.email : '';
+  } catch { return ''; }
+};
+export const verifiedApplicantId = () => {
+  try {
+    const raw = applicantToken().split('.')[1];
+    const payload = JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/')));
+    return verifiedApplicantEmail() && Number.isInteger(payload.applicantId) ? payload.applicantId : null;
+  } catch { return null; }
+};
 
 export const STATUS_INFO = {
   SUBMITTED: { label: 'Submitted', badge: 'bg-blue-100 text-blue-700', hint: 'Waiting for SASO review. You can still edit it.' },

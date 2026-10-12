@@ -1,4 +1,6 @@
 <script setup>
+import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
+import { verifiedApplicantEmail } from '../../utils/applicantSession.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { normalizePhPhone } from '../../utils/phoneValidation.js';
 import { getRegions, getProvinces, getCitiesByRegion, getCities, getBarangays } from '../../utils/psgc.js';
@@ -40,7 +42,11 @@ const ownerName = ref(typeof route.query.name === 'string' ? route.query.name : 
 const GMAIL_DOMAIN = '@gmail.com';
 const cleanGmailName = (value) => String(value || '').split('@')[0].replace(/[^A-Za-z0-9.]/g, '').slice(0, 64);
 const ownerEmailName = ref(cleanGmailName(typeof route.query.email === 'string' ? route.query.email : ''));
-const ownerEmail = computed(() => (ownerEmailName.value ? ownerEmailName.value + GMAIL_DOMAIN : ''));
+const verifiedEmail = ref(verifiedApplicantEmail());
+const refreshVerifiedEmail = () => { verifiedEmail.value = verifiedApplicantEmail(); };
+onMounted(() => window.addEventListener('applicant-session-updated', refreshVerifiedEmail));
+onUnmounted(() => window.removeEventListener('applicant-session-updated', refreshVerifiedEmail));
+const ownerEmail = computed(() => isPublicRegistration && !applicantMode ? verifiedEmail.value : (ownerEmailName.value ? ownerEmailName.value + GMAIL_DOMAIN : ''));
 const sanitizeOwnerEmailName = () => { ownerEmailName.value = cleanGmailName(ownerEmailName.value); };
 const ownerPhone = ref('');
 const ownerErrors = ref({});
@@ -557,7 +563,9 @@ const sanitizeOwnerPhone = () => {
 const validateOwnerDetails = () => {
   const errors = {};
   if (!ownerName.value.trim()) errors.name = 'Owner full name is required.';
-  if (!ownerEmailName.value.trim()) errors.email = 'Gmail address is required.';
+  if (isPublicRegistration && !applicantMode) {
+    if (!verifiedEmail.value) errors.email = 'Verify your personal email before continuing.';
+  } else if (!ownerEmailName.value.trim()) errors.email = 'Gmail address is required.';
   else if (/^\.|\.$|\.\./.test(ownerEmailName.value)) errors.email = 'A Gmail name cannot start or end with a dot, or have two dots in a row.';
   if (!/^09\d{9}$/.test(ownerPhone.value.trim())) errors.phone = 'Phone number must be a valid PH mobile number (11 digits, starting with 09).';
   if (!regionCode.value || (regionHasProvinces.value && !provinceCode.value) || !cityCode.value || !barangayCode.value) {
@@ -1276,6 +1284,7 @@ const copyReferenceNo = async () => {
 
 // Handle Form Submission
 const submitApplication = async () => {
+  if (isPublicRegistration && !verifiedApplicantEmail()) { errorMsg.value = 'Your email verification session expired. Request another link before submitting. Your application has not been submitted.'; verifiedEmail.value = ''; return; }
   validationErrors.value = [];
   successMsg.value = '';
   errorMsg.value = '';
@@ -1354,14 +1363,13 @@ const submitApplication = async () => {
       fd.append('owner_address', ownerAddress.value.trim());
 
       const response = await axios.post(`/api/boarding-houses/register-property`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { ...applicantHeaders(), 'Content-Type': 'multipart/form-data' }
       });
       if (response.data.success) {
         const referenceNo = response.data.reference_no;
         try {
           // Open Track My Application for the new reference right away.
-          const access = await axios.post('/api/applications/access', { reference_no: referenceNo });
-          setApplicantToken(access.data.token);
+          setApplicantToken(response.data.token);
           router.push({ path: '/track', query: { submitted: referenceNo } });
         } catch {
           // Tracking could not be opened automatically: show the reference on the confirmation screen.
@@ -1477,8 +1485,7 @@ const submitApplication = async () => {
           </button>
         </div>
         <p v-if="submittedRegistration.mode !== 'edit'" class="mt-3 max-w-md mx-auto text-[13px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left">
-          <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Save this reference number and keep it private — you need it to track, edit and activate your account, and anyone who has it can open your application.
-        </p>
+          <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Save this reference number to identify your property application. Access to tracking requires verification of your registered email.</p>
 
         <ol v-if="submittedRegistration.mode !== 'edit'" class="mt-6 text-left max-w-md mx-auto space-y-2 text-sm text-slate-600">
           <li class="flex gap-3"><span class="font-semibold text-[#1e4a8d]">1.</span> SASO reviews your property and documents. You can edit it until the review starts.</li>
@@ -1611,7 +1618,8 @@ const submitApplication = async () => {
       </div>
 
       <!-- Use v-show so that map Container and input are instantly available on mount -->
-      <form v-show="!isLoading" @submit.prevent="submitApplication" class="space-y-10" novalidate>
+      <ApplicantEmailGate v-if="isPublicRegistration && !verifiedEmail" />
+      <form v-show="!isLoading && (!isPublicRegistration || verifiedEmail)" @submit.prevent="submitApplication" class="space-y-10" novalidate>
         
         <!-- ================= STEP 0: OWNER INFORMATION (public registration) ================= -->
         <div v-if="includeOwnerStep" v-show="activeStep === 0" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 sm:p-10 animate-fade-in text-left">
@@ -1630,8 +1638,9 @@ const submitApplication = async () => {
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label for="owner-email" class="registration-label">Gmail address <span class="text-red-500">*</span></label>
-                  <div class="gmail-field" :class="ownerErrors.email ? 'is-error' : ''">
+                  <label for="owner-email" class="registration-label">{{ isPublicRegistration ? 'Verified email address' : 'Gmail address' }} <span class="text-red-500">*</span></label>
+                  <input v-if="isPublicRegistration" id="owner-email" :value="ownerEmail" readonly class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 text-sm" />
+                  <div v-else class="gmail-field" :class="ownerErrors.email ? 'is-error' : ''">
                     <input id="owner-email" v-model="ownerEmailName" @input="sanitizeOwnerEmailName" type="text" maxlength="64" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="yourname" aria-describedby="owner-email-domain"
                       class="flex-1 min-w-0 bg-transparent border-0 text-sm font-semibold outline-none" />
                     <span id="owner-email-domain" class="gmail-domain">@gmail.com</span>

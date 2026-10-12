@@ -1,4 +1,5 @@
 import { validateImages } from '../config/uploadValidation.js';
+import { requireVerifiedEmail, signVerifiedApplicant } from '../config/applicantVerification.js';
 import { validateBody } from '../config/inputValidation.js';
 import express from 'express';
 import multer from 'multer';
@@ -7,7 +8,7 @@ import { PUBLIC_HOUSE_COLUMNS } from '../config/publicHouseFields.js';
 import { authenticateToken } from './auth.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 import { evaluateHouseCompliance } from '../config/complianceManager.js';
-import { APPLICATION_STATUS, generateReferenceNo, recordStatusChange, createRateLimiter, isPendingApplicant } from '../config/applicationWorkflow.js';
+import { APPLICATION_STATUS, APPLICANT_EDITABLE, effectiveApplicationStatus, generateReferenceNo, recordStatusChange, createRateLimiter, isPendingApplicant } from '../config/applicationWorkflow.js';
 
 const router = express.Router();
 
@@ -714,6 +715,21 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             const expiry_permit_fire          = getExpiry('fire')          ? parseSafeDate(getExpiry('fire'))          : existingHouse.expiry_permit_fire;
 
             await beginApplicationTransaction();
+            // Applicant routes supply this server-only context. Ordinary owner
+            // accreditation requests retain their existing behavior.
+            if (req.applicantEdit) {
+                submissionStep = 'application-edit-check';
+                const [currentRows] = await connection.query('SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE', [house_id, ownerId]);
+                const current = currentRows[0];
+                if (!current || !APPLICANT_EDITABLE.has(effectiveApplicationStatus(current))
+                    || effectiveApplicationStatus(current) !== req.applicantEdit.before
+                    || current.house_status !== req.applicantEdit.houseStatus
+                    || (current.admin_comments || '') !== req.applicantEdit.remarks) {
+                    await connection.rollback();
+                    transactionOpen = false;
+                    return res.status(409).json({ success: false, message: 'SASO has updated this application while you were editing. Refresh Track My Application to see its current status before making further changes.' });
+                }
+            }
             submissionStep = 'property-update';
             const [updateResult] = await connection.query(
                 `UPDATE boarding_houses 
@@ -757,6 +773,20 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 );
             }
             await savePermitFileList(house_id, newPermitFiles);
+            if (req.applicantEdit) {
+                const { before, after } = req.applicantEdit;
+                submissionStep = 'application-status-save';
+                await connection.query(
+                    after === APPLICATION_STATUS.RESUBMITTED
+                        ? 'UPDATE boarding_houses SET application_status = ?, is_resubmission = 1, resubmitted_at = NOW() WHERE id = ?'
+                        : 'UPDATE boarding_houses SET application_status = ? WHERE id = ?',
+                    [after, house_id]
+                );
+                await recordStatusChange(connection, {
+                    houseId: house_id, from: before, to: after, actorType: 'applicant', actorId: ownerId, withSnapshot: true,
+                    remarks: after === APPLICATION_STATUS.RESUBMITTED ? 'Revised application resubmitted for review' : 'Application edited before review'
+                });
+            }
             await commitApplicationTransaction();
 
             // Evaluate the newly-saved expiry dates immediately rather than waiting
@@ -913,6 +943,7 @@ export async function markApplicationSubmitted(houseId, applicantId) {
         }
         if (!referenceNo) throw new Error('Could not allocate a unique reference number');
         await recordStatusChange(connection, { houseId, to: APPLICATION_STATUS.SUBMITTED, remarks: 'Application submitted', actorType: 'applicant', actorId: applicantId, withSnapshot: true });
+        await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [applicantId, `APPLICATION SUBMITTED: Your property application ${referenceNo} was received. SASO will review it. Open Track My Application to view its status.`]);
         await connection.commit();
     } catch (err) {
         await connection.rollback();
@@ -930,19 +961,22 @@ const failureResponse = (res, captured) => res.status(captured.code >= 400 ? cap
         : { success: false, message: 'We could not save your application. Please try again. If the problem continues, contact SASO.' }
 );
 
-router.post('/register-property', uploadAccreditationFiles, validateImages, validateBody('property'), validateBody('ownerApplicant'), async (req, res) => {
+router.post('/register-property', requireVerifiedEmail, (req, res, next) => {
     if (!allowRegistrationAttempt(req.ip || 'unknown')) {
-        return res.status(429).json({ success: false, message: 'Too many registration attempts. Please wait a few minutes and try again.' });
+        return res.status(429).json({ success: false, message: 'Please wait before submitting another application.' });
     }
+    next();
+}, uploadAccreditationFiles, validateImages, validateBody('property'), validateBody('ownerApplicant'), async (req, res) => {
 
     const ownerName = req.body.owner_name.trim();
-    const ownerEmail = req.body.owner_email.trim().toLowerCase();
+    const ownerEmail = req.verifiedApplicant.email;
+    if (req.body.owner_email.trim().toLowerCase() !== ownerEmail) return res.status(400).json({ success: false, message: 'Use the email address you verified.' });
     const ownerPhone = req.body.owner_phone.trim();
     const ownerAddress = req.body.owner_address.trim();
     // A public registration is always a brand-new application identified by its reference number.
     delete req.body.house_id;
 
-    // The email is stored as the applicant's contact/login email (no email is ever sent).
+    // Only the server-verified email can select the pending applicant identity.
     // An email that already has a pending application gets another application under the same
     // applicant; emails of active accounts (owners, students, SASO) are never reused here.
     let ownerId = null;
@@ -956,8 +990,8 @@ router.post('/register-property', uploadAccreditationFiles, validateImages, vali
             ownerId = existing[0].id;
         } else {
             const [userResult] = await pool.query(
-                `INSERT INTO users (name, email, role, status, phone, address, dpa_accepted, dpa_accepted_at)
-                 VALUES (?, ?, 'owner', 'pending', ?, ?, 1, NOW())`,
+                `INSERT INTO users (name, email, role, status, phone, address, dpa_accepted, dpa_accepted_at, email_verified_at)
+                 VALUES (?, ?, 'owner', 'pending', ?, ?, 1, NOW(), NOW())`,
                 [ownerName, ownerEmail, ownerPhone, ownerAddress]
             );
             ownerId = userResult.insertId;
@@ -995,7 +1029,8 @@ router.post('/register-property', uploadAccreditationFiles, validateImages, vali
     return res.status(201).json({
         success: true,
         message: 'Application submitted! Keep your reference number to track it.',
-        reference_no: referenceNo
+        reference_no: referenceNo,
+        token: signVerifiedApplicant(ownerEmail, ownerId)
     });
 });
 

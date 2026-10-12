@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { getImageUrl } from '../../config/api.js';
-import { applicantToken, setApplicantToken, clearApplicantToken, applicantHeaders, STATUS_INFO, formatDate } from '../../utils/applicantSession.js';
+import { applicantToken, verifiedApplicantId, clearApplicantToken, applicantHeaders, STATUS_INFO, formatDate } from '../../utils/applicantSession.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,13 +13,12 @@ const route = useRoute();
 const submittedRef = typeof route.query.submitted === 'string' ? route.query.submitted : '';
 const updatedRef = typeof route.query.updated === 'string' ? route.query.updated : '';
 const updatedStatus = typeof route.query.status === 'string' ? route.query.status : '';
+const submittedTicket = computed(() => applications.value.find(app => app.reference_no === submittedRef));
 const referenceCopied = ref(false);
 const copyReference = async () => {
   try { await navigator.clipboard.writeText(submittedRef); referenceCopied.value = true; } catch { referenceCopied.value = false; }
 };
 
-const referenceNo = ref(submittedRef || updatedRef || '');
-const isVerifying = ref(false);
 const errorMsg = ref('');
 
 const isLoading = ref(false);
@@ -42,34 +42,17 @@ const sessionExpired = (err) => {
 };
 
 const loadApplications = async () => {
-  if (!applicantToken()) return;
+  if (!verifiedApplicantId()) return;
   isLoading.value = true;
   try {
     const { data } = await axios.get('/api/applications/mine', { headers: applicantHeaders() });
     applicant.value = data.applicant;
     applications.value = data.applications || [];
+    errorMsg.value = "";
   } catch (err) {
     if (!sessionExpired(err)) errorMsg.value = err.response?.data?.message || 'We could not load your applications. Please try again.';
   } finally {
     isLoading.value = false;
-  }
-};
-
-const verify = async () => {
-  errorMsg.value = '';
-  if (!referenceNo.value.trim()) {
-    errorMsg.value = 'Enter your reference number.';
-    return;
-  }
-  isVerifying.value = true;
-  try {
-    const { data } = await axios.post('/api/applications/access', { reference_no: referenceNo.value.trim() });
-    setApplicantToken(data.token);
-    await loadApplications();
-  } catch (err) {
-    errorMsg.value = err.response?.data?.message || 'We could not verify your application. Please try again.';
-  } finally {
-    isVerifying.value = false;
   }
 };
 
@@ -84,10 +67,16 @@ const signOut = () => {
 const toggleDetails = async (app) => {
   const ref = app.reference_no;
   expanded.value[ref] = !expanded.value[ref];
-  if (!expanded.value[ref] || details.value[ref]) return;
+  if (!expanded.value[ref] || (details.value[ref] && !details.value[ref].error)) return;
   try {
     const { data } = await axios.get(`/api/applications/${encodeURIComponent(ref)}`, { headers: applicantHeaders() });
-    details.value[ref] = data;
+    const permitFiles = Array.isArray(data.permitFiles) ? [...data.permitFiles] : [];
+    for (const key of Object.keys(documentNames)) {
+      const permitKey = 'permit_' + key;
+      const path = data.application?.[permitKey];
+      if (path && !permitFiles.some(file => file.permit_key === permitKey)) permitFiles.push({ permit_key: permitKey, file_path: path });
+    }
+    details.value[ref] = { ...data, photos: Array.isArray(data.photos) ? data.photos : [], permitFiles, history: Array.isArray(data.history) ? data.history : [] };
   } catch (err) {
     if (!sessionExpired(err)) details.value[ref] = { error: err.response?.data?.message || 'Could not load the details.' };
   }
@@ -105,146 +94,179 @@ const startActivation = async () => {
   }
 };
 
+const documentNames = { business_form: 'Business application', cedula: 'Community tax certificate', dti: 'DTI registration', barangay: 'Barangay clearance', building: 'Building permit', zoning: 'Zoning clearance', sanitary: 'Sanitary permit', fire: 'Fire safety certificate' };
+const documentUrl = (path) => {
+  if (!path) return null;
+  try { const url = new URL(getImageUrl(path), window.location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : null; } catch { return null; }
+};
 const editLabel = (status) => (status === 'REVISION_REQUIRED' ? 'Respond to revision request' : 'Edit application');
+// Badge colours for this page only; STATUS_INFO.badge is also used by the admin screens.
+const STATUS_TONES = { SUBMITTED: 'tone-submitted', UNDER_REVIEW: 'tone-review', REVISION_REQUIRED: 'tone-revision', RESUBMITTED: 'tone-resubmitted', APPROVED: 'tone-approved', ACCOUNT_PENDING: 'tone-approved', ACTIVE: 'tone-active', REJECTED: 'tone-rejected' };
+const statusTone = (status) => STATUS_TONES[status] || 'tone-neutral';
+// Display only: long remarks start collapsed to a few lines; "Show more" reveals the full text.
+const openText = ref({});
+const isLongText = (text, chars) => String(text || '').length > chars || String(text || '').split('\n').length > 3;
+const toggleText = (key) => { openText.value[key] = !openText.value[key]; };
 
 onMounted(loadApplications);
+const refreshSession = () => { if (applicantToken()) loadApplications(); else { applicant.value = null; applications.value = []; } };
+onMounted(() => window.addEventListener('applicant-session-updated', refreshSession));
+onUnmounted(() => window.removeEventListener('applicant-session-updated', refreshSession));
 </script>
 
 <template>
   <div class="min-h-screen bg-[#f4f7fb] font-sans text-[#243449]">
-    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-      <header class="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-5 py-3 mb-4">
-        <router-link to="/" class="flex items-center gap-3 min-w-0">
-          <img src="/img/CSPC_logo.png" alt="" class="w-10 h-10 object-contain" />
-          <h1 class="text-lg sm:text-xl font-bold text-[#142b4a] truncate">Track My Application</h1>
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+      <header class="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 sm:px-5 py-3 mb-5">
+        <router-link to="/" class="track-focus flex items-center gap-3 min-w-0 rounded-lg">
+          <img src="/img/CSPC_logo.png" alt="" class="w-9 h-9 object-contain shrink-0" />
+          <h1 class="text-base sm:text-lg font-semibold text-[#142b4a] truncate">Track My Application</h1>
         </router-link>
-        <button v-if="signedIn" type="button" @click="signOut" class="text-[13px] font-semibold text-slate-500 hover:text-red-600 px-3 py-2 rounded-lg">
-          <i class="fa-solid fa-right-from-bracket mr-1" aria-hidden="true"></i>Sign out
+        <button v-if="signedIn" type="button" @click="signOut" class="track-focus shrink-0 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-lg">
+          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>Sign out
         </button>
       </header>
 
-      <div v-if="submittedRef && signedIn" role="status" class="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="min-w-0">
-          <p class="font-bold text-emerald-800"><i class="fa-solid fa-circle-check mr-1.5" aria-hidden="true"></i>Application submitted</p>
-          <p class="text-[13px] text-emerald-900 mt-0.5">Your reference number is <strong class="font-mono tracking-wider select-all">{{ submittedRef }}</strong>. Save it — it is all you need to come back here.</p>
-        </div>
-        <button type="button" @click="copyReference" class="shrink-0 bg-white border border-emerald-300 hover:border-emerald-500 text-emerald-800 text-[13px] font-semibold rounded-lg px-4 py-2">
-          <i :class="['fa-solid mr-1', referenceCopied ? 'fa-check' : 'fa-copy']" aria-hidden="true"></i>{{ referenceCopied ? 'Copied' : 'Copy reference' }}
-        </button>
-      </div>
-      <div v-if="updatedRef && signedIn" role="status" class="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 text-[13px] text-emerald-900">
-        <i class="fa-solid fa-circle-check mr-1.5" aria-hidden="true"></i>{{ updatedStatus === 'RESUBMITTED' ? 'Your revision was resubmitted to SASO for' : 'Your changes were saved for' }} <strong>{{ updatedRef }}</strong>.
-      </div>
-
-      <div v-if="errorMsg" role="alert" class="mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm font-semibold">
-        <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>{{ errorMsg }}
-      </div>
-
-      <!-- Verify access -->
-      <section v-if="!signedIn && !isLoading" class="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 max-w-lg mx-auto">
-        <h2 class="text-lg font-bold text-[#142b4a]">Open your applications</h2>
-        <p class="text-sm text-slate-500 mt-1 mb-5">Enter the reference number you received when you submitted your application. No owner account is needed.</p>
-        <form @submit.prevent="verify" class="space-y-4" novalidate>
-          <div>
-            <label for="track-reference" class="block text-[13px] font-semibold text-slate-600 mb-1.5">Reference number</label>
-            <input id="track-reference" v-model="referenceNo" type="text" autocomplete="off" placeholder="BH-2026-00001"
-              class="w-full border border-slate-200 bg-slate-50 rounded-lg px-3 py-2.5 text-sm font-semibold uppercase focus:bg-white focus:border-blue-500 outline-none" />
+      <div v-if="submittedTicket && signedIn" role="status" class="mb-5 bg-white border border-emerald-200 rounded-xl overflow-hidden">
+        <p class="flex items-center gap-2 px-5 py-3 bg-emerald-50 border-b border-emerald-100 text-sm font-semibold text-emerald-800">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>Application submitted
+        </p>
+        <div class="px-5 py-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+          <div class="min-w-0">
+            <p class="text-[13px] text-slate-500">Reference number</p>
+            <p class="font-mono text-xl sm:text-2xl font-semibold text-[#142b4a] tracking-wide select-all track-wrap mt-0.5">{{ submittedRef }}</p>
+            <dl class="track-facts mt-3 text-sm">
+              <dt>Property</dt><dd>{{ submittedTicket.name }}</dd>
+              <dt>Submitted</dt><dd>{{ formatDate(submittedTicket.submitted_at, true) }}</dd>
+              <dt>Status</dt><dd><span :class="['track-badge', statusTone(submittedTicket.status)]">{{ STATUS_INFO[submittedTicket.status]?.label || submittedTicket.status }}</span></dd>
+            </dl>
+            <p class="mt-3 text-[13px] leading-relaxed text-slate-600 max-w-prose">Save this reference number to identify this application. Verify your registered email when you return.</p>
           </div>
-          <button type="submit" :disabled="isVerifying" class="w-full bg-[#1e4a8d] hover:bg-[#163870] text-white font-semibold rounded-lg py-3 text-sm disabled:opacity-60">
-            {{ isVerifying ? 'Verifying…' : 'View my applications' }}
+          <button type="button" @click="copyReference" class="track-focus track-btn track-btn-secondary justify-self-start">
+            <i :class="['fa-solid', referenceCopied ? 'fa-check' : 'fa-copy']" aria-hidden="true"></i>{{ referenceCopied ? 'Copied' : 'Copy reference' }}
           </button>
-        </form>
-        <p class="text-[12px] text-slate-400 mt-5">Lost your reference number? Contact SASO with your name and mobile number.
-          Don't have an application yet? <router-link to="/register" class="text-blue-600 font-semibold hover:underline">Register your property</router-link>.</p>
-      </section>
-
-      <div v-if="isLoading" class="text-center text-slate-500 text-sm py-16" role="status">
-        <i class="fa-solid fa-spinner fa-spin mr-2" aria-hidden="true"></i>Loading your applications…
+        </div>
+      </div>
+      <div v-if="updatedRef && signedIn" role="status" class="mb-5 flex items-start gap-2.5 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-900">
+        <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i>
+        <p class="min-w-0 track-wrap">{{ updatedStatus === 'RESUBMITTED' ? 'Your revision was resubmitted to SASO for' : 'Your changes were saved for' }} <span class="font-semibold">{{ updatedRef }}</span>.</p>
       </div>
 
+      <div v-if="errorMsg" role="alert" class="mb-5 flex items-start gap-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-4 py-3 text-sm">
+        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        <p class="min-w-0 track-wrap">{{ errorMsg }}</p>
+      </div>
+
+      <ApplicantEmailGate v-if="!signedIn && !isLoading" />
+
+      <div v-if="isLoading" class="text-center text-slate-600 text-sm py-16" role="status">
+        <i class="fa-solid fa-spinner fa-spin mr-2 text-[#245b99]" aria-hidden="true"></i>Loading your applications…
+      </div>
       <!-- Dashboard -->
       <template v-if="signedIn && !isLoading">
-        <section class="bg-white border border-slate-200 rounded-xl px-5 py-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <section class="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="min-w-0">
-            <p class="font-bold text-[#142b4a] truncate">{{ applicant.name }}</p>
-            <p v-if="applicant.email" class="text-[13px] text-slate-500 truncate">{{ applicant.email }}</p>
+            <p class="font-semibold text-[#142b4a] track-wrap">{{ applicant.name }}</p>
+            <p v-if="applicant.email" class="text-[13px] text-slate-600 track-wrap">{{ applicant.email }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button v-if="applicant.account_status === 'ACCOUNT_PENDING'" type="button" @click="startActivation" :disabled="activation.loading"
-              class="bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-semibold rounded-lg px-4 py-2.5 disabled:opacity-60">
-              <i class="fa-solid fa-user-check mr-1.5" aria-hidden="true"></i>{{ activation.loading ? 'Preparing…' : 'Activate owner account' }}
+              class="track-focus track-btn bg-emerald-700 hover:bg-emerald-800 text-white">
+              <i class="fa-solid fa-user-check" aria-hidden="true"></i>{{ activation.loading ? 'Preparing…' : 'Activate owner account' }}
             </button>
-            <router-link v-if="applicant.account_status === 'ACTIVE'" to="/login" class="bg-[#1e4a8d] hover:bg-[#163870] text-white text-[13px] font-semibold rounded-lg px-4 py-2.5">
-              <i class="fa-solid fa-right-to-bracket mr-1.5" aria-hidden="true"></i>Log in to owner dashboard
+            <router-link v-if="applicant.account_status === 'ACTIVE'" to="/login" class="track-focus track-btn bg-[#1e4a8d] hover:bg-[#163870] text-white">
+              <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Log in to owner dashboard
             </router-link>
-            <router-link v-if="canAddProperty" to="/register?add=1" class="bg-white border border-slate-300 hover:border-blue-500 text-[#1e4a8d] text-[13px] font-semibold rounded-lg px-4 py-2.5">
-              <i class="fa-solid fa-plus mr-1.5" aria-hidden="true"></i>Add another property
+            <router-link v-if="canAddProperty" to="/register?add=1" class="track-focus track-btn track-btn-secondary">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>Add another property
             </router-link>
           </div>
         </section>
-        <p v-if="activation.error" class="mb-4 text-sm font-semibold text-rose-600">{{ activation.error }}</p>
-        <p v-if="applicant.account_status === 'ACCOUNT_PENDING'" class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm">
-          <i class="fa-solid fa-circle-check mr-1.5" aria-hidden="true"></i>SASO approved your application. Activate your owner account to set your password and manage your property.
+        <p v-if="activation.error" role="alert" class="mb-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-4 py-3 text-sm track-wrap">{{ activation.error }}</p>
+        <p v-if="applicant.account_status === 'ACCOUNT_PENDING'" class="mb-5 flex items-start gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-3 text-sm leading-relaxed">
+          <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i><span>SASO approved your application. Activate your owner account to set your password and manage your property.</span>
         </p>
 
-        <section v-if="applications.length === 0" class="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500">
-          <i class="fa-regular fa-folder-open text-3xl mb-3" aria-hidden="true"></i>
-          <p class="font-semibold">No applications yet.</p>
+        <section v-if="applications.length === 0" class="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-600">
+          <i class="fa-regular fa-folder-open text-3xl mb-3 text-slate-400" aria-hidden="true"></i>
+          <p class="font-medium">No applications yet.</p>
         </section>
 
         <ul class="space-y-3">
           <li v-for="app in applications" :key="app.reference_no || app.name" class="bg-white border border-slate-200 rounded-xl">
-            <div class="px-5 py-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
+            <div class="px-4 sm:px-5 py-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
               <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h2 class="font-bold text-[#142b4a] truncate">{{ app.name }}</h2>
-                  <span :class="['text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', STATUS_INFO[app.status]?.badge || 'bg-slate-100 text-slate-600']">{{ STATUS_INFO[app.status]?.label || app.status }}</span>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                  <h2 class="min-w-0 text-base font-semibold leading-snug text-[#142b4a] track-wrap">{{ app.name }}</h2>
+                  <span :class="['track-badge', statusTone(app.status)]">{{ STATUS_INFO[app.status]?.label || app.status }}</span>
                 </div>
-                <p class="text-[13px] text-slate-500 mt-1">
-                  <span class="font-semibold text-slate-700">{{ app.reference_no || 'Reference pending' }}</span>
-                  · Submitted {{ formatDate(app.submitted_at) }} · Updated {{ formatDate(app.updated_at) }}
-                </p>
-                <p class="text-[13px] text-slate-500 mt-1">{{ STATUS_INFO[app.status]?.hint }}</p>
+                <dl class="track-meta mt-1.5">
+                  <div><dt>Reference</dt><dd class="font-medium text-slate-800 tracking-wide tabular-nums track-wrap">{{ app.reference_no || 'Reference pending' }}</dd></div>
+                  <div><dt>Submitted</dt><dd>{{ formatDate(app.submitted_at) }}</dd></div>
+                  <div v-if="formatDate(app.updated_at) !== formatDate(app.submitted_at)"><dt>Last updated</dt><dd>{{ formatDate(app.updated_at) }}</dd></div>
+                </dl>
+                <p class="mt-1.5 text-sm text-slate-600 max-w-prose">{{ STATUS_INFO[app.status]?.hint }}</p>
               </div>
-              <div class="flex flex-wrap gap-2 shrink-0">
+              <div class="flex flex-wrap gap-2 md:justify-end">
                 <button type="button" @click="toggleDetails(app)" :aria-expanded="Boolean(expanded[app.reference_no])"
-                  class="border border-slate-300 hover:border-blue-500 text-slate-700 text-[13px] font-semibold rounded-lg px-3 py-2">
-                  <i :class="['fa-solid mr-1', expanded[app.reference_no] ? 'fa-chevron-up' : 'fa-clock-rotate-left']" aria-hidden="true"></i>{{ expanded[app.reference_no] ? 'Hide details' : 'View details & status' }}
+                  class="track-focus track-btn track-btn-secondary">
+                  <i :class="['fa-solid', expanded[app.reference_no] ? 'fa-chevron-up' : 'fa-clock-rotate-left']" aria-hidden="true"></i>{{ expanded[app.reference_no] ? 'Hide details' : 'View details & status' }}
                 </button>
                 <router-link v-if="app.editable" :to="`/register?edit=${encodeURIComponent(app.reference_no)}`"
-                  :class="['text-[13px] font-semibold rounded-lg px-3 py-2', app.status === 'REVISION_REQUIRED' ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-[#1e4a8d] hover:bg-[#163870] text-white']">
-                  <i class="fa-solid fa-pen-to-square mr-1" aria-hidden="true"></i>{{ editLabel(app.status) }}
+                  :class="['track-focus track-btn text-white', app.status === 'REVISION_REQUIRED' ? 'bg-amber-700 hover:bg-amber-800' : 'bg-[#1e4a8d] hover:bg-[#163870]']">
+                  <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>{{ editLabel(app.status) }}
                 </router-link>
               </div>
             </div>
-            <div v-if="app.remarks" class="mx-5 mb-4 rounded-lg px-4 py-3 text-sm" :class="app.status === 'REJECTED' ? 'bg-rose-50 border border-rose-200 text-rose-800' : 'bg-amber-50 border border-amber-200 text-amber-900'">
-              <p class="font-semibold text-[12px] uppercase tracking-wide mb-1">SASO remarks</p>
-              <p class="whitespace-pre-line">{{ app.remarks }}</p>
+            <div v-if="app.remarks" class="mx-4 sm:mx-5 mb-4 border-l-[3px] rounded-r-lg px-4 py-3" :class="app.status === 'REJECTED' ? 'border-rose-500 bg-rose-50 text-rose-900' : 'border-amber-500 bg-amber-50 text-amber-950'">
+              <h3 class="text-[13px] font-semibold mb-1">SASO remarks</h3>
+              <p :id="`remarks-${app.reference_no}`" :class="['text-sm leading-relaxed whitespace-pre-line track-wrap max-w-[70ch]', isLongText(app.remarks, 280) && !openText[`r:${app.reference_no}`] ? 'track-clamp-4' : '']">{{ app.remarks }}</p>
+              <button v-if="isLongText(app.remarks, 280)" type="button" @click="toggleText(`r:${app.reference_no}`)" :aria-expanded="Boolean(openText[`r:${app.reference_no}`])" :aria-controls="`remarks-${app.reference_no}`" class="track-focus track-more">{{ openText[`r:${app.reference_no}`] ? 'Show less' : 'Show more' }}</button>
             </div>
 
-            <div v-if="expanded[app.reference_no]" class="border-t border-slate-100 px-5 py-4">
-              <p v-if="!details[app.reference_no]" class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>Loading…</p>
-              <p v-else-if="details[app.reference_no].error" class="text-sm text-rose-600">{{ details[app.reference_no].error }}</p>
-              <div v-else class="grid md:grid-cols-2 gap-5">
-                <div class="flex gap-3 min-w-0">
-                  <img v-if="details[app.reference_no].application.img" :src="getImageUrl(details[app.reference_no].application.img)" alt="Featured property photo" class="w-28 h-20 object-cover rounded-lg border border-slate-200 shrink-0" />
-                  <dl class="text-[13px] space-y-1 min-w-0">
-                    <div><dt class="inline text-slate-500">Address: </dt><dd class="inline font-semibold">{{ details[app.reference_no].application.location || '—' }}</dd></div>
-                    <div><dt class="inline text-slate-500">Monthly rent: </dt><dd class="inline font-semibold">₱{{ Number(details[app.reference_no].application.price || 0).toLocaleString() }}</dd></div>
-                    <div><dt class="inline text-slate-500">Photos: </dt><dd class="inline font-semibold">{{ details[app.reference_no].photos.length }}</dd></div>
-                    <div><dt class="inline text-slate-500">Document files: </dt><dd class="inline font-semibold">{{ details[app.reference_no].permitFiles.length }}</dd></div>
-                  </dl>
-                </div>
-                <div>
-                  <h3 class="text-[12px] font-bold uppercase tracking-wide text-slate-500 mb-2">Status history</h3>
-                  <ol class="border-l-2 border-slate-200 pl-4 space-y-2.5">
-                    <li v-for="(h, i) in details[app.reference_no].history" :key="i" class="relative">
-                      <span class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-[#1e4a8d]" aria-hidden="true"></span>
-                      <p class="text-[13px] font-semibold text-[#142b4a]">{{ STATUS_INFO[h.status]?.label || h.status }} <span class="font-normal text-slate-400">· {{ formatDate(h.created_at, true) }}</span></p>
-                      <p v-if="h.remarks" class="text-[12px] text-slate-500 whitespace-pre-line">{{ h.remarks }}</p>
+            <div v-if="expanded[app.reference_no]" class="border-t border-slate-200 px-4 sm:px-5 py-5">
+              <p v-if="!details[app.reference_no]" class="text-sm text-slate-600" role="status"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-[#245b99]" aria-hidden="true"></i>Loading…</p>
+              <div v-else-if="details[app.reference_no].error" role="alert" class="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3 track-wrap">{{ details[app.reference_no].error }} <button type="button" class="track-focus ml-2 font-medium underline underline-offset-2 rounded" @click="expanded[app.reference_no] = false; toggleDetails(app)">Try again</button></div>
+              <div v-else class="space-y-6">
+                <section class="min-w-0">
+                  <h3 class="track-subhead">Property</h3>
+                  <div class="flex flex-col sm:flex-row sm:items-start gap-5 min-w-0">
+                    <img v-if="details[app.reference_no].application.img" :src="getImageUrl(details[app.reference_no].application.img)" alt="Featured property photo" class="w-full max-w-[320px] sm:w-[220px] aspect-[4/3] object-cover rounded-lg border border-slate-200 shrink-0" />
+                    <dl class="track-props flex-1 min-w-0">
+                      <div class="track-props-wide"><dt>Address</dt><dd>{{ details[app.reference_no].application.location || '—' }}</dd></div>
+                      <div><dt>Monthly rent</dt><dd class="tabular-nums">₱{{ Number(details[app.reference_no].application.price || 0).toLocaleString() }}</dd></div>
+                      <div><dt>Contact</dt><dd>{{ details[app.reference_no].application.phone_contact || 'Not provided' }}</dd></div>
+                      <div><dt>Photos</dt><dd class="tabular-nums">{{ details[app.reference_no].photos.length }}</dd></div>
+                      <div><dt>Document files</dt><dd class="tabular-nums">{{ details[app.reference_no].permitFiles.length }}</dd></div>
+                    </dl>
+                  </div>
+                </section>
+                <div class="grid md:grid-cols-2 gap-6 md:gap-8 pt-6 border-t border-slate-100">
+                <div class="min-w-0">
+                  <h3 class="track-subhead">Submitted documents</h3>
+                  <ul class="text-sm border border-slate-200 rounded-lg divide-y divide-slate-200">
+                    <li v-for="(file, index) in details[app.reference_no].permitFiles" :key="index" class="flex items-start gap-3 px-3 py-2">
+                      <i class="fa-regular fa-file-lines mt-0.5 text-slate-400" aria-hidden="true"></i>
+                      <a v-if="documentUrl(file.file_path)" :href="documentUrl(file.file_path)" target="_blank" rel="noopener noreferrer" class="track-focus min-w-0 rounded text-[#245b99] hover:text-[#142b4a] underline underline-offset-2 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }} - file {{ index + 1 }}<span class="sr-only"> (opens in a new tab)</span><i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[11px]" aria-hidden="true"></i></a>
+                      <span v-else class="min-w-0 text-slate-600 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }}: file unavailable</span>
                     </li>
-                    <li v-if="details[app.reference_no].history.length === 0" class="text-[13px] text-slate-500">No status changes recorded yet.</li>
+                    <li v-if="!details[app.reference_no].permitFiles.length" class="px-3 py-2 text-slate-600">No document files available in this list.</li>
+                  </ul>
+                </div>
+                <div class="min-w-0">
+                  <h3 class="track-subhead">Status history</h3>
+                  <ol class="track-timeline">
+                    <li v-for="(h, i) in details[app.reference_no].history" :key="i" class="relative">
+                      <span class="track-dot" aria-hidden="true"></span>
+                      <p class="text-[13px]"><span class="font-semibold text-[#142b4a]">{{ STATUS_INFO[h.status]?.label || h.status }}</span> <span class="text-slate-600 whitespace-nowrap">· {{ formatDate(h.created_at, true) }}</span></p>
+                      <template v-if="h.remarks">
+                        <p :id="`history-${app.reference_no}-${i}`" :class="['mt-0.5 text-[13px] leading-relaxed text-slate-700 whitespace-pre-line track-wrap max-w-[60ch]', isLongText(h.remarks, 120) && !openText[`h:${app.reference_no}:${i}`] ? 'track-clamp-2' : '']">{{ h.remarks }}</p>
+                        <button v-if="isLongText(h.remarks, 120)" type="button" @click="toggleText(`h:${app.reference_no}:${i}`)" :aria-expanded="Boolean(openText[`h:${app.reference_no}:${i}`])" :aria-controls="`history-${app.reference_no}-${i}`" class="track-focus track-more">{{ openText[`h:${app.reference_no}:${i}`] ? 'Show less' : 'Show more' }}</button>
+                      </template>
+                    </li>
+                    <li v-if="details[app.reference_no].history.length === 0" class="text-[13px] text-slate-600">No status changes recorded yet.</li>
                   </ol>
+                </div>
                 </div>
               </div>
             </div>
@@ -254,3 +276,54 @@ onMounted(loadApplications);
     </main>
   </div>
 </template>
+
+<style scoped>
+.track-focus:focus-visible { outline: 3px solid #5e99db; outline-offset: 2px; }
+.track-wrap { overflow-wrap: anywhere; }
+.track-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; line-height: 1.2; transition: background-color .15s, border-color .15s; }
+.track-btn:disabled { opacity: .65; cursor: not-allowed; }
+.track-btn-secondary { background: #fff; color: #142b4a; border: 1px solid #cbd5e1; }
+.track-btn-secondary:hover { border-color: #245b99; background: #f5f8fc; }
+.track-subhead { font-size: 13.5px; font-weight: 600; color: #142b4a; margin-bottom: 8px; }
+.track-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
+.track-facts dt { color: #64748b; }
+.track-facts dd { margin: 0; color: #1e293b; overflow-wrap: anywhere; }
+
+/* Reference / submitted / last updated: labelled items in a row; stacked on phones */
+.track-meta { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: #334155; }
+.track-meta > div { display: flex; gap: 6px; min-width: 0; }
+.track-meta dt { color: #64748b; }
+.track-meta dd { margin: 0; }
+@media (min-width: 640px) { .track-meta { flex-direction: row; flex-wrap: wrap; gap: 4px 20px; } }
+
+/* Property facts: label above value, laid out across the available width */
+.track-props { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; }
+.track-props dt { font-size: 12.5px; color: #64748b; }
+.track-props dd { margin: 2px 0 0; font-size: 14px; color: #1e293b; overflow-wrap: anywhere; }
+.track-props-wide { grid-column: 1 / -1; }
+@media (min-width: 900px) { .track-props { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Long remarks: clamp to a few lines until "Show more" is pressed */
+.track-clamp-2, .track-clamp-4 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.track-clamp-2 { -webkit-line-clamp: 2; line-clamp: 2; }
+.track-clamp-4 { -webkit-line-clamp: 4; line-clamp: 4; }
+.track-more { margin-top: 4px; padding: 2px 0; border-radius: 4px; font-size: 13px; font-weight: 600; color: #245b99; text-decoration: underline; text-underline-offset: 2px; }
+.track-more:hover { color: #142b4a; }
+
+/* Status badges: colours for this page only (STATUS_INFO.badge is shared with admin screens) */
+.track-badge { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 8px; border: 1px solid; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 1.6; white-space: nowrap; }
+.track-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.tone-submitted { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.tone-review { color: #5b21b6; background: #f5f3ff; border-color: #ddd6fe; }
+.tone-revision { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+.tone-resubmitted { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
+.tone-approved { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+.tone-active { color: #fff; background: #15803d; border-color: #15803d; }
+.tone-rejected { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.tone-neutral { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+
+/* Status history */
+.track-timeline { border-left: 2px solid #e2e8f0; padding-left: 18px; margin-left: 5px; display: grid; gap: 10px; }
+.track-dot { position: absolute; left: -25px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid #245b99; }
+.track-timeline > li:last-child .track-dot { background: #245b99; }
+</style>

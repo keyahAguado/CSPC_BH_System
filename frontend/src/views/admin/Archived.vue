@@ -25,6 +25,8 @@ const getAdminCheckoutDate = (occ) => {
 const houses = ref([]);
 const dynamicDocs = ref([]);
 const housePhotos = ref([]);
+// Every file uploaded per legal document (several images and/or PDF)
+const permitFiles = ref([]);
 
 const isLoading = ref(true);
 const alertRef = ref(null);
@@ -116,17 +118,40 @@ const isPdfFile = (url) => /\.pdf($|[?#])/i.test(String(url || ''));
 
 // Full-screen document viewer: images fit the screen (click to zoom to actual size); PDFs show inline
 const previewZoomed = ref(false);
+// A document can have several files: the viewer pages through them (1 of 3) with Previous / Next.
+const previewFiles = ref([]);
+const previewIndex = ref(0);
 const openPreview = (url) => {
   if (!url || url.endsWith('#')) return;
+  previewFiles.value = [url];
+  previewIndex.value = 0;
   previewImageUrl.value = url;
   previewZoomed.value = false;
   showPreviewModal.value = true;
+};
+const openPreviewSet = (files) => {
+  const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
+  if (!urls.length) return;
+  previewFiles.value = urls;
+  previewIndex.value = 0;
+  previewImageUrl.value = urls[0];
+  previewZoomed.value = false;
+  showPreviewModal.value = true;
+};
+const stepPreview = (direction) => {
+  const count = previewFiles.value.length;
+  if (count < 2) return;
+  previewIndex.value = (previewIndex.value + direction + count) % count;
+  previewImageUrl.value = previewFiles.value[previewIndex.value];
+  previewZoomed.value = false;
 };
 
 const closePreview = () => {
   showPreviewModal.value = false;
   previewImageUrl.value = '';
   previewZoomed.value = false;
+  previewFiles.value = [];
+  previewIndex.value = 0;
 };
 
 const downloadOriginal = () => {
@@ -227,6 +252,7 @@ const fetchArchivedHouses = async () => {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
       housePhotos.value = response.data.housePhotos || [];
+      permitFiles.value = response.data.permitFiles || [];
     }
   } catch (error) {
     loadError.value = 'The server did not return these records. Refresh the page to try again.';
@@ -328,12 +354,17 @@ const DETAIL_TABS = [
 ];
 
 const buildDocs = (house) => {
-  const toDoc = (p) => ({ label: p.label, file: house[p.key] || null, expiry: house['expiry_' + p.key] || null });
+  // All files for a permit; falls back to the single permit column for older records.
+  const toDoc = (p) => {
+    const listed = permitFiles.value.filter(f => f.house_id === house.id && f.permit_key === p.key).map(f => f.file_path);
+    const files = listed.length ? listed : (house[p.key] ? [house[p.key]] : []);
+    return { label: p.label, file: files[0] || null, files, expiry: house['expiry_' + p.key] || null };
+  };
   requiredDocs.value = REQUIRED_PERMITS.map(toDoc);
-  const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, expiry: null }] : [];
+  const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, files: [house.img], expiry: null }] : [];
   const dynamicUploaded = dynamicDocs.value
     .filter(d => d.house_id === house.id)
-    .map(d => ({ label: d.criteria_label || 'Additional document', file: d.file_path, expiry: null }));
+    .map(d => ({ label: d.criteria_label || 'Additional document', file: d.file_path, files: [d.file_path], expiry: null }));
   optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded];
 };
 
@@ -515,7 +546,7 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page registered-fit bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
+  <div class="management-page bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
     <AdminNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
@@ -573,12 +604,12 @@ const loadError = ref('');
       <!-- Table Container & Card Layout -->
       <div v-if="!isLoading" class="registered-body animate-fade-in">
         
-        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
 
         <!-- PHONE VIEW: one card per property -->
-        <div class="block md:hidden space-y-3">
+        <div class="block lg:hidden space-y-3">
           <div v-if="filteredHouses.length === 0" class="bg-white rounded-2xl p-8 text-center border border-slate-200/60 text-slate-400 italic text-sm font-semibold">
             <span v-if="selectedBarangay || searchQuery">No boarding houses match the selected filter.</span>
             <span v-else>No archived boarding houses found.</span>
@@ -599,7 +630,7 @@ const loadError = ref('');
         </div>
 
         <!-- LAPTOP / DESKTOP VIEW: Table Layout -->
-        <div class="registered-table-card hidden md:flex md:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="registered-table-card hidden lg:flex lg:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="registered-table-scroll overflow-x-auto">
@@ -795,9 +826,10 @@ const loadError = ref('');
             </div>
             <ul class="rp-doc-grid">
               <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
-                <button v-if="doc.file" type="button" class="rp-doc-preview" :aria-label="'View ' + doc.label" @click="openPreview(getImageUrl(doc.file))">
+                <button v-if="doc.file" type="button" class="rp-doc-preview" :aria-label="'View ' + doc.label + (doc.files.length > 1 ? ` (${doc.files.length} files)` : '')" @click="openPreviewSet(doc.files)">
                   <img v-if="!isPdfFile(doc.file)" :src="getImageUrl(doc.file)" alt="" />
                   <span v-else class="rp-doc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF</span>
+                  <span v-if="doc.files.length > 1" class="rp-doc-count" aria-hidden="true">{{ doc.files.length }} files</span>
                 </button>
                 <span v-else class="rp-doc-preview is-empty" aria-hidden="true"><i class="fa-regular fa-file"></i></span>
                 <div class="min-w-0 flex-1">
@@ -809,7 +841,7 @@ const loadError = ref('');
                       <span v-if="doc.expiry" :class="['rp-exp', 'is-' + expiryTone(doc.expiry)]"> · {{ expiryNote(doc.expiry) }}</span>
                     </template>
                   </p>
-                  <button v-if="doc.file" type="button" class="rp-link-btn" @click="openPreview(getImageUrl(doc.file))"><i class="fa-solid fa-expand" aria-hidden="true"></i> View full screen</button>
+                  <button v-if="doc.file" type="button" class="rp-link-btn" @click="openPreviewSet(doc.files)"><i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View all ${doc.files.length} files` : 'View full screen' }}</button>
                 </div>
               </li>
             </ul>
@@ -879,16 +911,16 @@ const loadError = ref('');
         <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
         <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
         <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button management-button-primary">Confirm</button>
+          <button @click="executeConfirm" class="flex-1 bg-[#245b99] hover:bg-[#194775] text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button management-button-primary">Confirm</button>
           <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Cancel</button>
         </div>
       </div>
     </div>
 
     <!-- Full-screen Document Viewer -->
-    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview">
+    <div v-management-dialog="{ close: () => closePreview() }" v-if="showPreviewModal" class="doc-viewer animate-fade-in" @click.self="closePreview" @keydown.left="stepPreview(-1)" @keydown.right="stepPreview(1)">
       <div class="doc-viewer-bar">
-        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview</span>
+        <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
         <div class="doc-viewer-actions">
           <button v-if="!isPdfFile(previewImageUrl)" type="button" class="doc-viewer-btn" @click="previewZoomed = !previewZoomed" :aria-pressed="previewZoomed">
             <i :class="previewZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'" aria-hidden="true"></i>
@@ -905,6 +937,10 @@ const loadError = ref('');
       <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
         <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
         <img v-else :src="previewImageUrl" class="doc-viewer-img" alt="Document preview" @click="previewZoomed = !previewZoomed" />
+        <template v-if="previewFiles.length > 1">
+          <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="doc-viewer-nav is-next" aria-label="Next file" @click="stepPreview(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+        </template>
       </div>
     </div>
 
@@ -927,7 +963,7 @@ const loadError = ref('');
 <style scoped>
 /* Laptop/desktop: keep the whole registry on one screen. The page itself does not scroll;
    only the table rows scroll inside the card, with the pagination bar always visible. */
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .registered-fit {
     height: 100dvh;
     min-height: 0 !important;
@@ -1086,6 +1122,8 @@ const loadError = ref('');
 .rp-doc-pdf i { font-size: 28px; }
 .rp-doc-name { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--a-heading); line-height: 1.35; }
 .rp-doc-meta { margin: 4px 0 0; font-size: 13px; }
+.rp-doc-preview { position: relative; }
+.rp-doc-count { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.5; }
 .rp-exp.is-success, .rp-exp.is-none { color: var(--a-muted); }
 .rp-exp.is-warning { color: #ea580c; font-weight: 600; }
 .rp-exp.is-danger { color: #be123c; font-weight: 600; }
@@ -1117,6 +1155,13 @@ const loadError = ref('');
 .doc-viewer-stage.is-zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; }
 .doc-viewer-stage.is-zoomed .doc-viewer-img { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
 .doc-viewer-pdf { width: 100%; height: 100%; border: 0; border-radius: 6px; background: #fff; }
+.doc-viewer-stage { position: relative; }
+.doc-viewer-count { margin-left: 4px; padding: 2px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: 12.5px; font-weight: 600; }
+.doc-viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; min-height: 46px !important; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 23, 42, .7); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+.doc-viewer-nav:hover { background: #2563eb; border-color: #2563eb; }
+.doc-viewer-nav:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.doc-viewer-nav.is-prev { left: 16px; }
+.doc-viewer-nav.is-next { right: 16px; }
 
 /* Barangay dropdown: no extra min-height so the box matches the search field */
 .barangay-select { min-height: 0 !important; padding: 0; }

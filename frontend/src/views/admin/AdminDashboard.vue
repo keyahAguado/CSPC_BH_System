@@ -394,7 +394,9 @@ const renderCharts = () => {
               color: INK,
               callback: function (value) {
                 const label = this.getLabelForValue(value);
-                return label.length > 24 ? label.slice(0, 23) + '…' : label;
+                // Phones leave less room for the name column; the tooltip still shows the full name.
+                const max = this.chart.width < 480 ? 14 : 24;
+                return label.length > max ? label.slice(0, max - 1) + '…' : label;
               }
             }
           }
@@ -739,8 +741,8 @@ const loadError = ref('');
               <option v-for="dept in DEPARTMENTS" :key="dept" :value="dept">{{ dept }}</option>
             </select>
             <div class="flex gap-2 shrink-0">
-              <button type="submit" class="admin-btn admin-btn-primary">
-                {{ courseForm.id ? 'Save' : 'Add' }}
+              <button type="submit" :class="['admin-btn', courseForm.id ? 'admin-btn-primary' : 'admin-btn-success']">
+                <i v-if="!courseForm.id" class="fa-solid fa-plus" aria-hidden="true"></i>{{ courseForm.id ? 'Save' : 'Add' }}
               </button>
               <button v-if="courseForm.id" type="button" @click="resetCourseForm" class="admin-btn admin-btn-ghost">
                 Cancel
@@ -761,7 +763,7 @@ const loadError = ref('');
                 <span v-if="!c.is_active" class="admin-badge is-warning">Inactive</span>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <button type="button" aria-label="Edit" @click="editCourse(c)" class="admin-icon-btn" title="Edit">
+                <button type="button" aria-label="Edit" @click="editCourse(c)" class="admin-icon-btn is-edit" title="Edit">
                   <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
                 </button>
                 <button type="button" aria-label="toggle Course" @click="toggleCourse(c)" class="admin-icon-btn" :title="c.is_active ? 'Deactivate' : 'Activate'">

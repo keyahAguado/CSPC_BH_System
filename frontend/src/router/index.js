@@ -25,6 +25,7 @@ import OwnerEdit from '../views/owner/EditHouse.vue';
 import OwnerRooms from '../views/owner/Rooms.vue';
 import OwnerProfile from '../views/owner/Profile.vue';
 import OwnerViewDetails from '../views/owner/RoomDetails.vue';
+import VerifyApplicantEmail from '../views/owner/VerifyApplicantEmail.vue';
 import TrackApplication from '../views/owner/TrackApplication.vue';
 import ActivateAccount from '../views/owner/ActivateAccount.vue';
 
@@ -80,7 +81,13 @@ const routes = [
         meta: { public: true, publicRegistration: true, title: 'Register Your Property' }
     },
     {
-        // Accountless applicants: reference number only
+        // Public applicant email verification; separate from owner login
+        path: '/verify-applicant-email',
+        name: 'VerifyApplicantEmail',
+        component: VerifyApplicantEmail,
+        meta: { public: true, title: 'Verify Applicant Email' }
+    },
+    {
         path: '/track',
         alias: '/track-application',
         name: 'TrackApplication',

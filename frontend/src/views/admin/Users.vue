@@ -293,10 +293,10 @@ const loadError = ref('');
 
       <div v-else class="registry-body">
         <!-- PHONE: cards -->
-        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredUsers.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
-        <div class="block md:hidden space-y-3">
+        <div class="block lg:hidden space-y-3">
           <div v-if="filteredUsers.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">No matching user accounts.</div>
           <div v-for="user in paginatedUsers" :key="'m-' + user.id" class="reg-card">
             <div class="flex items-center gap-3">
@@ -313,7 +313,7 @@ const loadError = ref('');
             </div>
             <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-phone text-slate-400 mr-1" aria-hidden="true"></i>{{ user.phone || 'No phone' }}</p>
             <div class="flex flex-wrap gap-2 mt-3">
-              <button type="button" class="reg-btn" @click="openEditModal(user)"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
+              <button type="button" class="reg-btn is-edit" @click="openEditModal(user)"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
               <button v-if="user.role === 'owner'" type="button" class="reg-btn" @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))"><i class="fa-solid fa-key" aria-hidden="true"></i> Reset password</button>
               <span v-if="user.status === 'pending'" class="reg-chip is-warning"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Awaiting accreditation</span>
               <button v-else type="button" :class="['reg-btn', user.status === 'active' ? 'is-danger' : 'is-success']"
@@ -325,7 +325,7 @@ const loadError = ref('');
         </div>
 
         <!-- LAPTOP / DESKTOP: table -->
-        <div class="registry-table-card hidden md:flex md:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="registry-table-card hidden lg:flex lg:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredUsers.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="registry-table-scroll overflow-x-auto">
@@ -358,7 +358,7 @@ const loadError = ref('');
                   </td>
                   <td>
                     <div class="reg-actions">
-                      <button type="button" class="reg-btn" @click="openEditModal(user)" :aria-label="'Edit ' + user.name"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
+                      <button type="button" class="reg-btn is-edit" @click="openEditModal(user)" :aria-label="'Edit ' + user.name"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
                       <span v-if="user.role !== 'owner'" aria-hidden="true"></span>
                       <button v-else type="button" class="reg-btn is-icon" title="Reset to default password" :aria-label="'Reset password of ' + user.name"
                               @click="triggerConfirm('Reset Credentials?', `Force overwrite ${user.name}'s current password back to institutional default CSPC1234?`, () => handleResetPassword(user.id))"><i class="fa-solid fa-key" aria-hidden="true"></i></button>
@@ -449,7 +449,7 @@ const loadError = ref('');
 
 <style scoped>
 /* Registry pages: same layout as Registered properties (one screen on laptop, table scrolls inside its card) */
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .registry-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
   .registry-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
   .registry-fit > main :deep(.management-page-header) { margin-bottom: 14px; }
@@ -509,6 +509,8 @@ const loadError = ref('');
 .reg-btn.is-danger:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
 .reg-btn.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
 .reg-btn.is-success:hover { background: #22c55e; border-color: #22c55e; color: #fff; }
+.reg-btn.is-edit { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+.reg-btn.is-edit:hover { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 .reg-avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0; background: #f1f5f9; }
 
 /* Residency groups */
@@ -540,10 +542,10 @@ const loadError = ref('');
 .registry-table-scroll :deep(tr > th:first-child),
 .registry-table-scroll :deep(tr > td:first-child) { text-align: left !important; }
 
-/* User registry: the page scrolls (no inner scroll box); the column header stays pinned below the top bar */
-@media (min-width: 768px) {
-  .registry-table-card { overflow: clip !important; }
-  .registry-table-scroll { overflow: visible !important; }
-  .registry-table-scroll thead th { position: sticky; top: 72px; z-index: 5; background: #f8fafc; box-shadow: inset 0 -1px 0 #e2e8f0; }
+/* User registry: the page scrolls. The table scrolls sideways when it is wider than the card,
+   so no column is cut off (phones and tablets use the card list instead). */
+@media (min-width: 1024px) {
+  .registry-table-card { overflow: hidden !important; }
+  .registry-table-scroll { overflow-x: auto !important; overflow-y: hidden; }
 }
 </style>

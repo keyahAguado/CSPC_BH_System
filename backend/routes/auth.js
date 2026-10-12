@@ -449,7 +449,7 @@ router.post('/register/owner-complete', verifyOwnerOnboarding, validateBody('own
 // =========================================================================
 // 6.5 OWNER ACCOUNT ACTIVATION  POST /api/auth/activate
 //     One-time, expiring link issued after SASO approves an application. Applicants register
-//     without an email, so here they choose the email they will log in with and set their own
+//     with a verified email, which remains their login email; here they set their own
 //     password; no default or generated passwords are ever used.
 // =========================================================================
 router.post('/activate', validateBody('activation'), async (req, res) => {
@@ -469,13 +469,27 @@ router.post('/activate', validateBody('activation'), async (req, res) => {
             await connection.rollback();
             return res.status(400).json({ success: false, message: 'This activation link is invalid, already used or expired. Open Track My Application to get a new link.' });
         }
-        const [users] = await connection.query('SELECT id, email, role, status, password, google_id FROM users WHERE id = ? FOR UPDATE', [tokens[0].user_id]);
+        const [users] = await connection.query('SELECT id, email, role, status, password, google_id, email_verified_at FROM users WHERE id = ? FOR UPDATE', [tokens[0].user_id]);
         if (!isPendingApplicant(users[0])) {
             await connection.query('UPDATE account_activation_tokens SET used_at = NOW() WHERE id = ?', [tokens[0].id]);
             await connection.commit();
             return res.status(409).json({ success: false, message: 'This account is already active. Please log in.' });
         }
         const userId = users[0].id;
+        if (!users[0].email_verified_at || emailCheck.email !== users[0].email.toLowerCase()) {
+            await connection.rollback();
+            return res.status(403).json({ success: false, message: 'Activate using your verified applicant email. To verify your email, open Track My Application.' });
+        }
+        // An earlier activation token is not proof that approval is still valid.
+        // Lock qualifying properties before changing the owner or consuming tokens.
+        const [approved] = await connection.query(
+            "SELECT id FROM boarding_houses WHERE owner_id = ? AND application_status = ? AND house_status = 'accredited' FOR UPDATE",
+            [userId, APPLICATION_STATUS.ACCOUNT_PENDING]
+        );
+        if (approved.length === 0) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'Account activation is unavailable because no approved, accredited property is currently linked to your application. Open Track My Application or contact SASO.' });
+        }
         const [taken] = await connection.query('SELECT id FROM users WHERE email = ? AND id <> ?', [emailCheck.email, userId]);
         if (taken.length > 0) {
             await connection.rollback();
@@ -483,7 +497,6 @@ router.post('/activate', validateBody('activation'), async (req, res) => {
         }
         await connection.query("UPDATE users SET email = ?, password = ?, status = 'active' WHERE id = ?", [emailCheck.email, await bcrypt.hash(req.body.password, 10), userId]);
         await connection.query('UPDATE account_activation_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [userId]);
-        const [approved] = await connection.query('SELECT id FROM boarding_houses WHERE owner_id = ? AND application_status = ?', [userId, APPLICATION_STATUS.ACCOUNT_PENDING]);
         for (const house of approved) {
             await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [APPLICATION_STATUS.ACTIVE, house.id]);
             await recordStatusChange(connection, { houseId: house.id, from: APPLICATION_STATUS.ACCOUNT_PENDING, to: APPLICATION_STATUS.ACTIVE, remarks: 'Owner account activated', actorType: 'applicant', actorId: userId });

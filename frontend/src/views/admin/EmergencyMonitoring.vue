@@ -300,7 +300,7 @@ const sexTone = (sex) => {
 
       <div v-else class="registry-body">
         <!-- LAPTOP / DESKTOP: table grouped by boarding house -->
-        <div class="registry-table-card hidden md:flex md:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="registry-table-card hidden lg:flex lg:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="registry-table-scroll overflow-x-auto">
@@ -370,10 +370,10 @@ const sexTone = (sex) => {
         </div>
 
         <!-- PHONE: cards grouped by boarding house -->
-        <div class="md:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
+        <div class="lg:hidden mb-3 rounded-2xl border border-slate-200 overflow-hidden">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
-        <div class="block md:hidden print:hidden space-y-4">
+        <div class="block lg:hidden print:hidden space-y-4">
           <div v-if="filteredResidents.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">
             {{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}
           </div>
@@ -478,7 +478,7 @@ const sexTone = (sex) => {
 
 <style scoped>
 /* Registry pages: same layout as Registered properties (one screen on laptop, table scrolls inside its card) */
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .registry-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
   .registry-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
   .registry-fit > main :deep(.management-page-header) { margin-bottom: 14px; }

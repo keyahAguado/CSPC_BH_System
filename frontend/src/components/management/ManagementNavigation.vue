@@ -34,7 +34,7 @@ const pageTitle = computed(() => {
 const adminName = (() => {
   try { return JSON.parse(sessionStorage.getItem('cspc_user') || '{}').name || (props.role === 'admin' ? 'Administrator' : 'Property owner'); } catch { return props.role === 'admin' ? 'Administrator' : 'Property owner'; }
 })();
-const roleLabel = computed(() => (isAdmin.value ? 'Administrator · OSAS' : 'Property owner'));
+const roleLabel = computed(() => (isAdmin.value ? 'Administrator · SASO' : 'Property owner'));
 const adminInitials = adminName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'A';
 const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
 

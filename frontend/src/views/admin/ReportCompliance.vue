@@ -107,7 +107,7 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 </script>
 
 <template>
-  <div class="management-page cp-fit bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
+  <div class="management-page bg-[#f8fafc] min-h-screen flex flex-col font-sans text-slate-800 text-left">
     <div class="no-print"><AdminNav /></div>
 
     <main id="management-content" tabindex="-1" class="management-content report-wide">

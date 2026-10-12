@@ -1,7 +1,7 @@
 // Track My Application: accountless access for boarding house applicants.
-// The (random, hard-to-guess) reference number opens a short tracking session; every route
-// below re-checks on the server that the application belongs to that applicant.
+// Verified email grants restricted tracking access; ownership is checked on every route.
 import express from 'express';
+import { requireVerifiedEmail, verificationHandlers } from '../config/applicantVerification.js';
 import pool from '../config/db.js';
 import { validateImages } from '../config/uploadValidation.js';
 import { validateBody, validateInput } from '../config/inputValidation.js';
@@ -13,6 +13,13 @@ import {
 } from '../config/applicationWorkflow.js';
 
 const router = express.Router();
+const verificationIpLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+const verificationEmailLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+const verificationCooldown = createRateLimiter({ windowMs: 60 * 1000, max: 1 });
+const emailVerification = verificationHandlers({ pool, limit: key => key.startsWith('email:')
+    ? verificationEmailLimit(key) && verificationCooldown(key) : verificationIpLimit(key) });
+router.post('/email/request', emailVerification.request);
+router.post('/email/verify', emailVerification.consume);
 
 const accessByIp = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const accessByReference = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
@@ -30,6 +37,19 @@ const validatePropertyBody = (req, res, next) => {
 
 // Marks multipart requests from these routes as application uploads (permit PDFs, photo limits).
 const markApplicationUpload = (req, res, next) => { req.applicationUpload = true; next(); };
+
+const verifyCurrentApplicant = async (req, res, next) => {
+    try {
+        const user = await loadApplicant(req.applicantId);
+        if (!isPendingApplicant(user) || user.email.toLowerCase() !== req.verifiedApplicant.email) {
+            return res.status(401).json({ success: false, message: 'Applicant access is no longer available. Activated owners should sign in.' });
+        }
+        next();
+    } catch {
+        return res.status(503).json({ success: false, message: 'We could not check your application access. Please try again later.' });
+    }
+};
+const applicantAccess = [verifyApplicant, verifyCurrentApplicant];
 
 async function loadApplicant(applicantId) {
     const [rows] = await pool.query('SELECT id, name, email, role, status, password, google_id FROM users WHERE id = ?', [applicantId]);
@@ -59,7 +79,7 @@ async function notifyAdmins(message) {
 }
 
 // POST /api/applications/access — open a 2-hour tracking session with the reference number.
-router.post('/access', validateBody('applicationAccess'), async (req, res) => {
+router.post('/access', requireVerifiedEmail, validateBody('applicationAccess'), async (req, res) => {
     const reference = normalizeReference(req.body.reference_no);
     if (!accessByIp(req.ip || 'unknown') || !accessByReference(reference)) {
         return res.status(429).json({ success: false, message: 'Too many attempts. Please wait 15 minutes and try again.' });
@@ -68,11 +88,11 @@ router.post('/access', validateBody('applicationAccess'), async (req, res) => {
         if (!REFERENCE_PATTERN.test(reference)) return res.status(401).json({ success: false, message: GENERIC_ACCESS_ERROR });
         const [rows] = await pool.query(
             `SELECT u.id FROM boarding_houses bh JOIN users u ON u.id = bh.owner_id
-             WHERE bh.reference_no = ? AND u.role = 'owner'`,
-            [reference]
+             WHERE bh.reference_no = ? AND u.role = 'owner' AND u.status = 'pending' AND u.email = ?`,
+            [reference, req.verifiedApplicant.email]
         );
         if (rows.length === 0) return res.status(401).json({ success: false, message: GENERIC_ACCESS_ERROR });
-        return res.json({ success: true, token: signApplicantToken(rows[0].id) });
+        return res.json({ success: true, token: signApplicantToken(rows[0].id, req.verifiedApplicant.email) });
     } catch (err) {
         console.error('Application access error:', err.code || err.message);
         return res.status(500).json({ success: false, message: 'We could not verify your application right now. Please try again.' });
@@ -80,7 +100,7 @@ router.post('/access', validateBody('applicationAccess'), async (req, res) => {
 });
 
 // GET /api/applications/mine — every application of the verified applicant.
-router.get('/mine', verifyApplicant, async (req, res) => {
+router.get('/mine', applicantAccess, async (req, res) => {
     try {
         const applicant = await loadApplicant(req.applicantId);
         if (!applicant) return res.status(401).json({ success: false, message: 'Please verify your application access again.' });
@@ -115,7 +135,7 @@ router.get('/mine', verifyApplicant, async (req, res) => {
 });
 
 // GET /api/applications/:reference — full details for viewing or editing one application.
-router.get('/:reference', verifyApplicant, async (req, res) => {
+router.get('/:reference', applicantAccess, async (req, res) => {
     try {
         const house = await loadOwnedApplication(req.applicantId, normalizeReference(req.params.reference));
         if (!house) return notFound(res);
@@ -140,7 +160,7 @@ router.get('/:reference', verifyApplicant, async (req, res) => {
 });
 
 // POST /api/applications/:reference/update — edit before review, or resubmit after a revision request.
-router.post('/:reference/update', verifyApplicant, markApplicationUpload, uploadAccreditationFiles, validateImages, validatePropertyBody, async (req, res) => {
+router.post('/:reference/update', applicantAccess, markApplicationUpload, uploadAccreditationFiles, validateImages, validatePropertyBody, async (req, res) => {
     if (!changesByApplicant(`applicant:${req.applicantId}`)) {
         return res.status(429).json({ success: false, message: 'Too many changes in a short time. Please wait a few minutes and try again.' });
     }
@@ -156,33 +176,13 @@ router.post('/:reference/update', verifyApplicant, markApplicationUpload, upload
         }
 
         req.body.house_id = String(house.id);
+        const after = before === APPLICATION_STATUS.REVISION_REQUIRED ? APPLICATION_STATUS.RESUBMITTED : APPLICATION_STATUS.SUBMITTED;
+        req.applicantEdit = { before, after, houseStatus: house.house_status, remarks: house.admin_comments || '' };
         const captured = await submitAccreditationAs(req, req.applicantId);
         if (captured.code >= 400 || !captured.body?.success) {
             return res.status(captured.code >= 400 ? captured.code : 500).json(captured.body && !captured.body.success
                 ? captured.body
                 : { success: false, message: 'We could not save your changes. Please try again.' });
-        }
-
-        const after = before === APPLICATION_STATUS.REVISION_REQUIRED ? APPLICATION_STATUS.RESUBMITTED : APPLICATION_STATUS.SUBMITTED;
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-            await connection.query(
-                after === APPLICATION_STATUS.RESUBMITTED
-                    ? 'UPDATE boarding_houses SET application_status = ?, is_resubmission = 1, resubmitted_at = NOW() WHERE id = ?'
-                    : 'UPDATE boarding_houses SET application_status = ? WHERE id = ?',
-                [after, house.id]
-            );
-            await recordStatusChange(connection, {
-                houseId: house.id, from: before, to: after, actorType: 'applicant', actorId: req.applicantId, withSnapshot: true,
-                remarks: after === APPLICATION_STATUS.RESUBMITTED ? 'Revised application resubmitted for review' : 'Application edited before review'
-            });
-            await connection.commit();
-        } catch (err) {
-            await connection.rollback();
-            throw err;
-        } finally {
-            connection.release();
         }
 
         if (after === APPLICATION_STATUS.RESUBMITTED) {
@@ -196,7 +196,7 @@ router.post('/:reference/update', verifyApplicant, markApplicationUpload, upload
 });
 
 // POST /api/applications/new — add another property for the same verified applicant.
-router.post('/new', verifyApplicant, markApplicationUpload, uploadAccreditationFiles, validateImages, validatePropertyBody, async (req, res) => {
+router.post('/new', applicantAccess, markApplicationUpload, uploadAccreditationFiles, validateImages, validatePropertyBody, async (req, res) => {
     if (!changesByApplicant(`applicant:${req.applicantId}`)) {
         return res.status(429).json({ success: false, message: 'Too many submissions in a short time. Please wait a few minutes and try again.' });
     }
@@ -222,7 +222,7 @@ router.post('/new', verifyApplicant, markApplicationUpload, uploadAccreditationF
 });
 
 // POST /api/applications/activation-link — approved applicant gets a fresh one-time activation link.
-router.post('/activation-link', verifyApplicant, async (req, res) => {
+router.post('/activation-link', applicantAccess, async (req, res) => {
     if (!changesByApplicant(`activation:${req.applicantId}`)) {
         return res.status(429).json({ success: false, message: 'Too many requests. Please wait a few minutes and try again.' });
     }
@@ -230,7 +230,7 @@ router.post('/activation-link', verifyApplicant, async (req, res) => {
     try {
         await connection.beginTransaction();
         const [users] = await connection.query('SELECT id, role, status, password, google_id FROM users WHERE id = ? FOR UPDATE', [req.applicantId]);
-        const [approved] = await connection.query('SELECT id FROM boarding_houses WHERE owner_id = ? AND application_status = ? LIMIT 1', [req.applicantId, APPLICATION_STATUS.ACCOUNT_PENDING]);
+        const [approved] = await connection.query("SELECT id FROM boarding_houses WHERE owner_id = ? AND application_status = ? AND house_status = 'accredited' LIMIT 1 FOR UPDATE", [req.applicantId, APPLICATION_STATUS.ACCOUNT_PENDING]);
         if (!isPendingApplicant(users[0]) || approved.length === 0) {
             await connection.rollback();
             return res.status(409).json({ success: false, message: 'Account activation is available only after SASO approves an application.' });

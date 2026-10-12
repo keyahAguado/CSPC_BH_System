@@ -1,7 +1,7 @@
 // Accountless boarding house applications: statuses, reference numbers, tracking
 // sessions, account activation tokens and the status history (audit trail).
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
+import { readVerifiedApplicant, signVerifiedApplicant } from './applicantVerification.js';
 
 export const APPLICATION_STATUS = Object.freeze({
     SUBMITTED: 'SUBMITTED',
@@ -29,8 +29,7 @@ export function effectiveApplicationStatus(house) {
     return String(house.house_status || '').toUpperCase() || APPLICATION_STATUS.SUBMITTED;
 }
 
-// Applicants register without an email. Their account row holds a non-routable placeholder
-// (RFC 2606 ".invalid") until they choose a real login email when activating their account.
+// Legacy placeholder helpers retained for older records only.
 export const PLACEHOLDER_EMAIL_DOMAIN = '@applicant.invalid';
 export const placeholderEmail = (seed) => `${String(seed).toLowerCase().replace(/[^a-z0-9-]/g, '')}${PLACEHOLDER_EMAIL_DOMAIN}`;
 export const isPlaceholderEmail = (email) => String(email || '').toLowerCase().endsWith(PLACEHOLDER_EMAIL_DOMAIN);
@@ -39,8 +38,7 @@ export const isPlaceholderEmail = (email) => String(email || '').toLowerCase().e
 export const isPendingApplicant = (user) =>
     Boolean(user) && user.role === 'owner' && user.status === 'pending' && !user.password && !user.google_id;
 
-// ── Reference numbers: the reference alone opens Track My Application, so new ones are
-//    random (not sequential) to prevent guessing; older sequential ones stay valid. ──
+// References identify applications; verified email is required for access.
 const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export function generateReferenceNo(date = new Date()) {
     const bytes = crypto.randomBytes(6);
@@ -52,21 +50,17 @@ export const REFERENCE_PATTERN = /^BH-\d{4}-[A-Z0-9]{5,12}$/;
 export const normalizeReference = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
 
 // ── Tracking session: separate secret and payload so it can never act as a login token ──
-const APPLICANT_SECRET = `${process.env.JWT_SECRET || 'your_super_secret_cspc_token_key'}:applicant-tracking`;
-export const signApplicantToken = (applicantId) =>
-    jwt.sign({ applicantId, scope: 'applicant' }, APPLICANT_SECRET, { expiresIn: '2h' });
+export const signApplicantToken = (applicantId, email) => signVerifiedApplicant(email, applicantId);
 
 export function verifyApplicant(req, res, next) {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ success: false, message: 'Please verify your application access first.' });
     try {
-        const payload = jwt.verify(token, APPLICANT_SECRET);
-        if (payload.scope !== 'applicant' || !Number.isInteger(payload.applicantId)) throw new Error('scope');
+        const payload = readVerifiedApplicant(req.headers.authorization || '');
+        if (!Number.isInteger(payload.applicantId)) throw new Error('scope');
         req.applicantId = payload.applicantId;
+        req.verifiedApplicant = payload;
         return next();
     } catch {
-        return res.status(401).json({ success: false, message: 'Your tracking session has expired. Please enter your reference number again.' });
+        return res.status(401).json({ success: false, message: 'Please verify your registered email again. Activated owners should sign in.' });
     }
 }
 

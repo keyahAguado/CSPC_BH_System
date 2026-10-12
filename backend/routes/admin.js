@@ -530,7 +530,10 @@ router.get('/applications/registered', authenticateToken, verifyAdmin, async (re
             SELECT house_id, photo_url, sort_order FROM house_photos ORDER BY sort_order ASC
         `);
 
-        res.json({ success: true, houses, dynamicDocs, housePhotos });
+        // Every file uploaded per legal document (multiple images / PDF)
+        const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
+
+        res.json({ success: true, houses, dynamicDocs, housePhotos, permitFiles });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -556,7 +559,10 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
             SELECT house_id, photo_url, sort_order FROM house_photos ORDER BY sort_order ASC
         `);
 
-        res.json({ success: true, houses, housePhotos });
+        // Every file uploaded per legal document (multiple images / PDF)
+        const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
+
+        res.json({ success: true, houses, housePhotos, permitFiles });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -851,7 +857,10 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
                 await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [next, houseId]);
                 await recordStatusChange(connection, { houseId, from: house[0].application_status, to: next, remarks: admin_comments, actorType: 'admin', actorId: req.user.id });
             }
-            const rejectMsg = `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
+            const revisionRequested = Boolean(house[0].application_status) && !closeApplication;
+            const rejectMsg = revisionRequested
+                ? `REVISION REQUIRED: SASO requested corrections for "${house[0].name}". Feedback: ${admin_comments}. Open Track My Application to update and resubmit.`
+                : `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, rejectMsg]);
         } else {
@@ -904,6 +913,7 @@ router.post('/applications/:id/start-review', authenticateToken, verifyAdmin, va
         }
         await connection.query('UPDATE boarding_houses SET application_status = ? WHERE id = ?', [APPLICATION_STATUS.UNDER_REVIEW, req.params.id]);
         await recordStatusChange(connection, { houseId: rows[0].id, from: current, to: APPLICATION_STATUS.UNDER_REVIEW, remarks: 'SASO started the review', actorType: 'admin', actorId: req.user.id });
+        await connection.query('INSERT INTO notifications (user_id, message) SELECT owner_id, ? FROM boarding_houses WHERE id = ?', ['APPLICATION UNDER REVIEW: SASO has started reviewing your property application. Editing is locked until a revision is requested. Open Track My Application for details.', req.params.id]);
         await connection.commit();
         res.json({ success: true, status: APPLICATION_STATUS.UNDER_REVIEW, changed: true });
     } catch (err) {
