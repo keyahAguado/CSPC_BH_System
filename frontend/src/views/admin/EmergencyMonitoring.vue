@@ -477,15 +477,15 @@ const sexTone = (sex) => {
 </style>
 
 <style scoped>
-/* Registry pages: same layout as Registered properties (one screen on laptop, table scrolls inside its card) */
+/* Let the registry grow with its rows; vertical scrolling belongs to the page. */
 @media (min-width: 1024px) {
-  .registry-fit { height: 100dvh; min-height: 0 !important; overflow: hidden; }
+  .registry-fit { height: auto; min-height: 100dvh !important; overflow: visible; }
   .registry-fit > main { display: flex; flex-direction: column; min-height: 0; padding-top: 24px !important; padding-bottom: 20px !important; }
   .registry-fit > main :deep(.management-page-header) { margin-bottom: 14px; }
   .registry-fit > main > * { flex-shrink: 0; }
-  .registry-fit > main > .registry-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .registry-fit > main > .registry-body { flex: 0 0 auto; display: flex; flex-direction: column; }
   .registry-table-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .registry-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .registry-table-scroll { flex: 0 0 auto; max-height: none; overflow-x: auto; }
   .registry-table-scroll thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
   .registry-table-scroll :deep(td) { padding-top: 10px; padding-bottom: 10px; vertical-align: middle; }
 }

@@ -30,6 +30,26 @@ const documentFiles = (document) => {
     ? document.current_files : document.current_file ? [document.current_file] : [];
   return [...new Set(files.filter(file => typeof file === 'string' && file.trim()))];
 };
+const previewFiles = ref([]);
+const previewIndex = ref(0);
+const previewTitle = ref('');
+const previewFailed = ref(false);
+const previewUrl = computed(() => previewFiles.value[previewIndex.value] || '');
+const previewIsPdf = computed(() => /\.pdf(?:$|[?#])/i.test(previewUrl.value));
+const openDocumentPreview = (document) => {
+  previewFiles.value = documentFiles(document).map(getImageUrl).filter(url => {
+    try { return ['http:', 'https:'].includes(new URL(url, window.location.origin).protocol); } catch { return false; }
+  });
+  previewTitle.value = document.label;
+  previewIndex.value = 0;
+  previewFailed.value = false;
+};
+const closeDocumentPreview = () => { previewFiles.value = []; previewIndex.value = 0; previewFailed.value = false; };
+const stepDocumentPreview = (direction) => {
+  if (!previewFiles.value.length) return;
+  previewIndex.value = (previewIndex.value + direction + previewFiles.value.length) % previewFiles.value.length;
+  previewFailed.value = false;
+};
 const fileInputs = ref({}); // Store file inputs: { identifier: File }
 const expiryDates = ref({}); // Store expiry date inputs: { identifier: 'YYYY-MM-DD' }
 const isRejected = ref(false);
@@ -430,11 +450,9 @@ const collapsed = ref({ required: false, additional: false });
                              accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
                              @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
                     </label>
-                    <div v-if="documentFiles(p).length" class="dx-file-links">
-                      <a v-for="(file, fileIndex) in documentFiles(p)" :key="file" :href="getImageUrl(file)" target="_blank" rel="noopener noreferrer" class="dx-view" :aria-label="'View ' + p.label + ', file ' + (fileIndex + 1)">
-                        <i class="fa-regular fa-eye" aria-hidden="true"></i> {{ documentFiles(p).length > 1 ? 'File ' + (fileIndex + 1) : 'View' }}
-                      </a>
-                    </div>
+                    <button v-if="documentFiles(p).length" type="button" class="dx-view" :aria-label="'View ' + p.label + ', ' + documentFiles(p).length + ' file(s)'" @click="openDocumentPreview(p)">
+                      <i class="fa-regular fa-eye" aria-hidden="true"></i> View
+                    </button>
                     <span v-else class="dx-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
                   </div>
                 </div>
@@ -456,6 +474,27 @@ const collapsed = ref({ required: false, additional: false });
       </div>
     </main>
   </div>
+  <Teleport to="body">
+    <div v-if="previewFiles.length" v-management-dialog="{ close: closeDocumentPreview }" class="owner-doc-viewer" @click.self="closeDocumentPreview" @keydown.left.prevent="stepDocumentPreview(-1)" @keydown.right.prevent="stepDocumentPreview(1)">
+      <section class="owner-doc-dialog">
+      <div class="owner-doc-toolbar">
+        <h2>{{ previewTitle }}</h2>
+        <span aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span>
+        <a :href="previewUrl" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+        <button type="button" aria-label="Close document preview" @click="closeDocumentPreview">Close</button>
+      </div>
+      <div class="owner-doc-stage">
+        <iframe v-if="previewIsPdf" :src="previewUrl" :title="previewTitle + ', file ' + (previewIndex + 1)"></iframe>
+        <img v-else-if="!previewFailed" :src="previewUrl" :alt="previewTitle + ', file ' + (previewIndex + 1)" @error="previewFailed = true" />
+        <p v-else>Preview unavailable. Use Open in new tab to view this file.</p>
+      </div>
+      <div v-if="previewFiles.length > 1" class="owner-doc-navigation">
+        <button type="button" @click="stepDocumentPreview(-1)">Previous file</button>
+        <button type="button" @click="stepDocumentPreview(1)">Next file</button>
+      </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -540,7 +579,16 @@ const collapsed = ref({ required: false, additional: false });
 .dx-file:hover .dx-file-btn { background: #2563eb; border-color: #2563eb; color: #fff; }
 .dx-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #64748b; }
 .dx-file-name.has-file { color: #047857; font-weight: 600; }
-.dx-file-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
+.owner-doc-viewer { position: fixed; inset: 0; z-index: 250; display: flex; flex-direction: column; background: #0f172a; color: white; }
+.owner-doc-dialog { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.owner-doc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; background: #142b4a; }
+.owner-doc-toolbar h2 { flex: 1; min-width: 160px; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.owner-doc-toolbar a, .owner-doc-viewer button { padding: 8px 12px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: white; }
+.owner-doc-viewer :is(a, button):focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.owner-doc-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.owner-doc-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.owner-doc-stage iframe { width: 100%; height: 100%; border: 0; background: white; }
+.owner-doc-navigation { display: flex; justify-content: center; gap: 12px; padding: 12px; }
 .dx-file-row { flex-wrap: wrap; }
 .dx-view { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9px; border: 1px solid #d6e2f3; background: #fff; color: #1e4a8d; font-size: 12px; font-weight: 600; text-decoration: none; }
 .dx-view:hover { background: #f3f7fd; border-color: #a9c1e4; }
