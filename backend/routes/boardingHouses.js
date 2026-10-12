@@ -239,6 +239,16 @@ router.get('/documents/:id', authenticateToken, async (req, res) => {
 
         // Combine both sets of criteria
         const criteria = [...standardCriteriaMapped, ...customCriteriaMapped];
+        const [permitFiles] = await pool.query(
+            'SELECT permit_key, file_path FROM house_permit_files WHERE house_id = ? ORDER BY permit_key, sort_order, id',
+            [houseId]
+        );
+        for (const criterion of criteria) {
+            const files = criterion.permit_key
+                ? permitFiles.filter(file => file.permit_key === criterion.permit_key).map(file => file.file_path)
+                : [];
+            criterion.current_files = [...new Set(files.length ? files : criterion.current_file ? [criterion.current_file] : [])];
+        }
 
         res.json({ success: true, house, criteria });
     } catch (err) {
@@ -302,6 +312,16 @@ router.get('/documents', authenticateToken, async (req, res) => {
         });
 
         const criteria = [...standardCriteriaMapped, ...customCriteriaMapped];
+        const [permitFiles] = await pool.query(
+            'SELECT permit_key, file_path FROM house_permit_files WHERE house_id = ? ORDER BY permit_key, sort_order, id',
+            [houseId]
+        );
+        for (const criterion of criteria) {
+            const files = criterion.permit_key
+                ? permitFiles.filter(file => file.permit_key === criterion.permit_key).map(file => file.file_path)
+                : [];
+            criterion.current_files = [...new Set(files.length ? files : criterion.current_file ? [criterion.current_file] : [])];
+        }
 
         res.json({ success: true, house, criteria });
     } catch (err) {
