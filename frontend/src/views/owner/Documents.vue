@@ -25,6 +25,11 @@ import { getImageUrl } from '../../config/api';
 
 const house = ref(null);
 const criteria = ref([]);
+const documentFiles = (document) => {
+  const files = Array.isArray(document.current_files) && document.current_files.length
+    ? document.current_files : document.current_file ? [document.current_file] : [];
+  return [...new Set(files.filter(file => typeof file === 'string' && file.trim()))];
+};
 const fileInputs = ref({}); // Store file inputs: { identifier: File }
 const expiryDates = ref({}); // Store expiry date inputs: { identifier: 'YYYY-MM-DD' }
 const isRejected = ref(false);
@@ -425,9 +430,11 @@ const collapsed = ref({ required: false, additional: false });
                              accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
                              @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
                     </label>
-                    <a v-if="p.current_file" :href="getImageUrl(p.current_file)" target="_blank" rel="noopener" class="dx-view" :aria-label="'View ' + p.label">
-                      <i class="fa-regular fa-eye" aria-hidden="true"></i> View
-                    </a>
+                    <div v-if="documentFiles(p).length" class="dx-file-links">
+                      <a v-for="(file, fileIndex) in documentFiles(p)" :key="file" :href="getImageUrl(file)" target="_blank" rel="noopener noreferrer" class="dx-view" :aria-label="'View ' + p.label + ', file ' + (fileIndex + 1)">
+                        <i class="fa-regular fa-eye" aria-hidden="true"></i> {{ documentFiles(p).length > 1 ? 'File ' + (fileIndex + 1) : 'View' }}
+                      </a>
+                    </div>
                     <span v-else class="dx-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
                   </div>
                 </div>
@@ -455,12 +462,8 @@ const collapsed = ref({ required: false, additional: false });
 /* Legal documents — same look as the accreditation form's Legal Documents step */
 .docs-main { flex: 1; width: 100%; max-width: 1600px !important; padding: 18px clamp(16px, 2.2vw, 32px) 18px !important; text-align: left; }
 .docs-main, .docs-main :is(h1, h2, h3, p, span, a, label, button, input, select, option, strong) { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif !important; }
-.docs-page { height: 100vh; overflow: hidden; }
-.docs-page > .docs-main { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-@media (max-width: 1179px), (max-height: 819px) {
-  .docs-page { height: auto; overflow: visible; }
-  .docs-page > .docs-main { overflow: visible; }
-}
+.docs-page { min-height: 100vh; height: auto; overflow: visible; }
+.docs-page > .docs-main { display: flex; flex-direction: column; overflow: visible; }
 .dx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Banners */
@@ -537,6 +540,8 @@ const collapsed = ref({ required: false, additional: false });
 .dx-file:hover .dx-file-btn { background: #2563eb; border-color: #2563eb; color: #fff; }
 .dx-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #64748b; }
 .dx-file-name.has-file { color: #047857; font-weight: 600; }
+.dx-file-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
+.dx-file-row { flex-wrap: wrap; }
 .dx-view { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9px; border: 1px solid #d6e2f3; background: #fff; color: #1e4a8d; font-size: 12px; font-weight: 600; text-decoration: none; }
 .dx-view:hover { background: #f3f7fd; border-color: #a9c1e4; }
 .dx-view:focus-visible { outline: 3px solid #7fa6db; outline-offset: 2px; }
