@@ -7,8 +7,8 @@ test.before(async () => { helpers = await import('../config/applicantVerificatio
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
 const rawToken = 'a'.repeat(64);
 const requestId = 'c'.repeat(64);
-function fixture({ user, expired = false, used = false, failSend = false, linkOpened = false, claimed = false } = {}) {
-    const state = { used, rows: 0, sent: 0, verified: false, committed: 0, rolledBack: 0, linkOpened, claimed };
+function fixture({ user, expired = false, used = false, failSend = false, failNotify = false, linkOpened = false, claimed = false } = {}) {
+    const state = { used, rows: 0, sent: 0, notified: 0, verified: false, committed: 0, rolledBack: 0, linkOpened, claimed };
     const connection = {
         async beginTransaction() {}, async commit() { state.committed++; }, async rollback() { state.rolledBack++; }, release() {},
         async query(sql, args) {
@@ -27,7 +27,9 @@ function fixture({ user, expired = false, used = false, failSend = false, linkOp
         if (sql.startsWith('DELETE FROM applicant_email')) { state.rows--; return [{}]; }
         throw Error('Unexpected pool query');
     } };
-    return { state, handlers: helpers.verificationHandlers({ pool, limit: () => true, send: async () => { state.sent++; if (failSend) throw Error('mock failure'); } }) };
+    return { state, handlers: helpers.verificationHandlers({ pool, limit: () => true,
+        send: async () => { state.sent++; if (failSend) throw Error('mock failure'); },
+        notify: async () => { state.notified++; if (failNotify) throw Error('mock failure'); } }) };
 }
 test('Verified session is email-bound and separate from old applicant and login scopes', () => {
     const session = helpers.signVerifiedApplicant('applicant@example.test', 7);
@@ -62,7 +64,32 @@ test('SMTP/provider failure invalidates challenge and reports no application sub
 test('Active account does not gain applicant access and has generic request response', async () => {
     const f = fixture({ user: { id: 7, role: 'owner', status: 'active', password: 'hash' } }), res = response();
     await f.handlers.request({ ip: 'mock', body: { email: 'applicant@example.test' } }, res);
-    assert.equal(res.code, 200); assert.equal(f.state.sent, 0); assert.match(res.body.message, /If this email is eligible/);
+    // No verification link is sent; the account holder gets sign-in instructions instead
+    assert.equal(res.code, 200); assert.equal(f.state.sent, 0); assert.equal(f.state.notified, 1);
+    assert.match(res.body.message, /sign-in instructions if this email already has an account/);
+});
+test('Existing and new emails get an identical on-screen response (no account disclosure)', async () => {
+    const accounts = [undefined, { id: 7, role: 'owner', status: 'active', password: 'hash' }, { id: 8, role: 'owner', status: 'active', google_id: 'g' }, { id: 9, role: 'student', status: 'active', google_id: 'g' }];
+    const bodies = [];
+    for (const user of accounts) {
+        const f = fixture({ user }), res = response();
+        await f.handlers.request({ ip: 'mock', body: { email: 'applicant@example.test' } }, res);
+        assert.equal(res.code, 200); assert.equal(f.state.rows, 1); assert.equal(f.state.sent + f.state.notified, 1);
+        assert.match(res.body.requestId, /^[a-f0-9]{64}$/);
+        bodies.push(JSON.stringify({ ...res.body, requestId: 'x' }));
+    }
+    assert.equal(new Set(bodies).size, 1);
+});
+test('Existing-account request keeps the tab waiting instead of reporting expired immediately', async () => {
+    // A recorded, unverified, unexpired request reports "waiting", not "expired"
+    const f = fixture({ user: { id: 7, role: 'owner', status: 'active', password: 'hash' } }), res = response();
+    await f.handlers.status({ ip: 'mock', body: { requestId } }, res);
+    assert.equal(res.code, 200); assert.equal(res.body.verified, false); assert.equal(res.body.expired, undefined); assert.equal(res.body.token, undefined);
+});
+test('Sign-in notice failure invalidates the request like a verification failure', async () => {
+    const f = fixture({ user: { id: 7, role: 'owner', status: 'active', password: 'hash' }, failNotify: true }), res = response();
+    await f.handlers.request({ ip: 'mock', body: { email: 'applicant@example.test' } }, res);
+    assert.equal(res.code, 503); assert.equal(f.state.rows, 0); assert.match(res.body.message, /No application was submitted/);
 });
 test('Institutional and malformed email rejected without delivery', async () => {
     for (const email of ['not-email', 'student@my.cspc.edu.ph', 'admin@cspc.edu.ph']) {

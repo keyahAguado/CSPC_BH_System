@@ -46,7 +46,23 @@ export async function sendApplicantVerification(email, token) {
     }, { headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 });
 }
 
-export function verificationHandlers({ pool, send = sendApplicantVerification, limit }) {
+// Sent instead of a verification link when the email already belongs to an account, so every
+// valid request results in an email while the on-screen response never reveals who is registered.
+export async function sendExistingAccountNotice(email) {
+    const { BREVO_API_KEY, EMAIL_FROM_ADDRESS, FRONTEND_URL } = process.env;
+    if (process.env.APPLICANT_EMAIL_ENABLED !== 'true' || !BREVO_API_KEY || !EMAIL_FROM_ADDRESS || !FRONTEND_URL) throw new Error('Verification email is not configured.');
+    const base = new URL(FRONTEND_URL);
+    if (!['http:', 'https:'].includes(base.protocol)) throw new Error('Invalid frontend URL.');
+    const login = new URL('/login-options', base);
+    await axios.post('https://api.brevo.com/v3/smtp/email', {
+        sender: { email: EMAIL_FROM_ADDRESS, name: process.env.EMAIL_FROM_NAME || 'CSPC BH Finder' },
+        to: [{ email }], subject: 'You already have an account — CSPC BH Finder',
+        textContent: `Someone asked to verify this email for a boarding-house application, but this email already has a CSPC BH Finder account.\n\nSign in instead, using the method you registered with (Google or email and password):\n${login.href}\n\nNo verification link is needed. If you did not request this, you can ignore this email.`,
+        htmlContent: `<html><body style="margin:0;background:#f2f5fa;font-family:Arial,sans-serif;color:#243449"><table role="presentation" width="100%"><tr><td align="center" style="padding:32px 16px"><table role="presentation" width="100%" style="max-width:600px;background:white;border:1px solid #e2e8f0;border-radius:16px" cellspacing="0" cellpadding="0"><tr><td style="padding:26px;background:#142b4a;color:white;font-size:20px;font-weight:bold;border-radius:16px 16px 0 0">CSPC BH Finder</td></tr><tr><td style="padding:28px"><h1 style="font-size:22px">You already have an account</h1><p style="line-height:1.8">Someone asked to verify this email for a boarding-house application, but this email already has a CSPC BH Finder account. No verification link is needed — please sign in instead, using the method you registered with (Google or email and password).</p><p style="margin:26px 0"><a href="${escapeEmailHtml(login.href)}" style="display:inline-block;background:#1e4a8d;color:white;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:bold">Sign in</a></p><p style="font-size:14px;color:#526174;line-height:1.7">If you did not request this, you can ignore this email.</p></td></tr></table></td></tr></table></body></html>`
+    }, { headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 });
+}
+
+export function verificationHandlers({ pool, send = sendApplicantVerification, notify = sendExistingAccountNotice, limit }) {
     return {
         request: async (req, res) => {
             const email = normalizeApplicantEmail(req.body?.email);
@@ -60,16 +76,19 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, l
                 const [users] = await pool.query('SELECT role, status, password, google_id FROM users WHERE email = ?', [email]);
                 // Identical outward response: do not reveal existing account status.
                 const eligible = !users.length || (users[0].role === 'owner' && users[0].status === 'pending' && !users[0].password && !users[0].google_id);
-                if (eligible) {
-                    await pool.query('INSERT INTO applicant_email_verifications (email, token_hash, poll_hash, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))', [email, hash, hashVerificationToken(requestId)]);
-                    try { await send(email, token); }
-                    catch {
-                        await pool.query('DELETE FROM applicant_email_verifications WHERE token_hash = ? AND used_at IS NULL', [hash]);
-                        throw new Error('Verification delivery failed');
-                    }
+                // Both paths record a pending request, so the requesting tab keeps waiting (and only expires
+                // after 30 minutes) instead of reporting "expired" within seconds for existing accounts.
+                // For an existing account the stored token is never emailed, so it can never be verified.
+                await pool.query('INSERT INTO applicant_email_verifications (email, token_hash, poll_hash, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))', [email, hash, hashVerificationToken(requestId)]);
+                try {
+                    if (eligible) await send(email, token);
+                    else await notify(email);
+                } catch {
+                    await pool.query('DELETE FROM applicant_email_verifications WHERE token_hash = ? AND used_at IS NULL', [hash]);
+                    throw new Error('Verification delivery failed');
                 }
-                // Ineligible emails also get a requestId (it never resolves) so the response stays identical.
-                return res.json({ success: true, requestId, message: 'If this email is eligible, a verification link has been requested. Check your inbox and spam folder. Existing account holders should sign in.' });
+                // Identical response either way: the email itself says whether to verify or to sign in.
+                return res.json({ success: true, requestId, message: 'We sent an email with your verification link — or sign-in instructions if this email already has an account.' });
             } catch {
                 // Never log Axios errors: they can contain the API key and verification link.
                 return res.status(503).json({ success: false, message: 'Email verification is temporarily unavailable. Please try again later. No application was submitted.' });
