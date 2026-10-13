@@ -119,7 +119,12 @@ const bodySegments = (text) => String(text).split(HIGHLIGHT).filter(s => s !== '
 
 // Where a notification leads: the exact booking when the message names one, otherwise My Bookings
 const targetFor = (n) => {
-  if (typeof n.link === 'string' && n.link.startsWith('/student/')) return { to: n.link, label: 'View details' };
+  // Newer booking notifications store a direct link to the booking they are about
+  if (typeof n.link === 'string' && n.link.startsWith('/student/')) {
+    if (/^\/student\/bookings\/\d+$/.test(n.link)) return { to: n.link, label: 'View booking' };
+    if (n.link === '/student/bookings') return { to: n.link, label: 'View my bookings' };
+    return { to: n.link, label: 'View details' };
+  }
   if (n.bookingId) return { to: `/student/bookings/${n.bookingId}`, label: 'View booking' };
   if (n.category !== 'other') return { to: '/student/bookings', label: 'View my bookings' };
   return null;

@@ -1138,8 +1138,8 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, val
             // 4. Notify the student via the notifications inbox
             const checkoutMsg = `NOTICE: Your residency at "${house_name}" has been checked out by the property owner. We hope you had a comfortable stay.`;
             await connection.query(
-                'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [student_id, checkoutMsg]
+                'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+                [student_id, checkoutMsg, '/student/bookings']
             );
             console.log(`[CHECKOUT] Notification dispatched => student_id=${student_id}, house="${house_name}"`);
         } else {
@@ -1346,8 +1346,8 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBod
             : `RESERVATION APPROVED: Your booking request has been confirmed! Please make arrangements to check-in.`;
 
         await connection.query(
-            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [b.student_id, notificationMsg]
+            'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+            [b.student_id, notificationMsg, `/student/bookings/${b.id}`]
         );
 
         await connection.commit();
@@ -1383,8 +1383,8 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, validateBody
 
         const rejectMsg = `RESERVATION UPDATE: Your booking request REF-${bookingRows[0].id.toString().padStart(4, '0')} was not approved by the landlord.`;
         await pool.query(
-            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [bookingRows[0].student_id, rejectMsg]
+            'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+            [bookingRows[0].student_id, rejectMsg, `/student/bookings/${bookingRows[0].id}`]
         );
 
         res.json({ success: true });
@@ -1453,8 +1453,8 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, v
 
         const extApprovedMsg = `EXTENSION APPROVED: Your stay extension request of +${extraMonths} months has been approved.`;
         await connection.query(
-            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [b.student_id, extApprovedMsg]
+            'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+            [b.student_id, extApprovedMsg, `/student/bookings/${b.id}`]
         );
 
         await connection.commit();
@@ -1498,8 +1498,8 @@ router.post('/bookings/reject-extension/:id', authenticateToken, verifyOwner, va
 
         const extDeclinedMsg = 'EXTENSION UPDATE: Your stay extension request was declined by the landlord.';
         await connection.query(
-            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [booking[0].student_id, extDeclinedMsg]
+            'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+            [booking[0].student_id, extDeclinedMsg, `/student/bookings/${booking[0].id}`]
         );
 
         await connection.commit();

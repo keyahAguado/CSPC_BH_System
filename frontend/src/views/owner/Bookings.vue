@@ -7,7 +7,7 @@ import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
-import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import html2pdf from 'html2pdf.js';
@@ -81,7 +81,22 @@ const refLabel = (b) => (b.is_non_cspc
   ? (b.reference_no || `NC-${b.id.toString().padStart(4, '0')}`)
   : `REF-${b.id.toString().padStart(4, '0')}`);
 
-const fetchBookings = async () => {
+// silent: background refresh (no spinner, no error toast) used to keep the list in sync with
+// student actions such as withdrawing an extension request
+const fetchBookings = async (silent = false) => {
+  if (silent) {
+    if (isLoading.value) return;
+    try {
+      let url = `/api/owner/bookings`;
+      if (houseId.value) url += `?houseId=${houseId.value}`;
+      const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (response.data.success) {
+        bookings.value = response.data.bookings || [];
+        houseName.value = response.data.houseName || houseName.value;
+      }
+    } catch (error) { /* keep showing the current list; the next refresh will retry */ }
+    return;
+  }
   loadError.value = '';
   try {
     isLoading.value = true;
@@ -290,6 +305,16 @@ const handleReject = (booking) => {
   );
 };
 
+// 409 = the request is no longer pending (the student withdrew it, or it was already decided)
+const extensionActionFailed = (error, fallback) => {
+  if (error?.response?.status === 409) {
+    showSystemAlert('This extension request is no longer pending — the student may have withdrawn it. The list has been updated.', 'warning');
+    fetchBookings(true);
+    return;
+  }
+  showSystemAlert(error?.response?.data?.message || fallback, 'error');
+};
+
 const handleApproveExtension = (booking) => {
   triggerConfirmModal(
     'Approve Stay Extension?',
@@ -305,7 +330,7 @@ const handleApproveExtension = (booking) => {
           fetchBookings();
         }
       } catch (error) {
-        showSystemAlert('Failed to approve extension.', 'error');
+        extensionActionFailed(error, 'Failed to approve extension.');
       }
     }
   );
@@ -326,7 +351,7 @@ const handleRejectExtension = (booking) => {
           fetchBookings();
         }
       } catch (error) {
-        showSystemAlert('Failed to reject extension.', 'error');
+        extensionActionFailed(error, 'Failed to reject extension.');
       }
     }
   );
@@ -373,8 +398,21 @@ const getCheckoutDateDisplay = (booking) => {
   return formatCheckoutDateString(computedDate);
 };
 
+// Keep the list current while the page stays open (e.g. a student withdraws an extension request)
+let refreshTimer = null;
+const refreshWhenVisible = () => { if (document.visibilityState === 'visible') fetchBookings(true); };
+
 onMounted(() => {
   fetchBookings();
+  refreshTimer = setInterval(refreshWhenVisible, 30000);
+  document.addEventListener('visibilitychange', refreshWhenVisible);
+  window.addEventListener('focus', refreshWhenVisible);
+});
+
+onUnmounted(() => {
+  clearInterval(refreshTimer);
+  document.removeEventListener('visibilitychange', refreshWhenVisible);
+  window.removeEventListener('focus', refreshWhenVisible);
 });
 
 const loadError = ref('');

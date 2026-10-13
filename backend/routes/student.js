@@ -440,8 +440,8 @@ router.post('/book/:houseId', authenticateToken, validateBody('booking'), async 
         const ownerMsg = `NEW BOOKING REQUEST: A new student has requested to book Room ${room.room_number} in your property "${houseRows[0].name}" (${refNo})!`;
 
         await connection.query(
-            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-            [studentId, studentMsg]
+            'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
+            [studentId, studentMsg, `/student/bookings/${insertResult.insertId}`]
         );
 
         await connection.query(
