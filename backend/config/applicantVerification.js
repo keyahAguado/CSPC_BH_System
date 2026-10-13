@@ -54,19 +54,22 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, l
             if (!limit(`ip:${req.ip}`) || !limit(`email:${email}`)) return res.status(429).json({ success: false, message: 'Please wait before requesting another verification email.' });
             const token = crypto.randomBytes(32).toString('hex');
             const hash = hashVerificationToken(token);
+            // Kept only by the tab that asked for the link; it collects the session once the link is opened anywhere.
+            const requestId = crypto.randomBytes(32).toString('hex');
             try {
                 const [users] = await pool.query('SELECT role, status, password, google_id FROM users WHERE email = ?', [email]);
                 // Identical outward response: do not reveal existing account status.
                 const eligible = !users.length || (users[0].role === 'owner' && users[0].status === 'pending' && !users[0].password && !users[0].google_id);
                 if (eligible) {
-                    await pool.query('INSERT INTO applicant_email_verifications (email, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))', [email, hash]);
+                    await pool.query('INSERT INTO applicant_email_verifications (email, token_hash, poll_hash, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))', [email, hash, hashVerificationToken(requestId)]);
                     try { await send(email, token); }
                     catch {
                         await pool.query('DELETE FROM applicant_email_verifications WHERE token_hash = ? AND used_at IS NULL', [hash]);
                         throw new Error('Verification delivery failed');
                     }
                 }
-                return res.json({ success: true, message: 'If this email is eligible, a verification link has been requested. Check your inbox and spam folder. Existing account holders should sign in.' });
+                // Ineligible emails also get a requestId (it never resolves) so the response stays identical.
+                return res.json({ success: true, requestId, message: 'If this email is eligible, a verification link has been requested. Check your inbox and spam folder. Existing account holders should sign in.' });
             } catch {
                 // Never log Axios errors: they can contain the API key and verification link.
                 return res.status(503).json({ success: false, message: 'Email verification is temporarily unavailable. Please try again later. No application was submitted.' });
@@ -92,14 +95,48 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, l
                     await connection.rollback();
                     return res.status(409).json({ success: false, message: 'Please sign in with your existing account.' });
                 }
-                const session = signVerifiedApplicant(email, user?.id);
-                await connection.query('UPDATE applicant_email_verifications SET used_at = NOW() WHERE email = ? AND used_at IS NULL', [email]);
+                // Opening the link only proves inbox access. The tab that requested it (on any device)
+                // picks up the session through /email/status, so this device is not signed in.
+                await connection.query('UPDATE applicant_email_verifications SET used_at = NOW(), verified_at = IF(expires_at > NOW(), NOW(), verified_at) WHERE email = ? AND used_at IS NULL', [email]);
                 if (user) await connection.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?', [user.id]);
                 await connection.commit();
-                return res.json({ success: true, token: session, email, hasApplications: Boolean(user) });
+                return res.json({ success: true, verified: true, email });
             } catch {
                 if (connection) await connection.rollback().catch(() => {});
                 return res.status(503).json({ success: false, message: 'We could not verify your email. Please try again later.' });
+            } finally { connection?.release(); }
+        },
+        // Polled by the requesting tab: hands over the verified session once, after the email link was opened.
+        status: async (req, res) => {
+            if (!limit(`status:${req.ip}`)) return res.status(429).json({ success: false, message: 'Please wait a moment before checking again.' });
+            const requestId = req.body?.requestId;
+            if (typeof requestId !== 'string' || !/^[a-f0-9]{64}$/.test(requestId)) return res.status(400).json({ success: false, message: 'Request a new verification link.' });
+            let connection;
+            try {
+                connection = await pool.getConnection();
+                await connection.beginTransaction();
+                const [rows] = await connection.query('SELECT id, email, verified_at, claimed_at, expires_at > NOW() AS active FROM applicant_email_verifications WHERE poll_hash = ? FOR UPDATE', [hashVerificationToken(requestId)]);
+                const row = rows[0];
+                if (!row || row.claimed_at || !row.active) {
+                    await connection.rollback();
+                    return res.json({ success: true, verified: false, expired: true });
+                }
+                if (!row.verified_at) {
+                    await connection.rollback();
+                    return res.json({ success: true, verified: false });
+                }
+                const [users] = await connection.query('SELECT id, role, status, password, google_id FROM users WHERE email = ? FOR UPDATE', [row.email]);
+                const user = users[0];
+                if (user && !(user.role === 'owner' && user.status === 'pending' && !user.password && !user.google_id)) {
+                    await connection.rollback();
+                    return res.status(409).json({ success: false, message: 'Please sign in with your existing account.' });
+                }
+                await connection.query('UPDATE applicant_email_verifications SET claimed_at = NOW() WHERE id = ?', [row.id]);
+                await connection.commit();
+                return res.json({ success: true, verified: true, token: signVerifiedApplicant(row.email, user?.id), email: row.email, hasApplications: Boolean(user) });
+            } catch {
+                if (connection) await connection.rollback().catch(() => {});
+                return res.status(503).json({ success: false, message: 'We could not check your verification. Please try again.' });
             } finally { connection?.release(); }
         }
     };

@@ -261,7 +261,7 @@ const loadError = ref('');
     <OwnerNav />
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
-    <main id="management-content" tabindex="-1" class="flex-1 w-full py-6 px-4 sm:px-6 lg:px-8 text-left">
+    <main id="management-content" tabindex="-1" class="profile-main flex-1 w-full py-6 px-4 sm:px-6 lg:px-8 text-left">
       <LoadError :message="loadError" />
       <!-- Header -->
       <div class="mb-5">
@@ -274,7 +274,7 @@ const loadError = ref('');
         <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Compiling Account Profile...</p>
       </div>
 
-      <div v-else-if="user" class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch animate-in fade-in duration-300">
+      <div v-else-if="user" class="profile-grid grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch animate-in fade-in duration-300">
         <!-- PROFILE FIELDS CARD -->
         <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left flex flex-col">
           <div class="p-6 md:p-7 h-full flex flex-col">
@@ -404,3 +404,27 @@ const loadError = ref('');
     </main>
   </div>
 </template>
+
+<style scoped>
+/* Profile & security fits in one screen on laptops: tighter cards, shorter fields, smaller headings.
+   Text stays readable; nothing is scaled. */
+@media (min-width: 1024px) {
+  .profile-main { padding-top: 16px !important; padding-bottom: 16px !important; }
+  .profile-main > .mb-5 { margin-bottom: 12px !important; }
+  .profile-grid { gap: 18px !important; }
+  .profile-grid > div { border-radius: 20px !important; }
+  .profile-grid > div > div { padding: 18px 22px !important; }
+  .profile-grid h2 { font-size: 17px !important; }
+  .profile-grid h2 + * , .profile-grid .mb-5 { margin-bottom: 12px !important; }
+  .profile-grid .bg-blue-600.w-2 { height: 22px; }
+  .profile-grid form { gap: 0; }
+  .profile-grid form.space-y-5 > * + *, .profile-grid form.space-y-4 > * + * { margin-top: 12px !important; }
+  .profile-grid .pb-5 { padding-bottom: 12px !important; }
+  .profile-grid .w-20.h-20 { width: 64px; height: 64px; }
+  .profile-grid label.block { margin-bottom: 4px !important; }
+  .profile-grid input:not([type='file']):not(.hidden) { height: 42px; min-height: 42px !important; padding-top: 0 !important; padding-bottom: 0 !important; }
+  .profile-grid .pt-5 { padding-top: 12px !important; }
+  .profile-grid button[type='submit'] { padding-top: 11px !important; padding-bottom: 11px !important; }
+  .profile-grid .p-4 { padding: 10px 12px !important; }
+}
+</style>

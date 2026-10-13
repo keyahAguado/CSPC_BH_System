@@ -52,17 +52,27 @@ const activate = async () => {
 
 <template>
   <div class="min-h-screen bg-[#f4f7fb] font-sans text-[#243449] flex items-start sm:items-center justify-center px-4 py-10">
-    <main class="w-full max-w-md bg-white border border-slate-200 rounded-xl p-6 sm:p-8">
-      <router-link to="/" class="activate-focus flex items-center gap-3 mb-5 rounded-lg">
-        <img src="/img/CSPC_logo.png" alt="" class="w-10 h-10 object-contain shrink-0" />
-        <h1 class="text-xl font-semibold leading-snug text-[#142b4a]">Activate owner account</h1>
+    <main class="activate-card w-full max-w-md">
+      <router-link to="/" class="activate-focus activate-head">
+        <span class="activate-logo"><img src="/img/CSPC_logo.png" alt="" class="w-8 h-8 object-contain" /></span>
+        <span class="min-w-0">
+          <h1 class="text-lg sm:text-xl font-bold leading-snug text-white">Activate owner account</h1>
+          <span class="block text-[12.5px] text-blue-100">CSPC Boarding House Finder</span>
+        </span>
       </router-link>
+      <div class="p-6 sm:p-8">
 
       <div v-if="activatedEmail" role="status" class="text-center">
-        <div class="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto mb-4"><i class="fa-solid fa-circle-check text-2xl" aria-hidden="true"></i></div>
-        <p class="text-base font-semibold text-[#142b4a]">Your account is active</p>
-        <p class="text-sm leading-relaxed text-slate-600 mt-1 mb-6">Log in with <strong class="font-semibold text-slate-800 activate-wrap">{{ activatedEmail }}</strong> and your new password.</p>
-        <router-link to="/login" class="activate-focus inline-flex items-center justify-center min-h-[44px] bg-[#1e4a8d] hover:bg-[#163870] text-white font-semibold rounded-lg px-6 py-3 text-sm">Go to login</router-link>
+        <div class="activate-success-icon" aria-hidden="true"><i class="fa-solid fa-check"></i></div>
+        <p class="text-[12px] font-bold uppercase tracking-wider text-emerald-700">Activation complete</p>
+        <p class="text-xl font-bold text-[#142b4a] mt-1">Your account is active</p>
+        <p class="text-sm leading-relaxed text-slate-600 mt-2">Log in with this email and your new password.</p>
+        <div class="activate-email-box">
+          <i class="fa-regular fa-envelope" aria-hidden="true"></i>
+          <span class="activate-wrap">{{ activatedEmail }}</span>
+        </div>
+        <router-link to="/login" class="activate-focus activate-cta">Go to login <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+        <p class="mt-4 text-[12.5px] text-slate-500"><i class="fa-solid fa-shield-halved mr-1 text-slate-400" aria-hidden="true"></i>Keep your password private. SASO will never ask for it.</p>
       </div>
 
       <template v-else-if="!token">
@@ -97,11 +107,22 @@ const activate = async () => {
           {{ isSaving ? 'Activating…' : 'Activate account' }}
         </button>
       </form>
+      </div>
     </main>
   </div>
 </template>
 
 <style scoped>
+.activate-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; box-shadow: 0 16px 40px rgba(20, 43, 74, .12); }
+.activate-head { display: flex; align-items: center; gap: 12px; padding: 18px 22px; background: linear-gradient(120deg, #142b4a 0%, #1e4a8d 60%, #2f6fc0 100%); }
+.activate-logo { width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); }
+.activate-success-icon { width: 72px; height: 72px; margin: 4px auto 16px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: linear-gradient(135deg, #22c55e, #15803d); color: #fff; font-size: 30px; box-shadow: 0 0 0 8px #dcfce7, 0 0 0 16px #f0fdf4, 0 10px 24px rgba(22, 163, 74, .3); animation: activate-pop .45s ease-out; }
+@keyframes activate-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .activate-success-icon { animation: none; } }
+.activate-email-box { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 16px 0 20px; padding: 12px 14px; border: 1px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; font-size: 14.5px; font-weight: 600; color: #142b4a; }
+.activate-email-box i { color: #1e4a8d; }
+.activate-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border-radius: 12px; background: #1e4a8d; color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 6px 16px rgba(30, 74, 141, .25); transition: background .15s, transform .15s; }
+.activate-cta:hover { background: #163870; transform: translateY(-1px); }
 .activate-input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; font-size: 15px; transition: border-color .15s, box-shadow .15s; }
 .activate-input:focus { outline: none; border-color: #245b99; box-shadow: 0 0 0 3px #bcd5f2; }
 .activate-readonly, .activate-readonly:focus { background: #f8fafc; color: #475569; border-color: #e2e8f0; }

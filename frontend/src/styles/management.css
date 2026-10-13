@@ -26,7 +26,11 @@
 .management-nav-footer p span{color:#a5bdd8;font-size:10px}
 .management-topbar{position:fixed;top:0;right:0;left:248px;height:72px;z-index:50;background:#fff;border-bottom:1px solid #dce4ed;display:flex;align-items:center;justify-content:space-between;padding:0 32px;gap:16px}
 .management-topbar-title{display:flex;align-items:center;min-width:0;gap:12px;font-size:12px;color:#61738b}
-.management-topbar-title>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.management-topbar-title>span,.management-breadcrumb{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.management-crumb{color:inherit;text-decoration:none;border-radius:6px;padding:2px 4px;margin:0 -4px;transition:color .15s,background .15s}
+.management-crumb:hover{color:#1d4ed8;background:#eff6ff;text-decoration:underline;text-underline-offset:3px}
+.management-crumb:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.management-crumb.is-current:hover strong{color:#1d4ed8}
 .management-topbar-title strong{font-weight:600;color:#273c56}
 .management-topbar-separator{padding:0 12px;color:#94a3b8}
 .management-topbar-notifications{display:flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:44px;color:#466080;background:#f4f7fb;border-radius:9px;flex-shrink:0}
@@ -98,3 +102,16 @@
 .management-page-header{min-width:0}.management-header-actions{flex-shrink:0}.management-page .management-row-actions .management-button{padding:8px 10px;min-height:38px}.management-page .management-property-actions .management-button{font-size:12px;padding:10px 8px}.management-page .management-property-grid>div:last-child:only-child{grid-column:1/-1}.management-page .management-property-card .bg-yellow-500{background:#fef3c7;color:#78350f}.management-page .management-property-media .bg-green-500{background:#dcfce7;color:#166534}.management-page .management-property-media .bg-orange-500{background:#ffedd5;color:#9a3412}.management-page .management-property-media .bg-amber-500{background:#fef3c7;color:#78350f}
 /* Reports use the full content width */
 .management-page .report-wide{max-width:none!important;width:100%!important}
+/* Admin data tables: one look for New applications, Registered, Archived and the Masterlist
+   (light header with small sub-labels, roomy rows, thin row dividers) */
+.admin-table-card{flex-direction:column;background:#fff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden}
+.management-page .admin-table{border-collapse:collapse;min-width:980px;font-size:13px;color:#0f172a;text-align:left}
+.management-page .admin-table thead th{position:sticky;top:0;z-index:1;padding:10px 14px;background:#f8fafc;text-align:left;font-size:12.5px;font-weight:600;line-height:1.4;color:#0f172a;border:0;border-bottom:1px solid #e2e8f0;text-transform:none;white-space:nowrap}
+.management-page .admin-table thead th small{display:block;font-size:11px;font-weight:500;color:#64748b}
+.management-page .admin-table tbody td{padding:10px 14px;font-size:13px;font-weight:400;line-height:1.45;text-align:left;vertical-align:middle;border:0;border-bottom:1px solid #eef2f7}
+.management-page .admin-table tbody tr:last-child td{border-bottom:0}
+.management-page .admin-table tbody tr:hover td{background:#f5f8fc}
+.admin-table-name{display:block;font-size:13.5px;font-weight:600;color:#0f172a}
+.admin-table-main{display:block;font-size:13px;font-weight:500;color:#0f172a}
+.admin-table-sub{display:block;margin-top:2px;font-size:12px;color:#64748b}
+.admin-table-empty{padding-top:56px!important;padding-bottom:56px!important;text-align:center!important;font-size:13px!important;font-weight:600!important;color:#64748b}

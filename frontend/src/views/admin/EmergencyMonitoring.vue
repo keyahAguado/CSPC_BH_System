@@ -240,7 +240,7 @@ const sexTone = (sex) => {
 
     <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-12 px-4 sm:px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
-      <PageHeader title="Emergency registry residence report" description="Locate student residents and emergency contacts by property, barangay, and course." />
+      <PageHeader title="Emergency registry residence" />
 
       <!-- Summary tiles (counts follow the selected filter) -->
       <dl class="reg-tiles no-print">
@@ -307,8 +307,8 @@ const sexTone = (sex) => {
             <table class="management-registry-table w-full border-collapse" id="emergencyTable">
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="filteredResidents.length === 0">
-                  <td colspan="5" class="py-20 text-center">
-                    <p class="text-slate-500 font-semibold text-sm">{{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}</p>
+                  <td colspan="5" class="admin-table-empty">
+                    <p class="text-slate-500 font-medium text-[13px] text-center m-0">{{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}</p>
                   </td>
                 </tr>
                 <template v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="group.house_name">
@@ -374,7 +374,7 @@ const sexTone = (sex) => {
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredResidents.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
         </div>
         <div class="block lg:hidden print:hidden space-y-4">
-          <div v-if="filteredResidents.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">
+          <div v-if="filteredResidents.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-[13px] font-medium">
             {{ (selectedBarangay || selectedHouse || selectedCourse || searchQuery) ? 'No residents match the selected filter or search.' : 'No active residents registered across all boarding houses.' }}
           </div>
           <div v-else v-for="group in groupedResidents.filter(g => g.residents.length > 0)" :key="'m-' + group.house_name" class="space-y-2">
@@ -493,11 +493,11 @@ const sexTone = (sex) => {
 /* Summary tiles */
 .reg-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
 @media (min-width: 1024px) { .reg-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.reg-tiles > div { padding: 12px 16px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; min-width: 0; }
+.reg-tiles > div { padding: 10px 14px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; min-width: 0; }
 .reg-tiles dt { font-size: 12px; font-weight: 600; color: #64748b; }
 .reg-tiles dt i { color: #94a3b8; margin-right: 4px; }
-.reg-tiles dd { margin: 4px 0 0; font-size: 22px; font-weight: 700; color: #142b4a; line-height: 1.2; }
-.reg-tiles .reg-tile-text { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reg-tiles dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: #142b4a; line-height: 1.2; }
+.reg-tiles .reg-tile-text { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reg-tile-sub { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
 .reg-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
 .reg-tiles > div.is-primary dd, .reg-tiles > div.is-primary dt i { color: #1e4a8d; }
@@ -508,16 +508,16 @@ const sexTone = (sex) => {
 .reg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .reg-search { position: relative; flex: 1 1 280px; min-width: 0; }
 .reg-search > i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.reg-search input { width: 100%; padding: 12px 40px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 40px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 .reg-search input::placeholder { font-weight: 400; color: #94a3b8; }
 .reg-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .reg-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-height: 28px !important; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer; }
 .reg-search-clear:hover { background: #f1f5f9; color: #475569; }
-.reg-select { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 46px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+.reg-select { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 .reg-select i { color: #94a3b8; font-size: 12px; }
 .reg-select select { border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; cursor: pointer; min-height: 0 !important; max-width: 220px; }
 .reg-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.reg-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #1e4a8d; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.reg-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 16px; border: 0; border-radius: 10px; background: #1e4a8d; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .reg-btn-primary:hover { background: #163870; }
 @media (max-width: 767px) { .reg-select, .reg-btn-primary { flex: 1 1 100%; justify-content: center; } .reg-select select { max-width: none; width: 100%; } }
 

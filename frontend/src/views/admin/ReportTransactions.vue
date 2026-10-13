@@ -51,7 +51,7 @@ const loadError = ref('');
   <div class="management-page min-h-screen font-sans">
 <AdminNav />
 <main id="management-content" tabindex="-1" class="management-content report-wide">
-      <LoadError :message="loadError" /><PageHeader title="Reservation history" description="Review the existing student reservation report." />
+      <LoadError :message="loadError" /><PageHeader title="Reservation history" />
     <div class="w-full bg-white p-6 sm:p-12 shadow-xl rounded-2xl border-t-8 border-[#2a528a] text-left">
       
       <!-- Header -->

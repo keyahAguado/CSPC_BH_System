@@ -1,8 +1,9 @@
 <script setup>
 import PageHeader from '../components/management/PageHeader.vue';
+import TablePager from '../components/management/TablePager.vue';
 import LoadError from '../components/management/LoadError.vue';
 import '../styles/management.css';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../components/partials/OwnerNav.vue';
@@ -263,6 +264,16 @@ const visibleItems = computed(() => {
   return items.value.filter(n => n.meta.category === activeFilter.value);
 });
 
+// Owner / admin inbox is paged (same pager as the admin tables) so the list doesn't run on forever
+const nfPage = ref(1);
+const nfPerPage = ref(10);
+const nfTotalPages = computed(() => Math.max(1, Math.ceil(visibleItems.value.length / nfPerPage.value)));
+const nfPaged = computed(() => visibleItems.value.slice((nfPage.value - 1) * nfPerPage.value, nfPage.value * nfPerPage.value));
+const nfStart = computed(() => (visibleItems.value.length ? (nfPage.value - 1) * nfPerPage.value + 1 : 0));
+const nfEnd = computed(() => Math.min(nfPage.value * nfPerPage.value, visibleItems.value.length));
+watch(activeFilter, () => { nfPage.value = 1; });
+watch(nfTotalPages, (total) => { if (nfPage.value > total) nfPage.value = total; });
+
 const isMarkingAll = ref(false);
 const markAllRead = async () => {
   try {
@@ -295,11 +306,11 @@ onMounted(() => {
     
     <component :is="user.role === 'admin' ? AdminNav : (user.role === 'owner' ? OwnerNav : StudentNav)" />
 
-    <main :id="user.role !== 'student' ? 'management-content' : undefined" class="flex-1 max-w-5xl mx-auto w-full py-12 px-6 lg:px-12">
+    <main :id="user.role !== 'student' ? 'management-content' : undefined" :class="['flex-1 max-w-5xl mx-auto w-full', user.role === 'student' ? 'py-12 px-6 lg:px-12' : 'py-6 px-4 sm:px-6']">
 
       <!-- Header Section -->
       <LoadError v-if="user.role !== 'student'" :message="loadError" />
-      <PageHeader v-if="user.role !== 'student'" title="Notifications" :description="user.role === 'admin' ? 'Review system updates, requests, and compliance notices.' : ''" />
+      <PageHeader v-if="user.role !== 'student'" title="Notifications" />
       <div v-else class="mb-14 text-center">
         <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight mb-2">
           {{ user.role === 'admin' ? 'Admin Inbox' : (user.role === 'owner' ? 'Owner Inbox' : 'Student Inbox') }}
@@ -391,7 +402,9 @@ onMounted(() => {
             </button>
           </div>
 
-          <article v-for="notif in visibleItems" :key="notif.id"
+          <div class="nf-pager"><TablePager position="top" noun="notifications" :page="nfPage" @update:page="nfPage = $event" :total-pages="nfTotalPages" :start="nfStart" :end="nfEnd" :total="visibleItems.length" :per-page="nfPerPage" @update:per-page="nfPerPage = $event; nfPage = 1" /></div>
+
+          <article v-for="notif in nfPaged" :key="notif.id"
                @click="handleContainerClick(notif, $event)"
                tabindex="0" role="link" :aria-label="'Open notification: ' + notif.meta.title" @keydown.enter.prevent="handleContainerClick(notif, $event)"
                class="nf-card"
@@ -478,6 +491,8 @@ onMounted(() => {
             </div>
           </article>
 
+          <div class="nf-pager"><TablePager position="bottom" noun="notifications" :page="nfPage" @update:page="nfPage = $event" :total-pages="nfTotalPages" :start="nfStart" :end="nfEnd" :total="visibleItems.length" :per-page="nfPerPage" @update:per-page="nfPerPage = $event; nfPage = 1" /></div>
+
           <!-- Owner / Admin Empty State -->
           <div v-if="visibleItems.length === 0" class="nf-empty">
             <div class="nf-empty-icon"><i :class="['fa-solid', notifications.length === 0 ? 'fa-bell-slash' : 'fa-inbox']" aria-hidden="true"></i></div>
@@ -515,37 +530,37 @@ onMounted(() => {
 .nf-markall { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 10px; border: 1.5px solid #1e40af; background: #fff; color: #1e40af; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s, color .15s; }
 .nf-markall:hover:not(:disabled) { background: #1e40af; color: #fff; }
 
-.nf-card { position: relative; overflow: hidden; background: #fff; border: 1px solid #dfe7f2; border-radius: 18px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04), 0 6px 18px rgba(20, 43, 74, .05); cursor: pointer; }
+.nf-card { position: relative; overflow: hidden; background: #fff; border: 1px solid #dfe7f2; border-radius: 14px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04), 0 6px 18px rgba(20, 43, 74, .05); cursor: pointer; }
 .nf-card:focus-visible { outline: 3px solid #7fa6db; outline-offset: 2px; }
 .nf-card.is-read { opacity: .82; }
-.nf-head { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: var(--nf-accent); color: #fff; }
-.nf-head-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .25); color: #fff; font-size: 15px; }
-.nf-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14.5px; font-weight: 700; color: #fff !important; letter-spacing: .01em; text-shadow: 0 1px 1px rgba(0, 0, 0, .12); }
-.nf-head-tag { padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, .25); color: #fff; font-size: 11.5px; font-weight: 700; }
-.nf-new { padding: 3px 9px; border-radius: 999px; background: #fff; color: var(--nf-ink, var(--nf-accent)); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
-.nf-body { padding: 18px 20px 16px; }
-.nf-message { margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: #33475f; }
+.nf-head { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--nf-accent); color: #fff; }
+.nf-head-icon { width: 26px; height: 26px; flex-shrink: 0; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .25); color: #fff; font-size: 12.5px; }
+.nf-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 700; color: #fff !important; letter-spacing: .01em; text-shadow: 0 1px 1px rgba(0, 0, 0, .12); }
+.nf-head-tag { padding: 2px 9px; border-radius: 999px; background: rgba(255, 255, 255, .25); color: #fff; font-size: 11px; font-weight: 700; }
+.nf-new { padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--nf-ink, var(--nf-accent)); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.nf-body { padding: 12px 16px 12px; }
+.nf-message { margin: 0 0 10px; font-size: 13.5px; line-height: 1.55; color: #33475f; }
 .nf-card.is-unread .nf-message { color: #142b4a; font-weight: 500; }
-.nf-context { margin-bottom: 14px; padding: 14px 16px; border-radius: 12px; border-left: 4px solid var(--nf-accent); background: var(--nf-soft, color-mix(in srgb, var(--nf-accent) 7%, #fff)); }
-.nf-context-title { margin: 0 0 4px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--nf-ink, var(--nf-accent)); }
-.nf-context-text { margin: 0; font-size: 14px; line-height: 1.55; color: #475569; }
+.nf-context { margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; border-left: 4px solid var(--nf-accent); background: var(--nf-soft, color-mix(in srgb, var(--nf-accent) 7%, #fff)); }
+.nf-context-title { margin: 0 0 2px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--nf-ink, var(--nf-accent)); }
+.nf-context-text { margin: 0; font-size: 13px; line-height: 1.5; color: #475569; }
 .nf-strong { font-weight: 700; color: var(--nf-ink, var(--nf-accent)); }
-.nf-cta { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; height: 38px; padding: 0 16px; border-radius: 10px; background: var(--nf-accent); color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 4px 12px color-mix(in srgb, var(--nf-accent) 30%, transparent); transition: transform .15s, filter .15s; }
+.nf-cta { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; height: 32px; padding: 0 14px; border-radius: 9px; background: var(--nf-accent); color: #fff; font-size: 12.5px; font-weight: 700; text-decoration: none; box-shadow: 0 4px 12px color-mix(in srgb, var(--nf-accent) 30%, transparent); transition: transform .15s, filter .15s; }
 .nf-cta:hover { filter: brightness(.92); transform: translateY(-1px); }
 .nf-cta i { font-size: 11px; }
-.nf-approved { display: flex; align-items: center; gap: 16px; }
-.nf-seal { width: 64px; height: 64px; flex-shrink: 0; padding: 6px; border-radius: 14px; background: #fff; border: 1px solid #d1eadc; }
+.nf-approved { display: flex; align-items: center; gap: 12px; }
+.nf-seal { width: 44px; height: 44px; flex-shrink: 0; padding: 4px; border-radius: 10px; background: #fff; border: 1px solid #d1eadc; }
 .nf-seal img { width: 100%; height: 100%; object-fit: contain; }
 .nf-neutral { --nf-accent: #64748b; --nf-ink: #475569; --nf-soft: #f8fafc; }
-.nf-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1px solid #edf2f8; }
-.nf-markread { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 0; border-radius: 10px; background: #0f172a; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s, transform .15s; }
+.nf-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid #edf2f8; }
+.nf-markread { display: inline-flex; align-items: center; gap: 7px; height: 32px; min-height: 32px !important; padding: 0 14px; border: 0; border-radius: 9px; background: #0f172a; color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .15s, transform .15s; }
 .nf-markread:hover { background: #1e40af; }
 .nf-markread:active { transform: scale(.97); }
-.nf-open { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #1e40af; transition: gap .15s; }
+.nf-open { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #1e40af; transition: gap .15s; }
 .nf-open i { font-size: 11px; }
 .nf-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
-.nf-from { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
-.nf-meta time { font-size: 13px; font-weight: 600; color: #5b6e86; }
+.nf-from { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
+.nf-meta time { font-size: 12px; font-weight: 600; color: #5b6e86; }
 .nf-empty { padding: 56px 24px; text-align: center; background: #fff; border: 1px dashed #c9d7ec; border-radius: 18px; }
 .nf-empty-icon { width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 999px; display: flex; align-items: center; justify-content: center; background: #eef3fa; color: #8597ad; font-size: 22px; }
 .nf-empty h3 { margin: 0; font-size: 16px; font-weight: 700; color: #142b4a; }
@@ -557,4 +572,7 @@ onMounted(() => {
 }
 @media (prefers-reduced-motion: reduce) { .nf-tab, .nf-cta { transition: none; } }
 .notif-owner-theme .management-page-header h1 { font-size: clamp(22px, 2.2vw, 28px); font-weight: 700; letter-spacing: -.02em; color: #142b4a; text-transform: none; }
+/* Owner / admin inbox: tighter spacing between cards */
+.notif-owner-theme .space-y-6 > * + * { margin-top: 12px !important; }
+.nf-pager { margin: 0 0 14px; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
 </style>

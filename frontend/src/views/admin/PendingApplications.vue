@@ -557,7 +557,7 @@ const loadError = ref('');
 
     <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-10 px-4 sm:px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
-      <PageHeader title="New applications" description="Review new submissions, resubmissions, and updated documents." />
+      <PageHeader title="New applications" />
 
       <!-- Loading State -->
       <div v-show="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
@@ -570,20 +570,11 @@ const loadError = ref('');
 
       <div v-show="!isLoading" class="na-body">
         <!-- Summary cards -->
-        <div class="na-cards">
-          <div class="na-stat">
-            <span class="na-stat-icon is-blue" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
-            <div><p class="na-stat-label">Active applications</p><p class="na-stat-value">{{ applications.length }}</p><p class="na-stat-sub">Awaiting SASO action</p></div>
-          </div>
-          <div class="na-stat">
-            <span class="na-stat-icon is-violet" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>
-            <div><p class="na-stat-label">New submissions</p><p class="na-stat-value">{{ typeCount('new') }}</p><p class="na-stat-sub">Initial applications</p></div>
-          </div>
-          <div class="na-stat">
-            <span class="na-stat-icon is-amber" aria-hidden="true"><i class="fa-solid fa-rotate"></i></span>
-            <div><p class="na-stat-label">Resubmissions &amp; updates</p><p class="na-stat-value">{{ typeCount('resubmission') + typeCount('update') }}</p><p class="na-stat-sub">Returned or updated documents</p></div>
-          </div>
-        </div>
+        <dl class="na-tiles">
+          <div class="is-primary"><dt><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Active applications</dt><dd>{{ applications.length }}</dd><span class="na-tile-sub">Awaiting SASO action</span></div>
+          <div><dt><i class="fa-regular fa-clock" aria-hidden="true"></i> New submissions</dt><dd>{{ typeCount('new') }}</dd><span class="na-tile-sub">Initial applications</span></div>
+          <div><dt><i class="fa-solid fa-rotate" aria-hidden="true"></i> Resubmissions &amp; updates</dt><dd>{{ typeCount('resubmission') + typeCount('update') }}</dd><span class="na-tile-sub">Returned or updated documents</span></div>
+        </dl>
 
         <!-- Filters -->
         <div class="na-filters">
@@ -619,11 +610,11 @@ const loadError = ref('');
         </div>
 
         <!-- LAPTOP / DESKTOP: table -->
-        <div class="na-table-card hidden lg:flex lg:flex-col">
+        <div class="na-table-card admin-table-card hidden lg:flex lg:flex-col">
           <TablePager position="top" noun="applications" :page="naPage" @update:page="naPage = $event" :total-pages="naTotalPages" :start="naStart" :end="naEnd" :total="naFiltered.length" :per-page="naPerPage" @update:per-page="naPerPage = $event; naPage = 1" />
 
           <div class="na-scroll">
-            <table class="na-table w-full">
+            <table class="na-table admin-table w-full">
               <thead>
                 <tr>
                   <th>#</th>
@@ -637,24 +628,24 @@ const loadError = ref('');
               </thead>
               <tbody>
                 <tr v-if="naPaged.length === 0">
-                  <td colspan="7" class="py-16 text-center text-slate-500 font-semibold text-sm">{{ applications.length === 0 ? 'No pending applications at the moment.' : 'No applications match these filters.' }}</td>
+                  <td colspan="7" class="admin-table-empty">{{ applications.length === 0 ? 'No pending applications at the moment.' : 'No applications match these filters.' }}</td>
                 </tr>
                 <tr v-for="(app, index) in naPaged" :key="app.id">
                   <td class="text-slate-500">{{ naStart + index }}</td>
                   <td>
-                    <strong class="na-name">{{ app.name }}</strong>
-                    <span class="na-sub">{{ app.barangay ? 'Brgy. ' + app.barangay + ', Nabua, Camarines Sur' : (app.location || '—') }}</span>
-                    <span v-if="app.reference_no" class="na-sub">Ref: {{ app.reference_no }}</span>
+                    <strong class="admin-table-name">{{ app.name }}</strong>
+                    <span class="admin-table-sub">{{ app.barangay ? 'Brgy. ' + app.barangay + ', Nabua, Camarines Sur' : (app.location || '—') }}</span>
+                    <span v-if="app.reference_no" class="admin-table-sub">Ref: {{ app.reference_no }}</span>
                   </td>
                   <td>
-                    <span class="na-owner">{{ app.owner_name }}</span>
-                    <span v-if="app.owner_phone" class="na-sub"><i class="fa-solid fa-phone text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_phone }}</span>
-                    <span v-else-if="app.owner_email" class="na-sub"><i class="fa-solid fa-envelope text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_email }}</span>
+                    <span class="admin-table-main">{{ app.owner_name }}</span>
+                    <span v-if="app.owner_phone" class="admin-table-sub"><i class="fa-solid fa-phone text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_phone }}</span>
+                    <span v-else-if="app.owner_email" class="admin-table-sub"><i class="fa-solid fa-envelope text-slate-500 mr-1.5" aria-hidden="true"></i>{{ app.owner_email }}</span>
                   </td>
                   <td><span :class="['na-type', 'is-' + appType(app).key]">{{ appType(app).label }}</span></td>
                   <td>
                     <span class="block text-slate-800">{{ formatDay(app.resubmitted_at || app.created_at) }}</span>
-                    <span class="na-sub">{{ formatTime(app.resubmitted_at || app.created_at) }}</span>
+                    <span class="admin-table-sub">{{ formatTime(app.resubmitted_at || app.created_at) }}</span>
                   </td>
                   <td><span :class="['na-status', 'is-' + appState(app).tone]">{{ appState(app).label }}</span></td>
                   <td>
@@ -680,8 +671,8 @@ const loadError = ref('');
             <div class="flex justify-between items-start gap-2">
               <div class="min-w-0">
                 <span class="text-[12px] text-slate-400 font-semibold">#{{ naStart + index }} · {{ formatDay(app.resubmitted_at || app.created_at) }}</span>
-                <strong class="na-name">{{ app.name }}</strong>
-                <span v-if="app.reference_no" class="na-sub">Ref: {{ app.reference_no }}</span>
+                <strong class="admin-table-name">{{ app.name }}</strong>
+                <span v-if="app.reference_no" class="admin-table-sub">Ref: {{ app.reference_no }}</span>
               </div>
               <span :class="['na-status', 'is-' + appState(app).tone]">{{ appState(app).label }}</span>
             </div>
@@ -1382,46 +1373,38 @@ const loadError = ref('');
   .na-scroll { flex: 1; min-height: 0; overflow: auto; }
 }
 .na-fit > main .management-page-header { margin-bottom: 16px; }
-.na-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 16px; }
-@media (min-width: 640px) { .na-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.na-stat { display: flex; align-items: center; gap: 18px; padding: 18px 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
-.na-stat-icon { width: 64px; height: 64px; flex-shrink: 0; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
-.na-stat-icon.is-blue { background: #e0ecff; color: #2563eb; }
-.na-stat-icon.is-violet { background: #ede9fe; color: #7c3aed; }
-.na-stat-icon.is-amber { background: #fff3d6; color: #f59e0b; }
-.na-stat-label { margin: 0; font-size: 14px; font-weight: 600; color: #334155; }
-.na-stat-value { margin: 2px 0; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.1; }
-.na-stat-sub { margin: 0; font-size: 12.5px; color: #64748b; }
-.na-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.na-tiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 0 0 14px; }
+@media (min-width: 640px) { .na-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.na-tiles > div { padding: 10px 14px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; }
+.na-tiles dt { font-size: 12px; font-weight: 600; color: #64748b; }
+.na-tiles dt i { color: #94a3b8; margin-right: 4px; }
+.na-tiles dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: #142b4a; line-height: 1.2; }
+.na-tile-sub { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+.na-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
+.na-tiles > div.is-primary dd, .na-tiles > div.is-primary dt i { color: #1e4a8d; }
+.na-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .na-search { position: relative; flex: 1 1 320px; min-width: 0; }
-.na-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #475569; font-size: 14px; pointer-events: none; }
-.na-search input { width: 100%; height: 50px; padding: 0 16px 0 44px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; color: #334155; outline: none; }
+.na-search i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
+.na-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; color: #334155; outline: none; }
 .na-search input:focus, .na-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
-.na-select { height: 50px; min-height: 50px !important; padding: 0 36px 0 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 500; color: #0f172a; outline: none; cursor: pointer; }
-.na-reset { display: inline-flex; align-items: center; gap: 8px; height: 50px; min-height: 50px !important; padding: 0 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 600; color: #0f172a; cursor: pointer; }
+.na-select { height: 40px; min-height: 40px !important; padding: 0 32px 0 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: #0f172a; outline: none; cursor: pointer; }
+.na-reset { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #0f172a; cursor: pointer; }
 .na-reset:hover { background: #f8fafc; }
 @media (max-width: 767px) { .na-select, .na-reset { flex: 1 1 45%; } }
-.na-table-card { flex-direction: column; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; }
 .na-scroll { overflow-x: auto; }
-.na-table { border-collapse: collapse; min-width: 980px; font-size: 14px; color: #0f172a; }
-.na-table thead th { position: sticky; top: 0; z-index: 1; padding: 14px 16px; background: #f8fafc; text-align: left; font-size: 13.5px; font-weight: 700; color: #0f172a; border-bottom: 1px solid #e2e8f0; text-transform: none; white-space: nowrap; }
-.na-table thead th small { display: block; font-size: 12px; font-weight: 500; color: #64748b; }
-.na-table tbody td { padding: 14px 16px; vertical-align: middle; border-bottom: 1px solid #eef2f7; }
-.na-name { display: block; font-size: 15px; font-weight: 700; color: #0f172a; }
-.na-owner { display: block; font-size: 15px; font-weight: 600; color: #0f172a; }
-.na-sub { display: block; margin-top: 3px; font-size: 13px; color: #64748b; }
-.na-type { display: inline-flex; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.na-table { min-width: 980px; }
+.na-type { display: inline-flex; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .na-type.is-new { background: #dcfce7; color: #15803d; }
 .na-type.is-resubmission { background: #e0f2fe; color: #0369a1; }
 .na-type.is-update { background: #fff7ed; color: #c2410c; }
-.na-status { display: inline-flex; padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.na-status { display: inline-flex; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .na-status.is-blue { background: #dbeafe; color: #1d4ed8; }
 .na-status.is-violet { background: #ede9fe; color: #6d28d9; }
 .na-status.is-amber { background: #fff3d6; color: #b45309; }
 .na-status.is-sky { background: #e0f2fe; color: #0369a1; }
 .na-status.is-green { background: #dcfce7; color: #15803d; }
 .na-status.is-rose { background: #ffe4e6; color: #be123c; }
-.na-action { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; min-height: 42px !important; border-radius: 10px; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.na-action { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; min-height: 34px !important; border-radius: 9px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .na-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid #eef2f7; font-size: 14px; color: #475569; }
 .na-pages { display: flex; gap: 8px; }
 .na-pages button { min-width: 42px; height: 42px; min-height: 42px !important; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-weight: 700; cursor: pointer; }
@@ -1430,7 +1413,7 @@ const loadError = ref('');
 .na-mcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
 
 .na-range { position: relative; }
-.na-range-btn { display: inline-flex; align-items: center; gap: 10px; height: 50px; min-height: 50px !important; padding: 0 14px; min-width: 230px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-weight: 500; color: #334155; cursor: pointer; }
+.na-range-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 12px; min-width: 200px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: #334155; cursor: pointer; }
 .na-range-btn span { flex: 1; text-align: left; }
 .na-range-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 260px; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 12px 30px rgba(15, 23, 42, .15); display: flex; flex-direction: column; gap: 10px; }
 .na-range-pop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #64748b; }

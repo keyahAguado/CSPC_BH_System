@@ -11,7 +11,7 @@ const isAdmin = computed(() => props.role === 'admin');
 const groups = computed(() => props.role === 'admin' ? [
   { label: 'Main', items: [['Home', '/admin/dashboard', 'fa-house']] },
   { label: 'Property administration', items: [['New applications', '/admin/pending-applications', 'fa-clipboard-check'], ['Registered properties', '/admin/registered', 'fa-building'], ['Archived properties', '/admin/archived', 'fa-box-archive']] },
-  { label: 'Reports', items: [['Accredited masterlist', '/admin/reports/masterlist', 'fa-list-check'], ['Compliance & expiry', '/admin/reports/compliance', 'fa-file-circle-check'], ['Emergency registry residence report', '/admin/emergency-monitoring', 'fa-shield-halved']] },
+  { label: 'Reports', items: [['Accredited masterlist', '/admin/reports/masterlist', 'fa-list-check'], ['Compliance & expiry', '/admin/reports/compliance', 'fa-file-circle-check'], ['Emergency registry residence', '/admin/emergency-monitoring', 'fa-shield-halved']] },
   { label: 'People', items: [['User registry', '/admin/users', 'fa-users']] },
   { label: 'System', items: [['Landing page', '/admin/site-content', 'fa-globe'], ['Notifications', '/admin/notifications', 'fa-bell']] }
 ] : [
@@ -22,6 +22,8 @@ const groups = computed(() => props.role === 'admin' ? [
 const propertyId = computed(() => ['OwnerEdit', 'OwnerRooms', 'OwnerDocuments'].includes(route.name) ? route.params.id : null);
 const active = (path) => route.path === path || (path === '/owner/documents' && route.path.startsWith(path + '/'));
 
+// Top bar breadcrumb: the first crumb goes back to the portal home
+const homePath = computed(() => (props.role === 'admin' ? '/admin/dashboard' : '/owner/dashboard'));
 // Top bar: name the current page with its sidebar label so the two always agree.
 const pageTitle = computed(() => {
   for (const group of groups.value) {
@@ -75,7 +77,7 @@ onUnmounted(() => desktopQuery?.removeEventListener('change', closeOnDesktop));
     </div>
   </aside>
   <header class="management-topbar no-print is-admin">
-    <div class="management-topbar-title"><button class="management-menu-toggle hamburger-btn" aria-label="Toggle navigation" :aria-expanded="open" aria-controls="management-navigation" @click="emit('toggle')"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><span>{{ role === 'admin' ? 'Administration' : 'Property management' }}<span class="management-topbar-separator">/</span><strong>{{ pageTitle }}</strong></span></div>
+    <div class="management-topbar-title"><button class="management-menu-toggle hamburger-btn" aria-label="Toggle navigation" :aria-expanded="open" aria-controls="management-navigation" @click="emit('toggle')"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><nav aria-label="Breadcrumb" class="management-breadcrumb"><router-link :to="homePath" class="management-crumb">{{ role === 'admin' ? 'Administration' : 'Property management' }}</router-link><span class="management-topbar-separator" aria-hidden="true">/</span><router-link :to="route.path" class="management-crumb is-current" aria-current="page"><strong>{{ pageTitle }}</strong></router-link></nav></div>
     <div class="admin-topbar-tools">
       <span v-if="isAdmin" class="admin-topbar-date"><i class="fa-regular fa-calendar" aria-hidden="true"></i>{{ today }}</span>
       <router-link :to="'/' + role + '/notifications'" class="management-topbar-notifications" aria-label="View notifications"><i class="fa-regular fa-bell" aria-hidden="true"></i><span v-if="unreadCount > 0" class="management-nav-count">{{ unreadCount }}</span></router-link>

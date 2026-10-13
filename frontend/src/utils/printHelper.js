@@ -9,7 +9,6 @@ import { escapeHtml } from './htmlHelper.js';
 const CSPC_LOGO = '/img/CSPC_logo.png';
 
 const BASE_STYLES = `
-  @page { margin: 1.5cm; }
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
   body { background: #fff; color: #1e293b; font-size: 10.5pt; }
   .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
@@ -58,6 +57,28 @@ const BASE_STYLES = `
   .legend { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; gap: 24px; align-items: center; }
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 9pt; font-weight: 700; text-transform: uppercase; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  /* Compact report (Emergency registry): smaller text and tighter spacing so it fits the page */
+  .compact-report .header { padding-bottom: 8px; margin-bottom: 10px; }
+  .compact-report .header-left img { width: 52px; height: 52px; }
+  .compact-report .school-name { font-size: 14pt; }
+  .compact-report .school-sub { font-size: 8.5pt; margin-top: 2px; }
+  .compact-report .report-date .label { font-size: 8pt; }
+  .compact-report .report-date .value { font-size: 11pt; }
+  .compact-report .title-section { margin-bottom: 10px; }
+  .compact-report .title-section h2 { font-size: 12.5pt; text-underline-offset: 4px; }
+  .compact-report .title-section .subtitle { margin-top: 6px; padding: 2px 12px; font-size: 8.5pt; }
+  .compact-report table { table-layout: fixed; margin-bottom: 12px; }
+  .compact-report th { padding: 5px 7px; font-size: 8.5pt; letter-spacing: .05em; color: #334155; }
+  .compact-report td { padding: 5px 7px; font-size: 10pt; line-height: 1.35; overflow-wrap: anywhere; }
+  .compact-report .small { font-size: 8.5pt; }
+  .compact-report .badge { padding: 1px 7px; font-size: 8pt; }
+  .compact-report .house-head { margin: 12px 0 6px; padding: 6px 10px; background: #f1f5f9; border-left: 4px solid #1e4a8d; border-radius: 4px; }
+  .compact-report .house-name { font-size: 11.5pt; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: .04em; }
+  .compact-report .house-count { margin-left: 6px; font-size: 9.5pt; font-weight: 700; color: #1e4a8d; }
+  .compact-report .house-meta { margin-top: 2px; font-size: 9.5pt; font-weight: 600; color: #334155; }
+  .compact-report .signatories { padding-top: 28px; margin-top: 8px; }
+  .compact-report .signatory-label { font-size: 8.5pt; }
+  .compact-report .print-footer { margin-top: 16px; padding-top: 8px; font-size: 8pt; }
   .print-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 8.5pt; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
   .print-footer strong { color: #1e4a8d; font-weight: 900; }
 `;
@@ -86,7 +107,7 @@ function openPrintWindow(html, title, landscape = false) {
 
   document.body.appendChild(iframe);
 
-  const pageCSS = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 1.5cm; }`;
+  const pageCSS = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: ${landscape ? '0.8cm 1cm' : '1.5cm'}; }`;
   const frameWin = iframe.contentWindow || iframe.contentDocument;
   const doc = frameWin.document || frameWin;
 
@@ -96,10 +117,10 @@ function openPrintWindow(html, title, landscape = false) {
 <head>
   <meta charset="UTF-8">
   <title>${escapeHtml(title)}</title>
-  <style>${pageCSS}${BASE_STYLES}</style>
+  <style>${BASE_STYLES}${pageCSS}</style>
 </head>
 <body>
-  <div style="max-width:${landscape ? '100%' : '800px'};margin:0 auto;padding:20px;">
+  <div style="max-width:${landscape ? '100%' : '800px'};margin:0 auto;padding:${landscape ? '0' : '20px'};">
     <table class="page-wrap">
       <tbody><tr><td>${html}</td></tr></tbody>
       <tfoot><tr><td><div class="page-wrap-space"></div></td></tr></tfoot>
@@ -288,15 +309,16 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
           </tr>`).join('');
 
         return `
-          <div style="margin-top: 24px; margin-bottom: 8px; padding: 10px 14px; background-color: #f1f5f9; border-left: 5px solid #1e4a8d; border-radius: 6px;">
-            <div style="font-size: 12.5pt; font-weight: 900; text-transform: uppercase; color: #0f172a; letter-spacing: 0.05em;">
-              ${escapeHtml(houseName)} <span style="font-size: 10pt; font-weight: 700; color: #1e4a8d; margin-left: 8px;">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
+          <div class="house-head">
+            <div class="house-name">
+              ${escapeHtml(houseName)} <span class="house-count">(${group.list.length} Resident${group.list.length === 1 ? '' : 's'})</span>
               ${group.status !== 'accredited' ? '<span class="badge badge-amber" style="margin-left:8px">Archived Property</span>' : ''}
             </div>
-            ${group.location ? `<div style="font-size: 10pt; color: #334155; margin-top: 4px; font-weight: 600;">Address: ${escapeHtml(group.location)}</div>` : ''}
-            ${(group.owner || group.phone) ? `<div style="font-size: 10pt; color: #334155; margin-top: 2px; font-weight: 600;">Owner: ${escapeHtml(group.owner || 'N/A')}${group.phone ? ` &nbsp;&bull;&nbsp; Contact: ${escapeHtml(group.phone)}` : ''}</div>` : ''}
+            ${group.location ? `<div class="house-meta">Address: ${escapeHtml(group.location)}</div>` : ''}
+            ${(group.owner || group.phone) ? `<div class="house-meta">Owner: ${escapeHtml(group.owner || 'N/A')}${group.phone ? ` &nbsp;&bull;&nbsp; Contact: ${escapeHtml(group.phone)}` : ''}</div>` : ''}
           </div>
           <table>
+            <colgroup><col style="width:31%"><col style="width:8%"><col style="width:23%"><col style="width:9%"><col style="width:15%"><col style="width:14%"></colgroup>
             <thead><tr>
               <th>Student Resident</th><th class="text-center">Sex</th><th>Course / Year</th>
               <th>Room</th><th>Guardian</th><th class="text-right">Emergency Contact</th>
@@ -305,7 +327,7 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
           </table>`;
       }).join('');
 
-  openPrintWindow(`
+  openPrintWindow(`<div class="compact-report">
     <div class="header">
       <div class="header-left">
         <img src="${CSPC_LOGO}" alt="CSPC" onerror="this.style.display='none'" />
@@ -332,7 +354,8 @@ export function printEmergencyRegistry(residents, targetArea, reportDate, course
     </div>
     <div class="print-footer">
       Camarines Sur Polytechnic Colleges &mdash; Office of Student Affairs and Services (SASO) &bull; Official Institutional Document &bull; &copy; 2026
-    </div>`, 'Emergency Registry Residence Report', true);
+    </div>
+  </div>`, 'Emergency Registry Residence Report', true);
 }
 
 /** TRANSACTIONS REPORT */

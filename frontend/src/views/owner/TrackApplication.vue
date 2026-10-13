@@ -103,6 +103,31 @@ const editLabel = (status) => (status === 'REVISION_REQUIRED' ? 'Respond to revi
 // Badge colours for this page only; STATUS_INFO.badge is also used by the admin screens.
 const STATUS_TONES = { SUBMITTED: 'tone-submitted', UNDER_REVIEW: 'tone-review', REVISION_REQUIRED: 'tone-revision', RESUBMITTED: 'tone-resubmitted', APPROVED: 'tone-approved', ACCOUNT_PENDING: 'tone-approved', ACTIVE: 'tone-active', REJECTED: 'tone-rejected' };
 const statusTone = (status) => STATUS_TONES[status] || 'tone-neutral';
+// Progress tracker (like parcel tracking): which stage each status has reached
+const TRACK_STAGES = [
+  { label: 'Submitted', icon: 'fa-paper-plane' },
+  { label: 'Under review', icon: 'fa-magnifying-glass' },
+  { label: 'Approved', icon: 'fa-circle-check' },
+  { label: 'Accredited', icon: 'fa-award' }
+];
+const STAGE_OF = { SUBMITTED: 0, RESUBMITTED: 0, UNDER_REVIEW: 1, REVISION_REQUIRED: 1, REJECTED: 1, APPROVED: 2, ACCOUNT_PENDING: 2, ACTIVE: 3 };
+const stageState = (status, index) => {
+  const at = STAGE_OF[status] ?? 0;
+  if (index < at) return 'is-done';
+  if (index > at) return 'is-todo';
+  if (status === 'REJECTED') return 'is-failed';
+  if (status === 'REVISION_REQUIRED') return 'is-warning';
+  return status === 'ACTIVE' ? 'is-done' : 'is-current';
+};
+const stageLabel = (status, index) => {
+  if (index === STAGE_OF[status]) {
+    if (status === 'REVISION_REQUIRED') return 'Revision required';
+    if (status === 'REJECTED') return 'Not approved';
+    if (status === 'RESUBMITTED') return 'Resubmitted';
+  }
+  return TRACK_STAGES[index].label;
+};
+const initials = (name) => String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'A';
 // Display only: long remarks start collapsed to a few lines; "Show more" reveals the full text.
 const openText = ref({});
 const isLongText = (text, chars) => String(text || '').length > chars || String(text || '').split('\n').length > 3;
@@ -116,37 +141,20 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
 
 <template>
   <div class="min-h-screen bg-[#f4f7fb] font-sans text-[#243449]">
-    <main class="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-      <header class="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 sm:px-5 py-3 mb-5">
+    <main :class="['mx-auto px-4 sm:px-6 py-5 sm:py-8', submittedTicket && signedIn ? 'max-w-6xl' : 'max-w-4xl']">
+      <header class="track-hero">
         <router-link to="/" class="track-focus flex items-center gap-3 min-w-0 rounded-lg">
-          <img src="/img/CSPC_logo.png" alt="" class="w-9 h-9 object-contain shrink-0" />
-          <h1 class="text-base sm:text-lg font-semibold text-[#142b4a] truncate">Track My Application</h1>
+          <span class="track-hero-logo"><img src="/img/CSPC_logo.png" alt="" class="w-8 h-8 object-contain" /></span>
+          <span class="min-w-0">
+            <h1 class="text-base sm:text-xl font-bold text-white truncate">Track My Application</h1>
+            <span class="block text-[12.5px] text-blue-100 truncate">CSPC Boarding House Finder · Property accreditation</span>
+          </span>
         </router-link>
-        <button v-if="signedIn" type="button" @click="signOut" class="track-focus shrink-0 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-lg">
+        <button v-if="signedIn" type="button" @click="signOut" class="track-focus track-hero-btn">
           <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>Sign out
         </button>
       </header>
 
-      <div v-if="submittedTicket && signedIn" role="status" class="mb-5 bg-white border border-emerald-200 rounded-xl overflow-hidden">
-        <p class="flex items-center gap-2 px-5 py-3 bg-emerald-50 border-b border-emerald-100 text-sm font-semibold text-emerald-800">
-          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>Application submitted
-        </p>
-        <div class="px-5 py-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-          <div class="min-w-0">
-            <p class="text-[13px] text-slate-500">Reference number</p>
-            <p class="font-mono text-xl sm:text-2xl font-semibold text-[#142b4a] tracking-wide select-all track-wrap mt-0.5">{{ submittedRef }}</p>
-            <dl class="track-facts mt-3 text-sm">
-              <dt>Property</dt><dd>{{ submittedTicket.name }}</dd>
-              <dt>Submitted</dt><dd>{{ formatDate(submittedTicket.submitted_at, true) }}</dd>
-              <dt>Status</dt><dd><span :class="['track-badge', statusTone(submittedTicket.status)]">{{ STATUS_INFO[submittedTicket.status]?.label || submittedTicket.status }}</span></dd>
-            </dl>
-            <p class="mt-3 text-[13px] leading-relaxed text-slate-600 max-w-prose">Save this reference number to identify this application. Verify your registered email when you return.</p>
-          </div>
-          <button type="button" @click="copyReference" class="track-focus track-btn track-btn-secondary justify-self-start">
-            <i :class="['fa-solid', referenceCopied ? 'fa-check' : 'fa-copy']" aria-hidden="true"></i>{{ referenceCopied ? 'Copied' : 'Copy reference' }}
-          </button>
-        </div>
-      </div>
       <div v-if="updatedRef && signedIn" role="status" class="mb-5 flex items-start gap-2.5 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-900">
         <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i>
         <p class="min-w-0 track-wrap">{{ updatedStatus === 'RESUBMITTED' ? 'Your revision was resubmitted to SASO for' : 'Your changes were saved for' }} <span class="font-semibold">{{ updatedRef }}</span>.</p>
@@ -163,11 +171,43 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
         <i class="fa-solid fa-spinner fa-spin mr-2 text-[#245b99]" aria-hidden="true"></i>Loading your applications…
       </div>
       <!-- Dashboard -->
-      <template v-if="signedIn && !isLoading">
-        <section class="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="min-w-0">
-            <p class="font-semibold text-[#142b4a] track-wrap">{{ applicant.name }}</p>
-            <p v-if="applicant.email" class="text-[13px] text-slate-600 track-wrap">{{ applicant.email }}</p>
+      <div v-if="signedIn && !isLoading" :class="['track-layout', { 'has-side': submittedTicket }]">
+        <aside v-if="submittedTicket" role="status" class="track-ticket track-side">
+          <div class="track-ticket-head">
+            <span class="track-ticket-icon"><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+            <div class="min-w-0">
+              <p class="text-base font-bold text-emerald-900">Application submitted</p>
+              <p class="text-[13px] text-emerald-800/80">SASO will review your property. You can follow its progress below.</p>
+            </div>
+          </div>
+          <div class="track-ticket-body is-stacked">
+            <!-- Reference "stub" -->
+            <div class="track-ref">
+              <p class="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Reference number</p>
+              <p class="font-mono text-xl sm:text-2xl font-bold text-[#142b4a] tracking-wider select-all track-wrap">{{ submittedRef }}</p>
+              <button type="button" @click="copyReference" class="track-focus track-btn track-btn-secondary mt-2">
+                <i :class="['fa-solid', referenceCopied ? 'fa-check' : 'fa-copy']" aria-hidden="true"></i>{{ referenceCopied ? 'Copied' : 'Copy reference' }}
+              </button>
+            </div>
+            <div class="min-w-0">
+              <dl class="track-facts-grid">
+                <div><dt><i class="fa-solid fa-house" aria-hidden="true"></i> Property</dt><dd>{{ submittedTicket.name }}</dd></div>
+                <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i> Submitted</dt><dd>{{ formatDate(submittedTicket.submitted_at, true) }}</dd></div>
+                <div><dt><i class="fa-solid fa-signal" aria-hidden="true"></i> Status</dt><dd><span :class="['track-badge', statusTone(submittedTicket.status)]">{{ STATUS_INFO[submittedTicket.status]?.label || submittedTicket.status }}</span></dd></div>
+              </dl>
+              <p class="track-tip"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Save this reference number to identify this application. Verify your registered email when you return.</p>
+            </div>
+          </div>
+        </aside>
+        <div class="track-main min-w-0">
+        <section class="track-profile">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="track-avatar" aria-hidden="true">{{ initials(applicant.name) }}</span>
+            <div class="min-w-0">
+              <p class="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Applicant</p>
+              <p class="font-semibold text-[#142b4a] track-wrap">{{ applicant.name }}</p>
+              <p v-if="applicant.email" class="text-[13px] text-slate-600 track-wrap"><i class="fa-regular fa-envelope mr-1 text-slate-400" aria-hidden="true"></i>{{ applicant.email }}</p>
+            </div>
           </div>
           <div class="flex flex-wrap gap-2">
             <button v-if="applicant.account_status === 'ACCOUNT_PENDING'" type="button" @click="startActivation" :disabled="activation.loading"
@@ -192,11 +232,13 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
           <p class="font-medium">No applications yet.</p>
         </section>
 
-        <ul class="space-y-3">
-          <li v-for="app in applications" :key="app.reference_no || app.name" class="bg-white border border-slate-200 rounded-xl">
+        <h2 v-if="applications.length" class="track-list-title"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> My applications <span>{{ applications.length }}</span></h2>
+        <ul class="space-y-4">
+          <li v-for="app in applications" :key="app.reference_no || app.name" :class="['track-app', statusTone(app.status)]">
             <div class="px-4 sm:px-5 py-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                  <span class="track-app-icon" aria-hidden="true"><i class="fa-solid fa-building"></i></span>
                   <h2 class="min-w-0 text-base font-semibold leading-snug text-[#142b4a] track-wrap">{{ app.name }}</h2>
                   <span :class="['track-badge', statusTone(app.status)]">{{ STATUS_INFO[app.status]?.label || app.status }}</span>
                 </div>
@@ -218,6 +260,12 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
                 </router-link>
               </div>
             </div>
+            <ol class="track-steps" :aria-label="'Progress of ' + app.name">
+              <li v-for="(stage, i) in TRACK_STAGES" :key="stage.label" :class="['track-step', stageState(app.status, i)]">
+                <span class="track-step-dot"><i :class="['fa-solid', stageState(app.status, i) === 'is-failed' ? 'fa-xmark' : stageState(app.status, i) === 'is-warning' ? 'fa-pen' : stage.icon]" aria-hidden="true"></i></span>
+                <span class="track-step-label">{{ stageLabel(app.status, i) }}</span>
+              </li>
+            </ol>
             <div v-if="app.remarks" class="mx-4 sm:mx-5 mb-4 border-l-[3px] rounded-r-lg px-4 py-3" :class="app.status === 'REJECTED' ? 'border-rose-500 bg-rose-50 text-rose-900' : 'border-amber-500 bg-amber-50 text-amber-950'">
               <h3 class="text-[13px] font-semibold mb-1">SASO remarks</h3>
               <p :id="`remarks-${app.reference_no}`" :class="['text-sm leading-relaxed whitespace-pre-line track-wrap max-w-[70ch]', isLongText(app.remarks, 280) && !openText[`r:${app.reference_no}`] ? 'track-clamp-4' : '']">{{ app.remarks }}</p>
@@ -272,7 +320,8 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
             </div>
           </li>
         </ul>
-      </template>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -321,6 +370,68 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
 .tone-active { color: #fff; background: #15803d; border-color: #15803d; }
 .tone-rejected { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .tone-neutral { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+
+/* Header banner */
+.track-hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding: 16px 20px; border-radius: 18px; background: linear-gradient(120deg, #142b4a 0%, #1e4a8d 60%, #2f6fc0 100%); box-shadow: 0 10px 30px rgba(20, 43, 74, .18); }
+.track-hero-logo { width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); }
+.track-hero-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .1); color: #fff; font-size: 13px; font-weight: 600; transition: background .15s; }
+.track-hero-btn:hover { background: rgba(255, 255, 255, .22); }
+
+/* "Application submitted" ticket */
+.track-ticket { margin-bottom: 20px; background: #fff; border: 1px solid #bbf7d0; border-radius: 18px; overflow: hidden; box-shadow: 0 6px 20px rgba(22, 163, 74, .08); }
+.track-ticket-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: linear-gradient(90deg, #ecfdf5, #f0fdf4); border-bottom: 1px dashed #86efac; }
+.track-ticket-icon { width: 38px; height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #16a34a; color: #fff; font-size: 16px; box-shadow: 0 0 0 5px #dcfce7; }
+.track-ticket-body { display: grid; gap: 18px; padding: 18px 20px; }
+@media (min-width: 720px) { .track-ticket-body { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); align-items: start; } }
+.track-ref { padding: 14px 16px; border: 2px dashed #cbd5e1; border-radius: 14px; background: #f8fafc; }
+.track-facts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0; }
+.track-facts-grid > div { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 12px; }
+.track-facts-grid dt { font-size: 12px; font-weight: 600; color: #64748b; }
+.track-facts-grid dt i { margin-right: 4px; color: #94a3b8; }
+.track-facts-grid dd { margin: 4px 0 0; font-size: 14px; font-weight: 600; color: #142b4a; overflow-wrap: anywhere; }
+.track-tip { display: flex; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: #fffbeb; color: #78350f; font-size: 13px; line-height: 1.55; }
+.track-tip i { margin-top: 3px; color: #d97706; }
+
+/* Side by side on wide screens: submitted ticket (left), applicant + applications (right) */
+.track-layout.has-side { display: grid; gap: 20px; align-items: start; }
+@media (min-width: 1024px) {
+  .track-layout.has-side { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+  .track-side { position: sticky; top: 20px; margin-bottom: 0; }
+}
+.track-ticket-body.is-stacked { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* Applicant profile */
+.track-profile { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; padding: 14px 18px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; }
+@media (min-width: 640px) { .track-profile { flex-direction: row; align-items: center; justify-content: space-between; } }
+.track-avatar { width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: linear-gradient(135deg, #2f6fc0, #1e4a8d); color: #fff; font-size: 16px; font-weight: 700; }
+.track-list-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #142b4a; }
+.track-list-title i { color: #245b99; }
+.track-list-title span { padding: 0 8px; border-radius: 999px; background: #e2e8f0; color: #334155; font-size: 12px; line-height: 20px; }
+
+/* Application card: coloured edge by status */
+.track-app { position: relative; background: #fff !important; border: 1px solid #e2e8f0 !important; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 10px rgba(15, 23, 42, .04); transition: box-shadow .15s; }
+.track-app:hover { box-shadow: 0 8px 24px rgba(15, 23, 42, .08); }
+.track-app::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: currentColor; }
+.track-app > * { color: #243449; }
+.track-app.tone-active::before { background: #15803d; }
+.track-app-icon { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; background: #eff6ff; color: #1e4a8d; font-size: 13px; }
+
+/* Progress tracker */
+.track-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 16px 16px; padding: 14px 8px 10px; list-style: none; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 14px; }
+@media (min-width: 640px) { .track-steps { margin: 0 20px 18px; } }
+.track-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.track-step:not(:last-child)::after { content: ""; position: absolute; top: 15px; left: calc(50% + 20px); right: calc(-50% + 20px); height: 3px; border-radius: 3px; background: #e2e8f0; }
+.track-step.is-done:not(:last-child)::after { background: #16a34a; }
+.track-step-dot { position: relative; z-index: 1; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 13px; background: #fff; border: 2px solid #e2e8f0; color: #94a3b8; }
+.track-step-label { font-size: 12px; font-weight: 600; color: #94a3b8; line-height: 1.3; }
+.track-step.is-done .track-step-dot { background: #16a34a; border-color: #16a34a; color: #fff; }
+.track-step.is-done .track-step-label { color: #15803d; }
+.track-step.is-current .track-step-dot { background: #1e4a8d; border-color: #1e4a8d; color: #fff; box-shadow: 0 0 0 4px #dbeafe; }
+.track-step.is-current .track-step-label { color: #1e4a8d; }
+.track-step.is-warning .track-step-dot { background: #d97706; border-color: #d97706; color: #fff; box-shadow: 0 0 0 4px #fef3c7; }
+.track-step.is-warning .track-step-label { color: #b45309; }
+.track-step.is-failed .track-step-dot { background: #dc2626; border-color: #dc2626; color: #fff; box-shadow: 0 0 0 4px #fee2e2; }
+.track-step.is-failed .track-step-label { color: #b91c1c; }
 
 /* Status history */
 .track-timeline { border-left: 2px solid #e2e8f0; padding-left: 18px; margin-left: 5px; display: grid; gap: 10px; }
