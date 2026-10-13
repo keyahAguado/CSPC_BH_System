@@ -14,6 +14,8 @@ import StudentProfile from '../views/student/StudentProfile.vue';
 import StudentHouseDetails from '../views/student/HouseDetails.vue';
 import StudentBook from '../views/student/Book.vue';
 import StudentBookings from '../views/student/StudentBookings.vue';
+import StudentBookingDetails from '../views/student/BookingDetails.vue';
+import StudentNotifications from '../views/student/StudentNotifications.vue';
 
 // 3. Owner Dashboard Views
 import OwnerDashboard from '../views/owner/OwnerDashboard.vue';
@@ -138,7 +140,7 @@ const routes = [
     {
         path: '/student/notifications',
         name: 'StudentNotifications',
-        component: Notifications,
+        component: StudentNotifications,
         meta: { role: 'student', title: 'Student Notifications' }
     },
     {
@@ -147,6 +149,12 @@ const routes = [
         name: 'StudentBookings',
         component: StudentBookings,
         meta: { role: 'student', title: 'My Bookings' }
+    },
+    {
+        path: '/student/bookings/:id',
+        name: 'StudentBookingDetails',
+        component: StudentBookingDetails,
+        meta: { role: 'student', title: 'Booking Details' }
     },
     {
         path: '/student/book/:id',

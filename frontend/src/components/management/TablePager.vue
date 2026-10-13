@@ -1,6 +1,6 @@
 <script setup>
 // Data-table style pagination bar ("Showing 1 to 10 of 42 entries · Rows per page · ‹ Prev 1 2 3 Next ›").
-// Used above and below the admin tables so paging is reachable without scrolling.
+// Used above and below the admin tables so paging is reachable without scrolling; shown even when the list is empty.
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -32,7 +32,7 @@ const go = (n) => { if (n >= 1 && n <= props.totalPages && n !== props.page) emi
 </script>
 
 <template>
-  <div v-if="total > 0" :class="['tp-bar', 'is-' + position, 'no-print']">
+  <div :class="['tp-bar', 'is-' + position, 'no-print']">
     <div class="tp-info">
       <span>Showing {{ start }} to {{ end }} of {{ total }} {{ noun }}</span>
       <label v-if="perPage" class="tp-rows">

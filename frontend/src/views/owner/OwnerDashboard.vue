@@ -1,10 +1,11 @@
 <script setup>
+import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { getImageUrl } from '../../config/api';
@@ -93,6 +94,35 @@ const visibleHouses = computed(() => {
   if (listingFilter.value === 'archived') return houses.value.filter(h => h.house_status === 'archived');
   if (listingFilter.value === 'active') return houses.value.filter(h => h.house_status !== 'archived');
   return houses.value; // 'all'
+});
+
+// One property at a time: the tabs list the properties on the current page (admin-style pager),
+// and the card shows the selected one
+const SELECTED_KEY = 'cspc_owner_selected_property';
+const readSelected = () => { try { return localStorage.getItem(SELECTED_KEY) || ''; } catch { return ''; } };
+const selectedHouseId = ref(readSelected());
+const propPage = ref(1);
+const propPerPage = ref(10);
+const propTotalPages = computed(() => Math.max(1, Math.ceil(visibleHouses.value.length / propPerPage.value)));
+const propStart = computed(() => (visibleHouses.value.length ? (propPage.value - 1) * propPerPage.value + 1 : 0));
+const propEnd = computed(() => Math.min(propPage.value * propPerPage.value, visibleHouses.value.length));
+const tabHouses = computed(() => visibleHouses.value.slice(propStart.value - 1, propEnd.value));
+const shownHouse = computed(() => tabHouses.value.find(h => String(h.id) === String(selectedHouseId.value)) || tabHouses.value[0] || null);
+const shownIndex = computed(() => visibleHouses.value.indexOf(shownHouse.value));
+const selectHouse = (id) => {
+  selectedHouseId.value = String(id);
+  try { localStorage.setItem(SELECTED_KEY, String(id)); } catch { /* storage unavailable: choice lasts this visit */ }
+  const i = visibleHouses.value.findIndex(h => String(h.id) === String(id));
+  if (i >= 0) propPage.value = Math.floor(i / propPerPage.value) + 1;
+};
+const stepHouse = (step) => {
+  const next = visibleHouses.value[shownIndex.value + step];
+  if (next) selectHouse(next.id);
+};
+// Open on the page that holds the remembered property; keep the page valid when the filter changes
+watch([visibleHouses, propPerPage], () => {
+  const i = visibleHouses.value.findIndex(h => String(h.id) === String(selectedHouseId.value));
+  propPage.value = i >= 0 ? Math.floor(i / propPerPage.value) + 1 : Math.min(propPage.value, propTotalPages.value);
 });
 
 // Count of archived houses (drives the filter badge)
@@ -349,8 +379,30 @@ const loadError = ref('');
             </div>
           </div>
 
+          <div v-if="visibleHouses.length" class="od-pager"><TablePager position="top" noun="properties" :page="propPage" @update:page="propPage = $event" :total-pages="propTotalPages" :start="propStart" :end="propEnd" :total="visibleHouses.length" :per-page="propPerPage" @update:per-page="propPerPage = $event; propPage = 1" /></div>
+          <!-- Property switcher: one property is shown at a time (shown even with a single property) -->
+          <div v-if="visibleHouses.length" class="od-switcher">
+            <div class="od-switch-tabs" role="tablist" aria-label="Choose a property">
+              <button v-for="h in tabHouses" :key="h.id" type="button" role="tab"
+                      :aria-selected="shownHouse?.id === h.id" :class="['od-switch-tab', { 'is-active': shownHouse?.id === h.id }]"
+                      @click="selectHouse(h.id)">
+                <img :src="getImageUrl(h.img)" alt="" @error="e => e.target.src = '/img/cspc_bg.webp'" />
+                <span class="od-switch-text">
+                  <span class="od-switch-name">{{ h.name }}</span>
+                  <span :class="['od-switch-status', 'is-' + statusMeta(h).tone]"><span class="od-switch-dot" aria-hidden="true"></span>{{ statusMeta(h).label }}</span>
+                </span>
+                <span v-if="h.pending_count > 0" class="od-switch-count" :aria-label="h.pending_count + ' pending requests'">{{ h.pending_count }}</span>
+              </button>
+            </div>
+            <div class="od-switch-nav">
+              <span>Property {{ shownIndex + 1 }} of {{ visibleHouses.length }}</span>
+              <button type="button" aria-label="Previous property" :disabled="shownIndex <= 0" @click="stepHouse(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+              <button type="button" aria-label="Next property" :disabled="shownIndex >= visibleHouses.length - 1" @click="stepHouse(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </div>
+
           <div v-if="visibleHouses.length" class="od-list">
-            <article v-for="house in visibleHouses" :key="house.id" class="od-card">
+            <article v-for="house in (shownHouse ? [shownHouse] : [])" :key="house.id" class="od-card">
               <div class="od-media" :class="{ 'is-muted': house.house_status === 'archived' || house.house_status === 'rejected' }">
                 <img class="od-media-photo" :src="getImageUrl(house.img)" :alt="house.name" @error="e => e.target.src = '/img/cspc_bg.webp'" />
                 <span :class="['od-status', 'od-status-overlay', 'is-' + statusMeta(house).tone]"><i :class="['fa-solid', statusMeta(house).icon]" aria-hidden="true"></i>{{ statusMeta(house).label }}</span>
@@ -443,6 +495,7 @@ const loadError = ref('');
               </div>
             </article>
           </div>
+          <div v-if="visibleHouses.length" class="od-pager is-bottom"><TablePager position="bottom" noun="properties" :page="propPage" @update:page="propPage = $event" :total-pages="propTotalPages" :start="propStart" :end="propEnd" :total="visibleHouses.length" :per-page="propPerPage" @update:per-page="propPerPage = $event; propPage = 1" /></div>
 
           <div v-else class="od-panel od-empty">
             <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
@@ -631,6 +684,29 @@ const loadError = ref('');
 </template>
 
 <style scoped>
+/* Property switcher: tabs for the first properties, a dropdown for the rest, arrows to step through */
+.od-switcher { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.od-switch-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.od-switch-tab { display: inline-flex; align-items: center; gap: 10px; max-width: 260px; min-height: 0 !important; padding: 6px 12px 6px 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; }
+.od-switch-tab:hover { border-color: #bfdbfe; background: #f8fbff; }
+.od-switch-tab.is-active { border-color: #1e4a8d; background: #eff6ff; box-shadow: 0 0 0 3px rgba(30, 74, 141, .12); }
+.od-switch-tab img { width: 40px; height: 40px; flex-shrink: 0; border-radius: 9px; object-fit: cover; background: #e2e8f0; }
+.od-switch-text { display: flex; flex-direction: column; min-width: 0; }
+.od-switch-name { font-size: 13.5px; font-weight: 700; color: #142b4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.od-switch-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: #64748b; white-space: nowrap; }
+.od-switch-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.od-switch-status.is-success { color: #15803d; }
+.od-switch-status.is-warning, .od-switch-status.is-expiry { color: #b45309; }
+.od-switch-status.is-danger { color: #b91c1c; }
+.od-switch-count { flex-shrink: 0; min-width: 20px; padding: 0 6px; border-radius: 999px; background: #f59e0b; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; }
+.od-pager { margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+.od-pager.is-bottom { margin: 12px 0 0; }
+.od-switch-nav { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #64748b; }
+.od-switch-nav span { margin-right: 4px; }
+.od-switch-nav button { width: 34px; height: 34px; min-height: 34px !important; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; color: #1e4a8d; cursor: pointer; }
+.od-switch-nav button:hover:not(:disabled) { background: #eff6ff; }
+.od-switch-nav button:disabled { opacity: .4; cursor: default; }
+
 /* Owner dashboard — CSPC navy / blue / gold, Plus Jakarta Sans (tokens from admin-theme.css) */
 .od-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-bottom: 20px; }
 .od-head h1 { margin: 0; font-size: clamp(24px, 2.4vw, 30px) !important; font-weight: 700 !important; color: var(--a-heading) !important; letter-spacing: -.02em; line-height: 1.2; }

@@ -107,7 +107,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
       </div>
 
       <div class="no-print">
-        <PageHeader title="Accredited masterlist" description="All SASO-accredited boarding houses with rooms, capacity, and current occupants." />
+        <PageHeader title="Accredited masterlist" />
 
         <!-- Summary tiles -->
         <dl class="ml-tiles">
@@ -134,16 +134,16 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 
       <div v-else class="masterlist-body">
         <!-- LAPTOP / DESKTOP + PRINT: table -->
-        <div class="masterlist-card hidden md:flex md:flex-col print:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="masterlist-card admin-table-card hidden md:flex md:flex-col print:block">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="masterlist-scroll overflow-x-auto">
-            <table class="ml-table w-full" id="masterlistTable">
+            <table class="ml-table admin-table w-full" id="masterlistTable">
               <thead>
                 <tr>
                   <th scope="col">#</th>
-                  <th scope="col" class="text-left">Boarding house<small>Address / barangay</small></th>
-                  <th scope="col" class="text-left">Owner / contact</th>
+                  <th scope="col">Boarding house<small>Address / barangay</small></th>
+                  <th scope="col">Owner / contact</th>
                   <th scope="col">Total rooms</th>
                   <th scope="col">Bed capacity<small>Beds</small></th>
                   <th scope="col">Current occupants<small>Male / female</small></th>
@@ -153,24 +153,24 @@ const totals = computed(() => houses.value.reduce((t, h) => {
               </thead>
               <tbody>
                 <tr v-if="filteredHouses.length === 0">
-                  <td colspan="8" class="py-16 text-center text-slate-500 font-semibold text-sm">No accredited boarding houses found.</td>
+                  <td colspan="8" class="admin-table-empty">No accredited boarding houses found.</td>
                 </tr>
                 <tr v-for="(h, i) in filteredHouses" :key="h.id" :class="{ 'ml-off-page': !onPage(i) }">
-                  <td class="text-slate-600">{{ i + 1 }}</td>
-                  <td class="text-left">
-                    <strong class="ml-name">{{ h.name }}</strong>
-                    <span class="block text-slate-500 text-xs mt-0.5 print:hidden">{{ h.address || '—' }}</span>
-                    <span v-if="h.barangay" class="block text-slate-500 text-xs print:hidden">Brgy. {{ h.barangay }}</span>
+                  <td class="text-slate-500">{{ i + 1 }}</td>
+                  <td>
+                    <strong class="ml-name admin-table-name">{{ h.name }}</strong>
+                    <span class="admin-table-sub print:hidden">{{ h.address || '—' }}</span>
+                    <span v-if="h.barangay" class="admin-table-sub print:hidden">Brgy. {{ h.barangay }}</span>
                   </td>
-                  <td class="text-left">
-                    <span class="block text-slate-800">{{ h.owner_name }}</span>
-                    <span class="block text-slate-500 text-xs mt-1"><i class="fa-solid fa-phone text-[#1e4a8d] mr-1.5" aria-hidden="true"></i>{{ h.owner_phone || '—' }}</span>
+                  <td>
+                    <span class="admin-table-main">{{ h.owner_name }}</span>
+                    <span class="admin-table-sub"><i class="fa-solid fa-phone text-slate-500 mr-1.5" aria-hidden="true"></i>{{ h.owner_phone || '—' }}</span>
                   </td>
                   <td>{{ h.total_rooms || 0 }}</td>
                   <td>{{ h.total_capacity || 0 }}</td>
                   <td>
                     <span class="ml-mf"><span class="text-blue-600">{{ h.male_count || 0 }} M</span><span class="ml-sep">|</span><span class="text-pink-600">{{ h.female_count || 0 }} F</span></span>
-                    <span class="block text-slate-500 text-xs mt-0.5">{{ h.occupied_beds ?? h.current_occupants ?? 0 }} / {{ h.total_capacity || 0 }} total</span>
+                    <span class="admin-table-sub">{{ h.occupied_beds ?? h.current_occupants ?? 0 }} / {{ h.total_capacity || 0 }} total</span>
                   </td>
                   <td>{{ h.approved_at ? formatDay(h.approved_at) : '—' }}</td>
                   <td><span class="ml-status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>{{ h.house_status }}</span></td>
@@ -307,22 +307,13 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 .ml-off-page { display: none; }
 @media print { .ml-off-page { display: table-row !important; } }
 .masterlist-card { display: flex; flex-direction: column; }
-/* Masterlist table (navy header, grid lines, light striped rows) */
-.ml-table { border-collapse: collapse; min-width: 960px; font-size: 13px; color: #142b4a; }
-.ml-table thead th { position: sticky; top: 0; z-index: 1; padding: 9px 12px; background: #1e4a8d !important; color: #fff; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.3; border-right: 1px solid rgba(255, 255, 255, .15); text-transform: none; }
-.ml-table thead th small { display: block; font-size: 12px; font-weight: 500; color: #dbe7f7; }
-.ml-table thead th.text-left { text-align: left; }
-.ml-table tbody td { padding: 8px 12px; text-align: center; vertical-align: middle; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
-.ml-table tbody td:last-child, .ml-table thead th:last-child { border-right: 0; }
-.ml-table tbody tr:nth-child(even) td { background: #f5f8fd; }
-.ml-table tbody td.text-left { text-align: left; }
+/* Masterlist table uses the shared .admin-table look (styles/management.css) */
 .ml-thumb { width: 64px; height: 48px; flex-shrink: 0; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; }
 .ml-thumb.is-empty { display: flex; align-items: center; justify-content: center; background: #e7eef8; color: #1e4a8d; }
-.ml-name { display: block; font-weight: 700; color: #142b4a; }
 .ml-mf { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; }
 .ml-sep { color: #cbd5e1; font-weight: 400; }
-.ml-status { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: #e3f6ea; color: #15803d; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
-.ml-status i { font-size: 14px; color: #16a34a; }
+.ml-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 8px; background: #dcfce7; color: #15803d; font-size: 12px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
+.ml-status i { font-size: 12px; color: #16a34a; }
 @media print {
   .ml-table thead th { background: #fff !important; color: #0f172a !important; }
   .ml-table thead th small { color: #334155 !important; }
@@ -342,11 +333,11 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 .ml-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .ml-search { position: relative; flex: 1 1 280px; min-width: 0; }
 .ml-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.ml-search input { width: 100%; padding: 12px 16px 12px 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 14px; font-weight: 600; color: #334155; outline: none; }
+.ml-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; }
 .ml-search input::placeholder { font-weight: 400; color: #94a3b8; }
 .ml-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .ml-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.ml-print { display: inline-flex; align-items: center; gap: 8px; height: 46px; min-height: 46px !important; padding: 0 18px; border: 0; border-radius: 14px; background: #dc2626; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ml-print { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 16px; border: 0; border-radius: 10px; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .ml-print:hover { background: #b91c1c; }
 @media (max-width: 767px) { .ml-print { flex: 1 1 100%; justify-content: center; } }
 
@@ -367,6 +358,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 /* Printed copy / PDF: large, even text in every cell */
 @media print {
   .ml-table { min-width: 0 !important; width: 100% !important; }
+  .ml-table thead th, .ml-table tbody td { padding: 8px 12px !important; }
   .ml-table thead th, .ml-table thead th * { font-size: 9.5pt !important; }
   .ml-table tbody td, .ml-table tbody td * { font-size: 10.5pt !important; line-height: 1.3 !important; }
   .ml-table tbody td i { font-size: 9pt !important; }
@@ -383,5 +375,15 @@ const totals = computed(() => houses.value.reduce((t, h) => {
   .management-page .signatories-block { position: fixed !important; left: 0 !important; right: 0 !important; bottom: 0 !important; margin: 0 !important; padding: 0 0 4mm !important; background: #fff !important; }
   .sig-spacer-row { display: table-footer-group !important; }
   .sig-spacer-row td { height: 26mm !important; border: 0 !important; padding: 0 !important; background: transparent !important; }
+}
+/* Printed copy: same lines as the Compliance report: a clear border on every cell, none around
+   the empty space kept for the signature lines, and no rounded box */
+@media print {
+  .ml-table thead th, .ml-table tbody td { border: 1px solid #475569 !important; }
+  .ml-table thead th { position: static !important; }
+  .ml-table { table-layout: auto !important; border: 0 !important; }
+  .ml-table .sig-spacer-row td { border: 0 !important; }
+  .ml-table thead th, .ml-table thead th * { overflow-wrap: normal !important; word-break: keep-all !important; }
+  .masterlist-card { border: 0 !important; border-radius: 0 !important; }
 }
 </style>

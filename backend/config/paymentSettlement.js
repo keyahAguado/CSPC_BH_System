@@ -97,7 +97,7 @@ export async function settlePayment(pool, bookingId, session, studentId, allowLe
         }
         const amount = (payment.amount / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const suffix = requiresReview ? 'The reservation needs owner review; no new occupancy was created.' : 'Your room reservation is secured.';
-        await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [fb.student_id, 'PAYMENT SETTLED: Your online payment of \u20b1' + amount + ' has been verified. ' + suffix]);
+        await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)', [fb.student_id, 'PAYMENT SETTLED: Your online payment of \u20b1' + amount + ' has been verified. ' + suffix, '/student/bookings/' + b.id]);
         if (fb.house_owner_id) await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [fb.house_owner_id, 'PAYMENT RECEIVED: ' + fb.student_name + ' paid \u20b1' + amount + ' for Room ' + fb.room_number + '. ' + (requiresReview ? 'Please review this reservation; no new occupancy was created.' : 'Occupancy is recorded.')]);
         await connection.commit();
         return { success: true, requiresReview, message: requiresReview ? 'Payment received. Please contact the owner to review your reservation.' : 'Payment verified and occupancy successfully recorded.' };

@@ -1,6 +1,7 @@
 <!-- Documents.vue (Updated Script Section) -->
 <script setup>
 import LoadError from '../../components/management/LoadError.vue';
+import TablePager from '../../components/management/TablePager.vue';
 
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
@@ -364,6 +365,20 @@ const docNote = (p) => {
 
 // Collapsible sections
 const collapsed = ref({ required: false, additional: false });
+// Table paging (same pager as the admin tables); rows stay grouped as Required / Additional
+const allDocs = computed(() => [...requiredDocs.value, ...additionalDocs.value].map((p, i) => ({ doc: p, number: i + 1 })));
+const docPage = ref(1);
+const docPerPage = ref(10);
+const docTotalPages = computed(() => Math.max(1, Math.ceil(allDocs.value.length / docPerPage.value)));
+const docStart = computed(() => (allDocs.value.length ? (docPage.value - 1) * docPerPage.value + 1 : 0));
+const docEnd = computed(() => Math.min(docPage.value * docPerPage.value, allDocs.value.length));
+const docSections = computed(() => {
+  const rows = allDocs.value.slice(docStart.value - 1, docEnd.value);
+  return [
+    { key: 'required', title: 'Required documents', icon: 'fa-shield-halved', note: `Items 1–${requiredDocs.value.length}`, rows: rows.filter(r => isRequiredDoc(r.doc)) },
+    { key: 'additional', title: 'Additional documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
+  ].filter(section => section.rows.length);
+});
 
 </script>
 
@@ -415,61 +430,68 @@ const collapsed = ref({ required: false, additional: false });
           <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading documents…
         </div>
 
-        <div v-else class="dx-sections">
-          <section v-for="section in [{ key: 'required', title: 'Required Documents', icon: 'fa-shield-halved', items: requiredDocs, offset: 0 }, { key: 'additional', title: 'Additional Documents', icon: 'fa-folder-open', items: additionalDocs, offset: requiredDocs.length }]"
-                   v-show="section.items.length" :key="section.key" :class="['dx-section', 'is-' + section.key]" :aria-label="section.title">
-            <button type="button" class="dx-section-head" :aria-expanded="!collapsed[section.key]" @click="collapsed[section.key] = !collapsed[section.key]">
-              <i :class="['fa-solid', section.icon, 'dx-section-icon']" aria-hidden="true"></i>
-              <h2>{{ section.title }}</h2>
-              <span class="dx-count">{{ section.key === 'required' ? 'Required' : 'Optional' }} (Items {{ section.offset + 1 }}-{{ section.offset + section.items.length }})</span>
-              <i :class="['fa-solid', 'dx-chevron', collapsed[section.key] ? 'fa-chevron-down' : 'fa-chevron-up']" aria-hidden="true"></i>
+        <div v-else class="dt-card">
+          <TablePager position="top" noun="documents" :page="docPage" @update:page="docPage = $event" :total-pages="docTotalPages" :start="docStart" :end="docEnd" :total="allDocs.length" :per-page="docPerPage" @update:per-page="docPerPage = $event; docPage = 1" />
+          <!-- Each group title sits above its own column header; click it to collapse -->
+          <div v-for="section in docSections" :key="section.key" class="dt-group">
+            <button type="button" class="dt-group-title" :aria-expanded="!collapsed[section.key]" @click="collapsed[section.key] = !collapsed[section.key]">
+              <i :class="['fa-solid', section.icon]" aria-hidden="true"></i> {{ section.title }} <span>{{ section.note }}</span>
+              <i :class="['fa-solid', 'dt-group-chevron', collapsed[section.key] ? 'fa-chevron-down' : 'fa-chevron-up']" aria-hidden="true"></i>
             </button>
-
-            <div v-show="!collapsed[section.key]" class="dx-grid">
-              <article v-for="(p, idx) in section.items" :key="p.id || docKey(p)" class="dx-card">
-                <div class="dx-card-top">
-                  <div class="dx-info">
-                    <h3><span class="dx-num">{{ section.offset + idx + 1 }}.</span> {{ p.label }}</h3>
-                    <p v-if="docNote(p)" :class="['dx-note', 'is-' + docNote(p).tone]"><i :class="['fa-solid', docNote(p).icon]" aria-hidden="true"></i>{{ docNote(p).text }}</p>
-                  </div>
-                  <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional">Optional</span>
-                  <span v-else :class="['dx-pill', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
-                </div>
-
-                <!-- Inline update form: file + view, editable expiry date, save -->
-                <div class="dx-field">
-                  <span class="dx-label">Scanned File</span>
-                  <div class="dx-file-row">
-                    <label class="dx-file" :title="fileInputs[docKey(p)]?.name || 'Choose a scanned file'">
-                      <span class="dx-file-btn">Choose File</span>
-                      <span :class="['dx-file-name', { 'has-file': fileInputs[docKey(p)] }]">
-                        <i v-if="fileInputs[docKey(p)]" class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                        {{ fileInputs[docKey(p)] ? fileInputs[docKey(p)].name : 'No file chosen' }}
-                      </span>
-                      <input :id="'docs-file-' + docKey(p)" type="file" class="dx-sr" :aria-label="'Scanned file for ' + p.label"
-                             accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
-                             @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
-                    </label>
-                    <button v-if="documentFiles(p).length" type="button" class="dx-view" :aria-label="'View ' + p.label + ', ' + documentFiles(p).length + ' file(s)'" @click="openDocumentPreview(p)">
-                      <i class="fa-regular fa-eye" aria-hidden="true"></i> View
-                    </button>
-                    <span v-else class="dx-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
-                  </div>
-                </div>
-
-                <div class="dx-field">
-                  <label class="dx-label" :for="'docs-exp-' + docKey(p)">Expiration Date</label>
-                  <div class="dx-date-row">
-                    <input :id="'docs-exp-' + docKey(p)" type="date" min="1000-01-01" max="9999-12-31" v-model="expiryDates[docKey(p)]" class="dx-date" />
-                    <button type="button" class="dx-save" @click="saveDocumentUpdate(p)" :disabled="isUpdating[docKey(p)]">
-                      <i :class="isUpdating[docKey(p)] ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
-                      {{ isUpdating[docKey(p)] ? 'Saving' : 'Save' }}
-                    </button>
-                  </div>
-                </div>
-              </article>
+            <div v-show="!collapsed[section.key]" class="dt-scroll">
+              <table class="dt-table">
+                <thead>
+                  <tr>
+                    <th class="dt-col-num">#</th>
+                    <th>Document<small>Legal permit / clearance</small></th>
+                    <th>File<small>Image file · click View to see it</small></th>
+                    <th>Expiration date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="{ doc: p, number } in section.rows" :key="p.id || docKey(p)" :class="['dt-row', 'is-' + docTone(p)]">
+                    <td class="dt-col-num">{{ number }}</td>
+                    <td>
+                      <span class="dt-name">{{ p.label }}</span>
+                      <span :class="['dt-pill', isRequiredDoc(p) ? 'is-required' : '']">{{ isRequiredDoc(p) ? 'Required' : 'Optional' }}</span>
+                      <p v-if="docNote(p)" :class="['dx-note', 'is-' + docNote(p).tone]"><i :class="['fa-solid', docNote(p).icon]" aria-hidden="true"></i>{{ docNote(p).text }}</p>
+                    </td>
+                    <td>
+                      <div class="dt-file">
+                        <!-- View opens the submitted file(s) in the pop-up viewer -->
+                        <button v-if="documentFiles(p).length" type="button" class="dt-view" :aria-label="'View ' + p.label + ', ' + documentFiles(p).length + ' file(s)'" @click="openDocumentPreview(p)">
+                          <i class="fa-regular fa-eye" aria-hidden="true"></i> View<span v-if="documentFiles(p).length > 1"> ({{ documentFiles(p).length }})</span>
+                        </button>
+                        <span v-else class="dt-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
+                        <label class="dt-upload" :title="fileInputs[docKey(p)]?.name || 'Choose a new scanned file'">
+                          <input :id="'docs-file-' + docKey(p)" type="file" :aria-label="'Scanned file for ' + p.label"
+                                 accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
+                                 @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
+                          <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> {{ p.current_file ? 'Replace' : 'Upload' }}
+                        </label>
+                        <span v-if="fileInputs[docKey(p)]" class="dt-file-text is-ok" :title="fileInputs[docKey(p)].name"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ fileInputs[docKey(p)].name }}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="dt-date-row">
+                        <input :id="'docs-exp-' + docKey(p)" type="date" min="1000-01-01" max="9999-12-31" v-model="expiryDates[docKey(p)]" class="dt-date" :aria-label="'Expiration date of ' + p.label" />
+                        <button type="button" class="dt-save" @click="saveDocumentUpdate(p)" :disabled="isUpdating[docKey(p)]" :aria-label="'Save ' + p.label">
+                          <i :class="isUpdating[docKey(p)] ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
+                          {{ isUpdating[docKey(p)] ? 'Saving' : 'Save' }}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Optional</span>
+                      <span v-else :class="['dx-pill', 'dt-status', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </section>
+          </div>
+          <TablePager position="bottom" noun="documents" :page="docPage" @update:page="docPage = $event" :total-pages="docTotalPages" :start="docStart" :end="docEnd" :total="allDocs.length" :per-page="docPerPage" @update:per-page="docPerPage = $event; docPage = 1" />
         </div>
       </div>
     </main>
@@ -498,6 +520,54 @@ const collapsed = ref({ required: false, additional: false });
 </template>
 
 <style scoped>
+/* Legal documents table (same design as Register your Property) */
+.dt-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; }
+.dt-group + .dt-group { border-top: 1px solid #e2e8f0; }
+.dt-group-title { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 0 !important; padding: 9px 14px; background: #eef2f7; border: 0; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: .04em; text-align: left; cursor: pointer; }
+.dt-group-title > i:first-child { color: #2563eb; }
+.dt-group-title span { margin-left: 4px; font-weight: 500; color: #64748b; text-transform: none; letter-spacing: 0; }
+.dt-group-chevron { margin-left: auto; color: #64748b; }
+.dt-scroll { overflow-x: auto; }
+.dt-table { width: 100%; min-width: 900px; table-layout: fixed; border-collapse: collapse; font-size: 13px; color: #0f172a; text-align: left; }
+.dt-table thead th { padding: 9px 14px; background: #f8fafc; font-size: 12.5px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #e2e8f0; white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.dt-table thead th small { display: block; font-size: 11px; font-weight: 500; color: #64748b; }
+.dt-table thead th:nth-child(2) { width: 30%; }
+.dt-table thead th:nth-child(3) { width: 30%; }
+.dt-table thead th:nth-child(4) { width: 22%; }
+.dt-table td { padding: 9px 14px; vertical-align: middle; border-bottom: 1px solid #eef2f7; }
+.dt-table tbody tr:last-child td { border-bottom: 0; }
+.dt-col-num { width: 44px; color: #64748b; }
+.dt-row:hover td { background: #f8fbff; }
+.dt-row.is-expired td, .dt-row.is-missing td { background: #fffafa; }
+.dt-name { display: block; font-size: 13.5px; font-weight: 600; color: #0f172a; }
+.dt-pill { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: #f1f5f9; color: #64748b; }
+.dt-pill.is-required { background: #fff1f2; color: #be123c; }
+.dt-table .dx-note { margin-top: 4px; }
+.dt-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.dt-view { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 32px !important; padding: 0 12px; border: 1px solid #d6e2f3; border-radius: 9px; background: #fff; color: #1e4a8d; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dt-view:hover { background: #f5f8fc; border-color: #93c5fd; }
+.dt-view.is-disabled { color: #94a3b8; border-color: #e2e8f0; cursor: not-allowed; }
+.dt-upload { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #bfdbfe; border-radius: 9px; background: #eff6ff; color: #1d4ed8; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dt-upload:hover, .dt-upload:focus-within { background: #dbeafe; border-color: #93c5fd; }
+.dt-upload input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0 !important; opacity: 0; cursor: pointer; }
+.dt-file-text { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #15803d; font-weight: 500; }
+.dt-file-text i { margin-right: 4px; }
+.dt-date-row { display: flex; align-items: center; gap: 6px; }
+.dt-date { flex: 1; min-width: 0; height: 34px; min-height: 34px !important; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; font-size: 13px; color: #0f172a; outline: none; }
+.dt-date:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .15); }
+.dt-save { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; height: 34px; min-height: 34px !important; padding: 0 10px; border: 0; border-radius: 9px; background: #1e4a8d; color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dt-save:hover:not(:disabled) { background: #163870; }
+.dt-save:disabled { opacity: .6; cursor: default; }
+.dt-status { display: inline-block; width: 130px; text-align: center; }
+@media (max-width: 767px) {
+  .dt-table { min-width: 0; table-layout: auto; }
+  .dt-table thead { display: none; }
+  .dt-table, .dt-table tbody, .dt-table tr, .dt-table td { display: block; width: 100%; }
+  .dt-row { padding: 10px 14px; border-bottom: 1px solid #eef2f7; }
+  .dt-table td { padding: 3px 0; border: 0; }
+  .dt-col-num { display: none !important; }
+}
+
 /* Legal documents — same look as the accreditation form's Legal Documents step */
 .docs-main { flex: 1; width: 100%; max-width: 1600px !important; padding: 18px clamp(16px, 2.2vw, 32px) 18px !important; text-align: left; }
 .docs-main, .docs-main :is(h1, h2, h3, p, span, a, label, button, input, select, option, strong) { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif !important; }
@@ -579,16 +649,22 @@ const collapsed = ref({ required: false, additional: false });
 .dx-file:hover .dx-file-btn { background: #2563eb; border-color: #2563eb; color: #fff; }
 .dx-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #64748b; }
 .dx-file-name.has-file { color: #047857; font-weight: 600; }
-.owner-doc-viewer { position: fixed; inset: 0; z-index: 250; display: flex; flex-direction: column; background: #0f172a; color: white; }
-.owner-doc-dialog { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.owner-doc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; background: #142b4a; }
-.owner-doc-toolbar h2 { flex: 1; min-width: 160px; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.owner-doc-toolbar a, .owner-doc-viewer button { padding: 8px 12px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: white; }
+/* Document viewer: a centred pop-up (modal) over a dimmed page, not full screen */
+.owner-doc-viewer { position: fixed; inset: 0; z-index: 250; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, .6); backdrop-filter: blur(3px); }
+.owner-doc-dialog { display: flex; flex-direction: column; width: min(760px, 100%); max-height: min(86vh, 900px); background: #fff; color: #0f172a; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 23, 42, .35); }
+.owner-doc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 16px; background: linear-gradient(120deg, #142b4a, #1e4a8d); color: #fff; }
+.owner-doc-toolbar h2 { flex: 1; min-width: 140px; margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.owner-doc-toolbar span { font-size: 12.5px; color: #dbeafe; }
+.owner-doc-toolbar a, .owner-doc-toolbar button { display: inline-flex; align-items: center; min-height: 34px !important; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 9px; background: rgba(255, 255, 255, .12); color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.owner-doc-toolbar a:hover, .owner-doc-toolbar button:hover { background: rgba(255, 255, 255, .24); }
 .owner-doc-viewer :is(a, button):focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
-.owner-doc-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.owner-doc-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.owner-doc-stage iframe { width: 100%; height: 100%; border: 0; background: white; }
-.owner-doc-navigation { display: flex; justify-content: center; gap: 12px; padding: 12px; }
+.owner-doc-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px; background: #f1f5f9; }
+.owner-doc-stage img { max-width: 100%; max-height: calc(min(86vh, 900px) - 140px); object-fit: contain; border-radius: 8px; box-shadow: 0 4px 14px rgba(15, 23, 42, .15); }
+.owner-doc-stage iframe { width: 100%; height: calc(min(86vh, 900px) - 140px); border: 0; border-radius: 8px; background: #fff; }
+.owner-doc-stage p { color: #475569; font-size: 14px; }
+.owner-doc-navigation { display: flex; justify-content: center; gap: 10px; padding: 10px; border-top: 1px solid #e2e8f0; background: #fff; }
+.owner-doc-navigation button { min-height: 36px !important; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; color: #1e4a8d; font-size: 13px; font-weight: 600; cursor: pointer; }
+.owner-doc-navigation button:hover { background: #eff6ff; }
 .dx-file-row { flex-wrap: wrap; }
 .dx-view { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9px; border: 1px solid #d6e2f3; background: #fff; color: #1e4a8d; font-size: 12px; font-weight: 600; text-decoration: none; }
 .dx-view:hover { background: #f3f7fd; border-color: #a9c1e4; }

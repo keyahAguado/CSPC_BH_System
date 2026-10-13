@@ -1,28 +1,40 @@
 <script setup>
-import { escapeHtml } from '../../utils/htmlHelper.js';
-import { ref, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
-import { formatAddress } from '../../utils/formatAddress.js';
+import {
+  formatMoney, formatShortDate, formatCheckInShort, formatCheckOutShort, monthsLabel,
+  bookingAddress, bookingReference, checkInDateOf, isActiveBooking, isAwaitingPayment,
+  bookingStatusBadge, paymentStatusBadge, BADGE_TONE_CLASSES, needsOnlinePayment
+} from '../../utils/studentBookings.js';
+
+const PAGE_SIZE = 5;
+const STATE_KEY = 'cspc_student_bookings_state';
 
 const bookings = ref([]);
 const isLoading = ref(true);
+const loadError = ref(false);
 const alerts = ref([]);
 
 const { isOffline } = useOfflineStatus();
-
 const token = sessionStorage.getItem('cspc_token');
-import { getApiBaseUrl } from '../../config/api';
 
-const API = getApiBaseUrl();
+// Search / filter / sort / page are kept for this tab so "Back to My Bookings" restores them
+const savedState = (() => {
+  try { return JSON.parse(sessionStorage.getItem(STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
+})();
+const VIEWS = ['all', 'active', 'history', 'awaiting'];
+const STATUSES = ['', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
+const SORTS = ['recent', 'oldest', 'move_in', 'amount'];
 
-const showCancelConfirmModal = ref(false);
-const pendingCancelBookingId = ref(null);
-const showReceiptModal = ref(false);
-const activeReceipt = ref(null);
+const searchQuery = ref(typeof savedState.q === 'string' ? savedState.q : '');
+const viewFilter = ref(VIEWS.includes(savedState.view) ? savedState.view : 'all');
+const statusFilter = ref(STATUSES.includes(savedState.status) ? savedState.status : '');
+const sortBy = ref(SORTS.includes(savedState.sort) ? savedState.sort : 'recent');
+const currentPage = ref(Math.max(1, parseInt(savedState.page, 10) || 1));
 
-// Displays the polished slide-in toast notification banner in the upper right
+// Displays the slide-in toast notification banner in the upper right
 const showSystemAlert = (message, type = 'error') => {
   const id = 'alert-' + Date.now();
   const configs = {
@@ -31,148 +43,28 @@ const showSystemAlert = (message, type = 'error') => {
     warning: { borderClass: 'border-amber-500', iconClass: 'fa-triangle-exclamation', iconColorClass: 'text-amber-500', title: 'Attention Required' },
     info: { borderClass: 'border-blue-500', iconClass: 'fa-circle-info', iconColorClass: 'text-blue-500', title: 'Information' }
   };
-
   const config = configs[type] || configs.error;
-  const newAlert = { id, message, type, ...config };
-  
-  alerts.value.push(newAlert);
-
-  setTimeout(() => {
-    closeAlert(id);
-  }, 7000);
+  alerts.value.push({ id, message, type, ...config });
+  setTimeout(() => closeAlert(id), 7000);
 };
 
 const closeAlert = (id) => {
   alerts.value = alerts.value.filter(a => a.id !== id);
 };
 
-// Triggered when clicking "Cancel Reservation" - opens the custom modal
-const cancelReservation = (id) => {
-  pendingCancelBookingId.value = id;
-  showCancelConfirmModal.value = true;
-};
-
-// Executes the actual backend cancellation call
-const execCancelReservation = async () => {
-  showCancelConfirmModal.value = false;
-  const id = pendingCancelBookingId.value;
-  pendingCancelBookingId.value = null;
-  
-  if (!id) return;
-  
-  try {
-    const res = await axios.post(`/api/student/bookings/cancel/${id}`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (res.data.success) {
-      showSystemAlert('Reservation request cancelled successfully.', 'success');
-      await fetchBookings();
-    }
-  } catch (err) {
-    console.error('Cancel booking failed:', err);
-    showSystemAlert(err.response?.data?.message || 'Unable to cancel. Please check your connection and try again.', 'error');
-  }
-};
-
-// Safely parse current user session
-let currentUserObj = {};
-try {
-  const userRaw = sessionStorage.getItem('cspc_user');
-  if (userRaw && userRaw !== 'undefined') {
-    currentUserObj = JSON.parse(userRaw);
-  }
-} catch (e) {
-  console.error("Corrupted student storage parser:", e);
-}
-const currentUser = currentUserObj;
-
 const fetchBookings = async () => {
   try {
     isLoading.value = true;
+    loadError.value = false;
     const res = await axios.get(`/api/student/bookings`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     bookings.value = res.data.bookings || [];
   } catch (e) {
     console.error('Failed to load bookings', e);
-    // Silently fail — offline banner handles the UI
+    loadError.value = true;
   } finally {
     isLoading.value = false;
-  }
-};
-
-import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '—';
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch (e) {
-    return '—';
-  }
-};
-
-const getCheckoutDateDisplay = (booking) => {
-  const checkIn = booking.occupant_check_in || booking.check_in_date;
-  if (!checkIn) return '—';
-  const computedDate = computeCheckoutDate(checkIn, booking.months);
-  return formatCheckoutDateString(computedDate);
-};
-
-const formatMoney = (val) =>
-  Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const showExtendForm = ref({});
-const toggleExtend = (id) => {
-  showExtendForm.value[id] = !showExtendForm.value[id];
-};
-
-const extensionMonths = ref({});
-const requestExtension = async (bookingId) => {
-  const months = extensionMonths.value[bookingId] || 1;
-  try {
-    await axios.post(`/api/student/bookings/extend/${bookingId}`, { extension_months: months }, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    await fetchBookings();
-    showExtendForm.value[bookingId] = false;
-    showSystemAlert('Stay extension request submitted successfully.', 'success');
-  } catch (e) {
-    console.error('Extension failed', e);
-    showSystemAlert(e.response?.data?.message || 'Unable to submit extension. Please check your connection and try again.', 'error');
-  }
-};
-
-const isPaying = ref({});
-
-const paymentNeedsReview = (booking) => booking.payment_method === 'paymongo' && !!booking.paymongo_payment_id && !booking.occupant_check_in;
-
-const triggerPayment = async (booking) => {
-  if (isPaying.value[booking.id]) return;
-  try {
-    isPaying.value[booking.id] = true;
-    
-    // Create PayMongo checkout session
-    const response = await axios.post(`/api/payment/checkout`, {
-      bookingId: booking.id
-    }, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (response.data.success && response.data.checkoutUrl) {
-      // Redirect student to PayMongo Hosted Checkout Page
-      window.location.href = response.data.checkoutUrl;
-    } else if (response.data.success) {
-      showSystemAlert(response.data.message || 'Payment verified.', response.data.requiresReview ? 'error' : 'success');
-      await fetchBookings();
-    }
-  } catch (error) {
-    console.error('[PAYMENT ERROR] Failed to initialize checkout:', error);
-    showSystemAlert(error.response?.data?.message || 'Unable to start payment. Please check your connection and try again.', 'error');
-  } finally {
-    isPaying.value[booking.id] = false;
   }
 };
 
@@ -203,173 +95,136 @@ const checkUrlQueryOnMount = async () => {
   }
 };
 
-// Opens the custom receipt modal and loads the booking details
-const viewReceipt = (booking) => {
-  activeReceipt.value = booking;
-  showReceiptModal.value = true;
+const counts = computed(() => ({
+  all: bookings.value.length,
+  active: bookings.value.filter(isActiveBooking).length,
+  history: bookings.value.filter(b => !isActiveBooking(b)).length,
+  awaiting: bookings.value.filter(isAwaitingPayment).length
+}));
+
+const statCards = computed(() => [
+  { key: 'all', label: 'All Bookings', value: counts.value.all },
+  { key: 'active', label: 'Active', value: counts.value.active },
+  { key: 'history', label: 'Booking History', value: counts.value.history },
+  { key: 'awaiting', label: 'Awaiting Payment', value: counts.value.awaiting }
+]);
+
+const matchesView = (b) => {
+  if (viewFilter.value === 'active') return isActiveBooking(b);
+  if (viewFilter.value === 'history') return !isActiveBooking(b);
+  if (viewFilter.value === 'awaiting') return isAwaitingPayment(b);
+  return true;
 };
 
-const getReceiptPaymentMethod = (booking) => {
-  if (booking.payment_method === 'paymongo') return 'PayMongo';
-  if (booking.payment_method === 'cash') return 'Cash';
-  return 'Not recorded';
+const timeOf = (val) => {
+  const t = val ? new Date(val).getTime() : NaN;
+  return isNaN(t) ? null : t;
 };
 
-const getReceiptRentLabel = (booking) => {
-  const months = parseInt(booking.advance_months || 0);
-  return months > 0 ? `Advance Rent (${months} Mo)` : 'First Month Rent';
-};
-
-const getReceiptRentAmount = (booking) =>
-  Math.max(1, parseInt(booking.advance_months || 0)) * parseFloat(booking.monthly_rent || 0);
-
-// Triggers a compact receipt print window instead of printing the whole page
-const printReceipt = () => {
-  if (!activeReceipt.value) return;
-  const r = activeReceipt.value;
-
-  const advanceAmt = getReceiptRentAmount(r).toLocaleString('en-US', { minimumFractionDigits: 2 });
-  const depositAmt = (parseInt(r.deposit_months || 0) * parseFloat(r.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 });
-  const totalAmt = parseFloat(r.initial_payment || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
-  const refNo = `REF-${r.id.toString().padStart(4, '0')}`;
-  const printDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const depositLine = parseInt(r.deposit_months) > 0
-    ? `<tr><td>Security Deposit (${escapeHtml(r.deposit_months)} Mo)</td><td class="amt">&#8369;${depositAmt}</td></tr>`
-    : '';
-
-  // Compute check-in and check-out
-  const checkInDateRaw = r.occupant_check_in || r.check_in_date;
-  const checkInDisplay = checkInDateRaw
-    ? new Date(checkInDateRaw).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : '—';
-  const checkOutDate = computeCheckoutDate(checkInDateRaw, r.months, 0);
-  const checkOutDisplay = checkOutDate
-    ? checkOutDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : '—';
-
-  const win = window.open('', '_blank');
-  if (!win) { alert('Pop-up blocked. Please allow pop-ups and try again.'); return; }
-
-  win.document.write(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Receipt ${escapeHtml(refNo)}</title>
-  <style>
-    @page { size: 80mm auto; margin: 0; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 9pt;
-      color: #1e293b;
-      background: #fff;
-      width: 80mm;
-      padding: 6mm 8mm 10mm;
-    }
-    .center { text-align: center; }
-    .right { text-align: right; }
-    .bold { font-weight: 700; }
-    .upper { text-transform: uppercase; }
-    .divider { border: none; border-top: 1px dashed #94a3b8; margin: 6px 0; }
-    .divider-solid { border: none; border-top: 1.5px solid #1e293b; margin: 6px 0; }
-    .logo-section { text-align: center; padding-bottom: 8px; }
-    .logo-section img { width: 40px; height: 40px; object-fit: contain; }
-    .org { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; }
-    .sub { font-size: 6.5pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
-    .title { font-size: 11pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 2px; }
-    .ref { font-size: 8pt; color: #2563eb; font-weight: 700; letter-spacing: 0.1em; }
-    table { width: 100%; border-collapse: collapse; margin: 4px 0; }
-    table td { padding: 2px 0; font-size: 8.5pt; vertical-align: top; }
-    table td.label { color: #64748b; width: 45%; }
-    table td.value { font-weight: 700; text-align: right; }
-    .breakdown td { padding: 1.5px 0; font-size: 8pt; }
-    .breakdown td.amt { text-align: right; font-weight: 700; }
-    .total-row td { font-size: 10pt; font-weight: 900; padding-top: 4px; }
-    .total-row td.amt { color: #059669; }
-    .footer { text-align: center; font-size: 7pt; color: #94a3b8; margin-top: 8px; line-height: 1.5; }
-    .status-badge { display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 10px; font-size: 7pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
-  </style>
-</head>
-<body>
-  <div class="logo-section">
-    <img src="/img/CSPC_logo.png" alt="CSPC" onerror="this.style.display='none'" />
-    <div class="org">Camarines Sur Polytechnic Colleges</div>
-    <div class="sub">Boarding House Management System</div>
-  </div>
-
-  <hr class="divider-solid" />
-
-  <div class="center title">Payment Receipt</div>
-  <div class="center ref">${escapeHtml(refNo)}</div>
-  <div class="center" style="margin-top:3px"><span class="status-badge">Paid &mdash; ${getReceiptPaymentMethod(r)}</span></div>
-
-  <hr class="divider" />
-
-  <table>
-    <tr><td class="label">Printed On</td><td class="value">${printDate}</td></tr>
-    <tr><td class="label">Resident</td><td class="value upper">${escapeHtml(r.resident_name || '')}</td></tr>
-    <tr><td class="label">Boarding House</td><td class="value upper">${escapeHtml(r.house_name || '')}</td></tr>
-    <tr><td class="label">Room</td><td class="value">Room ${escapeHtml(r.room_number || 'N/A')}</td></tr>
-    <tr><td class="label">Duration</td><td class="value">${escapeHtml(r.months || 0)} Month(s)</td></tr>
-    <tr><td class="label">Check-In</td><td class="value">${checkInDisplay}</td></tr>
-    <tr><td class="label">Check-Out</td><td class="value" style="color:#2563eb">${checkOutDisplay}</td></tr>
-    <tr><td class="label">Monthly Rent</td><td class="value">&#8369;${parseFloat(r.monthly_rent || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>
-  </table>
-
-  <hr class="divider" />
-
-  <table class="breakdown">
-    <tr>
-      <td colspan="2" style="font-size:7pt;font-weight:900;text-transform:uppercase;color:#94a3b8;letter-spacing:0.1em;padding-bottom:3px">
-        Move-in Cost Breakdown
-      </td>
-    </tr>
-    <tr><td>${escapeHtml(getReceiptRentLabel(r))}</td><td class="amt">&#8369;${advanceAmt}</td></tr>
-    ${depositLine}
-    <tr class="total-row">
-      <td class="bold upper">Total Paid</td>
-      <td class="amt">&#8369;${totalAmt}</td>
-    </tr>
-  </table>
-
-  <hr class="divider-solid" />
-
-  <div class="footer">
-    Official receipt for move-in cost payment.<br/>Keep this for your records.
-  </div>
-
-  <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() { 
-        window.print();
-        setTimeout(function() { window.close(); }, 500);
-      }, 400);
+const filteredBookings = computed(() => {
+  const terms = searchQuery.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const list = bookings.value
+    .map((b, index) => ({ b, index }))
+    .filter(({ b }) => {
+      if (!matchesView(b)) return false;
+      if (statusFilter.value && b.status !== statusFilter.value) return false;
+      if (!terms.length) return true;
+      const haystack = [b.house_name, `room ${b.room_number}`, b.room_number, bookingAddress(b), bookingReference(b)]
+        .filter(Boolean).join(' ').toLowerCase();
+      return terms.every(t => haystack.includes(t));
     });
-    window.onafterprint = function() {
-      window.close();
-    };
-  <\/script>
-</body>
-</html>`);
-  win.document.close();
+
+  const byBooked = (dir) => (x, y) => ((timeOf(x.b.booking_date) ?? 0) - (timeOf(y.b.booking_date) ?? 0)) * dir || x.index - y.index;
+  if (sortBy.value === 'recent') {
+    // Active bookings first, then past ones, newest booking first within each group
+    list.sort((x, y) => Number(isActiveBooking(y.b)) - Number(isActiveBooking(x.b)) || byBooked(-1)(x, y));
+  } else if (sortBy.value === 'oldest') {
+    list.sort(byBooked(1));
+  } else if (sortBy.value === 'move_in') {
+    list.sort((x, y) => {
+      const tx = timeOf(checkInDateOf(x.b));
+      const ty = timeOf(checkInDateOf(y.b));
+      if (tx === null && ty === null) return x.index - y.index;
+      if (tx === null) return 1;
+      if (ty === null) return -1;
+      return tx - ty || x.index - y.index;
+    });
+  } else if (sortBy.value === 'amount') {
+    list.sort((x, y) => (Number(y.b.amount) || 0) - (Number(x.b.amount) || 0) || x.index - y.index);
+  }
+  return list.map(item => item.b);
+});
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredBookings.value.length / PAGE_SIZE)));
+const pageStart = computed(() => filteredBookings.value.length === 0 ? 0 : (currentPage.value - 1) * PAGE_SIZE + 1);
+const pageEnd = computed(() => Math.min(currentPage.value * PAGE_SIZE, filteredBookings.value.length));
+const pagedBookings = computed(() =>
+  filteredBookings.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE)
+);
+
+// Page buttons: first, last, and one either side of the current page, with gaps as "…"
+const pageButtons = computed(() => {
+  const total = totalPages.value;
+  const keep = new Set([1, total, currentPage.value - 1, currentPage.value, currentPage.value + 1]
+    .filter(n => n >= 1 && n <= total));
+  const list = [];
+  let prev = 0;
+  [...keep].sort((a, b) => a - b).forEach(n => {
+    if (n - prev > 1) list.push('gap-' + n);
+    list.push(n);
+    prev = n;
+  });
+  return list;
+});
+
+const goToPage = (n) => {
+  if (n >= 1 && n <= totalPages.value) currentPage.value = n;
 };
 
-// Combined mounting hook runs standard fetch and checks redirection query parameters
+watch([searchQuery, viewFilter, statusFilter, sortBy], () => { currentPage.value = 1; });
+
+watch([totalPages, isLoading], ([total, loading]) => {
+  if (!loading && currentPage.value > total) currentPage.value = total;
+}, { immediate: true });
+
+watch([searchQuery, viewFilter, statusFilter, sortBy, currentPage], () => {
+  try {
+    sessionStorage.setItem(STATE_KEY, JSON.stringify({
+      q: searchQuery.value, view: viewFilter.value, status: statusFilter.value, sort: sortBy.value, page: currentPage.value
+    }));
+  } catch (e) {}
+});
+
+const resetFilters = () => {
+  searchQuery.value = '';
+  viewFilter.value = 'all';
+  statusFilter.value = '';
+  sortBy.value = 'recent';
+};
+
+const tableTitle = computed(() => ({
+  all: 'Your booking history',
+  active: 'Active bookings',
+  history: 'Past bookings',
+  awaiting: 'Bookings awaiting payment'
+}[viewFilter.value]));
+
+const badgeClass = (badge) => BADGE_TONE_CLASSES[badge.tone] || BADGE_TONE_CLASSES.slate;
+
 onMounted(() => {
   fetchBookings();
   checkUrlQueryOnMount();
 });
 </script>
 
-
 <template>
-  <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
+  <div class="bg-[#f6f8fb] min-h-screen font-sans text-slate-800 pb-20">
     <StudentNav />
 
-    <!-- Alert Panel (Tailwind slide-in toasts) -->
+    <!-- Alert Panel (slide-in toasts) -->
     <div class="fixed top-8 right-8 z-[9999] max-w-sm w-full px-4 pointer-events-none space-y-4">
-      <div v-for="alert in alerts" :key="alert.id" 
-           class="pointer-events-auto flex items-stretch bg-white border-l-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-r-xl transition-all duration-500 ease-out transform overflow-hidden" 
+      <div v-for="alert in alerts" :key="alert.id"
+           class="pointer-events-auto relative flex items-stretch bg-white border-l-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-r-xl overflow-hidden"
            :class="alert.borderClass">
         <div class="px-5 py-5 flex items-center justify-center bg-slate-50/50">
           <i class="fa-solid text-xl" :class="[alert.iconClass, alert.iconColorClass]"></i>
@@ -378,540 +233,313 @@ onMounted(() => {
           <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{{ alert.title }}</h4>
           <p class="text-[13px] font-bold text-slate-700 leading-relaxed">{{ alert.message }}</p>
         </div>
-        <button @click="closeAlert(alert.id)" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
+        <button @click="closeAlert(alert.id)" aria-label="Dismiss" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
           <i class="fa-solid fa-xmark text-xs"></i>
         </button>
       </div>
     </div>
 
-    <main class="py-12 px-6 lg:px-10 max-w-[1400px] mx-auto">
-      <header class="mb-10 text-center md:text-left">
-        <h1 class="text-3xl font-black text-slate-900 tracking-tight uppercase leading-none">My Bookings</h1>
-        <p class="text-slate-400 font-bold uppercase text-[9px] tracking-[0.2em] mt-2">Tracking your pending and confirmed stays</p>
+    <main class="max-w-[1920px] mx-auto px-4 sm:px-8 xl:px-[62px] pt-10 lg:pt-14 text-left">
+      <header>
+        <h1 class="text-[28px] sm:text-[40px] font-extrabold text-slate-900 tracking-tight uppercase leading-none">My Bookings</h1>
+        <p class="mt-3 sm:mt-4 text-[11px] sm:text-[13px] font-semibold text-slate-400 uppercase tracking-[0.18em]">View your active and past boarding house bookings</p>
       </header>
 
       <!-- Loading State -->
-      <div v-if="isLoading" class="bg-white rounded-3xl p-20 text-center shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
-        <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase tracking-widest text-[9px]">Loading bookings...</p>
+      <div v-if="isLoading" class="mt-8 bg-white rounded-2xl p-20 text-center border border-slate-200 flex flex-col items-center justify-center">
+        <div class="w-8 h-8 border-4 border-blue-700 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p class="text-slate-400 font-semibold text-sm">Loading your bookings…</p>
       </div>
 
-      <!-- Offline Banner -->
-      <div v-else-if="isOffline" class="bg-white rounded-3xl p-20 text-center shadow-sm border-2 border-dashed border-amber-200">
-        <svg class="w-12 h-12 text-amber-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
-        </svg>
-        <p class="text-amber-600 font-black uppercase tracking-widest text-[11px] mb-2">No Internet Connection</p>
-        <p class="text-slate-400 font-bold text-[10px]">Please connect to the internet to view your bookings.</p>
+      <!-- Offline -->
+      <div v-else-if="isOffline" class="mt-8 bg-white rounded-2xl p-16 text-center border-2 border-dashed border-amber-200">
+        <i class="fa-solid fa-wifi text-3xl text-amber-300 mb-4"></i>
+        <p class="text-amber-600 font-bold uppercase tracking-widest text-xs mb-2">No Internet Connection</p>
+        <p class="text-slate-400 font-medium text-sm">Please connect to the internet to view your bookings.</p>
       </div>
 
-      <!-- Bookings Container -->
-      <div v-else-if="bookings.length > 0" class="space-y-6">
-        
-        <!-- DESKTOP TABLE VIEW (Visible on tablet & desktop screens) -->
-        <div class="hidden md:block bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse" style="min-width:1100px; table-layout:fixed;">
-              <colgroup>
-                <col style="width:22%" />
-                <col style="width:16%" />
-                <col style="width:30%" />
-                <col style="width:11%" />
-                <col style="width:21%" />
-              </colgroup>
-              <thead>
-                <tr class="bg-slate-50 border-b-2 border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <th class="px-5 py-4 text-left">Boarding House</th>
-                  <th class="px-5 py-4 text-left">Duration &amp; Dates</th>
-                  <th class="px-5 py-4 text-center">Payment Details</th>
-                  <th class="px-5 py-4 text-left">Booked On</th>
-                  <th class="px-5 py-4 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody class="text-[13px] font-semibold text-slate-700 divide-y divide-slate-100">
-                <tr
-                  v-for="booking in bookings"
-                  :key="booking.id"
-                  class="hover:bg-slate-50/40 transition-colors group align-top"
-                >
-                  <!-- House Info -->
-                  <td class="px-5 py-5 align-top">
-                    <p class="text-sm font-black text-slate-900 uppercase tracking-tight group-hover:text-blue-600 transition-colors leading-snug">
-                      {{ booking.house_name }}
-                    </p>
-                    <p class="text-[10px] text-slate-400 font-bold mt-1.5 tracking-wide flex items-start gap-1.5 leading-snug">
-                      <i class="fa-solid fa-location-dot text-[9px] text-blue-500 shrink-0 mt-0.5"></i>
-                      <span>{{ formatAddress({ barangay: booking.house_barangay, location: booking.house_location }) || 'Address Pending' }}</span>
-                    </p>
-                  </td>
+      <!-- Load error -->
+      <div v-else-if="loadError" class="mt-8 bg-white rounded-2xl p-16 text-center border border-rose-100">
+        <i class="fa-solid fa-circle-exclamation text-3xl text-rose-400 mb-4"></i>
+        <p class="text-slate-900 font-bold mb-1">Unable to load your bookings</p>
+        <p class="text-slate-400 text-sm mb-5">Something went wrong. Please try again.</p>
+        <button type="button" @click="fetchBookings" class="bg-[#1e4b8f] hover:bg-[#163a70] text-white text-sm font-bold px-5 py-2.5 rounded-lg transition">Retry</button>
+      </div>
 
-                  <!-- Duration + Dates -->
-                  <td class="px-5 py-5 align-top">
-                    <span class="text-sm font-black text-blue-600 block">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                    <div v-if="booking.check_in_date || booking.occupant_check_in" class="mt-2 space-y-1.5">
-                      <div class="flex items-center gap-2">
-                        <span class="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase tracking-widest shrink-0 leading-none">IN</span>
-                        <span class="text-xs font-bold text-slate-700">{{ formatDate(booking.occupant_check_in || booking.check_in_date) }}</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="text-[8px] font-black bg-blue-100 text-blue-600 px-1 py-0.5 rounded uppercase tracking-widest shrink-0 leading-none">OUT</span>
-                        <span class="text-xs font-black text-blue-600">{{ getCheckoutDateDisplay(booking) }}</span>
-                      </div>
-                    </div>
-                  </td>
+      <!-- Empty -->
+      <div v-else-if="bookings.length === 0" class="mt-8 p-16 border-2 border-dashed border-slate-200 rounded-2xl bg-white flex flex-col items-center justify-center gap-3 text-center">
+        <i class="fa-solid fa-calendar-xmark text-4xl text-slate-300"></i>
+        <p class="text-slate-500 font-bold">You have no bookings yet.</p>
+        <router-link to="/student/dashboard" class="text-[#1e4b8f] font-bold text-sm hover:underline">Browse boarding houses</router-link>
+      </div>
 
-                  <!-- Payment Details -->
-                  <td class="px-5 py-5 align-top text-center">
-                    <!-- Total + rate -->
-                    <p class="text-xl font-black text-slate-900 leading-none">₱{{ formatMoney(booking.amount) }}</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-1">₱{{ formatMoney(booking.monthly_rent) }}/month × {{ booking.months }} month{{ booking.months > 1 ? 's' : '' }}</p>
-
-                    <!-- Room + method badges + Move-in cost — all in one width-constrained block -->
-                    <div class="inline-flex flex-col gap-2 mt-2">
-                      <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                        <span class="inline-block bg-blue-50 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-blue-100">Room {{ booking.room_number }}</span>
-                        <span class="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border"
-                              :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                          <i class="fa-solid text-[8px]" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                          {{ booking.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
-                        </span>
-                      </div>
-
-                      <!-- Move-in cost — same width as badges row above -->
-                      <div v-if="booking.initial_payment > 0" class="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-left w-full">
-                        <p class="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Move-in Cost</p>
-                        <p class="text-sm font-black text-emerald-700 mt-0.5">₱{{ formatMoney(booking.initial_payment) }}</p>
-                        <p class="text-[9px] font-semibold text-emerald-600/70 mt-0.5 leading-snug">
-                          <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
-                            {{ booking.advance_months }} Month Advance + {{ booking.deposit_months }} Month Deposit
-                          </template>
-                          <template v-else-if="Number(booking.advance_months) > 0">
-                            {{ booking.advance_months }} Month Advance Only
-                          </template>
-                          <template v-else-if="Number(booking.deposit_months) > 0">
-                            {{ booking.deposit_months }} Month Deposit Only
-                          </template>
-                          <template v-else>Due upon check-in</template>
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-
-                  <!-- Booked On -->
-                  <td class="px-5 py-5 align-top">
-                    <p class="text-xs font-bold text-slate-600">{{ formatDate(booking.booking_date) }}</p>
-                  </td>
-
-                  <!-- Status -->
-                  <td class="px-5 py-5 align-top text-center">
-                    <!-- Pending -->
-                    <div v-if="paymentNeedsReview(booking)" class="text-amber-700 text-xs font-semibold">
-                      Payment received: owner review needed. Please contact your property owner.
-                    </div>
-                    <div v-else-if="booking.status === 'pending'" class="flex flex-col items-center gap-3">
-                      <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
-                      <span v-if="booking.check_in_date" class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                        Requested Check-in: {{ formatDate(booking.check_in_date) }}
-                      </span>
-                      <button
-                        @click="cancelReservation(booking.id)"
-                        class="text-[9px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                      >Cancel Reservation</button>
-                    </div>
-
-                    <!-- Confirmed / Active Stay -->
-                    <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center gap-2.5">
-                      <span class="bg-emerald-50 text-emerald-700 border border-emerald-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Confirmed</span>
-
-                      <!-- Zone 2: what you can do — grouped as one quiet block -->
-                      <template v-if="booking.payment_status === 'paid'">
-                        <div class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-2">
-                          <span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest leading-none">Payment Settled</span>
-                          <button
-                            @click="viewReceipt(booking)"
-                            class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-widest transition cursor-pointer"
-                          >
-                            <i class="fa-solid fa-receipt mr-1"></i> Print Receipt
-                          </button>
-
-                          <span v-if="booking.is_extension_requested" class="mt-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100 animate-pulse block">
-                            Extension Pending (+{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }})
-                          </span>
-                          <template v-else>
-                            <button
-                              @click="toggleExtend(booking.id)"
-                              class="mt-1 text-[9px] font-black text-[#2a528a] hover:text-black uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                            >Request Extension</button>
-                            <div v-if="showExtendForm[booking.id]" class="mt-2 bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-inner w-full">
-                              <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 text-left">Additional Months:</p>
-                              <div class="flex gap-2">
-                                <input
-                                  type="number"
-                                  v-model="extensionMonths[booking.id]"
-                                  value="1"
-                                  min="1"
-                                  class="w-16 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold outline-none focus:border-blue-500 transition"
-                                >
-                                <button
-                                  @click="requestExtension(booking.id)"
-                                  class="bg-[#2a528a] text-white px-4 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-black transition cursor-pointer"
-                                >Submit</button>
-                              </div>
-                            </div>
-                          </template>
-                        </div>
-                      </template>
-
-                      <!-- AWAITING PAYMENT OPTION BRANCHES -->
-                      <template v-else>
-                        <div v-if="booking.payment_method === 'paymongo'" class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-2">
-                          <span class="text-[8px] font-black text-orange-400 uppercase tracking-widest leading-none">Awaiting Payment</span>
-                          <button
-                            @click="triggerPayment(booking)"
-                            :disabled="isPaying[booking.id]"
-                            class="bg-blue-600 hover:bg-black text-white text-[9px] font-black px-4 py-2 rounded-lg uppercase tracking-widest transition shadow-sm cursor-pointer disabled:opacity-50"
-                          >
-                            {{ isPaying[booking.id] ? 'Connecting...' : 'Pay Move-In Cost' }}
-                          </button>
-                          <button
-                            @click="cancelReservation(booking.id)"
-                            class="text-[8px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                          >Cancel Reservation</button>
-                        </div>
-
-                        <div v-else class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-1">
-                          <span class="bg-orange-50 text-orange-600 border border-orange-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Awaiting Cash Payment</span>
-                          <p class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Pay directly at boarding house</p>
-                        </div>
-                      </template>
-                    </div>
-
-                    <!-- Completed / Checked Out -->
-                    <div v-else-if="booking.status === 'completed'" class="flex flex-col items-center gap-1.5">
-                      <span class="bg-blue-50 text-blue-600 border border-blue-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-sm">Checked Out</span>
-                      <p class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Stay Completed</p>
-                      <span v-if="booking.occupant_check_out" class="text-[8px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">
-                        <i class="fa-solid fa-calendar-check text-blue-400 mr-1"></i>{{ formatDate(booking.occupant_check_out) }}
-                      </span>
-                    </div>
-
-                    <!-- Cancelled -->
-                    <span v-else-if="booking.status === 'cancelled'" class="bg-slate-50 text-slate-500 border border-slate-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Cancelled</span>
-
-                    <!-- Other/Rejected -->
-                    <span v-else class="bg-rose-50 text-rose-700 border border-rose-200/50 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest">Rejected</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <template v-else>
+        <!-- Summary cards (also act as quick view filters) -->
+        <div class="mt-7 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-3.5">
+          <button
+            v-for="card in statCards"
+            :key="card.key"
+            type="button"
+            @click="viewFilter = card.key"
+            :aria-pressed="viewFilter === card.key"
+            class="text-left bg-white rounded-xl px-5 py-[15px] sm:min-w-[146px] transition border"
+            :class="viewFilter === card.key ? 'border-[#1e4b8f] ring-1 ring-[#1e4b8f]' : 'border-slate-200 hover:border-slate-300'"
+          >
+            <span class="block text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.12em] whitespace-nowrap"
+                  :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
+            <span class="block mt-2 text-[26px] sm:text-[28px] font-bold leading-none"
+                  :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
+          </button>
         </div>
 
-        <!-- MOBILE PHONE CARD VIEW (Styled strictly matching reference design with centered balanced padding) -->
-        <div class="block md:hidden space-y-6">
-          <div
-            v-for="booking in bookings"
-            :key="`mobile-${booking.id}`"
-            class="bg-white rounded-[2.2rem] shadow-[0_12px_40px_-15px_rgba(0,0,0,0.09)] border border-slate-200/80 overflow-hidden"
-          >
-            <div class="grid grid-cols-[115px_1fr] sm:grid-cols-[140px_1fr] items-stretch">
-              
-              <!-- ROW 1: Boarding House -->
-              <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300">
-                Boarding House
-              </div>
-              <div class="p-5 text-center border-b border-slate-200 flex flex-col items-center justify-center gap-1">
-                <h3 class="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
-                  {{ booking.house_name }}
-                </h3>
-                <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 mt-0.5">
-                  <i class="fa-solid fa-location-dot text-[9px] text-blue-500"></i>
-                  <span>{{ formatAddress({ barangay: booking.house_barangay, location: booking.house_location }) || 'Address Pending' }}</span>
-                </p>
-              </div>
-
-              <!-- ROW 2: Duration -->
-              <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300">
-                Duration
-              </div>
-              <div class="p-5 text-center border-b border-slate-200 flex flex-col items-center justify-center gap-1">
-                <span class="text-base sm:text-lg font-black text-blue-600 tracking-tight">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                <div v-if="booking.check_in_date || booking.occupant_check_in" class="mt-2 space-y-1.5">
-                  <div class="flex items-center justify-center gap-2">
-                    <span class="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase tracking-widest leading-none shrink-0">IN</span>
-                    <span class="text-xs font-bold text-slate-700">{{ formatDate(booking.occupant_check_in || booking.check_in_date) }}</span>
-                  </div>
-                  <div class="flex items-center justify-center gap-2">
-                    <span class="text-[8px] font-black bg-blue-100 text-blue-600 px-1 py-0.5 rounded uppercase tracking-widest leading-none shrink-0">OUT</span>
-                    <span class="text-xs font-black text-blue-600">{{ getCheckoutDateDisplay(booking) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ROW 3: Payment Details -->
-              <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300 leading-tight">
-                Payment Details
-              </div>
-              <div class="p-5 text-center border-b border-slate-200 flex flex-col items-center justify-center gap-2">
-                <div class="leading-tight">
-                  <span class="text-base sm:text-lg font-black text-slate-900">₱{{ formatMoney(booking.amount) }}</span>
-                  <span class="block text-[9px] sm:text-[10px] font-bold text-slate-400">₱{{ formatMoney(booking.monthly_rent) }} / month</span>
-                </div>
-
-                <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                  <span class="inline-block bg-blue-50 text-blue-600 border border-blue-200/80 text-[8px] sm:text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-wider">ROOM {{ booking.room_number }}</span>
-                  <span class="inline-flex items-center gap-1 border text-[8px] sm:text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-wider"
-                        :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border-indigo-200/80' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                    <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                    {{ booking.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash' }}
-                  </span>
-                </div>
-
-                <div v-if="booking.initial_payment > 0" class="mt-1.5 bg-emerald-50 border border-emerald-100 rounded-xl w-full px-3 py-2.5 text-left">
-                  <p class="text-[8px] font-black text-emerald-700 uppercase tracking-widest">Move-in Cost</p>
-                  <p class="text-base font-black text-emerald-600 mt-0.5">₱{{ formatMoney(booking.initial_payment) }}</p>
-                  <p class="text-[9px] font-semibold text-emerald-600/70 mt-0.5 leading-snug">
-                    <template v-if="Number(booking.advance_months) > 0 && Number(booking.deposit_months) > 0">
-                      {{ booking.advance_months }} Month Advance + {{ booking.deposit_months }} Month Deposit
-                    </template>
-                    <template v-else-if="Number(booking.advance_months) > 0">
-                      {{ booking.advance_months }} Month Advance Only
-                    </template>
-                    <template v-else-if="Number(booking.deposit_months) > 0">
-                      {{ booking.deposit_months }} Month Deposit Only
-                    </template>
-                    <template v-else>Due upon check-in</template>
-                  </p>
-                </div>
-              </div>
-
-              <!-- ROW 4: Booking Date -->
-              <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300">
-                Booking Date
-              </div>
-              <div class="p-5 text-center border-b border-slate-200 flex items-center justify-center">
-                <p class="text-xs sm:text-sm font-black text-slate-900">{{ formatDate(booking.booking_date) }}</p>
-              </div>
-
-              <!-- ROW 5: Status -->
-              <div class="p-5 flex items-center justify-center text-center font-bold text-slate-400 text-[11px] uppercase tracking-wider border-r border-slate-300">
-                Status
-              </div>
-              <div class="p-5 text-center flex flex-col items-center justify-center gap-2">
-                <!-- Pending -->
-                <div v-if="paymentNeedsReview(booking)" class="text-amber-700 text-xs font-semibold">
-                  Payment received: owner review needed. Please contact your property owner.
-                </div>
-                <div v-else-if="booking.status === 'pending'" class="flex flex-col items-center gap-2.5">
-                  <span class="bg-yellow-50 text-yellow-700 border border-yellow-200/50 text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-sm">Pending Review</span>
-                  <button
-                    @click="cancelReservation(booking.id)"
-                    class="text-[9px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                  >Cancel Reservation</button>
-                </div>
-
-                <!-- Confirmed / Active Stay -->
-                <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center gap-2 w-full">
-                  <span class="bg-emerald-100 text-emerald-700 border border-emerald-200/60 text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-sm">Confirmed</span>
-
-                  <!-- Zone 2: what you can do — grouped as one quiet block -->
-                  <template v-if="booking.payment_status === 'paid'">
-                    <div class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-2">
-                      <span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest leading-none">Payment Settled</span>
-                      <button
-                        @click="viewReceipt(booking)"
-                        class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[8px] font-black px-3.5 py-1 rounded-lg uppercase tracking-widest transition cursor-pointer"
-                      >
-                        <i class="fa-solid fa-receipt mr-1"></i> Print Receipt
-                      </button>
-
-                      <span v-if="booking.is_extension_requested" class="mt-1 text-[8px] font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-lg border border-amber-100 animate-pulse block">
-                        Extension Pending (+{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }})
-                      </span>
-                      <template v-else>
-                        <button
-                          @click="toggleExtend(booking.id)"
-                          class="mt-1 text-[8px] font-black text-[#1e3a8a] hover:text-black uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                        >Request Extension</button>
-                        <div v-if="showExtendForm[booking.id]" class="mt-2 bg-slate-100/90 p-3 rounded-xl border border-slate-200 w-full max-w-[200px]">
-                          <p class="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1.5 text-center">Additional Months</p>
-                          <div class="flex items-center justify-center gap-2">
-                            <input
-                              type="number"
-                              v-model="extensionMonths[booking.id]"
-                              value="1"
-                              min="1"
-                              class="w-12 px-2 py-1 rounded-md border border-slate-300 bg-white text-xs font-bold text-center outline-none focus:border-blue-500"
-                            >
-                            <button
-                              @click="requestExtension(booking.id)"
-                              class="bg-[#1e3a8a] text-white px-3 py-1 rounded-md text-[8px] font-black uppercase tracking-widest hover:bg-black transition cursor-pointer"
-                            >Submit</button>
-                          </div>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-
-                  <template v-else>
-                    <div v-if="booking.payment_method === 'paymongo'" class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-1.5">
-                      <span class="text-[8px] font-black text-orange-400 uppercase tracking-widest leading-none">Awaiting Payment</span>
-                      <button
-                        @click="triggerPayment(booking)"
-                        :disabled="isPaying[booking.id]"
-                        class="bg-blue-600 hover:bg-black text-white text-[9px] font-black px-4 py-2 rounded-lg uppercase tracking-widest transition shadow-sm cursor-pointer disabled:opacity-50"
-                      >
-                        {{ isPaying[booking.id] ? 'Connecting...' : 'Pay Move-In Cost' }}
-                      </button>
-                      <button
-                        @click="cancelReservation(booking.id)"
-                        class="text-[7px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition underline underline-offset-4 decoration-2 cursor-pointer"
-                      >Cancel Reservation</button>
-                    </div>
-
-                    <div v-else class="mt-1 pt-3 border-t border-slate-100 w-full flex flex-col items-center gap-1">
-                      <span class="bg-orange-50 text-orange-600 border border-orange-200/50 text-[8px] font-black px-3.5 py-1 rounded-full uppercase tracking-widest shadow-sm">Awaiting Cash Payment</span>
-                      <p class="text-[7px] font-bold text-slate-400 uppercase mt-0.5">Pay directly at boarding house</p>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- Completed / Checked Out -->
-                <div v-else-if="booking.status === 'completed'" class="flex flex-col items-center gap-1">
-                  <span class="bg-blue-50 text-blue-600 border border-blue-200/50 text-[8px] font-black px-3.5 py-1 rounded-full uppercase tracking-widest shadow-sm">Checked Out</span>
-                  <p class="text-[7px] font-bold text-slate-400 uppercase mt-0.5">Stay Completed</p>
-                  <span v-if="booking.occupant_check_out" class="text-[7px] font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full mt-1">
-                    <i class="fa-solid fa-calendar-check text-blue-400 mr-1"></i>{{ formatDate(booking.occupant_check_out) }}
-                  </span>
-                </div>
-
-                <!-- Cancelled -->
-                <span v-else-if="booking.status === 'cancelled'" class="bg-slate-50 text-slate-500 border border-slate-200/50 text-[9px] font-black px-3.5 py-1 rounded-full uppercase tracking-widest">Cancelled</span>
-
-                <!-- Other/Rejected -->
-                <span v-else class="bg-rose-50 text-rose-700 border border-rose-200/50 text-[9px] font-black px-3.5 py-1 rounded-full uppercase tracking-widest">Rejected</span>
-              </div>
-
+        <!-- Search, filters, sort -->
+        <div class="mt-7 bg-white border border-slate-200 rounded-2xl p-3 sm:p-[18px] flex flex-col lg:flex-row lg:items-center gap-3">
+          <div class="relative flex-1 min-w-0">
+            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400 pointer-events-none">
+              <i class="fa-solid fa-magnifying-glass text-[12px]"></i>
+            </span>
+            <input
+              v-model="searchQuery"
+              type="text"
+              aria-label="Search bookings"
+              placeholder="Search your bookings by boarding house or room"
+              class="w-full h-12 pl-10 pr-4 bg-white border border-slate-300 rounded-lg text-[14px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-[#1e4b8f] transition"
+            >
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 lg:flex gap-3 lg:items-center">
+            <div class="relative">
+              <select v-model="viewFilter" aria-label="View" class="bk-select lg:w-[166px]">
+                <option value="all">View: All bookings</option>
+                <option value="active">View: Active</option>
+                <option value="history">View: History</option>
+                <option value="awaiting">View: Awaiting payment</option>
+              </select>
+              <i class="fa-solid fa-chevron-down bk-chevron"></i>
+            </div>
+            <div class="relative">
+              <select v-model="statusFilter" aria-label="Booking status" class="bk-select lg:w-[156px]">
+                <option value="">Booking status</option>
+                <option value="pending">Pending</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="completed">Checked out</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <i class="fa-solid fa-chevron-down bk-chevron"></i>
+            </div>
+            <div class="relative">
+              <select v-model="sortBy" aria-label="Sort bookings" class="bk-select lg:w-[156px]">
+                <option value="recent">Sort: Recent</option>
+                <option value="oldest">Sort: Oldest</option>
+                <option value="move_in">Sort: Move-in date</option>
+                <option value="amount">Sort: Total cost</option>
+              </select>
+              <i class="fa-solid fa-chevron-down bk-chevron"></i>
             </div>
           </div>
+          <button
+            type="button"
+            @click="resetFilters"
+            class="self-end lg:self-auto px-2 lg:px-3 text-[14px] font-bold text-[#1e4b8f] hover:underline whitespace-nowrap"
+          >Reset filters</button>
         </div>
 
-      </div>
+        <!-- Bookings list -->
+        <section class="mt-6 bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <div class="flex items-center justify-between gap-4 px-5 sm:px-[25px] py-5">
+            <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900">{{ tableTitle }}</h2>
+            <p class="text-[12px] sm:text-[13px] font-semibold text-slate-500 whitespace-nowrap">
+              {{ filteredBookings.length }} booking{{ filteredBookings.length === 1 ? '' : 's' }}{{ filteredBookings.length === bookings.length ? ' total' : ' found' }}
+            </p>
+          </div>
 
-      <!-- Clean Empty State -->
-      <div v-else class="p-20 border-2 border-dashed border-slate-200 rounded-[2rem] bg-white flex flex-col items-center justify-center gap-6">
-        <div class="flex flex-col items-center gap-3 opacity-30 text-center">
-          <i class="fa-solid fa-calendar-xmark text-5xl text-slate-400"></i>
-          <p class="text-slate-400 font-black uppercase text-xs tracking-[0.2em] mt-2">No bookings registered under your active account.</p>
-        </div>
-      </div>
+          <!-- No matches -->
+          <div v-if="filteredBookings.length === 0" class="border-t border-slate-200 px-6 py-16 text-center">
+            <p class="text-slate-500 font-semibold mb-3">No bookings match your search or filters.</p>
+            <button type="button" @click="resetFilters" class="text-[#1e4b8f] font-bold text-sm hover:underline">Reset filters</button>
+          </div>
+
+          <template v-else>
+            <!-- Desktop table -->
+            <div class="hidden xl:block border-t border-slate-200 overflow-x-auto">
+              <table class="w-full text-left border-collapse table-auto">
+                <thead>
+                  <tr class="bg-slate-50/70 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                    <th class="pl-5 pr-4 py-[15px] font-bold w-[26%] min-w-[220px] whitespace-nowrap">Boarding House</th>
+                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Duration &amp; Dates</th>
+                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Payment Details</th>
+                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Booked On</th>
+                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Booking Status</th>
+                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Payment Status</th>
+                    <th class="px-4 py-[15px]"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="booking in pagedBookings" :key="booking.id" class="border-t border-slate-200 hover:bg-slate-50/50 transition-colors">
+                    <td class="pl-5 pr-4 py-[22px] align-middle">
+                      <p class="text-[15px] font-bold text-slate-900 leading-snug break-words">{{ booking.house_name }}</p>
+                      <p class="mt-1.5 text-[12px] text-slate-500 flex items-start gap-1.5 leading-snug">
+                        <span class="mt-[5px] w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                        <span>{{ bookingAddress(booking) }}</span>
+                      </p>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <p class="text-[14px] font-bold text-slate-900">{{ monthsLabel(booking.months) }}</p>
+                      <p class="mt-1 text-[12px] text-slate-500"><span class="inline-block w-9">IN</span>{{ formatCheckInShort(booking) }}</p>
+                      <p class="mt-1 text-[12px] text-blue-700"><span class="inline-block w-9">OUT</span>{{ formatCheckOutShort(booking) }}</p>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <p class="text-[17px] font-bold text-slate-900 leading-tight">₱{{ formatMoney(booking.amount) }}</p>
+                      <p class="mt-1 text-[12px] text-slate-500">₱{{ formatMoney(booking.monthly_rent) }}/month</p>
+                      <p class="mt-1 text-[12px] text-slate-500">Room {{ booking.room_number }} · {{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</p>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <p class="text-[14px] font-bold text-slate-900">{{ formatShortDate(booking.booking_date) }}</p>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] whitespace-nowrap" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
+                    </td>
+                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                      <!-- Bookings that can be paid online point straight to payment -->
+                      <router-link
+                        v-if="needsOnlinePayment(booking)"
+                        :to="`/student/bookings/${booking.id}`"
+                        :aria-label="`Pay move-in cost for booking ${bookingReference(booking)} at ${booking.house_name}`"
+                        class="inline-flex items-center gap-1.5 whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white text-[13px] font-bold px-3 py-2 rounded-lg shadow-sm shadow-emerald-200 transition"
+                      >Pay now <i class="fa-solid fa-chevron-right text-[9px]"></i></router-link>
+                      <router-link
+                        v-else
+                        :to="`/student/bookings/${booking.id}`"
+                        :aria-label="`View booking ${bookingReference(booking)} at ${booking.house_name}`"
+                        class="inline-flex items-center gap-1.5 text-[14px] font-bold text-[#1e4b8f] hover:underline"
+                      >View <i class="fa-solid fa-chevron-right text-[10px]"></i></router-link>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Mobile / tablet cards -->
+            <div class="xl:hidden border-t border-slate-200 divide-y divide-slate-200">
+              <router-link
+                v-for="booking in pagedBookings"
+                :key="`m-${booking.id}`"
+                :to="`/student/bookings/${booking.id}`"
+                class="block px-5 py-5 hover:bg-slate-50/60 transition-colors"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-[15px] font-bold text-slate-900 leading-snug break-words">{{ booking.house_name }}</p>
+                    <p class="mt-1 text-[12px] text-slate-500 flex items-start gap-1.5">
+                      <span class="mt-[5px] w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                      <span>{{ bookingAddress(booking) }}</span>
+                    </p>
+                  </div>
+                  <span v-if="needsOnlinePayment(booking)" class="shrink-0 bg-emerald-600 text-white text-[12px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1">Pay now <i class="fa-solid fa-chevron-right text-[9px]"></i></span>
+                  <span v-else class="shrink-0 text-[13px] font-bold text-[#1e4b8f] flex items-center gap-1">View <i class="fa-solid fa-chevron-right text-[10px]"></i></span>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[12px]">
+                  <div>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Duration</p>
+                    <p class="mt-0.5 font-bold text-slate-900 text-[13px]">{{ monthsLabel(booking.months) }}</p>
+                    <p class="text-slate-500">IN {{ formatCheckInShort(booking) }}</p>
+                    <p class="text-blue-700">OUT {{ formatCheckOutShort(booking) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Payment</p>
+                    <p class="mt-0.5 font-bold text-slate-900 text-[14px]">₱{{ formatMoney(booking.amount) }}</p>
+                    <p class="text-slate-500">₱{{ formatMoney(booking.monthly_rent) }}/month</p>
+                    <p class="text-slate-500">Room {{ booking.room_number }} · {{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</p>
+                  </div>
+                  <div class="col-span-2">
+                    <p class="text-slate-500">Booked on <span class="font-bold text-slate-900">{{ formatShortDate(booking.booking_date) }}</span></p>
+                  </div>
+                </div>
+              </router-link>
+            </div>
+
+            <!-- Pagination -->
+            <div class="border-t border-slate-200 px-5 sm:px-[25px] py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p class="text-[13px] text-slate-500">
+                Showing <b class="text-slate-700">{{ pageStart }}–{{ pageEnd }}</b> of <b class="text-slate-700">{{ filteredBookings.length }}</b> of your bookings
+              </p>
+              <nav v-if="totalPages > 1" aria-label="Booking pages" class="flex items-center gap-[7px]">
+                <button type="button" aria-label="Previous page" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" class="bk-page">
+                  <i class="fa-solid fa-chevron-left text-[9px]"></i>
+                </button>
+                <template v-for="p in pageButtons" :key="p">
+                  <span v-if="typeof p === 'string'" class="w-5 text-center text-slate-400 text-xs">…</span>
+                  <button
+                    v-else
+                    type="button"
+                    :aria-label="`Page ${p}`"
+                    :aria-current="p === currentPage ? 'page' : undefined"
+                    @click="goToPage(p)"
+                    class="bk-page"
+                    :class="{ 'is-current': p === currentPage }"
+                  >{{ p }}</button>
+                </template>
+                <button type="button" aria-label="Next page" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" class="bk-page">
+                  <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                </button>
+              </nav>
+            </div>
+          </template>
+        </section>
+
+        <p v-if="sortBy === 'recent'" class="mt-4 text-[12px] text-slate-400">Tip: Your active bookings stay at the top, followed by your past booking history.</p>
+      </template>
     </main>
   </div>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- CUSTOM CONFIRMATION MODAL: Cancel Reservation Request      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <div v-if="showCancelConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showCancelConfirmModal = false">
-    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-      <!-- Header -->
-      <div class="bg-red-600 px-8 py-5 flex items-center gap-4">
-        <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
-          <i class="fa-solid fa-circle-xmark text-white text-xl"></i>
-        </div>
-        <h3 class="text-white font-black text-base uppercase tracking-tight">Cancel Reservation</h3>
-      </div>
-      <!-- Body -->
-      <div class="px-10 py-8 text-left">
-        <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
-          Are you sure you want to <strong class="text-red-600">cancel</strong> this reservation request?
-        </p>
-        <p class="text-slate-400 font-bold text-[11px] uppercase tracking-widest leading-relaxed">This action cannot be undone.</p>
-      </div>
-      <!-- Actions -->
-      <div class="px-10 pb-8 flex justify-end gap-4">
-        <button @click="showCancelConfirmModal = false; pendingCancelBookingId = null" class="px-8 py-3 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-500 font-black text-[11px] uppercase tracking-widest rounded-xl transition">
-          Cancel
-        </button>
-        <button @click="execCancelReservation" class="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition">
-          <i class="fa-solid fa-trash-can mr-2"></i>Confirm Cancellation
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- CUSTOM PRINTABLE RECEIPT MODAL                             -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
- <div v-if="showReceiptModal && activeReceipt" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-6" @click.self="showReceiptModal = false">
-    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left p-8 border border-slate-100 relative">
-      
-      <!-- Header / Branding -->
-      <div class="text-center border-b-2 border-dashed border-slate-200 pb-6 mb-6">
-        <h2 class="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mb-1">CSPC Boarding House System</h2>
-        <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight">Official Payment Receipt</h3>
-        <p class="text-[9px] text-slate-400 font-bold uppercase mt-1">Payment Method: {{ getReceiptPaymentMethod(activeReceipt) }}</p>
-      </div>
-
-      <!-- Receipt Body Details -->
-      <div class="space-y-4 text-xs font-semibold text-slate-600">
-        <div class="flex justify-between">
-          <span class="text-slate-400">Reference Number:</span>
-          <span class="font-mono text-slate-900 font-bold">REF-{{ activeReceipt.id.toString().padStart(4, '0') }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-400">Receipt Generated:</span>
-          <span class="text-slate-900">{{ new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-400">Resident Name:</span>
-          <span class="text-slate-900 uppercase font-bold">{{ activeReceipt.resident_name }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-400">Boarding House:</span>
-          <span class="text-slate-900 uppercase font-bold">{{ activeReceipt.house_name }}</span>
-        </div>
-        <div class="flex justify-between border-b border-slate-100 pb-3">
-          <span class="text-slate-400">Allocated Room:</span>
-          <span class="text-slate-900 font-bold">Room {{ activeReceipt.room_number }}</span>
-        </div>
-
-        <!-- Breakdown -->
-        <div class="space-y-2 pt-2">
-          <div class="flex justify-between text-slate-400 text-[10px] uppercase font-black tracking-wider">
-            <span>Description</span>
-            <span>Amount</span>
-          </div>
-          <div class="flex justify-between text-slate-700">
-            <span>{{ getReceiptRentLabel(activeReceipt) }}</span>
-            <span>₱{{ formatMoney(getReceiptRentAmount(activeReceipt)) }}</span>
-          </div>
-          <div v-if="parseInt(activeReceipt.deposit_months) > 0" class="flex justify-between text-slate-700">
-            <span>Security Deposit ({{ activeReceipt.deposit_months }} Mo)</span>
-            <span>₱{{ formatMoney(parseInt(activeReceipt.deposit_months) * parseFloat(activeReceipt.monthly_rent)) }}</span>
-          </div>
-        </div>
-
-        <!-- Total Paid -->
-        <div class="flex justify-between border-t-2 border-dashed border-slate-200 pt-5 mt-6 text-sm">
-          <span class="text-slate-900 font-black uppercase tracking-wider">TOTAL AMOUNT PAID:</span>
-          <span class="text-base font-black text-emerald-600">₱{{ formatMoney(activeReceipt.initial_payment) }}</span>
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div class="mt-8 pt-6 border-t border-slate-100 flex gap-3">
-        <button @click="printReceipt" class="flex-1 bg-blue-600 hover:bg-black text-white text-[10px] font-black py-3 rounded-xl uppercase tracking-widest transition flex items-center justify-center gap-2 cursor-pointer">
-          <i class="fa-solid fa-print"></i> Print PDF
-        </button>
-        <button @click="showReceiptModal = false; activeReceipt = null" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black py-3 rounded-xl uppercase tracking-widest transition cursor-pointer">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-    
 </template>
 
-<style>
-/* Receipt print styles no longer needed — handled by dedicated print window */
+<style scoped>
+.bk-select {
+  width: 100%;
+  height: 48px;
+  appearance: none;
+  padding: 0 36px 0 14px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  outline: none;
+  cursor: pointer;
+}
+.bk-select:focus { border-color: #1e4b8f; }
+.bk-chevron {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: #64748b;
+  pointer-events: none;
+}
+.bk-page {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  transition: border-color .15s, color .15s;
+}
+.bk-page:hover:not(:disabled):not(.is-current) { border-color: #1e4b8f; color: #1e4b8f; }
+.bk-page:disabled { opacity: .45; cursor: default; }
+.bk-page.is-current { background: #1e4b8f; border-color: #1e4b8f; color: #fff; }
 </style>

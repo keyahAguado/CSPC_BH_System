@@ -553,7 +553,7 @@ const loadError = ref('');
     <main id="management-content" tabindex="-1" class="max-w-[1450px] mx-auto py-12 px-6 flex-1 w-full text-left">
       <LoadError :message="loadError" />
       <!-- Header -->
-      <PageHeader title="Archived properties" description="Inspect archived records and restore eligible boarding houses." />
+      <PageHeader title="Archived properties" />
 
       <!-- Loading State -->
       <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 px-6 gap-6">
@@ -561,7 +561,7 @@ const loadError = ref('');
       </div>
 
       <!-- Filter Bar -->
-      <div v-if="!isLoading" class="mb-5 flex flex-col sm:flex-row items-center gap-3 animate-fade-in">
+      <div v-if="!isLoading" class="mb-4 flex flex-col sm:flex-row items-center gap-3 animate-fade-in">
         <!-- Search Input -->
         <div class="relative flex-1 min-w-0 w-full sm:w-auto">
           <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
@@ -569,16 +569,16 @@ const loadError = ref('');
             v-model="searchQuery"
             type="text"
             placeholder="Search by boarding house name, date, location..."
-            class="w-full h-[46px] pl-10 pr-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
+            class="w-full h-[40px] pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[13.5px] font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
           />
         </div>
 
         <!-- Barangay Filter Dropdown -->
-        <div class="flex items-center gap-2 bg-white border border-slate-200 px-4 h-[46px] rounded-2xl shadow-sm min-w-[220px] w-full sm:w-auto">
+        <div class="flex items-center gap-2 bg-white border border-slate-200 px-4 h-[40px] rounded-xl shadow-sm min-w-[220px] w-full sm:w-auto">
           <i class="fa-solid fa-filter text-slate-400 text-xs flex-shrink-0"></i>
           <select aria-label="selected Barangay"
             v-model="selectedBarangay"
-            class="flex-1 h-full bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer barangay-select"
+            class="flex-1 h-full bg-transparent border-none text-[13.5px] font-semibold text-slate-700 outline-none cursor-pointer barangay-select"
           >
             <option value="">All Barangays</option>
             <option v-for="b in barangays" :key="b" :value="b">{{ b }}</option>
@@ -589,7 +589,7 @@ const loadError = ref('');
         <button
           v-if="selectedBarangay || searchQuery"
           @click="selectedBarangay = ''; searchQuery = '';"
-          class="flex items-center gap-2 px-4 py-3 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-500 hover:text-red-600 rounded-2xl text-xs font-semibold uppercase tracking-wide transition whitespace-nowrap w-full sm:w-auto justify-center management-button"
+          class="flex items-center gap-2 px-4 h-[40px] bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-500 hover:text-red-600 rounded-xl text-xs font-semibold uppercase tracking-wide transition whitespace-nowrap w-full sm:w-auto justify-center management-button"
         >
           <i class="fa-solid fa-xmark"></i> Clear
         </button>
@@ -630,17 +630,17 @@ const loadError = ref('');
         </div>
 
         <!-- LAPTOP / DESKTOP VIEW: Table Layout -->
-        <div class="registered-table-card hidden lg:flex lg:flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden shadow-slate-100">
+        <div class="registered-table-card admin-table-card hidden lg:flex lg:flex-col">
           <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="startItemIndex" :end="endItemIndex" :total="filteredHouses.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
           <div class="registered-table-scroll overflow-x-auto">
-            <table class="management-registry-table w-full border-collapse">
-              <thead class="bg-slate-50">
-                <tr><th scope="col">#</th><th scope="col">Boarding house</th><th scope="col">Owner</th><th scope="col">Archived</th><th scope="col">Permits</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
+            <table class="admin-table w-full">
+              <thead>
+                <tr><th scope="col">#</th><th scope="col">Boarding house<small>Address / barangay</small></th><th scope="col">Owner / contact</th><th scope="col">Archived<small>Date / reason</small></th><th scope="col">Permits<small>Next expiry</small></th><th scope="col">Action</th></tr>
               </thead>
-              <tbody class="divide-y divide-slate-100">
+              <tbody>
                 <tr v-if="filteredHouses.length === 0">
-                  <td colspan="6" class="py-20 text-slate-400 italic text-sm text-center font-semibold">
+                  <td colspan="6" class="admin-table-empty">
                     <span v-if="selectedBarangay || searchQuery">No boarding houses match the selected filter.</span>
                     <span v-else>No archived boarding houses found.</span>
                   </td>
@@ -648,23 +648,23 @@ const loadError = ref('');
                 <tr v-for="(house, index) in paginatedHouses" :key="house.id" class="rp-row">
                   <td class="text-slate-500">{{ startItemIndex + index }}</td>
                   <td>
-                    <strong class="block text-slate-900 font-semibold">{{ house.name }}</strong>
-                    <span class="block text-slate-500 text-xs mt-1">{{ formatAddress(house) || '—' }}</span>
+                    <strong class="admin-table-name">{{ house.name }}</strong>
+                    <span class="admin-table-sub">{{ formatAddress(house) || '—' }}</span>
                   </td>
                   <td>
-                    <span class="block text-slate-800 font-medium">{{ house.owner_name }}</span>
-                    <span class="block text-slate-500 text-xs mt-1">{{ house.owner_phone || house.phone_contact || '—' }}</span>
+                    <span class="admin-table-main">{{ house.owner_name }}</span>
+                    <span class="admin-table-sub"><i class="fa-solid fa-phone text-slate-500 mr-1.5" aria-hidden="true"></i>{{ house.owner_phone || house.phone_contact || '—' }}</span>
                   </td>
                   <td>
                     <span class="rp-chip is-archived"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>{{ archivedByLabel(house) }}</span>
-                    <span class="block text-slate-500 text-xs mt-1">{{ house.archived_at ? formatDate(house.archived_at) : 'Registered ' + formatDate(house.created_at) }}</span>
-                    <span v-if="house.archive_reason" class="block text-slate-500 text-xs mt-0.5 max-w-[260px] truncate" :title="house.archive_reason">“{{ house.archive_reason }}”</span>
+                    <span class="admin-table-sub">{{ house.archived_at ? formatDate(house.archived_at) : 'Registered ' + formatDate(house.created_at) }}</span>
+                    <span v-if="house.archive_reason" class="admin-table-sub max-w-[260px] truncate" :title="house.archive_reason">“{{ house.archive_reason }}”</span>
                   </td>
                   <td>
                     <span :class="['rp-chip', 'is-' + permitSummary(house).tone]"><i :class="['fa-solid', permitSummary(house).icon]" aria-hidden="true"></i>{{ permitSummary(house).label }}</span>
-                    <span v-if="nextRequiredExpiry(house)" class="block text-slate-500 text-xs mt-1">Next: {{ expiryNote(nextRequiredExpiry(house)) }}</span>
+                    <span v-if="nextRequiredExpiry(house)" class="admin-table-sub">Next: {{ expiryNote(nextRequiredExpiry(house)) }}</span>
                   </td>
-                  <td class="text-right">
+                  <td>
                     <button type="button" class="rp-view-btn" @click="openDetail(house)" :aria-label="'View details of ' + house.name"><i class="fa-solid fa-eye" aria-hidden="true"></i> View details</button>
                   </td>
                 </tr>
@@ -997,10 +997,6 @@ const loadError = ref('');
     z-index: 1;
     background: #f8fafc;
   }
-  .registered-table-scroll :deep(td) {
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
 }
 
 /* Registry rows: the whole row opens the details panel */
@@ -1009,7 +1005,7 @@ const loadError = ref('');
 .rp-chip.is-warning { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
 .rp-chip.is-danger { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
 .rp-chip.is-star { background: #fffbeb; color: #b45309; border-color: #fde68a; }
-.rp-view-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; min-height: 38px; border-radius: 10px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+.rp-view-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 6px 12px; min-height: 34px; border-radius: 10px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
 .rp-view-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
 .rp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
 

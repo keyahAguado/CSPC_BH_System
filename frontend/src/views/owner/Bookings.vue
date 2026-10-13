@@ -2,11 +2,12 @@
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
+import TablePager from '../../components/management/TablePager.vue';
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
-import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import html2pdf from 'html2pdf.js';
@@ -80,7 +81,22 @@ const refLabel = (b) => (b.is_non_cspc
   ? (b.reference_no || `NC-${b.id.toString().padStart(4, '0')}`)
   : `REF-${b.id.toString().padStart(4, '0')}`);
 
-const fetchBookings = async () => {
+// silent: background refresh (no spinner, no error toast) used to keep the list in sync with
+// student actions such as withdrawing an extension request
+const fetchBookings = async (silent = false) => {
+  if (silent) {
+    if (isLoading.value) return;
+    try {
+      let url = `/api/owner/bookings`;
+      if (houseId.value) url += `?houseId=${houseId.value}`;
+      const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (response.data.success) {
+        bookings.value = response.data.bookings || [];
+        houseName.value = response.data.houseName || houseName.value;
+      }
+    } catch (error) { /* keep showing the current list; the next refresh will retry */ }
+    return;
+  }
   loadError.value = '';
   try {
     isLoading.value = true;
@@ -142,6 +158,8 @@ const filteredBookings = computed(() => {
 const sortBy = ref('room'); // Default sort by Room (Number & Male/Female)
 const sortOrder = ref('asc');
 
+// Sort arrow for a column key (merged columns have two sortable labels)
+const sortIcon = (col) => (sortBy.value === col ? (sortOrder.value === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort text-slate-400');
 const toggleSort = (col) => {
   if (sortBy.value === col) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
@@ -212,13 +230,8 @@ const totalPages = computed(() => {
   return Math.ceil(sortedBookings.value.length / itemsPerPage.value) || 1;
 });
 
-const prevPage = () => {
-  if (currentPage.value > 1) currentPage.value--;
-};
-
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) currentPage.value++;
-};
+const pageStart = computed(() => (sortedBookings.value.length ? (currentPage.value - 1) * itemsPerPage.value + 1 : 0));
+const pageEnd = computed(() => Math.min(currentPage.value * itemsPerPage.value, sortedBookings.value.length));
 
 const groupedHouses = computed(() => {
   const list = [];
@@ -292,6 +305,16 @@ const handleReject = (booking) => {
   );
 };
 
+// 409 = the request is no longer pending (the student withdrew it, or it was already decided)
+const extensionActionFailed = (error, fallback) => {
+  if (error?.response?.status === 409) {
+    showSystemAlert('This extension request is no longer pending — the student may have withdrawn it. The list has been updated.', 'warning');
+    fetchBookings(true);
+    return;
+  }
+  showSystemAlert(error?.response?.data?.message || fallback, 'error');
+};
+
 const handleApproveExtension = (booking) => {
   triggerConfirmModal(
     'Approve Stay Extension?',
@@ -307,7 +330,7 @@ const handleApproveExtension = (booking) => {
           fetchBookings();
         }
       } catch (error) {
-        showSystemAlert('Failed to approve extension.', 'error');
+        extensionActionFailed(error, 'Failed to approve extension.');
       }
     }
   );
@@ -328,7 +351,7 @@ const handleRejectExtension = (booking) => {
           fetchBookings();
         }
       } catch (error) {
-        showSystemAlert('Failed to reject extension.', 'error');
+        extensionActionFailed(error, 'Failed to reject extension.');
       }
     }
   );
@@ -375,8 +398,21 @@ const getCheckoutDateDisplay = (booking) => {
   return formatCheckoutDateString(computedDate);
 };
 
+// Keep the list current while the page stays open (e.g. a student withdraws an extension request)
+let refreshTimer = null;
+const refreshWhenVisible = () => { if (document.visibilityState === 'visible') fetchBookings(true); };
+
 onMounted(() => {
   fetchBookings();
+  refreshTimer = setInterval(refreshWhenVisible, 30000);
+  document.addEventListener('visibilitychange', refreshWhenVisible);
+  window.addEventListener('focus', refreshWhenVisible);
+});
+
+onUnmounted(() => {
+  clearInterval(refreshTimer);
+  document.removeEventListener('visibilitychange', refreshWhenVisible);
+  window.removeEventListener('focus', refreshWhenVisible);
 });
 
 const loadError = ref('');
@@ -548,25 +584,22 @@ const loadError = ref('');
         <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading bookings records...</p>
       </div>
 
-      <!-- Main Card Container -->
-      <div v-else class="bg-white rounded-[1.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left animate-in fade-in duration-300">
-
-        <!-- Control Bar -->
-        <div class="px-6 py-6 bg-slate-50/50 border-b border-slate-100 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 control-bar no-print">
-          <!-- Left side -->
-          <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      <template v-else>
+        <!-- Search, filter and print: their own row above the table card (like the admin lists) -->
+        <div class="bk-toolbar control-bar no-print">
+          <div class="bk-toolbar-left">
             <!-- Search bar -->
-            <div class="relative w-full sm:w-56 md:w-72">
+            <div class="bk-search">
               <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i>
               </span>
               <input aria-label="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..." type="text" v-model="searchQuery" placeholder="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..."
-                  class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[12px] font-bold tracking-wide shadow-sm focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
+                  class="bk-input w-full pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
             </div>
 
             <!-- Status Filter -->
-            <div class="relative w-full sm:w-44">
-              <select aria-label="status Filter" v-model="statusFilter" class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-[12px] font-semibold uppercase tracking-wider text-slate-700 shadow-sm focus:border-[#2a528a] outline-none cursor-pointer">
+            <div class="relative bk-status">
+              <select aria-label="status Filter" v-model="statusFilter" class="bk-input w-full px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 focus:border-[#2a528a] outline-none cursor-pointer">
                 <option value="all">ALL STATUSES</option>
                 <option value="pending">PENDING REQUESTS</option>
                 <option value="confirmed">CONFIRMED / ACTIVE</option>
@@ -577,7 +610,7 @@ const loadError = ref('');
 
           </div>
 
-          <div class="flex items-center gap-3 xl:ml-auto">
+          <div class="flex items-center gap-3">
               <!-- Print Trigger button -->
             <button @click="handlePrint"
                 class="bg-[#d9454f] hover:bg-[#b8323c] text-white px-5 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn management-button">
@@ -587,56 +620,19 @@ const loadError = ref('');
           </div>
         </div>
 
-        <!-- Top Pagination Bar -->
-        <div v-if="filteredBookings.length > 0" class="px-6 py-3.5 bg-white border-b border-slate-200/60 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-bold text-slate-500 no-print print:hidden">
-          <div class="flex items-center gap-4">
-            <span>Showing {{ Math.min((currentPage - 1) * itemsPerPage + 1, filteredBookings.length) }} to {{ Math.min(currentPage * itemsPerPage, filteredBookings.length) }} of {{ filteredBookings.length }} entries</span>
-            <div class="flex items-center gap-2">
-              <span class="text-[12px] font-bold text-slate-400">Rows per page:</span>
-              <select aria-label="items Per Page" v-model="itemsPerPage" @change="currentPage = 1" class="bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                <option :value="10">10</option>
-                <option :value="25">25</option>
-                <option :value="50">50</option>
-                <option :value="100">100</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button 
-              type="button"
-              @click="prevPage" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              <i class="fa-solid fa-chevron-left text-[12px]"></i> Prev
-            </button>
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-xl font-semibold text-xs">
-              {{ currentPage }} / {{ totalPages }}
-            </span>
-            <button 
-              type="button"
-              @click="nextPage" 
-              :disabled="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-600 transition font-bold cursor-pointer management-button management-button-secondary"
-            >
-              Next <i class="fa-solid fa-chevron-right text-[12px]"></i>
-            </button>
-          </div>
-        </div>
-
-
-
+        <!-- Table card -->
+        <div class="bg-white rounded-[1.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left animate-in fade-in duration-300">
+        <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
 
         <!-- ===== DESKTOP TABLE (hidden on mobile, hidden on print) ===== -->
         <div class="booking-table-wrapper w-full overflow-x-auto shadow-sm rounded-xl border border-slate-200 print:hidden">
-          <table class="w-full text-left border-collapse min-w-[1050px] divide-y divide-slate-200" id="bookingsTable">
+          <table class="w-full text-left border-collapse min-w-[760px] divide-y divide-slate-200" id="bookingsTable">
             <tbody class="text-[12px] font-semibold text-slate-700 divide-y divide-slate-100">
               <template v-for="hName in groupedHouses" :key="hName">
                 
                 <!-- House Group Header (Matches User Screenshot) -->
                 <tr class="bg-blue-50/50 border-y border-blue-100 house-group-header">
-                  <td colspan="10" class="px-6 py-3.5">
+                  <td colspan="6" class="px-6 py-3.5">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-3">
                         <div class="w-8 h-8 bg-[#2a528a] text-white rounded-lg flex items-center justify-center shadow-xs shrink-0">
@@ -657,129 +653,91 @@ const loadError = ref('');
                 </tr>
 
                 <!-- Column titles for this boarding house -->
+                <!-- Column titles for this boarding house. Related details share a column so the table
+                     fits without sideways scrolling; each label still sorts its own field. -->
                 <tr class="booking-col-head bg-slate-100/80 border-b border-slate-300 text-slate-800 uppercase text-[12px] font-semibold tracking-wider select-none">
-                  <th @click="toggleSort('ref')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center gap-1.5">
-                      REF NO.
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'ref' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-4 py-3 whitespace-nowrap">
+                    <button type="button" class="bk-sort" @click="toggleSort('student')">Student <i class="fa-solid" :class="sortIcon('student')"></i></button>
+                    <button type="button" class="bk-sort is-sub" @click="toggleSort('ref')">Ref no. <i class="fa-solid" :class="sortIcon('ref')"></i></button>
                   </th>
-                  <th @click="toggleSort('student')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center gap-1.5">
-                      STUDENT NAME
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'student' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-3 py-3 whitespace-nowrap">
+                    <button type="button" class="bk-sort" @click="toggleSort('room')">Room <i class="fa-solid" :class="sortIcon('room')"></i></button>
+                    <span class="bk-sub">Male / female</span>
                   </th>
-                  <th @click="toggleSort('room')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center justify-center gap-1.5">
-                      ROOM (MALE/FEMALE)
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'room' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-3 py-3 whitespace-nowrap">
+                    <button type="button" class="bk-sort" @click="toggleSort('checkin')">Check-in / out <i class="fa-solid" :class="sortIcon('checkin')"></i></button>
+                    <button type="button" class="bk-sort is-sub" @click="toggleSort('duration')">Duration <i class="fa-solid" :class="sortIcon('duration')"></i></button>
                   </th>
-                  <th @click="toggleSort('checkin')" class="px-3 py-3 text-center cursor-pointer hover:bg-slate-200/60 transition" style="min-width:110px">
-                    <div class="flex items-center justify-center gap-1.5">
-                      CHECK-IN /<br/>CHECK-OUT
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'checkin' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-3 py-3 whitespace-nowrap">
+                    <button type="button" class="bk-sort" @click="toggleSort('guardian')">Guardian <i class="fa-solid" :class="sortIcon('guardian')"></i></button>
+                    <button type="button" class="bk-sort is-sub" @click="toggleSort('contact')">Emergency contact <i class="fa-solid" :class="sortIcon('contact')"></i></button>
                   </th>
-                  <th @click="toggleSort('contact')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center justify-center gap-1.5">
-                      EMERGENCY<br/>CONTACT
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'contact' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-3 py-3 whitespace-nowrap bg-emerald-50/80 text-emerald-800">
+                    <button type="button" class="bk-sort" @click="toggleSort('rent')">Rent / total <i class="fa-solid" :class="sortIcon('rent')"></i></button>
+                    <button type="button" class="bk-sort is-sub" @click="toggleSort('payment')">Due at move-in <i class="fa-solid" :class="sortIcon('payment')"></i></button>
                   </th>
-                  <th @click="toggleSort('guardian')" class="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center gap-1.5">
-                      GUARDIAN<br/>NAME
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'guardian' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
-                  </th>
-                  <th @click="toggleSort('duration')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center justify-center gap-1.5">
-                      DURATION<br/>&amp; STAY
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'duration' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
-                  </th>
-                  <th @click="toggleSort('rent')" class="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center justify-center gap-1.5">
-                      RENT /<br/>TOTAL
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'rent' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
-                  </th>
-                  <th @click="toggleSort('payment')" class="px-4 py-3 text-left bg-emerald-50/80 text-emerald-800 cursor-pointer hover:bg-emerald-100/80 transition" style="min-width:160px">
-                    <div class="flex items-center gap-1.5">
-                      INITIAL PAYMENT<br/><span class="font-bold normal-case text-[12px] text-emerald-600">DUE (MOVE-IN)</span>
-                      <i class="fa-solid text-[12px] text-emerald-600" :class="sortBy === 'payment' ? (sortOrder === 'asc' ? 'fa-sort-up text-emerald-800' : 'fa-sort-down text-emerald-800') : 'fa-sort'"></i>
-                    </div>
-                  </th>
-                  <th @click="toggleSort('status')" class="px-4 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-slate-200/60 transition">
-                    <div class="flex items-center justify-center gap-1.5">
-                      ACTION /<br/>STATUS
-                      <i class="fa-solid text-[12px] text-slate-400" :class="sortBy === 'status' ? (sortOrder === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort'"></i>
-                    </div>
+                  <th class="px-3 py-3 text-center whitespace-nowrap">
+                    <button type="button" class="bk-sort mx-auto" @click="toggleSort('status')">Action / status <i class="fa-solid" :class="sortIcon('status')"></i></button>
                   </th>
                 </tr>
 
                 <!-- Bookings Loop (Matches User Screenshot) -->
                 <tr v-for="booking in getHouseBookings(hName)" :key="rowKey(booking)" class="hover:bg-slate-50/40 transition-colors">
-                  <td class="px-4 py-6 font-mono text-[12px] leading-relaxed">
-                    <span class="font-bold text-slate-900 text-xs block">{{ refLabel(booking) }}</span>
-                    <span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wide"
-                          :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
-                      <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                      {{ paymentMethodLabel(booking.payment_method) }}
+                  <!-- Student: name, Non-CSPC tag, reference and payment method -->
+                  <td class="px-4 py-4">
+                    <span class="block font-bold text-slate-900 text-sm">{{ booking.student_name }}</span>
+                    <span v-if="booking.is_non_cspc" class="inline-block mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold">Non-CSPC</span>
+                    <span class="flex flex-wrap items-center gap-1.5 mt-1">
+                      <span class="font-mono font-bold text-slate-600 text-[11.5px]">{{ refLabel(booking) }}</span>
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide"
+                            :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
+                        <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
+                        {{ paymentMethodLabel(booking.payment_method) }}
+                      </span>
                     </span>
                   </td>
-                  <td class="px-4 py-6 font-bold text-slate-900 text-sm whitespace-nowrap">
-                    {{ booking.student_name }}
-                    <span v-if="booking.is_non_cspc" class="block mt-1 w-fit px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold">Non-CSPC</span>
-                  </td>
-                  <td class="px-3 py-6 text-center whitespace-nowrap">
+                  <!-- Room -->
+                  <td class="px-3 py-4 whitespace-nowrap">
                     <span class="font-bold text-slate-900 text-xs block">Room {{ booking.room_number }}</span>
                     <span class="text-[12px] font-semibold uppercase tracking-wider block" :class="booking.room_gender === 'female' ? 'text-pink-500' : 'text-blue-500'">
                       {{ booking.room_gender }}
                     </span>
                   </td>
-                  <td class="px-3 py-6 text-center font-bold text-slate-800 whitespace-nowrap">
+                  <!-- Stay: check-in, check-out, duration -->
+                  <td class="px-3 py-4 whitespace-nowrap">
                     <span class="block text-xs font-bold text-slate-800">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' }}</span>
-                    <span class="block text-[12px] font-bold text-blue-600 mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
+                    <span class="block text-[12px] font-bold text-blue-600">→ {{ getCheckoutDateDisplay(booking) }}</span>
+                    <span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11.5px] font-semibold">{{ booking.months }} month{{ booking.months > 1 ? 's' : '' }}</span>
                   </td>
-                  <td class="px-3 py-6 text-center font-bold text-slate-700 text-xs whitespace-nowrap">
-                    {{ booking.emergency_contact || 'N/A' }}
+                  <!-- Guardian and emergency contact -->
+                  <td class="px-3 py-4">
+                    <span class="block font-bold text-slate-900 text-xs">{{ booking.guardian_name || 'N/A' }}</span>
+                    <span class="block text-[12px] font-semibold text-slate-600 mt-0.5 whitespace-nowrap"><i class="fa-solid fa-phone text-[10px] text-slate-400 mr-1"></i>{{ booking.emergency_contact || 'N/A' }}</span>
                   </td>
-                  <td class="px-4 py-6 font-bold text-slate-900 text-xs whitespace-nowrap">
-                    {{ booking.guardian_name || 'N/A' }}
-                  </td>
-                  <td class="px-3 py-6 text-center font-bold text-blue-600 text-xs whitespace-nowrap">
-                    <span class="block font-semibold text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-                  </td>
-                  <td class="px-3 py-6 text-center whitespace-nowrap">
-                    <span class="block text-xs font-bold text-slate-700">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}<span class="text-slate-400">/month</span></span>
-                    <span class="block text-sm font-semibold text-slate-900 mt-0.5">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span>
-                  </td>
-                  <!-- Move-in Ledger Column -->
-                  <td class="px-4 py-6 text-left bg-emerald-50/40 min-w-[180px]">
-                    <div v-if="booking.initial_payment > 0">
-                      <span class="block text-sm font-semibold text-emerald-700">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
-                      <span class="block text-[12px] font-bold text-slate-400 mt-0.5 leading-tight">
-                        Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }} +<br />
-                        Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }}
+                  <!-- Payment: rent, total, amount due at move-in -->
+                  <td class="px-3 py-4 bg-emerald-50/40 whitespace-nowrap">
+                    <span class="block text-[12px] font-bold text-slate-600">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}<span class="text-slate-400">/month</span> · <span class="text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }} total</span></span>
+                    <template v-if="booking.initial_payment > 0">
+                      <span class="block text-sm font-semibold text-emerald-700 mt-1">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span class="text-[11px] font-semibold text-emerald-600">due</span></span>
+                      <span class="block text-[11.5px] font-bold text-slate-400 leading-tight">
+                        Adv ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }} +
+                        Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}) ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }}
                       </span>
-                    </div>
-                    <span v-else class="text-slate-300 text-xs font-bold">—</span>
+                    </template>
+                    <span v-else class="block text-slate-300 text-xs font-bold mt-1">No initial payment</span>
                   </td>
                   <!-- Action/Status Column -->
-                  <td class="px-4 py-6 text-center whitespace-nowrap">
+                  <td class="px-3 py-4 text-center">
                     <!-- Screen view: Interactive buttons -->
                     <div class="print:hidden">
                       <!-- Extension actions -->
                       <div v-if="booking.is_extension_requested" class="bg-amber-50 border border-amber-200 p-2 rounded-xl mb-2">
                         <p class="text-[12px] font-semibold text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
                         <div class="flex gap-2">
-                          <button type="button" @click="handleApproveExtension(booking)" class="flex-1 bg-amber-500 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] hover:bg-black transition shadow-sm uppercase tracking-wide management-button">
+                          <button type="button" @click="handleApproveExtension(booking)" class="bk-approve flex-1 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-sm uppercase tracking-wide management-button">
                             Approve
                           </button>
-                          <button type="button" @click="handleRejectExtension(booking)" class="flex-1 bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-semibold text-[12px] hover:bg-red-600 hover:text-white transition shadow-sm uppercase tracking-wide management-button">
+                          <button type="button" @click="handleRejectExtension(booking)" class="bk-reject flex-1 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-sm uppercase tracking-wide management-button">
                             Reject
                           </button>
                         </div>
@@ -796,10 +754,10 @@ const loadError = ref('');
                         Payment received: review required. No occupancy recorded.
                       </div>
                       <div v-else-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
-                        <button @click="handleApprove(booking)" class="w-24 bg-[#108548] hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
+                        <button @click="handleApprove(booking)" class="bk-approve w-24 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button">
                           APPROVE
                         </button>
-                        <button @click="handleReject(booking)" class="w-24 bg-[#dc2626] hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
+                        <button @click="handleReject(booking)" class="bk-reject w-24 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button">
                           REJECT
                         </button>
                       </div>
@@ -835,7 +793,7 @@ const loadError = ref('');
               </template>
 
               <tr v-if="filteredBookings.length === 0">
-                <td colspan="13" class="py-20 text-center text-slate-400 font-bold uppercase tracking-wide">
+                <td colspan="6" class="py-20 text-center text-slate-400 font-bold uppercase tracking-wide">
                   No bookings found under search.
                 </td>
               </tr>
@@ -941,13 +899,35 @@ const loadError = ref('');
           </template>
         </div>
 
-      </div>
+        <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
+        </div>
+      </template>
 
     </main>
   </div>
 </template>
 
 <style>
+/* Approve = green, Reject = red (beats the portal's navy button theme) */
+.owner-page .bk-approve, .bk-approve { background: #16a34a !important; border: 1px solid #16a34a !important; color: #fff !important; }
+.owner-page .bk-approve:hover, .bk-approve:hover { background: #15803d !important; border-color: #15803d !important; }
+.owner-page .bk-reject, .bk-reject { background: #dc2626 !important; border: 1px solid #dc2626 !important; color: #fff !important; }
+.owner-page .bk-reject:hover, .bk-reject:hover { background: #b91c1c !important; border-color: #b91c1c !important; }
+
+/* Toolbar above the table card */
+.bk-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.bk-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 520px; min-width: 0; }
+.bk-search { position: relative; flex: 1 1 320px; min-width: 0; }
+.bk-status { flex: 0 0 220px; }
+.bk-input { height: 46px; min-height: 46px !important; }
+.bk-toolbar .cb-pdf-btn { height: 46px; }
+
+/* Merged column headers: each label sorts its own field */
+.bk-sort { display: flex; align-items: center; gap: 6px; padding: 0; min-height: 0 !important; background: none; border: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.bk-sort:hover { color: #1d4ed8; }
+.bk-sort.is-sub, .bk-sub { display: flex; margin-top: 2px; font-size: 11px; font-weight: 600; color: #64748b; text-transform: none; letter-spacing: 0; }
+.bk-sort i { font-size: 11px; }
+
 /* Column titles under each boarding house */
 .booking-col-head th { background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; border-bottom: 1px solid #dfe7f2; }
 .booking-col-head th * { text-transform: none !important; }

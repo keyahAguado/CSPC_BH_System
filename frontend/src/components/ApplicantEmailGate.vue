@@ -1,14 +1,61 @@
 <script setup>
-import { ref, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
+import { setApplicantToken } from '../utils/applicantSession.js';
+const route = useRoute();
+const router = useRouter();
 const email = ref('');
 const requestedEmail = ref('');
 const busy = ref(false);
 const message = ref('');
 const error = ref('');
 const cooldown = ref(false);
+const waiting = ref(false);
 let timer;
-onUnmounted(() => clearTimeout(timer));
+let poller;
+
+// The link can be opened on any device (e.g. a phone). This tab keeps checking and continues
+// by itself once the email is verified; the request survives a page reload for 30 minutes.
+const PENDING_KEY = 'cspc_applicant_pending_request';
+const savePending = (value) => { try { value ? sessionStorage.setItem(PENDING_KEY, JSON.stringify(value)) : sessionStorage.removeItem(PENDING_KEY); } catch { /* storage unavailable: polling still runs in this tab */ } };
+const readPending = () => { try { return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } };
+const stopWaiting = () => { clearInterval(poller); poller = null; waiting.value = false; };
+const checkStatus = async (requestId) => {
+  try {
+    const { data } = await axios.post('/api/applications/email/status', { requestId });
+    if (data.verified && data.token) {
+      stopWaiting(); savePending(null);
+      setApplicantToken(data.token);
+      if (data.hasApplications && route.path !== '/track') router.replace('/track');
+    } else if (data.expired) {
+      stopWaiting(); savePending(null);
+      message.value = '';
+      error.value = 'This verification link has expired or was already used. Send a new link.';
+    }
+  } catch (err) {
+    if (err.response?.status === 409 || err.response?.status === 400) {
+      stopWaiting(); savePending(null); message.value = '';
+      error.value = err.response?.data?.message || 'Send a new verification link.';
+    }
+    // Network blips and rate limits: keep waiting and try again on the next tick.
+  }
+};
+const startWaiting = (requestId) => {
+  stopWaiting();
+  waiting.value = true;
+  poller = setInterval(() => checkStatus(requestId), 3000);
+};
+onMounted(() => {
+  const pending = readPending();
+  if (pending?.requestId && pending.until > Date.now()) {
+    requestedEmail.value = pending.email; email.value = pending.email;
+    message.value = 'A verification link was sent.';
+    startWaiting(pending.requestId);
+    checkStatus(pending.requestId);
+  } else savePending(null);
+});
+onUnmounted(() => { clearTimeout(timer); stopWaiting(); });
 const request = async () => {
   error.value = ''; message.value = '';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) { error.value = 'Enter a valid personal email address.'; return; }
@@ -19,6 +66,10 @@ const request = async () => {
     message.value = data.message;
     cooldown.value = true;
     timer = setTimeout(() => { cooldown.value = false; }, 60000);
+    if (data.requestId) {
+      savePending({ requestId: data.requestId, email: requestedEmail.value, until: Date.now() + 30 * 60 * 1000 });
+      startWaiting(data.requestId);
+    }
   } catch (err) { error.value = err.response?.data?.message || 'We could not request verification. Check your connection and try again.'; }
   finally { busy.value = false; }
 };
@@ -36,7 +87,8 @@ const request = async () => {
       <p v-if="error" id="applicant-email-error" role="alert" class="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 gate-wrap">{{ error }}</p>
       <div v-if="message" role="status" class="text-sm leading-relaxed text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 space-y-1.5">
         <p class="gate-wrap">{{ message }} Check the inbox and spam folder for <span class="font-semibold">{{ requestedEmail }}</span>.</p>
-        <p>Open the link, then press Verify email to continue.</p>
+        <p>Open the link on this device or on your phone and tap <span class="font-semibold">Verify my email</span>. This page continues automatically once your email is verified.</p>
+        <p v-if="waiting" class="flex items-center gap-2 font-medium"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting for verification…</p>
         <p class="text-emerald-800">The link expires in 30 minutes. Email verification does not approve your property or create an active owner login.</p>
       </div>
       <button :disabled="busy || cooldown" class="gate-focus w-full min-h-[44px] bg-[#1e4a8d] hover:bg-[#163870] text-white text-sm font-semibold rounded-lg px-4 py-3 disabled:bg-slate-200 disabled:text-slate-600 disabled:cursor-not-allowed">{{ busy ? 'Requesting…' : cooldown ? 'Wait a minute before resending' : 'Send verification link' }}</button>
