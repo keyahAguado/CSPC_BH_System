@@ -361,48 +361,48 @@ onMounted(() => {
 
           <template v-else>
             <!-- Desktop table -->
-            <div class="hidden xl:block border-t border-slate-200 overflow-x-auto">
+            <div class="hidden lg:block border-t border-slate-200 overflow-x-auto">
               <table class="w-full text-left border-collapse table-auto">
                 <thead>
                   <tr class="bg-slate-50/70 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
-                    <th class="pl-5 pr-4 py-[15px] font-bold w-[26%] min-w-[220px] whitespace-nowrap">Boarding House</th>
-                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Duration &amp; Dates</th>
-                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Payment Details</th>
-                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Booked On</th>
-                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Booking Status</th>
-                    <th class="px-4 py-[15px] font-bold whitespace-nowrap">Payment Status</th>
-                    <th class="px-4 py-[15px]"><span class="sr-only">Actions</span></th>
+                    <th class="pl-4 pr-3 xl:pl-5 xl:pr-4 py-[15px] font-bold w-[26%] min-w-[170px] xl:min-w-[220px] whitespace-nowrap">Boarding House</th>
+                    <th class="px-3 xl:px-4 py-[15px] font-bold leading-snug whitespace-normal xl:whitespace-nowrap">Duration &amp; Dates</th>
+                    <th class="px-3 xl:px-4 py-[15px] font-bold leading-snug whitespace-normal xl:whitespace-nowrap">Payment Details</th>
+                    <th class="px-3 xl:px-4 py-[15px] font-bold leading-snug whitespace-normal xl:whitespace-nowrap">Booked On</th>
+                    <th class="px-3 xl:px-4 py-[15px] font-bold leading-snug whitespace-normal xl:whitespace-nowrap">Booking Status</th>
+                    <th class="px-3 xl:px-4 py-[15px] font-bold leading-snug whitespace-normal xl:whitespace-nowrap">Payment Status</th>
+                    <th class="px-3 xl:px-4 py-[15px]"><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="booking in pagedBookings" :key="booking.id" class="border-t border-slate-200 hover:bg-slate-50/50 transition-colors">
-                    <td class="pl-5 pr-4 py-[22px] align-middle">
+                    <td class="pl-4 pr-3 xl:pl-5 xl:pr-4 py-[22px] align-middle">
                       <p class="text-[15px] font-bold text-slate-900 leading-snug break-words">{{ booking.house_name }}</p>
                       <p class="mt-1.5 text-[12px] text-slate-500 flex items-start gap-1.5 leading-snug">
                         <span class="mt-[5px] w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
                         <span>{{ bookingAddress(booking) }}</span>
                       </p>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <p class="text-[14px] font-bold text-slate-900">{{ monthsLabel(booking.months) }}</p>
                       <p class="mt-1 text-[12px] text-slate-500"><span class="inline-block w-9">IN</span>{{ formatCheckInShort(booking) }}</p>
                       <p class="mt-1 text-[12px] text-blue-700"><span class="inline-block w-9">OUT</span>{{ formatCheckOutShort(booking) }}</p>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <p class="text-[17px] font-bold text-slate-900 leading-tight">₱{{ formatMoney(booking.amount) }}</p>
                       <p class="mt-1 text-[12px] text-slate-500">₱{{ formatMoney(booking.monthly_rent) }}/month</p>
                       <p class="mt-1 text-[12px] text-slate-500">Room {{ booking.room_number }} · {{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</p>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <p class="text-[14px] font-bold text-slate-900">{{ formatShortDate(booking.booking_date) }}</p>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
-                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
+                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] text-center leading-tight whitespace-normal xl:whitespace-nowrap" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
-                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] whitespace-nowrap" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
+                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] text-center leading-tight whitespace-normal xl:whitespace-nowrap" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
                     </td>
-                    <td class="px-4 py-[22px] align-middle whitespace-nowrap">
+                    <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <!-- Bookings that can be paid online point straight to payment -->
                       <router-link
                         v-if="needsOnlinePayment(booking)"
@@ -423,7 +423,7 @@ onMounted(() => {
             </div>
 
             <!-- Mobile / tablet cards -->
-            <div class="xl:hidden border-t border-slate-200 divide-y divide-slate-200">
+            <div class="lg:hidden border-t border-slate-200 divide-y divide-slate-200">
               <router-link
                 v-for="booking in pagedBookings"
                 :key="`m-${booking.id}`"
