@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
@@ -7,6 +7,7 @@ import StudentNav from '../../components/partials/StudentNav.vue';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 import { formatAddress } from '../../utils/formatAddress.js';
 import { formatPriceRange } from '../../utils/formatPrice.js';
+import { getImageUrl } from '../../config/api';
 
 const router = useRouter();
 const route = useRoute();
@@ -20,16 +21,61 @@ const initialCachedHouses = (() => {
   }
 })();
 
+const PAGE_SIZE = 6;
+const VISIBLE_AMENITY_OPTIONS = 4;
+const SORT_VALUES = ['default', 'price_asc', 'price_desc', 'rating'];
+const DIRECTORY_QUERY_KEYS = ['q', 'min', 'max', 'rating', 'amenity', 'loc', 'sort', 'page'];
+const DIRECTORY_STATE_KEY = 'cspc_student_directory_state';
+
+// Search, filters, sort and page live in the URL (and this tab's session) so returning
+// from a house's details page, even via "Back to Listings", restores the same view.
+const initialQuery = (() => {
+  if (DIRECTORY_QUERY_KEYS.some(k => route.query[k] !== undefined)) return route.query;
+  try {
+    return JSON.parse(sessionStorage.getItem(DIRECTORY_STATE_KEY) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+})();
+const queryList = (val) => (val === undefined || val === null ? [] : (Array.isArray(val) ? val : [val]))
+  .map(v => String(v)).filter(Boolean);
+const queryText = (val) => (Array.isArray(val) ? val[0] : val) ?? '';
+
 const houses = ref(initialCachedHouses);
 const isLoading = ref(initialCachedHouses.length === 0);
-const searchInput = ref('');
-const minPrice = ref('');
-const maxPrice = ref('');
-const selectedRatings = ref([]);
-const showLoginModal = ref(false);
+const searchInput = ref(String(queryText(initialQuery.q)));
+const minPrice = ref(String(queryText(initialQuery.min)));
+const maxPrice = ref(String(queryText(initialQuery.max)));
+const selectedRatings = ref(queryList(initialQuery.rating).map(Number).filter(n => n >= 1 && n <= 5));
+const selectedAmenities = ref(queryList(initialQuery.amenity).filter(k => /^(free|paid):./.test(k)));
+const selectedLocation = ref(String(queryText(initialQuery.loc)).toLowerCase());
+const sortBy = ref(SORT_VALUES.includes(queryText(initialQuery.sort)) ? queryText(initialQuery.sort) : 'default');
+const currentPage = ref(Math.max(1, parseInt(queryText(initialQuery.page), 10) || 1));
+const showAllAmenities = ref(false);
+const showMobileFilters = ref(false);
+const resultsTop = ref(null);
+
+// Collapsible filter sections; Location starts closed unless a location is already selected
+const openSections = ref({ ratings: true, price: true, amenities: true, location: !!selectedLocation.value });
+const toggleSection = (key) => { openSections.value[key] = !openSections.value[key]; };
+
+// Grid/List is a viewer preference only — it never changes the results or the page
+const VIEW_MODE_KEY = 'cspc_directory_view_mode';
+const viewMode = ref((() => {
+  try { return localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'grid'; } catch (e) { return 'grid'; }
+})());
+const setViewMode = (mode) => {
+  viewMode.value = mode;
+  try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch (e) {}
+};
+// Grid cards stay compact (2 chips + "+N"); the wider list rows have room for more
+const chipLimit = computed(() => (viewMode.value === 'list' ? 5 : 2));
 
 const { isOffline } = useOfflineStatus();
-const isOfflineFlag = ref(false);
+// loadError: request failed and there is nothing cached to show.
+// refreshFailed: request failed but cached listings are still being displayed.
+const loadError = ref(false);
+const refreshFailed = ref(false);
 
 const token = sessionStorage.getItem('cspc_token');
 const userRaw = sessionStorage.getItem('cspc_user');
@@ -37,17 +83,13 @@ const currentUser = userRaw ? JSON.parse(userRaw) : null;
 const isGuest = computed(() => route.query.guest === 'true' || !token);
 const displayName = computed(() => isGuest.value ? 'Guest' : (currentUser?.name || 'Guest'));
 
-
-import { getApiBaseUrl, getImageUrl } from '../../config/api';
-
-const API = getApiBaseUrl();
-
 const fetchHouses = async () => {
   try {
     if (houses.value.length === 0) {
       isLoading.value = true;
     }
-    isOfflineFlag.value = false;
+    loadError.value = false;
+    refreshFailed.value = false;
     const res = await axios.get('/api/student/houses');
     const fetched = res.data?.houses || res.data?.data || (Array.isArray(res.data) ? res.data : null);
     if (Array.isArray(fetched)) {
@@ -65,14 +107,117 @@ const fetchHouses = async () => {
         }
       }
     } catch (err) {}
-    
+
     if (houses.value.length === 0) {
-      isOfflineFlag.value = true;
+      loadError.value = true;
+    } else {
+      refreshFailed.value = true;
     }
   } finally {
     isLoading.value = false;
   }
 };
+
+// Same parsing rules as the House Details page (JSON array, double-encoded JSON, or comma list)
+const parseAmenities = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  let temp = val;
+  while (typeof temp === 'string') {
+    try {
+      const parsed = JSON.parse(temp);
+      if (temp === parsed) break; // Halts infinite loops for literal strings
+      temp = parsed;
+    } catch (e) {
+      return temp.split(',').map(item => item.trim()).filter(Boolean);
+    }
+  }
+  return Array.isArray(temp) ? temp : [];
+};
+
+const normalize = (val) => String(val || '').trim().toLowerCase();
+
+// Free amenities first, then paid ones. The key keeps free and paid apart, so a
+// student filtering for "Laundry" is not shown houses that charge for laundry.
+const amenitiesOf = (house) => {
+  const seen = new Set();
+  const list = [];
+  [['amenities_free', false], ['amenities_paid', true]].forEach(([field, paid]) => {
+    parseAmenities(house[field])
+      .filter(a => typeof a === 'string' && a.trim())
+      .forEach(a => {
+        const label = a.trim();
+        const key = (paid ? 'paid:' : 'free:') + normalize(label);
+        if (seen.has(key)) return;
+        seen.add(key);
+        list.push({ key, label, paid });
+      });
+  });
+  return list;
+};
+
+// Checkbox presets offered to owners (same lists as OwnerAccreditation.vue / EditHouse.vue)
+const PRESET_AMENITY_KEYS = new Set([
+  ...['Wi-Fi', '24/7 Water', 'CCTV', 'Electric Fan', 'Caretaker', 'Study Area', 'Visitor Area', 'Fire Exit']
+    .map(a => 'free:' + a.toLowerCase()),
+  ...['Aircon', 'Laundry', 'Parking', 'Refrigerator', 'Electricity', 'Water Bill', 'Balcony', 'Kitchen Use']
+    .map(a => 'paid:' + a.toLowerCase())
+]);
+
+// Owner-typed entries that are not meaningful amenity names (e.g. "1", "dd", "PAID")
+const isJunkAmenity = (label) => {
+  const name = normalize(label);
+  return (name.match(/[a-z]/g) || []).length < 3 || ['paid', 'free', 'none', 'n/a'].includes(name);
+};
+
+// Every amenity found in the loaded listings, with how many houses list it
+const allAmenityOptions = computed(() => {
+  const counts = new Map();
+  houses.value.forEach(h => {
+    amenitiesOf(h).forEach(a => {
+      const entry = counts.get(a.key) || { ...a, count: 0 };
+      entry.count += 1;
+      counts.set(a.key, entry);
+    });
+  });
+  return [...counts.values()].sort((a, b) =>
+    Number(a.paid) - Number(b.paid) || b.count - a.count || a.label.localeCompare(b.label)
+  );
+});
+
+// Filter list: preset amenities, plus typed-in ones that at least two houses share.
+// Cards still show every amenity the owner entered.
+const amenityOptions = computed(() => allAmenityOptions.value.filter(opt =>
+  PRESET_AMENITY_KEYS.has(opt.key) || (opt.count >= 2 && !isJunkAmenity(opt.label))
+));
+
+const amenityByKey = computed(() => new Map(allAmenityOptions.value.map(opt => [opt.key, opt])));
+
+const visibleAmenityOptions = computed(() => {
+  // Ticked amenities always stay visible, even when collapsed or hidden by the rules above
+  const extra = selectedAmenities.value
+    .filter(key => !amenityOptions.value.some(opt => opt.key === key))
+    .map(key => amenityByKey.value.get(key))
+    .filter(Boolean);
+  if (showAllAmenities.value) return [...amenityOptions.value, ...extra];
+  return [
+    ...amenityOptions.value.filter((opt, idx) =>
+      idx < VISIBLE_AMENITY_OPTIONS || selectedAmenities.value.includes(opt.key)
+    ),
+    ...extra
+  ];
+});
+
+const locationOptions = computed(() => {
+  const map = new Map();
+  houses.value.forEach(h => {
+    const barangay = String(h.barangay || '').trim();
+    if (barangay && !map.has(normalize(barangay))) map.set(normalize(barangay), barangay);
+  });
+  return [...map.entries()]
+    .map(([key, label]) => ({ key, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+});
 
 const filteredHouses = computed(() => {
   const query = (searchInput.value || '').toLowerCase().trim();
@@ -84,7 +229,7 @@ const filteredHouses = computed(() => {
     const barangay = (h.barangay || '').toLowerCase();
     const ownerName = (h.owner_name || '').toLowerCase();
 
-    const matchSearch = terms.length === 0 || terms.some(t => 
+    const matchSearch = terms.length === 0 || terms.some(t =>
       name.includes(t) || address.includes(t) || barangay.includes(t) || ownerName.includes(t)
     );
 
@@ -96,7 +241,13 @@ const filteredHouses = computed(() => {
 
     const rating = Math.round(parseFloat(h.avg_rating) || 0);
     const matchRating = selectedRatings.value.length === 0 || selectedRatings.value.includes(rating);
-    return matchSearch && matchPrice && matchRating;
+
+    const houseAmenities = amenitiesOf(h).map(a => a.key);
+    const matchAmenities = selectedAmenities.value.every(a => houseAmenities.includes(a));
+
+    const matchLocation = !selectedLocation.value || normalize(h.barangay) === selectedLocation.value;
+
+    return matchSearch && matchPrice && matchRating && matchAmenities && matchLocation;
   });
 
   if (terms.length > 0) {
@@ -122,18 +273,184 @@ const filteredHouses = computed(() => {
   return filtered;
 });
 
+const toPositiveNumber = (val) => {
+  const num = parseFloat(String(val ?? '').replace(/,/g, ''));
+  return num > 0 ? num : null;
+};
+
+// Sorting uses the min/max prices the API already returns; listings without a price stay last
+const sortedHouses = computed(() => {
+  const list = filteredHouses.value.map((house, index) => ({ house, index }));
+  const byPrice = (field, dir) => (a, b) => {
+    const pa = toPositiveNumber(a.house[field]);
+    const pb = toPositiveNumber(b.house[field]);
+    if (pa === null && pb === null) return a.index - b.index;
+    if (pa === null) return 1;
+    if (pb === null) return -1;
+    return (pa - pb) * dir || a.index - b.index;
+  };
+
+  if (sortBy.value === 'price_asc') list.sort(byPrice('min_price', 1));
+  else if (sortBy.value === 'price_desc') list.sort(byPrice('max_price', -1));
+  else if (sortBy.value === 'rating') {
+    list.sort((a, b) =>
+      (parseFloat(b.house.avg_rating) || 0) - (parseFloat(a.house.avg_rating) || 0) ||
+      (Number(b.house.review_count) || 0) - (Number(a.house.review_count) || 0) ||
+      a.index - b.index
+    );
+  }
+  return list.map(item => item.house);
+});
+
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedHouses.value.length / PAGE_SIZE)));
+const pageStart = computed(() => sortedHouses.value.length === 0 ? 0 : (currentPage.value - 1) * PAGE_SIZE + 1);
+const pageEnd = computed(() => Math.min(currentPage.value * PAGE_SIZE, sortedHouses.value.length));
+const paginatedHouses = computed(() =>
+  sortedHouses.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE)
+);
+
+// Page buttons: first, last, and one either side of the current page, with gaps as "…"
+const pageButtons = computed(() => {
+  const total = totalPages.value;
+  const keep = new Set([1, total, currentPage.value - 1, currentPage.value, currentPage.value + 1]
+    .filter(n => n >= 1 && n <= total));
+  const list = [];
+  let prev = 0;
+  [...keep].sort((a, b) => a - b).forEach(n => {
+    if (n - prev > 1) list.push('gap-' + n);
+    list.push(n);
+    prev = n;
+  });
+  return list;
+});
+
+const goToPage = (n) => {
+  if (n < 1 || n > totalPages.value || n === currentPage.value) return;
+  currentPage.value = n;
+  resultsTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+// Any change to search, filters, or sort starts again from the first page
+watch([searchInput, minPrice, maxPrice, selectedRatings, selectedAmenities, selectedLocation, sortBy], () => {
+  currentPage.value = 1;
+}, { deep: true });
+
+// Keep the current page valid once listings are known (e.g. a restored page that no longer exists)
+watch([totalPages, isLoading], ([total, loading]) => {
+  if (!loading && currentPage.value > total) currentPage.value = total;
+}, { immediate: true });
+
+const hasValue = (val) => val !== '' && val !== null && val !== undefined;
+
+// Mirror the directory state into the URL (keeping ?guest=true) and this tab's session
+const directoryQuery = computed(() => {
+  const query = {};
+  if (searchInput.value.trim()) query.q = searchInput.value.trim();
+  if (hasValue(minPrice.value)) query.min = String(minPrice.value);
+  if (hasValue(maxPrice.value)) query.max = String(maxPrice.value);
+  if (selectedRatings.value.length) query.rating = selectedRatings.value.map(String);
+  if (selectedAmenities.value.length) query.amenity = [...selectedAmenities.value];
+  if (selectedLocation.value) query.loc = selectedLocation.value;
+  if (sortBy.value !== 'default') query.sort = sortBy.value;
+  if (currentPage.value > 1) query.page = String(currentPage.value);
+  return query;
+});
+
+watch(directoryQuery, (query) => {
+  try {
+    sessionStorage.setItem(DIRECTORY_STATE_KEY, JSON.stringify(query));
+  } catch (e) {}
+  const preserved = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => !DIRECTORY_QUERY_KEYS.includes(key))
+  );
+  const next = { ...preserved, ...query };
+  if (JSON.stringify(next) !== JSON.stringify(route.query)) {
+    router.replace({ query: next }).catch(() => {});
+  }
+}, { immediate: true, deep: true });
+
+const activeFilterCount = computed(() =>
+  selectedRatings.value.length +
+  selectedAmenities.value.length +
+  (hasValue(minPrice.value) ? 1 : 0) +
+  (hasValue(maxPrice.value) ? 1 : 0) +
+  (selectedLocation.value ? 1 : 0)
+);
+
+const formatPeso = (val) => '₱' + (parseFloat(val) || 0).toLocaleString();
+
+const removeFromList = (listRef, value) => {
+  listRef.value = listRef.value.filter(v => v !== value);
+};
+
+// Removable chips shown above the results for everything currently narrowing the list
+const activeChips = computed(() => {
+  const chips = [];
+  const q = searchInput.value.trim();
+  if (q) chips.push({ id: 'q', label: `Search: "${q}"`, remove: () => { searchInput.value = ''; } });
+  [...selectedRatings.value].sort((a, b) => b - a).forEach(n => chips.push({
+    id: 'rating-' + n, label: `${n} star${n === 1 ? '' : 's'}`, remove: () => removeFromList(selectedRatings, n)
+  }));
+  if (hasValue(minPrice.value)) chips.push({ id: 'min', label: `Min ${formatPeso(minPrice.value)}`, remove: () => { minPrice.value = ''; } });
+  if (hasValue(maxPrice.value)) chips.push({ id: 'max', label: `Max ${formatPeso(maxPrice.value)}`, remove: () => { maxPrice.value = ''; } });
+  selectedAmenities.value.forEach(key => {
+    const opt = amenityByKey.value.get(key);
+    const paid = key.startsWith('paid:');
+    const label = opt?.label || key.slice(key.indexOf(':') + 1);
+    chips.push({ id: 'amenity-' + key, label: paid ? `${label} (Paid)` : label, remove: () => removeFromList(selectedAmenities, key) });
+  });
+  if (selectedLocation.value) {
+    const loc = locationOptions.value.find(l => l.key === selectedLocation.value);
+    chips.push({ id: 'loc', label: `Brgy. ${loc?.label || selectedLocation.value}`, remove: () => { selectedLocation.value = ''; } });
+  }
+  return chips;
+});
+
+// "Newest" is the API's order (most recently listed first); while searching it is relevance
+const defaultSortLabel = computed(() => (searchInput.value.trim() ? 'Best match' : 'Newest'));
+
+const clearFilters = () => {
+  searchInput.value = '';
+  minPrice.value = '';
+  maxPrice.value = '';
+  selectedRatings.value = [];
+  selectedAmenities.value = [];
+  selectedLocation.value = '';
+  sortBy.value = 'default';
+};
+
 const toggleRating = (num) => {
   const idx = selectedRatings.value.indexOf(num);
   if (idx === -1) selectedRatings.value.push(num);
   else selectedRatings.value.splice(idx, 1);
 };
 
-const handleBook = (houseId) => {
-  if (isGuest.value) {
-    showLoginModal.value = true;
-  } else {
-    router.push(`/student/book/${houseId}`);
-  }
+const toggleAmenity = (key) => {
+  const idx = selectedAmenities.value.indexOf(key);
+  if (idx === -1) selectedAmenities.value.push(key);
+  else selectedAmenities.value.splice(idx, 1);
+};
+
+const amenityIcon = (label) => {
+  const name = normalize(label);
+  if (name.includes('wi-fi') || name.includes('wifi') || name.includes('internet')) return 'fa-wifi';
+  if (name.includes('laundry') || name.includes('wash')) return 'fa-shirt';
+  if (name.includes('kitchen') || name.includes('cook')) return 'fa-utensils';
+  if (name.includes('parking') || name.includes('garage')) return 'fa-car';
+  if (name.includes('cctv') || name.includes('security')) return 'fa-video';
+  if (name.includes('water')) return 'fa-droplet';
+  if (name.includes('fan') || name.includes('aircon') || name.includes('air con')) return 'fa-fan';
+  if (name.includes('study')) return 'fa-book-open';
+  if (name.includes('caretaker')) return 'fa-user-shield';
+  if (name.includes('fire')) return 'fa-fire-extinguisher';
+  return 'fa-circle-check';
+};
+
+const ratingValue = (house) => parseFloat(house.avg_rating) || 0;
+
+const displayPrice = (house) => {
+  const text = formatPriceRange(house);
+  return text === '₱0' ? null : text.replace(' - ', ' – ');
 };
 
 const handleDetails = (houseId) => {
@@ -159,182 +476,236 @@ onUnmounted(() => {
   <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
     <StudentNav />
 
-    <!-- LOGIN PROMPT MODAL -->
-    <div
-      v-if="showLoginModal"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-fade-in"
-    >
-      <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
-        <div class="text-blue-600 mb-4 flex justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
-        <h2 class="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Login Required</h2>
-        <p class="text-slate-500 mb-6 text-sm">
-          To perform this action, you must first log in using your <strong>CSPC student email</strong>.
-        </p>
-        <div class="flex flex-col gap-3">
-          <a
-            href="/login-options"
-            class="bg-blue-600 hover:bg-slate-900 text-white font-black py-3.5 rounded-xl transition-colors uppercase text-xs tracking-widest text-center block shadow-lg shadow-blue-100"
-          >Go to Login</a>
-          <button
-            @click="showLoginModal = false"
-            class="text-slate-400 text-xs font-bold hover:text-slate-900 uppercase tracking-widest mt-2 focus:outline-none"
-          >Cancel</button>
-        </div>
-      </div>
-    </div>
-
     <!-- MAIN BODY CONTAINER -->
-    <main class="max-w-7xl mx-auto py-12 px-6">
-      <div class="flex flex-col lg:flex-row gap-8">
+    <main class="max-w-[1440px] mx-auto py-8 lg:py-10 px-4 sm:px-6">
+      <!-- Grid places the header, filter panel, and results; on small screens they stack in that order -->
+      <div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] lg:grid-rows-[auto_1fr] gap-x-8 gap-y-5 text-left">
 
-        <!-- SIDEBAR FILTERS (Desktop only) -->
-        <aside class="hidden lg:block lg:w-[260px] flex-shrink-0 text-left">
-          <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 sticky top-24">
-            <div class="flex items-center gap-2.5 mb-4 text-slate-800">
-              <i class="fa-solid fa-sliders text-blue-500 text-sm"></i>
-              <h2 class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Filter Directory</h2>
-            </div>
-            <hr class="mb-5 border-slate-100">
-
-            <!-- Star Rating Filter -->
-            <div class="mb-6">
-              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Ratings</h3>
-              <div class="space-y-2.5">
-                <label
-                  v-for="num in [5,4,3,2,1]"
-                  :key="num"
-                  class="flex items-center gap-3 cursor-pointer group"
-                >
-                  <input
-                    type="checkbox"
-                    :value="num"
-                    :checked="selectedRatings.includes(num)"
-                    @change="toggleRating(num)"
-                    class="w-4 h-4 border-slate-300 rounded text-blue-600 focus:ring-0 cursor-pointer"
-                  >
-                  <span class="text-xs font-bold text-slate-600 group-hover:text-slate-900">
-                    {{ num }}
-                    <span class="text-amber-400 ml-1">
-                      <i v-for="star in num" :key="star" class="fa-solid fa-star text-[10px]"></i>
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Price Range Filter -->
-            <div>
-              <h3 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Price Range </h3>
-              <div class="flex items-center gap-1.5">
-                <div class="relative flex-1">
-                  <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>
-                  <input
-                    type="number"
-                    v-model="minPrice"
-                    placeholder="MIN"
-                    class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-[10px] font-black outline-none focus:bg-white focus:border-blue-400 transition"
-                  >
-                </div>
-                <span class="text-slate-300 text-xs">-</span>
-                <div class="relative flex-1">
-                  <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>
-                  <input
-                    type="number"
-                    v-model="maxPrice"
-                    placeholder="MAX"
-                    class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-[10px] font-black outline-none focus:bg-white focus:border-blue-400 transition"
-                  >
-                </div>
-              </div>
-            </div>
+        <!-- HEADER: title, result count, search, sort -->
+        <header class="lg:col-start-2 lg:row-start-1 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div class="flex-[1_0_auto] max-w-full">
+            <h1 class="text-[26px] sm:text-[34px] font-black text-slate-900 uppercase tracking-tight leading-[1.05] break-words">Welcome, {{ displayName }}</h1>
+            <p class="text-slate-500 text-sm font-medium mt-1.5">
+              <template v-if="isLoading">Loading boarding houses…</template>
+              <template v-else>{{ sortedHouses.length }} boarding {{ sortedHouses.length === 1 ? 'house' : 'houses' }} found</template>
+            </p>
           </div>
-        </aside>
 
-        <!-- MAIN VIEW WORKSPACE -->
-        <section class="flex-1 text-left">
-          <!-- Welcome and Search Header (Aligned horizontally on desktop to save space) -->
-          <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-3 lg:mb-6 border-b border-slate-200/50 pb-3 lg:pb-6">
-            <div>
-              <h1 class="text-3xl font-black text-slate-900 mb-1 uppercase tracking-tight">
-                Welcome, {{ displayName }}
-              </h1>
-              <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">CSPC Housing Selection Portal</p>
-            </div>
-            
-            <!-- Compact Search Bar -->
-            <div class="relative w-full max-w-sm shrink-0">
-              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+          <div class="flex flex-col sm:flex-row gap-3 flex-[1_1_560px] max-w-full">
+            <div class="relative w-full sm:flex-1 min-w-0">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
                 <i class="fa-solid fa-magnifying-glass text-xs"></i>
               </span>
               <input
                 type="text"
                 v-model="searchInput"
-                placeholder="SEARCH BOARDING HOUSE..."
-                class="w-full pl-9 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black tracking-widest shadow-sm focus:border-blue-400 outline-none transition"
+                aria-label="Search boarding house"
+                placeholder="Search boarding house..."
+                class="w-full pl-9 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium shadow-sm focus:border-blue-400 outline-none transition"
               >
             </div>
-          </div>
-
-          <!-- MOBILE-ONLY INLINE FILTER CARD (hidden on lg+) -->
-          <div class="lg:hidden mb-6">
-            <div class="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-4">
-              <p class="text-[9px] font-black text-slate-800 uppercase tracking-[0.2em] mb-3">Filters</p>
-              <!-- Rating -->
-              <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Rating</p>
-              <div class="grid grid-cols-3 gap-2 mb-4">
-                <label
-                  v-for="num in [5,4,3,2,1]"
-                  :key="num"
-                  class="flex items-center gap-1.5 cursor-pointer group"
-                >
-                  <input
-                    type="checkbox"
-                    :value="num"
-                    :checked="selectedRatings.includes(num)"
-                    @change="toggleRating(num)"
-                    class="w-4 h-4 border-slate-300 rounded text-blue-600 focus:ring-0 cursor-pointer flex-shrink-0"
-                  >
-                  <span class="text-[10px] font-bold text-slate-600 group-hover:text-slate-900 flex items-center gap-0.5">
-                    {{ num }}
-                    <span class="text-amber-400">
-                      <i v-for="star in num" :key="star" class="fa-solid fa-star text-[9px]"></i>
-                    </span>
-                  </span>
-                </label>
-              </div>
-
-              <!-- Max Budget -->
-              <hr class="border-slate-100 mb-3">
-              <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Max Budget</p>
-              <div class="flex items-center gap-1.5">
-                <div class="relative flex-1">
-                  <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>
-                  <input
-                    type="number"
-                    v-model="minPrice"
-                    placeholder="MIN"
-                    class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-[10px] font-black outline-none focus:bg-white focus:border-blue-400 transition"
-                  >
-                </div>
-                <span class="text-slate-300 text-xs">-</span>
-                <div class="relative flex-1">
-                  <span class="absolute left-3 top-2.5 text-slate-300 text-[10px] font-bold">₱</span>
-                  <input
-                    type="number"
-                    v-model="maxPrice"
-                    placeholder="MAX"
-                    class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-[10px] font-black outline-none focus:bg-white focus:border-blue-400 transition"
-                  >
-                </div>
-              </div>
+            <div class="relative w-full sm:w-52 shrink-0">
+              <select
+                v-model="sortBy"
+                aria-label="Sort boarding houses"
+                class="w-full appearance-none pl-4 pr-9 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 shadow-sm focus:border-blue-400 outline-none transition cursor-pointer"
+              >
+                <option value="default">{{ defaultSortLabel }}</option>
+                <option value="price_asc">Price: Low to High</option>
+                <option value="price_desc">Price: High to Low</option>
+                <option value="rating">Highest Rated</option>
+              </select>
+              <span class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 pointer-events-none">
+                <i class="fa-solid fa-chevron-down text-[10px]"></i>
+              </span>
+            </div>
+            <!-- Grid / List (presentation only; hidden on phones where both look the same) -->
+            <div class="hidden md:flex shrink-0 bg-white border border-slate-200 rounded-xl shadow-sm p-1" role="group" aria-label="Layout">
+              <button
+                type="button"
+                @click="setViewMode('grid')"
+                :aria-pressed="viewMode === 'grid'"
+                aria-label="Grid view"
+                title="Grid view"
+                class="w-11 h-[38px] rounded-lg flex items-center justify-center transition"
+                :class="viewMode === 'grid' ? 'bg-blue-50 text-blue-700' : 'text-slate-400 hover:text-slate-700'"
+              ><i class="fa-solid fa-table-cells-large text-[15px]"></i></button>
+              <button
+                type="button"
+                @click="setViewMode('list')"
+                :aria-pressed="viewMode === 'list'"
+                aria-label="List view"
+                title="List view"
+                class="w-11 h-[38px] rounded-lg flex items-center justify-center transition"
+                :class="viewMode === 'list' ? 'bg-blue-50 text-blue-700' : 'text-slate-400 hover:text-slate-700'"
+              ><i class="fa-solid fa-list text-[15px]"></i></button>
             </div>
           </div>
+        </header>
 
+        <!-- FILTER PANEL: sidebar on desktop, collapsible card on smaller screens -->
+        <aside class="lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-24">
+          <div class="bg-white rounded-2xl lg:rounded-3xl shadow-sm border border-slate-200/60">
+            <div class="flex items-center justify-between gap-3 p-4 lg:px-6 lg:pt-6 lg:pb-4">
+              <button
+                type="button"
+                class="flex items-center gap-2 text-slate-800 lg:cursor-default min-w-0"
+                :aria-expanded="showMobileFilters"
+                @click="showMobileFilters = !showMobileFilters"
+              >
+                <i class="fa-solid fa-sliders text-blue-600 text-sm"></i>
+                <h2 class="text-xs font-black uppercase tracking-[0.12em] text-slate-900 whitespace-nowrap">Filter Directory</h2>
+                <span v-if="activeFilterCount > 0" class="lg:hidden text-[10px] font-black bg-blue-600 text-white rounded-full px-2 py-0.5 leading-none">{{ activeFilterCount }}</span>
+                <!-- Wrapper carries lg:hidden because Font Awesome sets display on the icon itself -->
+                <span class="lg:hidden flex items-center">
+                  <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 transition-transform" :class="{ 'rotate-180': showMobileFilters }"></i>
+                </span>
+              </button>
+              <button
+                type="button"
+                @click="clearFilters"
+                class="text-xs font-bold text-blue-600 hover:text-blue-800 transition whitespace-nowrap shrink-0"
+              >Clear All</button>
+            </div>
+
+            <div :class="showMobileFilters ? 'block' : 'hidden lg:block'" class="px-4 pb-5 lg:px-6 lg:pb-6">
+              <hr class="mb-5 border-slate-100">
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-x-8 gap-y-6">
+                <!-- Star Rating Filter -->
+                <div>
+                  <button type="button" @click="toggleSection('ratings')" :aria-expanded="openSections.ratings" aria-controls="flt-ratings" class="flt-head" :class="{ 'mb-3': openSections.ratings }">
+                    <span class="flt-label">Ratings<span v-if="!openSections.ratings && selectedRatings.length" class="flt-count">{{ selectedRatings.length }}</span></span>
+                    <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.ratings }"></i>
+                  </button>
+                  <div v-show="openSections.ratings" id="flt-ratings" class="grid grid-cols-3 sm:grid-cols-1 gap-2.5">
+                    <label
+                      v-for="num in [5,4,3,2,1]"
+                      :key="num"
+                      class="flex items-center gap-3 cursor-pointer group"
+                    >
+                      <input
+                        type="checkbox"
+                        :value="num"
+                        :checked="selectedRatings.includes(num)"
+                        @change="toggleRating(num)"
+                        class="w-4 h-4 border-slate-300 rounded text-blue-600 focus:ring-0 cursor-pointer flex-shrink-0"
+                      >
+                      <span class="text-xs font-bold text-slate-600 group-hover:text-slate-900 flex items-center gap-1">
+                        {{ num }}
+                        <span class="text-amber-400 whitespace-nowrap">
+                          <i v-for="star in num" :key="star" class="fa-solid fa-star text-[10px]"></i>
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Price Range Filter -->
+                <div class="flt-section">
+                  <button type="button" @click="toggleSection('price')" :aria-expanded="openSections.price" aria-controls="flt-price" class="flt-head" :class="{ 'mb-3': openSections.price }">
+                    <span class="flt-label">Price Range (₱)<span v-if="!openSections.price && (hasValue(minPrice) || hasValue(maxPrice))" class="flt-count">{{ (hasValue(minPrice) ? 1 : 0) + (hasValue(maxPrice) ? 1 : 0) }}</span></span>
+                    <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.price }"></i>
+                  </button>
+                  <div v-show="openSections.price" id="flt-price" class="flex items-center gap-1.5">
+                    <div class="relative flex-1">
+                      <span class="absolute left-3 top-2.5 text-slate-300 text-[11px] font-bold">₱</span>
+                      <input
+                        type="number"
+                        v-model="minPrice"
+                        aria-label="Minimum price"
+                        placeholder="Min"
+                        class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-400 transition"
+                      >
+                    </div>
+                    <span class="text-slate-300 text-xs">-</span>
+                    <div class="relative flex-1">
+                      <span class="absolute left-3 top-2.5 text-slate-300 text-[11px] font-bold">₱</span>
+                      <input
+                        type="number"
+                        v-model="maxPrice"
+                        aria-label="Maximum price"
+                        placeholder="Max"
+                        class="w-full pl-6 pr-2 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-400 transition"
+                      >
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Amenities Filter -->
+                <div v-if="amenityOptions.length > 0" class="flt-section">
+                  <button type="button" @click="toggleSection('amenities')" :aria-expanded="openSections.amenities" aria-controls="flt-amenities" class="flt-head" :class="{ 'mb-3': openSections.amenities }">
+                    <span class="flt-label">Amenities<span v-if="!openSections.amenities && selectedAmenities.length" class="flt-count">{{ selectedAmenities.length }}</span></span>
+                    <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.amenities }"></i>
+                  </button>
+                  <div v-show="openSections.amenities" id="flt-amenities">
+                  <div class="grid grid-cols-2 sm:grid-cols-1 gap-2.5">
+                    <label
+                      v-for="opt in visibleAmenityOptions"
+                      :key="opt.key"
+                      class="flex items-center gap-3 cursor-pointer group min-w-0"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="selectedAmenities.includes(opt.key)"
+                        @change="toggleAmenity(opt.key)"
+                        class="w-4 h-4 border-slate-300 rounded text-blue-600 focus:ring-0 cursor-pointer flex-shrink-0"
+                      >
+                      <i class="fa-solid text-[11px] text-slate-500 w-4 text-center" :class="amenityIcon(opt.label)"></i>
+                      <span class="text-xs font-bold text-slate-600 group-hover:text-slate-900 truncate">{{ opt.label }}</span>
+                      <span v-if="opt.paid" class="shrink-0 text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-px leading-none">Paid</span>
+                    </label>
+                  </div>
+                  <button
+                    v-if="amenityOptions.length > VISIBLE_AMENITY_OPTIONS"
+                    type="button"
+                    @click="showAllAmenities = !showAllAmenities"
+                    class="mt-3 text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1.5"
+                  >
+                    <i class="fa-solid text-[11px]" :class="showAllAmenities ? 'fa-circle-minus' : 'fa-circle-plus'"></i>
+                    {{ showAllAmenities ? 'Show fewer amenities' : 'Show all amenities' }}
+                  </button>
+                  </div>
+                </div>
+
+                <!-- Location Filter -->
+                <div v-if="locationOptions.length > 0" class="flt-section">
+                  <button type="button" @click="toggleSection('location')" :aria-expanded="openSections.location" aria-controls="flt-location" class="flt-head" :class="{ 'mb-3': openSections.location }">
+                    <span class="flt-label">Location<span v-if="!openSections.location && selectedLocation" class="flt-count">1</span></span>
+                    <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.location }"></i>
+                  </button>
+                  <div v-show="openSections.location" id="flt-location" class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-blue-600 pointer-events-none">
+                      <i class="fa-solid fa-location-dot text-xs"></i>
+                    </span>
+                    <select
+                      v-model="selectedLocation"
+                      aria-label="Filter by location"
+                      class="w-full appearance-none pl-8 pr-8 py-2.5 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-400 transition cursor-pointer"
+                    >
+                      <option value="">All Locations</option>
+                      <option v-for="loc in locationOptions" :key="loc.key" :value="loc.key">Brgy. {{ loc.label }}</option>
+                    </select>
+                    <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 pointer-events-none">
+                      <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                @click="clearFilters"
+                class="mt-6 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition"
+              >
+                <i class="fa-solid fa-rotate-right text-[11px]"></i> Clear Filters
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- RESULTS -->
+        <section ref="resultsTop" class="lg:col-start-2 lg:row-start-2 scroll-mt-24 min-w-0">
           <!-- Loading Spinner -->
           <div v-if="isLoading" class="py-24 text-center bg-white rounded-[2rem] border border-slate-200/60 shadow-sm">
             <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -357,8 +728,29 @@ onUnmounted(() => {
             </span>
           </div>
 
+          <!-- Refresh failed while online, but saved listings are still shown -->
+          <div v-if="!isLoading && !isOffline && refreshFailed" class="mb-6 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900">
+            <p class="text-xs font-bold flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-amber-500"></i>
+              Couldn't refresh the directory. Showing previously saved listings.
+            </p>
+            <button type="button" @click="fetchHouses" class="self-start sm:self-auto text-[10px] font-black uppercase tracking-widest bg-white border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition">Retry</button>
+          </div>
+
+          <!-- Load Error State (request failed while online and nothing is cached) -->
+          <div v-if="!isLoading && !isOffline && loadError" class="py-20 text-center bg-white rounded-[2rem] border border-red-100 shadow-sm px-6">
+            <div class="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-red-500 mx-auto mb-4">
+              <i class="fa-solid fa-circle-exclamation text-2xl"></i>
+            </div>
+            <h3 class="text-slate-900 font-black uppercase tracking-tight text-sm mb-1">Unable to Load Boarding Houses</h3>
+            <p class="text-slate-400 font-medium text-xs max-w-md mx-auto leading-relaxed mb-5">
+              Something went wrong while loading the directory. Please try again.
+            </p>
+            <button type="button" @click="fetchHouses" class="bg-blue-700 hover:bg-[#0f2f66] text-white text-[10px] font-black py-2.5 px-6 rounded-xl uppercase tracking-widest transition">Retry</button>
+          </div>
+
           <!-- ONLINE Empty State (When 0 accredited houses exist in database) -->
-          <div v-if="!isLoading && !isOffline && houses.length === 0" class="py-20 text-center bg-white rounded-[2rem] border border-slate-200/80 shadow-sm px-6">
+          <div v-if="!isLoading && !isOffline && !loadError && houses.length === 0" class="py-20 text-center bg-white rounded-[2rem] border border-slate-200/80 shadow-sm px-6">
             <div class="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#2a528a] mx-auto mb-4 shadow-sm">
               <i class="fa-solid fa-building-circle-check text-2xl"></i>
             </div>
@@ -377,73 +769,161 @@ onUnmounted(() => {
             <p class="text-slate-500 font-medium text-xs max-w-sm mx-auto">Please connect to an active internet connection to load and save available boarding houses.</p>
           </div>
 
-          <!-- DYNAMIC ACCREDITED HOUSES GRID -->
-          <div v-if="!isLoading && houses.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div
-              v-for="house in filteredHouses"
-              :key="house.id"
-              class="bg-white rounded-[2rem] p-5 shadow-sm border border-slate-200/50 hover:shadow-md transition-all duration-300 flex flex-col hover:-translate-y-1"
-            >
-              <!-- Aspect-Ratio Protected Photo Cover -->
-              <div class="rounded-2xl overflow-hidden mb-5 aspect-[16/10] bg-slate-50 border border-slate-100 shadow-inner">
-                <img
-                  :src="getImageUrl(house.img)"
-                  :alt="house.name"
-                  loading="lazy"
-                  decoding="async"
-                  class="w-full h-full object-cover grayscale-[5%] hover:grayscale-0 transition duration-500"
-                  @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
-                >
-              </div>
-
-              <!-- Header Details -->
-              <div class="px-1 mb-5 text-left">
-                <!-- Stars Rating badge using clean FontAwesome glpyhs -->
-                <div v-if="house.review_count > 0" class="flex items-center gap-1 text-amber-400 text-[10px] mb-2">
-                  <i v-for="i in 5" :key="i" class="fa-solid fa-star" :class="i <= Math.round(house.avg_rating) ? 'text-amber-400' : 'text-slate-100'"></i>
-                  <span class="text-slate-400 ml-1.5 font-black uppercase tracking-widest text-[8px]">
-                    ({{ house.review_count }} Reviews)
-                  </span>
-                </div>
-                
-                <h2 class="font-black text-xl text-slate-900 leading-tight uppercase tracking-tight mb-1.5">{{ house.name }}</h2>
-                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                  <i class="fa-solid fa-location-dot text-[9px] text-blue-500"></i>
-                  {{ formatAddress(house) }}
-                </p>
-              </div>
-
-              <!-- Action Terms Footer Block -->
-              <div class="mt-auto bg-slate-50 border border-slate-100/80 rounded-2xl p-5 flex justify-between items-center">
-                <div class="text-left">
-                  <p class="font-black text-2xl text-slate-900 leading-none">{{ formatPriceRange(house) }}</p>
-                  <p class="text-[8px] text-slate-400 font-black uppercase tracking-widest mt-1.5 leading-none">per month</p>
-                  <p class="text-[9px] text-slate-500 font-bold mt-2 flex items-center gap-1">
-                    <i class="fa-solid fa-door-open text-blue-500 text-[8px]"></i> Rooms: {{ house.room_count || 0 }}
-                  </p>
-                </div>
-                <div class="flex flex-col gap-1.5 items-end shrink-0">
-                  <button
-                    @click="handleBook(house.id)"
-                    class="bg-blue-600 text-white text-[10px] font-black py-2.5 px-6 rounded-xl uppercase tracking-widest hover:bg-slate-900 transition active:scale-95 shadow-lg shadow-blue-100 leading-none cursor-pointer"
-                  >Book Now</button>
-                  <button
-                    @click="handleDetails(house.id)"
-                    class="bg-slate-200 text-slate-800 text-[10px] font-black py-2.5 px-6 rounded-xl uppercase tracking-widest hover:bg-slate-900 hover:text-white transition leading-none cursor-pointer"
-                  >View Details</button>
-                </div>
-              </div>
+          <template v-if="!isLoading && houses.length > 0">
+            <!-- Active filter chips -->
+            <div v-if="activeChips.length > 0" class="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">
+              <button
+                v-for="chip in activeChips"
+                :key="chip.id"
+                type="button"
+                @click="chip.remove"
+                :aria-label="`Remove filter ${chip.label}`"
+                class="inline-flex items-center gap-2 max-w-full text-xs font-bold text-blue-800 bg-blue-50 border border-blue-200 rounded-full pl-3 pr-2 py-1.5 hover:bg-blue-100 transition"
+              >
+                <span class="truncate">{{ chip.label }}</span>
+                <i class="fa-solid fa-xmark text-[10px] text-blue-500"></i>
+              </button>
+              <button
+                v-if="activeChips.length > 1"
+                type="button"
+                @click="clearFilters"
+                class="text-xs font-bold text-slate-500 hover:text-slate-900 underline underline-offset-2 px-1"
+              >Clear all</button>
             </div>
 
-            <!-- Empty State Dotted-Border Card -->
-            <div v-if="filteredHouses.length === 0" class="col-span-full py-20 text-center bg-white rounded-[2rem] border-2 border-dashed border-slate-200/80 shadow-inner">
+            <!-- No matches for the current search/filters -->
+            <div v-if="sortedHouses.length === 0" class="py-20 text-center bg-white rounded-[2rem] border-2 border-dashed border-slate-200/80 shadow-inner px-6">
               <svg class="w-12 h-12 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"
                   d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
               </svg>
-              <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No accredited houses match your filter criteria.</p>
+              <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px] mb-4">No accredited houses match your filter criteria.</p>
+              <button type="button" @click="clearFilters" class="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-5 py-2.5 hover:bg-blue-100 transition">Clear Filters</button>
             </div>
-          </div>
+
+            <!-- DYNAMIC ACCREDITED HOUSES GRID -->
+            <div v-else :class="viewMode === 'list' ? 'flex flex-col gap-4' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'">
+              <article
+                v-for="house in paginatedHouses"
+                :key="house.id"
+                class="bg-white rounded-2xl p-3 shadow-sm border border-slate-200/60 hover:shadow-md transition-all duration-300 flex flex-col hover:-translate-y-0.5"
+                :class="viewMode === 'list' ? 'md:flex-row md:gap-5' : ''"
+              >
+                <!-- Aspect-Ratio Protected Photo Cover -->
+                <div class="rounded-xl overflow-hidden aspect-[17/10] bg-slate-50 border border-slate-100 shrink-0"
+                     :class="viewMode === 'list' ? 'md:w-[260px] lg:w-[300px] md:aspect-auto md:min-h-[190px]' : ''">
+                  <img
+                    :src="getImageUrl(house.img)"
+                    :alt="house.name"
+                    loading="lazy"
+                    decoding="async"
+                    class="w-full h-full object-cover"
+                    @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
+                  >
+                </div>
+
+                <div class="px-1.5 pt-3 flex flex-col flex-1 min-w-0" :class="viewMode === 'list' ? 'md:pt-1.5 md:pb-1 md:pr-2' : ''">
+                  <h2 class="font-black text-[17px] text-[#0f2f66] leading-tight uppercase tracking-tight line-clamp-2">{{ house.name }}</h2>
+                  <p v-if="formatAddress(house)" class="text-[10.5px] text-slate-400 font-bold uppercase tracking-wider flex items-start gap-1.5 mt-1">
+                    <i class="fa-solid fa-location-dot text-[9px] text-blue-500 mt-[2px]"></i>
+                    <span class="line-clamp-2">{{ formatAddress(house) }}</span>
+                  </p>
+
+                  <!-- Price and rating -->
+                  <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-1 mt-3">
+                    <p class="leading-none">
+                      <template v-if="displayPrice(house)">
+                        <span class="font-black text-[20px] text-blue-700">{{ displayPrice(house) }}</span>
+                        <span class="text-xs text-slate-400 font-medium"> / month</span>
+                      </template>
+                      <span v-else class="text-xs font-bold text-slate-400">Price not available</span>
+                    </p>
+                    <div v-if="Number(house.review_count) > 0" class="flex items-center gap-0.5 text-[10px]" :title="`${house.review_count} review${Number(house.review_count) === 1 ? '' : 's'}`">
+                      <i v-for="i in 5" :key="i" class="fa-solid fa-star" :class="i <= Math.round(ratingValue(house)) ? 'text-amber-400' : 'text-slate-200'"></i>
+                      <span class="ml-1 text-xs font-black text-slate-700">{{ ratingValue(house).toFixed(1) }}</span>
+                    </div>
+                    <span v-else class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No reviews yet</span>
+                  </div>
+
+                  <p class="text-[10px] text-slate-500 font-bold mt-2 flex items-center gap-1.5">
+                    <i class="fa-solid fa-door-open text-blue-500 text-[9px]"></i> Rooms: {{ house.room_count || 0 }}
+                  </p>
+
+                  <!-- Amenity chips -->
+                  <!-- Condensed amenities: a few chips plus "+N" (full list in the tooltip and on the details page) -->
+                  <div v-if="amenitiesOf(house).length > 0" class="flex flex-wrap gap-1.5 mt-3">
+                    <span
+                      v-for="a in amenitiesOf(house).slice(0, chipLimit)"
+                      :key="a.key"
+                      :title="a.paid ? `${a.label} (paid)` : a.label"
+                      class="inline-flex items-center gap-1.5 text-[11px] font-bold rounded-lg px-2.5 py-1.5 max-w-[150px] border"
+                      :class="a.paid ? 'text-amber-800 bg-amber-50 border-amber-200' : 'text-slate-600 bg-white border-slate-200'"
+                    >
+                      <i class="fa-solid text-[10px]" :class="[amenityIcon(a.label), a.paid ? 'text-amber-600' : 'text-slate-500']"></i>
+                      <span class="truncate">{{ a.label }}</span>
+                      <span v-if="a.paid" class="sr-only">(paid)</span>
+                    </span>
+                    <span
+                      v-if="amenitiesOf(house).length > chipLimit"
+                      class="inline-flex items-center text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5"
+                      :title="amenitiesOf(house).slice(chipLimit).map(a => a.paid ? `${a.label} (paid)` : a.label).join(', ')"
+                      :aria-label="`${amenitiesOf(house).length - chipLimit} more amenities`"
+                    >+{{ amenitiesOf(house).length - chipLimit }}</span>
+                  </div>
+
+                  <!-- Booking happens on the details page, where the student picks a room -->
+                  <div class="mt-auto pt-4" :class="viewMode === 'list' ? 'md:flex md:justify-end' : ''">
+                    <button
+                      @click="handleDetails(house.id)"
+                      class="w-full bg-blue-700 text-white text-[12px] font-black py-3 px-4 rounded-xl uppercase tracking-widest hover:bg-[#0f2f66] transition flex items-center justify-center gap-2 cursor-pointer"
+                      :class="viewMode === 'list' ? 'md:w-auto md:px-8' : ''"
+                    >View Details <i class="fa-solid fa-arrow-right text-[10px]"></i></button>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <!-- PAGINATION -->
+            <nav
+              v-if="sortedHouses.length > 0"
+              aria-label="Boarding house pages"
+              class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3"
+            >
+              <p class="text-xs font-medium text-slate-500">
+                Showing {{ pageStart }}–{{ pageEnd }} of {{ sortedHouses.length }} boarding {{ sortedHouses.length === 1 ? 'house' : 'houses' }}
+              </p>
+              <div v-if="totalPages > 1" class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  :disabled="currentPage === 1"
+                  @click="goToPage(currentPage - 1)"
+                  class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:border-blue-400 hover:text-blue-700 transition disabled:opacity-40 disabled:pointer-events-none"
+                ><i class="fa-solid fa-chevron-left text-[11px]"></i></button>
+                <template v-for="p in pageButtons" :key="p">
+                  <span v-if="typeof p === 'string'" class="w-6 text-center text-slate-400 text-xs">…</span>
+                  <button
+                    v-else
+                    type="button"
+                    :aria-label="`Page ${p}`"
+                    :aria-current="p === currentPage ? 'page' : undefined"
+                    @click="goToPage(p)"
+                    class="w-9 h-9 rounded-lg border text-xs font-black transition"
+                    :class="p === currentPage
+                      ? 'bg-blue-700 border-blue-700 text-white'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-700'"
+                  >{{ p }}</button>
+                </template>
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  :disabled="currentPage === totalPages"
+                  @click="goToPage(currentPage + 1)"
+                  class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:border-blue-400 hover:text-blue-700 transition disabled:opacity-40 disabled:pointer-events-none"
+                ><i class="fa-solid fa-chevron-right text-[11px]"></i></button>
+              </div>
+            </nav>
+          </template>
         </section>
       </div>
     </main>
@@ -458,5 +938,17 @@ onUnmounted(() => {
 }
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out forwards;
+}
+</style>
+
+<style scoped>
+/* Collapsible filter sections */
+.flt-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+.flt-label { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: #64748b; }
+.flt-head:hover .flt-label { color: #334155; }
+.flt-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; letter-spacing: 0; display: inline-flex; align-items: center; justify-content: center; }
+.flt-chevron { font-size: 11px; color: #94a3b8; transition: transform .15s; }
+@media (min-width: 1024px) {
+  .flt-section { border-top: 1px solid #f1f5f9; padding-top: 20px; }
 }
 </style>

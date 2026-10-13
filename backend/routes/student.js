@@ -612,4 +612,52 @@ router.post('/bookings/extend/:id', authenticateToken, validateBody('ids'), asyn
     }
 });
 
+// 11. [POST] - Withdraw a pending stay extension request (before the owner approves or declines it).
+// Uses the same reset as the owner's decline; the booking itself was never changed by the request.
+router.post('/bookings/extension/cancel/:id', authenticateToken, validateBody('ids'), async (req, res) => {
+    if (req.user.role !== 'student') {
+        return res.status(403).json({ success: false, message: 'Only students can cancel their extension requests.' });
+    }
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [booking] = await connection.query(
+            'SELECT b.*, bh.owner_id, bh.name as house_name FROM bookings b JOIN boarding_houses bh ON b.house_id = bh.id WHERE b.id = ? AND b.student_id = ? FOR UPDATE',
+            [req.params.id, req.user.id]
+        );
+
+        if (booking.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ success: false, message: 'Reservation not found.' });
+        }
+
+        if (booking[0].status !== 'confirmed' || !booking[0].is_extension_requested) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This extension request is no longer pending. Please refresh your booking.' });
+        }
+
+        await connection.query(
+            'UPDATE bookings SET is_extension_requested = 0, extension_months = 0 WHERE id = ?',
+            [req.params.id]
+        );
+
+        const refNo = `REF-${req.params.id.toString().padStart(4, '0')}`;
+        const withdrawnMsg = `EXTENSION WITHDRAWN: A student has cancelled their stay extension request (+${booking[0].extension_months} months) for your property "${booking[0].house_name}" (${refNo}).`;
+        await connection.query(
+            'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+            [booking[0].owner_id, withdrawnMsg]
+        );
+
+        await connection.commit();
+        res.json({ success: true });
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('Cancel stay extension failed:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to cancel the extension request.' });
+    } finally {
+        connection?.release();
+    }
+});
+
 export default router;
