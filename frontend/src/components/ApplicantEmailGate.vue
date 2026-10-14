@@ -12,15 +12,20 @@ const message = ref('');
 const error = ref('');
 const cooldown = ref(false);
 const waiting = ref(false);
+// After a while without verification, explain the existing-account case (shown to everyone,
+// so the page never reveals whether an email is registered)
+const waitingLong = ref(false);
+const LONG_WAIT_MS = 45000;
 let timer;
 let poller;
+let longWaitTimer;
 
 // The link can be opened on any device (e.g. a phone). This tab keeps checking and continues
 // by itself once the email is verified; the request survives a page reload for 30 minutes.
 const PENDING_KEY = 'cspc_applicant_pending_request';
 const savePending = (value) => { try { value ? sessionStorage.setItem(PENDING_KEY, JSON.stringify(value)) : sessionStorage.removeItem(PENDING_KEY); } catch { /* storage unavailable: polling still runs in this tab */ } };
 const readPending = () => { try { return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } };
-const stopWaiting = () => { clearInterval(poller); poller = null; waiting.value = false; };
+const stopWaiting = () => { clearInterval(poller); poller = null; clearTimeout(longWaitTimer); longWaitTimer = null; waiting.value = false; waitingLong.value = false; };
 const checkStatus = async (requestId) => {
   try {
     const { data } = await axios.post('/api/applications/email/status', { requestId });
@@ -41,17 +46,25 @@ const checkStatus = async (requestId) => {
     // Network blips and rate limits: keep waiting and try again on the next tick.
   }
 };
-const startWaiting = (requestId) => {
+const startWaiting = (requestId, sinceMs = 0) => {
   stopWaiting();
   waiting.value = true;
   poller = setInterval(() => checkStatus(requestId), 3000);
+  longWaitTimer = setTimeout(() => { if (waiting.value) waitingLong.value = true; }, Math.max(0, LONG_WAIT_MS - sinceMs));
+};
+// Lets the applicant abandon a pending request (wrong address, or an email that already has an account)
+const startOver = () => {
+  stopWaiting(); savePending(null);
+  clearTimeout(timer); cooldown.value = false;
+  message.value = ''; error.value = ''; requestedEmail.value = '';
 };
 onMounted(() => {
   const pending = readPending();
   if (pending?.requestId && pending.until > Date.now()) {
     requestedEmail.value = pending.email; email.value = pending.email;
     message.value = 'A verification link was sent.';
-    startWaiting(pending.requestId);
+    // Restored after a reload: count the time already spent waiting
+    startWaiting(pending.requestId, pending.since ? Date.now() - pending.since : 0);
     checkStatus(pending.requestId);
   } else savePending(null);
 });
@@ -67,7 +80,7 @@ const request = async () => {
     cooldown.value = true;
     timer = setTimeout(() => { cooldown.value = false; }, 60000);
     if (data.requestId) {
-      savePending({ requestId: data.requestId, email: requestedEmail.value, until: Date.now() + 30 * 60 * 1000 });
+      savePending({ requestId: data.requestId, email: requestedEmail.value, since: Date.now(), until: Date.now() + 30 * 60 * 1000 });
       startWaiting(data.requestId);
     }
   } catch (err) { error.value = err.response?.data?.message || 'We could not request verification. Check your connection and try again.'; }
@@ -90,6 +103,15 @@ const request = async () => {
         <p>Open the link on this device or on your phone and tap <span class="font-semibold">Verify my email</span>. This page continues automatically once your email is verified.</p>
         <p v-if="waiting" class="flex items-center gap-2 font-medium"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting for verification…</p>
         <p class="text-emerald-800">The link expires in 30 minutes. Email verification does not approve your property or create an active owner login.</p>
+        <button v-if="waiting" type="button" @click="startOver" class="gate-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Use a different email</button>
+      </div>
+      <div v-if="waitingLong" role="status" class="text-sm leading-relaxed text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 space-y-2">
+        <p class="font-semibold">No verification link in your inbox?</p>
+        <p>If this email already has a CSPC BH Finder account, we sent <span class="font-semibold">sign-in instructions</span> instead of a link. Sign in, then use <span class="font-semibold">Register a property</span> on your owner dashboard. Also check your spam folder.</p>
+        <div class="flex flex-wrap gap-x-5 gap-y-2 pt-1">
+          <router-link to="/login" class="gate-focus rounded font-semibold text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Sign in</router-link>
+          <button type="button" @click="startOver" class="gate-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Use a different email</button>
+        </div>
       </div>
       <button :disabled="busy || cooldown" class="gate-focus w-full min-h-[44px] bg-[#1e4a8d] hover:bg-[#163870] text-white text-sm font-semibold rounded-lg px-4 py-3 disabled:bg-slate-200 disabled:text-slate-600 disabled:cursor-not-allowed">{{ busy ? 'Requesting…' : cooldown ? 'Wait a minute before resending' : 'Send verification link' }}</button>
     </form>
