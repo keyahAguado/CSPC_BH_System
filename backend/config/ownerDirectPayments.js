@@ -117,8 +117,10 @@ export function createDirectHealthWorker({pool,service=createDirectPaymentServic
                 AND EXISTS (SELECT 1 FROM bookings b JOIN boarding_houses bh ON bh.id = b.house_id WHERE bh.owner_id = c.owner_id
                     AND b.payment_method = 'paymongo' AND b.status IN ('pending','confirmed') AND b.payment_status != 'paid'
                     AND b.paymongo_payment_id IS NULL AND b.payment_interruption_notified_at IS NULL
-                    AND (b.paymongo_mode IS NULL OR b.paymongo_mode = c.mode)) LIMIT 100`,[paymentMode()]);
+                    AND (b.paymongo_mode IS NULL OR b.paymongo_mode = ?)) LIMIT 100`,[paymentMode(),paymentMode()]);
+            // c.mode already equals the current mode; comparing bookings.paymongo_mode (utf8mb4_general_ci) with
+            // the newer table's column (server-default collation) raised "Illegal mix of collations".
             for(const row of disconnected)await notifyPaymentInterruption(pool,row);
-        }catch{log.warn('[OWNER PAYMENTS] Connection health check could not finish.');}finally{running=false;}
+        }catch(error){log.warn('[OWNER PAYMENTS] Connection health check could not finish:',error?.code||error?.name||'unknown');}finally{running=false;}
     };
 }

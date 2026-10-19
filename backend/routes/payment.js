@@ -138,10 +138,13 @@ router.post('/checkout', authenticateToken, async (req, res) => {
             options
         );
 
-        const session = paymongoResponse.data.data;
-        const checkoutUrl = session?.attributes?.checkout_url;
-        if (!session?.id || !checkoutUrl) throw paymentError(502, 'Invalid payment provider response.');
-        assertCheckoutContext(session, {...contextBooking, paymongo_session_id:session.id});
+        const created = paymongoResponse.data.data;
+        if (!created?.id || !created?.attributes?.checkout_url) throw paymentError(502, 'Invalid payment provider response.');
+        // The create response does not echo metadata, so read the session back (the same read used to
+        // confirm payment) and verify its booking, mode and recipient before saving or showing the URL.
+        const session = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(created.id), options)).data.data;
+        assertCheckoutContext(session, {...contextBooking, paymongo_session_id:created.id});
+        const checkoutUrl = session.attributes.checkout_url || created.attributes.checkout_url;
         await connection.query('UPDATE bookings SET paymongo_session_id = ?, paymongo_account_id = ?, paymongo_mode = ?, paymongo_direct_connection_id = ? WHERE id = ?', [session.id, accountId, paymentMode(), directId||null, b.id]);
         await connection.commit();
         res.json({ success: true, checkoutUrl });
