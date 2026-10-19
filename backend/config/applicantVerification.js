@@ -144,7 +144,7 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, n
                 }
                 // Opening the link only proves inbox access. The tab that requested it (on any device)
                 // picks up the session through /email/status, so this device is not signed in.
-                await connection.query('UPDATE applicant_email_verifications SET used_at = NOW(), verified_at = IF(expires_at > NOW(), NOW(), verified_at) WHERE email = ? AND used_at IS NULL', [email]);
+                await connection.query('UPDATE applicant_email_verifications SET used_at = NOW(), verified_at = NOW() WHERE id = ? AND used_at IS NULL', [rows[0].id]);
                 if (user) await connection.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?', [user.id]);
                 await connection.commit();
                 return res.json({ success: true, verified: true, email });

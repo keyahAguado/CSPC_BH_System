@@ -445,7 +445,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (18,'admin@cspc.edu.ph','$2b$10$n2j1SKagRGi5sqQxMuQ8oOViizimxAPrsrh/utbITrEq/E5ymLIiq',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
+INSERT INTO `users` (`id`,`email`,`password`,`google_id`,`role`,`name`,`phone`,`address`,`status`,`student_id`,`sex`,`course`,`year_section`,`dob`,`age`,`emergency_contact`,`guardian_name`,`profile_pic`,`created_at`) VALUES (18,'admin@cspc.edu.ph','$2b$10$n2j1SKagRGi5sqQxMuQ8oOViizimxAPrsrh/utbITrEq/E5ymLIiq',NULL,'admin','SASO Admin',NULL,NULL,'active',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'2026-06-08 15:06:51');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 --
@@ -616,6 +616,46 @@ INSERT IGNORE INTO `site_settings` (`setting_key`, `setting_value`) VALUES
 ('footer_facebook', ''),
 ('footer_website', ''),
 ('footer_copyright', '© 2026 CSPC Boarding House Selection & Management System. All rights reserved.');
+
+-- ---------------------------------------------------------------------------------------------------
+-- Fresh-install additions (same definitions as migrations 2026-10-11 and 2026-10-12). init.sql runs
+-- only on an empty database; everything else newer is added by the backend when it starts.
+-- ---------------------------------------------------------------------------------------------------
+ALTER TABLE `users` ADD COLUMN `email_verified_at` DATETIME NULL DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS `applicant_email_verifications` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `poll_hash` char(64) NULL DEFAULT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime NULL DEFAULT NULL,
+  `verified_at` datetime NULL DEFAULT NULL,
+  `claimed_at` datetime NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `applicant_verification_hash` (`token_hash`),
+  UNIQUE KEY `applicant_verification_poll` (`poll_hash`),
+  KEY `applicant_verification_email` (`email`,`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `notification_email_settings` (
+  `id` tinyint unsigned NOT NULL,
+  `start_after_id` bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`)
+);
+INSERT IGNORE INTO `notification_email_settings` (`id`, `start_after_id`) SELECT 1, COALESCE(MAX(`id`), 0) FROM `notifications`;
+
+CREATE TABLE IF NOT EXISTS `notification_email_deliveries` (
+  `notification_id` bigint unsigned NOT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'pending',
+  `attempts` int unsigned NOT NULL DEFAULT 0,
+  `next_attempt_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `accepted_at` datetime NULL,
+  `provider_message_id` varchar(255) NULL,
+  PRIMARY KEY (`notification_id`),
+  KEY `notification_email_pending` (`status`,`next_attempt_at`)
+);
 
 /*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

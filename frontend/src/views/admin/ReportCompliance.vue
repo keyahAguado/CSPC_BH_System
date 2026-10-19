@@ -85,15 +85,16 @@ onMounted(() => {
 
 const loadError = ref('');
 
+// Required permits first, then optional ones (each group keeps the standard document order).
 const PERMITS = [
   { key: 'business_form', label: 'Business' },
+  { key: 'barangay', label: 'Barangay' },
+  { key: 'sanitary', label: 'Sanitary' },
+  { key: 'fire', label: 'Fire safety' },
   { key: 'cedula', label: 'Cedula (CTC)' },
   { key: 'dti', label: 'DTI' },
-  { key: 'barangay', label: 'Barangay' },
   { key: 'building', label: 'Building' },
-  { key: 'zoning', label: 'Zoning' },
-  { key: 'sanitary', label: 'Sanitary' },
-  { key: 'fire', label: 'Fire safety' }
+  { key: 'zoning', label: 'Zoning' }
 ];
 const normalStatus = (v) => {
   const s = String(v || '').toLowerCase();
@@ -146,7 +147,6 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input v-model="searchQuery" type="text" aria-label="Search compliance records" placeholder="Search by boarding house, owner, or status..." />
           </div>
-          <span class="cp-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
           <button type="button" class="cp-print app-print-button" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
         </div>
       </div>

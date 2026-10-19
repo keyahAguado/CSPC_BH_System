@@ -189,7 +189,7 @@ const formatPeso =(v) => (Number(v) > 0 ? '₱' + Number(v).toLocaleString('en-P
 // Keep showArchived as an alias for backward-compat with any other refs
 const showArchived = computed(() => listingFilter.value === 'archived');
 
-// Supplementary doc info pop-up
+// Optional doc info pop-up
 const showSuppModal = ref(false);
 const suppModalStatus = ref('');
 
@@ -469,7 +469,7 @@ const loadError = ref('');
                   <span v-if="house.document_update_pending" class="admin-badge is-warning"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Document update under review</span>
                   <button v-if="house.compliance !== 'warning' && house.supplementary_status && house.supplementary_status !== 'active'" type="button"
                           class="admin-badge is-neutral od-chip-btn" @click="openSuppModal(house.supplementary_status)">
-                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>{{ house.supplementary_status === 'expired' ? 'Supplementary doc expired' : 'Supplementary doc expiring' }}
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>{{ house.supplementary_status === 'expired' ? 'Optional doc expired' : 'Optional doc expiring' }}
                   </button>
                 </div>
 
@@ -511,7 +511,7 @@ const loadError = ref('');
       </template>
     </main>
 
-    <!-- Supplementary Document Info Modal -->
+    <!-- Optional Document Info Modal -->
     <div v-management-dialog="{ close: () => showSuppModal = false }" v-if="showSuppModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[250] flex items-center justify-center p-4" @click.self="showSuppModal = false">
       <div class="popup-panel bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between gap-3">
@@ -519,7 +519,7 @@ const loadError = ref('');
             <div class="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
               <i class="fa-solid fa-circle-info text-slate-500"></i>
             </div>
-            <h3 class="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">Supplementary Document</h3>
+            <h3 class="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">Optional Document</h3>
           </div>
           <button aria-label="Close dialog" @click="showSuppModal = false" class="text-slate-300 hover:text-slate-600 transition cursor-pointer">
             <i class="fa-solid fa-xmark text-lg"></i>
@@ -528,10 +528,10 @@ const loadError = ref('');
         <div class="px-6 py-5">
           <p class="text-[13px] font-medium text-slate-900 leading-relaxed popup-message">
             <template v-if="suppModalStatus === 'expired'">
-              A supplementary document (e.g. Cedula, DTI, Building Inspection, or Zoning Clearance) has expired. <strong class="text-slate-800">Your listing stays visible and bookable</strong> — these are non-critical documents that don't affect your accreditation status. Renew it when convenient.
+              An optional document (e.g. Cedula, DTI, Building Inspection, or Zoning Clearance) has expired. <strong class="text-slate-800">Your listing stays visible and bookable</strong> — these are non-critical documents that don't affect your accreditation status. Renew it when convenient.
             </template>
             <template v-else>
-              A supplementary document is expiring soon. <strong class="text-slate-800">No action needed yet</strong> — this will not affect your listing or accreditation status. You may upload a renewed copy in advance under <strong>Docs</strong>.
+              An optional document is expiring soon. <strong class="text-slate-800">No action needed yet</strong> — this will not affect your listing or accreditation status. You may upload a renewed copy in advance under <strong>Docs</strong>.
             </template>
           </p>
         </div>

@@ -352,7 +352,7 @@ const docSections = computed(() => {
   const rows = allDocs.value.slice(docStart.value - 1, docEnd.value);
   return [
     { key: 'required', title: 'Required documents', icon: 'fa-shield-halved', note: `Items 1–${requiredDocs.value.length}`, rows: rows.filter(r => isRequiredDoc(r.doc)) },
-    { key: 'additional', title: 'Supplementary documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
+    { key: 'additional', title: 'Optional documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
   ].filter(section => section.rows.length);
 });
 
@@ -461,7 +461,7 @@ const docSections = computed(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Supplementary</span>
+                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Optional</span>
                       <span v-else :class="['dx-pill', 'dt-status', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
                     </td>
                   </tr>

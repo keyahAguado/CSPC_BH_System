@@ -285,7 +285,6 @@ const loadError = ref('');
             <option value="pending">Pending</option>
           </select>
         </label>
-        <span class="reg-count">{{ filteredUsers.length }} result{{ filteredUsers.length !== 1 ? 's' : '' }}</span>
       </div>
 
       <!-- Loading -->

@@ -1,7 +1,8 @@
 <script setup>
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router';
+import { trackingBackDestination } from '../../utils/applicantNavigation.js';
 import axios from 'axios';
 import { getImageUrl } from '../../config/api.js';
 import {
@@ -11,6 +12,10 @@ import {
 
 const router = useRouter();
 const route = useRoute();
+onBeforeRouteLeave((to, from) => {
+  const destination = trackingBackDestination(to, from, window.history.state);
+  if (destination) return { path: destination, replace: true };
+});
 
 // Shown after the register / edit page sends the applicant here.
 const submittedRef = typeof route.query.submitted === 'string' ? route.query.submitted : '';

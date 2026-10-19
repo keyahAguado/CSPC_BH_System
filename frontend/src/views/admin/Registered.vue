@@ -1,7 +1,8 @@
 <script setup>
 import UserAvatar from "../../components/UserAvatar.vue";
 import { confirmTone } from '../../utils/confirmTone.js';
-import { documentAttachments } from '../../utils/documentFiles.js';
+import DocumentAttachmentList from '../../components/DocumentAttachmentList.vue';
+import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
 import RoomFeatures from '../../components/RoomFeatures.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
@@ -133,12 +134,12 @@ const openPreview = (url) => {
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
-const openPreviewSet = (files) => {
+const openPreviewSet = (files, initialIndex = 0) => {
   const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
   if (!urls.length) return;
   previewFiles.value = urls;
-  previewIndex.value = 0;
-  previewImageUrl.value = urls[0];
+  previewIndex.value = Math.max(0, Math.min(initialIndex, urls.length - 1));
+  previewImageUrl.value = urls[previewIndex.value];
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
@@ -356,13 +357,16 @@ const expiryTone = (value) => {
 };
 
 // Row summary: how many required permits are on file and the earliest required expiry
-const customDocsFor = (h) => sharedCriteria.value
+const customDocsFor = (h) => [...sharedCriteria.value
   .filter(c => c.house_id == null || Number(c.house_id) === Number(h.id))
   .map(c => {
     const d = dynamicDocs.value.find(d => Number(d.house_id) === Number(h.id) && Number(d.criteria_id) === Number(c.id));
     const files = d ? documentAttachments(d) : [];
     return { label: c.label, file: files[0] || null, files, expiry: d?.expiry_date || null, required: c.requirement_type === 'required' };
-  });
+  }), ...dynamicDocs.value.filter(d => Number(d.house_id) === Number(h.id) && !sharedCriteria.value.some(c => Number(c.id) === Number(d.criteria_id))).map(d => {
+    const files = documentAttachments(d);
+    return { label: d.criteria_label || 'Previous document requirement', file: files[0] || null, files, expiry: d.expiry_date || null, required: false };
+  })];
 const requiredDocumentsFor = (h) => [...REQUIRED_PERMITS.map(p => ({ file: h[p.key], expiry: h['expiry_' + p.key] })), ...customDocsFor(h).filter(d => d.required)];
 const requiredCount = h => requiredDocumentsFor(h).length;
 const requiredOnFile = h => requiredDocumentsFor(h).filter(d => d.file).length;
@@ -400,8 +404,7 @@ const DETAIL_TABS = [
 const buildDocs = (house) => {
   // All files for a permit; falls back to the single permit column for older records.
   const toDoc = (p) => {
-    const listed = permitFiles.value.filter(f => f.house_id === house.id && f.permit_key === p.key).map(f => f.file_path);
-    const files = listed.length ? listed : (house[p.key] ? [house[p.key]] : []);
+    const files = permitAttachments(house, p.key, permitFiles.value);
     return { label: p.label, file: files[0] || null, files, expiry: house['expiry_' + p.key] || null };
   };
   requiredDocs.value = REQUIRED_PERMITS.map(toDoc);
@@ -474,6 +477,7 @@ const openDetail = (house, tab = 'overview') => {
   buildDocs(house);
   activeRooms.value = [];
   activeRoomOccupants.value = [];
+  activeRoomData.value = null;
   isOccupantsView.value = false;
   roomsChanged.value = false;
   detailTab.value = tab;
@@ -493,6 +497,7 @@ const closeDetail = () => {
   reviews.value = [];
   activeRooms.value = [];
   activeRoomOccupants.value = [];
+  activeRoomData.value = null;
   isOccupantsView.value = false;
   requiredDocs.value = [];
   optionalDocs.value = [];
@@ -853,21 +858,16 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Supplementary documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
             <div class="rp-card-head">
               <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
               <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === requiredCount(activeHouse) ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
             </div>
             <ul class="rp-doc-grid">
               <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
-                <button v-if="doc.file" type="button" class="rp-doc-preview" :aria-label="'View ' + doc.label + (doc.files.length > 1 ? ` (${doc.files.length} files)` : '')" @click="openPreviewSet(doc.files)">
-                  <img v-if="!isPdfFile(doc.file)" :src="getImageUrl(doc.file)" alt="" />
-                  <span v-else class="rp-doc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF</span>
-                  <span v-if="doc.files.length > 1" class="rp-doc-count" aria-hidden="true">{{ doc.files.length }} files</span>
-                </button>
-                <span v-else class="rp-doc-preview is-empty" aria-hidden="true"><i class="fa-regular fa-file"></i></span>
                 <div class="min-w-0 flex-1">
                   <p class="rp-doc-name">{{ doc.label }}</p>
+                  <DocumentAttachmentList v-if="doc.files.length" :files="doc.files" :label="doc.label" @preview="index => openPreviewSet(doc.files, index)" />
                   <p class="rp-doc-meta">
                     <span v-if="!doc.file" :class="group.required ? 'text-rose-600 font-semibold' : 'text-slate-400'">Not submitted</span>
                     <template v-else>
@@ -884,6 +884,10 @@ const loadError = ref('');
 
         <!-- ROOMS & OCCUPANTS -->
         <div v-else class="rp-col">
+          <div class="rp-card-head" aria-label="Room and occupant views">
+            <button type="button" class="rp-back" :aria-pressed="!isOccupantsView" @click="isOccupantsView = false">View rooms</button>
+            <button v-if="activeRoomData" type="button" class="rp-link-btn" :aria-pressed="isOccupantsView" @click="viewBoarderDetails(activeRoomData)">View occupants · Room {{ activeRoomData.room_number }}</button>
+          </div>
           <template v-if="!isOccupantsView">
             <section class="rp-card">
               <div class="rp-card-head">
@@ -913,7 +917,6 @@ const loadError = ref('');
           <template v-else>
             <section class="rp-card">
               <div class="rp-card-head">
-                <button type="button" class="rp-back" @click="isOccupantsView = false"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back to rooms</button>
                 <h2 class="rp-card-title !mb-0">Room {{ activeRoomData ? activeRoomData.room_number : '' }} occupants</h2>
               </div>
               <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active CSPC student boarders in this room.</div>

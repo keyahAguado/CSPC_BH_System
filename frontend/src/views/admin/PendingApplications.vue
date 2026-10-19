@@ -1,5 +1,5 @@
 <script setup>
-import { documentAttachments } from '../../utils/documentFiles.js';
+import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
@@ -73,7 +73,7 @@ const newCriteriaLabel = ref('');
 const newCriteriaType = ref('');
 const requirementTypeOptions = [
   { value: 'required', label: 'Required', note: 'Owners must upload it before submitting.' },
-  { value: 'supplementary', label: 'Supplementary', note: 'Optional. Owners may upload it.' }
+  { value: 'supplementary', label: 'Optional', note: 'Optional. Owners may upload it.' }
 ];
 const editCriteriaId = ref(null);
 const editCriteriaLabel = ref('');
@@ -176,11 +176,7 @@ const closeChecklistModal = () => {
 // Legal documents can be PDF: open those in a new tab instead of the image preview.
 const isPdfFile = (url) => /\.pdf($|[?#])/i.test(String(url || ''));
 // Every file submitted for a legal document; falls back to the single permit column.
-const getPermitFiles = (app, key) => {
-  if (!app || !key) return [];
-  const list = permitFiles.value.filter(f => f.house_id === app.id && f.permit_key === key).map(f => f.file_path);
-  return list.length ? list : (app[key] ? [app[key]] : []);
-};
+const getPermitFiles = (app, key) => permitAttachments(app, key, permitFiles.value);
 
 // Full-screen document viewer: images fit the screen (click to zoom to actual size); PDFs show inline
 const previewZoomed = ref(false);
@@ -393,7 +389,7 @@ const submitAddCriteria = async () => {
   const inputError = validateInput('criterion', { label: newCriteriaLabel.value });
   if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (!newCriteriaLabel.value.trim()) return;
-  if (!newCriteriaType.value) { showSystemAlert('Choose whether this document is Required or Supplementary.', 'error'); return; }
+  if (!newCriteriaType.value) { showSystemAlert('Choose whether this document is Required or Optional.', 'error'); return; }
   try {
     const res = await axios.post(`/api/admin/criteria/add`, {
       label: newCriteriaLabel.value,
@@ -722,7 +718,7 @@ const loadError = ref('');
           <button aria-label="Close dialog" @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0 management-button"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left">
-          <section v-for="group in [{ title: 'Required documents', required: true }, { title: 'Supplementary documents', required: false }]" :key="group.title" class="mb-8">
+          <section v-for="group in [{ title: 'Required documents', required: true }, { title: 'Optional documents', required: false }]" :key="group.title" class="mb-8">
             <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ group.title }}</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div v-for="p in getFilteredCriteria().filter(c => isRequiredCriterion(c) === group.required)" :key="p.id"
@@ -871,7 +867,7 @@ const loadError = ref('');
                           </span>
                           <span v-else
                                 class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
-                            Supplementary
+                            Optional
                           </span>
                         </div>
                       </td>
@@ -928,7 +924,7 @@ const loadError = ref('');
                     </span>
                     <span v-else
                           class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
-                      Supplementary
+                      Optional
                     </span>
                   </div>
                 </div>
@@ -1074,7 +1070,7 @@ const loadError = ref('');
           </div>
           <div class="space-y-4">
             <div v-for="item in criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id))" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
-              <span class="text-sm font-semibold text-slate-700">{{ item.label }}<small class="block text-xs text-slate-500 mt-1">{{ item.house_id ? 'This property only' : 'All boarding houses' }} / {{ isRequiredCriterion(item) ? 'Required' : 'Supplementary' }}</small></span>
+              <span class="text-sm font-semibold text-slate-700">{{ item.label }}<small class="block text-xs text-slate-500 mt-1">{{ item.house_id ? 'This property only' : 'All boarding houses' }} / {{ isRequiredCriterion(item) ? 'Required' : 'Optional' }}</small></span>
               <button @click="startEditCriteria(item.id, item.label)" class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Edit</button>
             </div>
             <div v-if="criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id)).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">

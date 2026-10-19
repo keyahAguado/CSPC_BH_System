@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
-import { setApplicantToken, rememberedDevice, saveRememberedDevice, forgetRememberedDevice, takeFreshVerificationFlag } from '../utils/applicantSession.js';
+import { setApplicantToken, rememberedDevice, saveRememberedDevice, forgetRememberedDevice, takeFreshVerificationFlag, PENDING_VERIFICATION_KEY } from '../utils/applicantSession.js';
 const route = useRoute();
 const router = useRouter();
 const email = ref('');
@@ -26,7 +26,7 @@ const resuming = ref(false);
 
 // The link can be opened on any device (e.g. a phone). This tab keeps checking and continues
 // by itself once the email is verified; the request survives a page reload for 30 minutes.
-const PENDING_KEY = 'cspc_applicant_pending_request';
+const PENDING_KEY = PENDING_VERIFICATION_KEY;
 const savePending = (value) => { try { value ? sessionStorage.setItem(PENDING_KEY, JSON.stringify(value)) : sessionStorage.removeItem(PENDING_KEY); } catch { /* storage unavailable: polling still runs in this tab */ } };
 const readPending = () => { try { return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } };
 const stopWaiting = () => { clearInterval(poller); poller = null; clearTimeout(longWaitTimer); longWaitTimer = null; waiting.value = false; waitingLong.value = false; };
@@ -34,6 +34,8 @@ const stopWaiting = () => { clearInterval(poller); poller = null; clearTimeout(l
 // could otherwise find the request already completed by the first and wrongly report "expired".
 let checking = false;
 let activeRequestId = '';
+let sessionGeneration = 0;
+const sessionChanged = () => { sessionGeneration++; activeRequestId = ''; stopWaiting(); savePending(null); };
 const checkStatus = async (requestId) => {
   if (checking || requestId !== activeRequestId) return;
   checking = true;
@@ -75,6 +77,7 @@ const startWaiting = (requestId, sinceMs = 0) => {
 };
 // Lets the applicant abandon a pending request (wrong address, or an email that already has an account)
 const startOver = () => {
+  sessionGeneration++;
   activeRequestId = '';
   stopWaiting(); savePending(null);
   clearTimeout(timer); cooldown.value = false;
@@ -85,8 +88,10 @@ const resumeRememberedDevice = async () => {
   const device = rememberedDevice();
   if (!device) return false;
   resuming.value = true;
+  const generation = sessionGeneration;
   try {
     const { data } = await axios.post('/api/applications/session/resume', { deviceToken: device.token });
+    if (generation !== sessionGeneration) return false;
     setApplicantToken(data.token);
     if (data.hasApplications && route.path !== '/track') router.replace('/track');
     return true;
@@ -98,6 +103,7 @@ const resumeRememberedDevice = async () => {
   }
 };
 onMounted(async () => {
+  window.addEventListener('applicant-session-updated', sessionChanged);
   if (!takeFreshVerificationFlag() && await resumeRememberedDevice()) return;
   const pending = readPending();
   if (pending?.requestId && pending.until > Date.now()) {
@@ -109,13 +115,17 @@ onMounted(async () => {
     checkStatus(pending.requestId);
   } else savePending(null);
 });
-onUnmounted(() => { clearTimeout(timer); stopWaiting(); });
+onUnmounted(() => { sessionGeneration++; activeRequestId = ''; clearTimeout(timer); stopWaiting(); window.removeEventListener('applicant-session-updated', sessionChanged); });
 const request = async () => {
+  if (busy.value || cooldown.value) return;
   error.value = ''; message.value = '';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) { error.value = 'Enter a valid personal email address.'; return; }
+  activeRequestId = ''; stopWaiting(); savePending(null);
+  const generation = ++sessionGeneration;
   busy.value = true;
   try {
     const { data } = await axios.post('/api/applications/email/request', { email: email.value.trim() });
+    if (generation !== sessionGeneration) return;
     requestedEmail.value = email.value.trim();
     message.value = data.message;
     cooldown.value = true;
@@ -125,7 +135,7 @@ const request = async () => {
       savePending({ requestId: data.requestId, email: requestedEmail.value, remember: rememberChoice, since: Date.now(), until: Date.now() + 30 * 60 * 1000 });
       startWaiting(data.requestId);
     }
-  } catch (err) { error.value = err.response?.data?.message || 'We could not request verification. Check your connection and try again.'; }
+  } catch (err) { if (generation === sessionGeneration) error.value = err.response?.data?.message || 'We could not request verification. Check your connection and try again.'; }
   finally { busy.value = false; }
 };
 </script>

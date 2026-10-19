@@ -1,10 +1,13 @@
 // Track My Application session (accountless applicants). Kept in sessionStorage only and
 // separate from the normal login token; the server limits it to 2 hours.
 const KEY = 'cspc_applicant_token';
+export const PENDING_VERIFICATION_KEY = 'cspc_applicant_pending_request';
+export const clearPendingVerification = () => { try { sessionStorage.removeItem(PENDING_VERIFICATION_KEY); } catch {} };
 let channel = null;
 try { if (typeof BroadcastChannel === 'function') channel = new BroadcastChannel('cspc-applicant-verification'); } catch { /* browser restrictions: this tab still works */ }
 channel?.addEventListener('message', ({ data }) => {
   if (typeof data !== 'string') return;
+  clearPendingVerification();
   try { sessionStorage.setItem(KEY, data); } catch { return; }
   window.dispatchEvent(new Event('applicant-session-updated'));
 });
@@ -13,13 +16,16 @@ export const applicantToken = () => {
   try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; }
 };
 export const setApplicantToken = (token) => {
+  clearPendingVerification();
   try { sessionStorage.setItem(KEY, token); } catch { /* storage unavailable */ }
   try { channel?.postMessage(token); } catch { /* synchronization is optional */ }
   window.dispatchEvent(new Event('applicant-session-updated'));
 };
 export const clearApplicantToken = () => {
+  clearPendingVerification();
   try { sessionStorage.removeItem(KEY); } catch { /* storage unavailable */ }
   try { channel?.postMessage(''); } catch { /* synchronization is optional */ }
+  window.dispatchEvent(new Event('applicant-session-updated'));
 };
 export const applicantHeaders = () => ({ Authorization: `Bearer ${applicantToken()}` });
 

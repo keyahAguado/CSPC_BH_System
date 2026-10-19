@@ -32,9 +32,15 @@ const barangayOptions = ref([]);
 const regionHasProvinces = ref(true);
 const loading = ref('');
 const loadError = ref('');
+let selectionVersion = 0;
+let loadVersion = 0;
 
 const nameOf = (list, code) => (list.find(o => o.code === code) || {}).name || '';
-const complete = computed(() => !!cityCode.value && (!barangayOptions.value.length || !!barangayCode.value));
+const complete = computed(() => !loading.value && !loadError.value
+  && regionOptions.value.some(o => o.code === regionCode.value)
+  && (!regionHasProvinces.value || provinceOptions.value.some(o => o.code === provinceCode.value))
+  && cityOptions.value.some(o => o.code === cityCode.value)
+  && barangayOptions.value.some(o => o.code === barangayCode.value));
 const composed = computed(() => [
   street.value.trim(),
   nameOf(barangayOptions.value, barangayCode.value),
@@ -58,32 +64,37 @@ watch(() => props.modelValue, (value) => {
 });
 
 const load = async (level, loader) => {
+  const version = ++loadVersion;
   loading.value = level;
   loadError.value = '';
   try { return await loader(); } catch {
-    loadError.value = 'Could not load the address list. Check your connection and select again.';
+    if (version === loadVersion) loadError.value = 'Could not load the address list. Check your connection and select again.';
     return [];
-  } finally { loading.value = ''; }
+  } finally { if (version === loadVersion) loading.value = ''; }
 };
 const loadRegions = async () => { if (!regionOptions.value.length) regionOptions.value = await load('region', getRegions); };
 const onRegionChange = async () => {
+  const version = ++selectionVersion;
   provinceCode.value = ''; cityCode.value = ''; barangayCode.value = '';
   provinceOptions.value = []; cityOptions.value = []; barangayOptions.value = [];
   if (!regionCode.value) return;
   const provinces = await load('province', () => getProvinces(regionCode.value));
+  if (version !== selectionVersion || loadError.value) return;
   regionHasProvinces.value = provinces.length > 0;
   if (regionHasProvinces.value) provinceOptions.value = provinces;
-  else cityOptions.value = await load('city', () => getCitiesByRegion(regionCode.value));
+  else { const cities = await load('city', () => getCitiesByRegion(regionCode.value)); if (version === selectionVersion) cityOptions.value = cities; }
 };
 const onProvinceChange = async () => {
+  const version = ++selectionVersion;
   cityCode.value = ''; barangayCode.value = '';
   cityOptions.value = []; barangayOptions.value = [];
-  if (provinceCode.value) cityOptions.value = await load('city', () => getCities(provinceCode.value));
+  if (provinceCode.value) { const cities = await load('city', () => getCities(provinceCode.value)); if (version === selectionVersion) cityOptions.value = cities; }
 };
 const onCityChange = async () => {
+  const version = ++selectionVersion;
   barangayCode.value = '';
   barangayOptions.value = [];
-  if (cityCode.value) barangayOptions.value = await load('barangay', () => getBarangays(cityCode.value));
+  if (cityCode.value) { const barangays = await load('barangay', () => getBarangays(cityCode.value)); if (version === selectionVersion) barangayOptions.value = barangays; }
 };
 
 const startChange = () => { editing.value = true; publish(complete.value ? composed.value : saved.value); loadRegions(); };
