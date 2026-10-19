@@ -116,13 +116,13 @@ export async function evaluateHouseCompliance(houseId) {
         await pool.query('UPDATE boarding_houses SET supplementary_status = ? WHERE id = ?', [supplementary.status, house.id]);
 
         if (supplementary.status === 'expired') {
-            const suppExpiredMsg = `ALERT: The following supplementary documents for "${house.name}" have expired: ${supplementary.expired.join(', ')}. Your listing remains active and bookable — please upload renewed copies when convenient.`;
+            const suppExpiredMsg = `ALERT: The following optional documents for "${house.name}" have expired: ${supplementary.expired.join(', ')}. Your listing remains active and bookable — please upload renewed copies when convenient.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
                 suppExpiredMsg
             ]);
         } else if (supplementary.status === 'warning') {
-            const suppWarnMsg = `WARNING: The following supplementary documents for "${house.name}" are expiring soon (within 30 days): ${supplementary.expiringSoon.join(', ')}. Please upload renewed copies before they expire.`;
+            const suppWarnMsg = `WARNING: The following optional documents for "${house.name}" are expiring soon (within 30 days): ${supplementary.expiringSoon.join(', ')}. Please upload renewed copies before they expire.`;
             await pool.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [
                 house.owner_id,
                 suppWarnMsg

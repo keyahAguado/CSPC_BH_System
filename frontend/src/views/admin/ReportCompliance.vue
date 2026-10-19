@@ -85,15 +85,16 @@ onMounted(() => {
 
 const loadError = ref('');
 
+// Required permits first, then optional ones (each group keeps the standard document order).
 const PERMITS = [
   { key: 'business_form', label: 'Business' },
+  { key: 'barangay', label: 'Barangay' },
+  { key: 'sanitary', label: 'Sanitary' },
+  { key: 'fire', label: 'Fire safety' },
   { key: 'cedula', label: 'Cedula (CTC)' },
   { key: 'dti', label: 'DTI' },
-  { key: 'barangay', label: 'Barangay' },
   { key: 'building', label: 'Building' },
-  { key: 'zoning', label: 'Zoning' },
-  { key: 'sanitary', label: 'Sanitary' },
-  { key: 'fire', label: 'Fire safety' }
+  { key: 'zoning', label: 'Zoning' }
 ];
 const normalStatus = (v) => {
   const s = String(v || '').toLowerCase();
@@ -142,11 +143,10 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 
         <!-- Toolbar -->
         <div class="cp-toolbar">
-          <div class="cp-search">
+          <div class="admin-search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input v-model="searchQuery" type="text" aria-label="Search compliance records" placeholder="Search by boarding house, owner, or status..." />
           </div>
-          <span class="cp-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
           <button type="button" class="cp-print app-print-button" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
         </div>
       </div>
@@ -332,11 +332,6 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
 .cp-tiles .is-danger dd, .cp-tiles .is-danger dt i { color: #dc2626; }
 
 .cp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
-.cp-search { position: relative; flex: 1 1 280px; min-width: 0; }
-.cp-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.cp-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; }
-.cp-search input::placeholder { font-weight: 400; color: #94a3b8; }
-.cp-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .cp-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #64748b; }
 .cp-dot { width: 8px; height: 8px; border-radius: 999px; background: #dc2626; }
 .cp-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }

@@ -119,11 +119,10 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 
         <!-- Toolbar -->
         <div class="ml-toolbar">
-          <div class="ml-search">
+          <div class="admin-search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input v-model="searchQuery" type="text" aria-label="Search masterlist" placeholder="Search by boarding house, owner, or address..." />
           </div>
-          <span class="ml-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
           <button type="button" class="ml-print app-print-button" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
         </div>
       </div>
@@ -331,11 +330,6 @@ const totals = computed(() => houses.value.reduce((t, h) => {
 .ml-tiles > div.is-primary dd, .ml-tiles > div.is-primary dt i { color: #1e4a8d; }
 
 .ml-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
-.ml-search { position: relative; flex: 1 1 280px; min-width: 0; }
-.ml-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.ml-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; }
-.ml-search input::placeholder { font-weight: 400; color: #94a3b8; }
-.ml-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .ml-count { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .ml-print { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 16px; border: 0; border-radius: 10px; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .ml-print:hover { background: #b91c1c; }

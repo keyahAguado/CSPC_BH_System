@@ -59,6 +59,8 @@ const adminComments = ref('');
 
 const ownerProperties = ref([]);
 const selectedHouseId = ref('');
+// False when the owner has not registered a property yet (nothing to load, not an error)
+const hasProperty = ref(true);
 
 const isLoading = ref(true);
 const isUpdating = ref({});
@@ -97,7 +99,8 @@ const fetchOwnerProperties = async () => {
     });
     if (res.data.success) {
       ownerProperties.value = res.data.properties || (res.data.data ? [res.data.data] : []);
-      
+      hasProperty.value = ownerProperties.value.length > 0;
+
       const paramId = route.params.id;
       const queryHouseName = route.query.houseName;
       
@@ -125,10 +128,21 @@ const fetchDocuments = async (overrideId) => {
     isLoading.value = true;
     const houseId = overrideId || selectedHouseId.value || route.params.id || '';
     
-    // Fetch records using correct boarding-houses prefix
-    const response = await axios.get(`/api/boarding-houses/documents/${houseId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    // Fetch records using correct boarding-houses prefix. Retry brief outages (no response
+    // or 5xx, e.g. while the database restarts) instead of leaving the page empty.
+    let response;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        response = await axios.get(`/api/boarding-houses/documents/${houseId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        break;
+      } catch (err) {
+        const status = err.response?.status;
+        if (attempt >= 3 || (status && status < 500)) throw err;
+        await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+      }
+    }
 
      if (response.data.success) {
       house.value = response.data.house;
@@ -179,6 +193,11 @@ const fetchDocuments = async (overrideId) => {
       console.log('[DEBUG] Loaded document expiries:', expiryDates.value);
     }
   } catch (error) {
+    // No boarding house linked to this account yet: show the register prompt instead of an error
+    if (error.response?.status === 404 && !route.params.id) {
+      hasProperty.value = false;
+      return;
+    }
     loadError.value = 'The server did not return these records. Refresh the page to try again.';
     console.error('Failed to load documents details:', error);
     showSystemAlert('Could not fetch legal documents data.', 'warning');
@@ -291,6 +310,10 @@ const saveDocumentUpdate = async (p) => {
 
 onMounted(async () => {
   await fetchOwnerProperties();
+  if (!hasProperty.value) {
+    isLoading.value = false;
+    return;
+  }
   await fetchDocuments();
 });
 
@@ -352,7 +375,7 @@ const docSections = computed(() => {
   const rows = allDocs.value.slice(docStart.value - 1, docEnd.value);
   return [
     { key: 'required', title: 'Required documents', icon: 'fa-shield-halved', note: `Items 1–${requiredDocs.value.length}`, rows: rows.filter(r => isRequiredDoc(r.doc)) },
-    { key: 'additional', title: 'Supplementary documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
+    { key: 'additional', title: 'Optional documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
   ].filter(section => section.rows.length);
 });
 
@@ -404,6 +427,15 @@ const docSections = computed(() => {
 
         <div v-if="isLoading" class="docs-loading" role="status">
           <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading documents…
+        </div>
+
+        <div v-else-if="!hasProperty" class="docs-empty" role="status">
+          <i class="fa-solid fa-house-circle-exclamation" aria-hidden="true"></i>
+          <strong>No registered property yet</strong>
+          <p>Legal documents are uploaded when you register your boarding house. Once it is registered, you can view and renew its permits here.</p>
+          <router-link to="/owner/accreditation" class="docs-empty-action">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i> Register your property
+          </router-link>
         </div>
 
         <div v-else class="dt-card">
@@ -461,7 +493,7 @@ const docSections = computed(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Supplementary</span>
+                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Optional</span>
                       <span v-else :class="['dx-pill', 'dt-status', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
                     </td>
                   </tr>
@@ -562,6 +594,12 @@ const docSections = computed(() => {
 /* One white panel holding everything */
 .dx-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 1px 2px rgba(20, 43, 74, .04); padding: 14px 18px 16px; }
 .docs-loading { padding: 48px; text-align: center; color: #5b6e86; font-weight: 600; }
+.docs-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 460px; margin: 0 auto; padding: 48px 16px; text-align: center; color: #5b6e86; font-size: 13.5px; line-height: 1.55; }
+.docs-empty > i { font-size: 30px; color: #94a3b8; margin-bottom: 4px; }
+.docs-empty strong { color: #0f172a; font-size: 15px; }
+.docs-empty p { margin: 0; }
+.docs-empty-action { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 9px 16px; border-radius: 10px; background: #2563eb; color: #fff; font-weight: 700; text-decoration: none; }
+.docs-empty-action:hover { background: #1d4ed8; }
 
 /* Panel header */
 .dx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; }

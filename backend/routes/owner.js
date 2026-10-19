@@ -596,7 +596,7 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, upload.array('
 
         // Verify room belongs to owner's house
         const [roomRows] = await connection.query(
-            `SELECT r.id, r.house_id, r.price, r.room_number, r.floor_label, r.amenities, r.photos, r.amenities_free, r.amenities_paid
+            `SELECT r.id, r.house_id, r.capacity, r.price, r.room_number, r.floor_label, r.amenities, r.photos, r.amenities_free, r.amenities_paid
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
              WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
@@ -625,8 +625,8 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, upload.array('
         }
 
         // Read after the room lock so concurrent additions/approvals cannot take these places.
-        const usage = await getRoomCapacityUsage(connection, req.params.roomId);
-        if (parsedCapacity < usage.requiredCapacity) {
+        const usage = parsedCapacity < Number(roomRows[0].capacity) ? await getRoomCapacityUsage(connection, req.params.roomId) : null;
+        if (usage && parsedCapacity < usage.requiredCapacity) {
             return res.status(400).json({
                 success: false,
                 message: usage.reserved > 0
@@ -790,7 +790,7 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
 
         // Verify room belongs to owner's house
         const [roomRows] = await connection.query(
-            `SELECT r.id, r.house_id, r.room_number
+            `SELECT r.id, r.house_id, r.room_number, r.capacity
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
              WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
@@ -817,8 +817,8 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
         }
 
         // Read after the room lock so concurrent additions/approvals cannot take these places.
-        const usage = await getRoomCapacityUsage(connection, roomId);
-        if (parsedCapacity < usage.requiredCapacity) {
+        const usage = parsedCapacity < Number(roomRows[0].capacity) ? await getRoomCapacityUsage(connection, roomId) : null;
+        if (usage && parsedCapacity < usage.requiredCapacity) {
             return res.status(400).json({
                 success: false,
                 message: usage.reserved > 0

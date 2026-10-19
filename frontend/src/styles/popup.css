@@ -13,16 +13,16 @@ body .popup-message.popup-message { line-height: 1.65; }
 body .app-dialog-lead.app-dialog-lead,
 body .app-dialog-message.app-dialog-message { color: #0f172a; }
 
-/* Generic yes/no confirmations (confirmTitle / confirmMessage pattern): icon, title and message, then actions. */
+/* Generic yes/no confirmations (confirmTitle / confirmMessage pattern): centred icon on top, title and message below, then two equal buttons. */
 .cm-backdrop{position:fixed;inset:0;z-index:250;display:flex;align-items:center;justify-content:center;padding:16px;background:rgb(15 23 42 / .55);backdrop-filter:blur(2px)}
-.cm-panel{width:100%;max-width:460px;max-height:calc(100dvh - 32px);overflow-y:auto;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgb(15 23 42 / .28);text-align:left;color:#0f172a}
-.cm-body{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px;padding:24px 24px 20px}
-.cm-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;font-size:19px}
-.cm-icon svg{width:22px;height:22px}
+.cm-panel{width:100%;max-width:420px;max-height:calc(100dvh - 32px);overflow-y:auto;background:#fff;border-radius:20px;box-shadow:0 24px 70px rgb(15 23 42 / .28);text-align:center;color:#0f172a}
+.cm-body{display:flex;flex-direction:column;align-items:center;gap:14px;padding:30px 28px 22px;text-align:center}.cm-body>div{width:100%}
+.cm-icon{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;font-size:26px;flex-shrink:0}
+.cm-icon svg{width:28px;height:28px}
 .cm-icon.is-warning{background:#fef3c7;color:#d97706}.cm-icon.is-danger{background:#fee2e2;color:#dc2626}.cm-icon.is-success{background:#dcfce7;color:#16a34a}.cm-icon.is-info{background:#dbeafe;color:#2563eb}
-.cm-title{margin:0;padding-top:2px;font-size:17px;font-weight:700;line-height:1.4;color:#0f172a;text-transform:none;letter-spacing:0}
-.cm-message{margin:6px 0 0;font-size:14px;line-height:1.65;color:#0f172a;white-space:pre-line;overflow-wrap:anywhere}
-.cm-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 24px;background:#f8fafc;border-top:1px solid #e8eef6}
+.cm-title{margin:0;padding-top:0;font-size:18px;font-weight:700;line-height:1.4;color:#0f172a;text-transform:none;letter-spacing:0}
+.cm-message{margin:6px 0 0;font-size:14px;line-height:1.65;color:#475569;white-space:pre-line;overflow-wrap:anywhere}
+.cm-actions{display:flex;justify-content:center;gap:10px;padding:0 28px 26px}.cm-actions>.cm-btn{flex:1}
 .cm-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 18px;border-radius:9px;border:1px solid transparent;font-size:13.5px;font-weight:600;line-height:1.2;text-transform:none;letter-spacing:0;cursor:pointer;transition:background .15s,border-color .15s}
 .cm-btn.cm-cancel{background:#fff;border-color:#d6e1ee;color:#334155}.cm-btn.cm-cancel:hover{background:#f1f5f9}
 .cm-btn.cm-confirm{background:#2563eb;color:#fff}.cm-btn.cm-confirm:hover{background:#1d4ed8}
@@ -30,12 +30,14 @@ body .app-dialog-message.app-dialog-message { color: #0f172a; }
 .cm-btn.cm-success{background:#16a34a;color:#fff}.cm-btn.cm-success:hover{background:#15803d}
 .cm-btn:disabled{opacity:.5;cursor:not-allowed}
 .cm-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
-@media(max-width:520px){.cm-body{grid-template-columns:1fr;gap:12px;padding:20px 18px 16px}.cm-actions{flex-direction:column-reverse;padding:12px 18px}.cm-btn{width:100%}}
+@media(max-width:520px){.cm-body{gap:12px;padding:24px 18px 18px}.cm-actions{flex-direction:column-reverse;padding:0 18px 20px}.cm-btn{width:100%}}
 @media(pointer:coarse){.cm-btn{min-height:44px}}
 /* Optional detail rows under a confirmation message (for example, extension requests). */
-.cm-facts{display:grid;margin:14px 0 0;border:1px solid #e3eaf4;border-radius:11px;overflow:hidden}
+.cm-facts{display:grid;margin:14px 0 0;text-align:left;border:1px solid #e3eaf4;border-radius:11px;overflow:hidden}
 .cm-facts>div{display:grid;grid-template-columns:minmax(120px,42%) minmax(0,1fr);gap:12px;padding:8px 12px;border-top:1px solid #edf2f8;font-size:13px;line-height:1.5}
 .cm-facts>div:first-child{border-top:0}
+/* Form fields inside a confirmation stay left-aligned */
+.cm-body :is(textarea,input,select,label){text-align:left}
 .cm-facts dt{color:#5a708c;font-weight:500}
 .cm-facts dd{margin:0;color:#0f172a;font-weight:600;overflow-wrap:anywhere}
 @media(max-width:520px){.cm-facts>div{grid-template-columns:1fr;gap:2px}}

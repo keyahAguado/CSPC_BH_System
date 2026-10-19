@@ -6,9 +6,10 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import TablePager from '../../components/management/TablePager.vue';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 
-const PAGE_SIZE = 5;
+const PAGE_SIZES = [10, 25, 50, 100];
 const STATE_KEY = 'cspc_student_notifications_state';
 
 const router = useRouter();
@@ -28,6 +29,7 @@ const searchQuery = ref(typeof savedState.q === 'string' ? savedState.q : '');
 const viewFilter = ref(VIEWS.includes(savedState.view) ? savedState.view : 'all');
 const sortBy = ref(savedState.sort === 'oldest' ? 'oldest' : 'newest');
 const currentPage = ref(Math.max(1, parseInt(savedState.page, 10) || 1));
+const perPage = ref(PAGE_SIZES.includes(savedState.perPage) ? savedState.perPage : 10);
 
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
 
@@ -187,39 +189,26 @@ const filteredItems = computed(() => {
   return [...list].sort((a, b) => (timeOf(a) - timeOf(b)) * dir || (a.id - b.id) * dir);
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredItems.value.length / PAGE_SIZE)));
-const pageStart = computed(() => filteredItems.value.length === 0 ? 0 : (currentPage.value - 1) * PAGE_SIZE + 1);
-const pageEnd = computed(() => Math.min(currentPage.value * PAGE_SIZE, filteredItems.value.length));
-const pagedItems = computed(() => filteredItems.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE));
-
-// Page buttons: first, last, and one either side of the current page, with gaps as "…"
-const pageButtons = computed(() => {
-  const total = totalPages.value;
-  const keep = new Set([1, total, currentPage.value - 1, currentPage.value, currentPage.value + 1].filter(n => n >= 1 && n <= total));
-  const list = [];
-  let prev = 0;
-  [...keep].sort((a, b) => a - b).forEach(n => {
-    if (n - prev > 1) list.push('gap-' + n);
-    list.push(n);
-    prev = n;
-  });
-  return list;
-});
+// Paged like the data tables across the app ("Showing x to y of z" · Rows per page · Prev / Next)
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredItems.value.length / perPage.value)));
+const pageStart = computed(() => filteredItems.value.length === 0 ? 0 : (currentPage.value - 1) * perPage.value + 1);
+const pageEnd = computed(() => Math.min(currentPage.value * perPage.value, filteredItems.value.length));
+const pagedItems = computed(() => filteredItems.value.slice((currentPage.value - 1) * perPage.value, currentPage.value * perPage.value));
 
 const goToPage = (n) => {
   if (n >= 1 && n <= totalPages.value) currentPage.value = n;
 };
 
-watch([searchQuery, viewFilter, sortBy], () => { currentPage.value = 1; });
+watch([searchQuery, viewFilter, sortBy, perPage], () => { currentPage.value = 1; });
 
 // Unread view: marking an item read can empty the last page, so keep the page in range
 watch([totalPages, isLoading], ([total, loading]) => {
   if (!loading && currentPage.value > total) currentPage.value = total;
 }, { immediate: true });
 
-watch([searchQuery, viewFilter, sortBy, currentPage], () => {
+watch([searchQuery, viewFilter, sortBy, currentPage, perPage], () => {
   try {
-    sessionStorage.setItem(STATE_KEY, JSON.stringify({ q: searchQuery.value, view: viewFilter.value, sort: sortBy.value, page: currentPage.value }));
+    sessionStorage.setItem(STATE_KEY, JSON.stringify({ q: searchQuery.value, view: viewFilter.value, sort: sortBy.value, page: currentPage.value, perPage: perPage.value }));
   } catch (e) {}
 });
 
@@ -336,10 +325,8 @@ onMounted(fetchNotifications);
         <section class="mt-6 bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div class="flex items-center justify-between gap-4 px-5 sm:px-[25px] py-5 border-b border-slate-200">
             <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900">Recent notifications</h2>
-            <p class="text-[12px] sm:text-[13px] font-semibold text-slate-500 whitespace-nowrap">
-              Showing {{ pageStart }}–{{ pageEnd }} of {{ filteredItems.length }} alert{{ filteredItems.length === 1 ? '' : 's' }}
-            </p>
           </div>
+          <TablePager v-if="filteredItems.length > 0" position="top" noun="notifications" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredItems.length" :per-page="perPage" :options="PAGE_SIZES" @update:page="goToPage" @update:per-page="perPage = $event" />
 
           <!-- No matches -->
           <div v-if="filteredItems.length === 0" class="px-6 py-16 text-center">
@@ -394,32 +381,7 @@ onMounted(fetchNotifications);
             </li>
           </ul>
 
-          <!-- Pagination -->
-          <div v-if="filteredItems.length > 0" class="border-t border-slate-200 px-5 sm:px-[25px] py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p class="text-[13px] text-slate-500">
-              Showing <b class="text-slate-700">{{ pageStart }}–{{ pageEnd }}</b> of <b class="text-slate-700">{{ filteredItems.length }}</b> alert{{ filteredItems.length === 1 ? '' : 's' }}
-            </p>
-            <nav v-if="totalPages > 1" aria-label="Notification pages" class="flex items-center gap-[7px]">
-              <button type="button" aria-label="Previous page" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" class="nt-page">
-                <i class="fa-solid fa-chevron-left text-[9px]"></i>
-              </button>
-              <template v-for="p in pageButtons" :key="p">
-                <span v-if="typeof p === 'string'" class="w-5 text-center text-slate-400 text-xs">…</span>
-                <button
-                  v-else
-                  type="button"
-                  :aria-label="`Page ${p}`"
-                  :aria-current="p === currentPage ? 'page' : undefined"
-                  @click="goToPage(p)"
-                  class="nt-page"
-                  :class="{ 'is-current': p === currentPage }"
-                >{{ p }}</button>
-              </template>
-              <button type="button" aria-label="Next page" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" class="nt-page">
-                <i class="fa-solid fa-chevron-right text-[9px]"></i>
-              </button>
-            </nav>
-          </div>
+          <TablePager v-if="filteredItems.length > 0" position="bottom" noun="notifications" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredItems.length" :per-page="perPage" :options="PAGE_SIZES" @update:page="goToPage" @update:per-page="perPage = $event" />
         </section>
 
         <p class="mt-4 text-[12px] text-slate-400">Updates about your reservations, payments and stay extensions appear here. Select a notification to open the related booking.</p>
@@ -453,21 +415,4 @@ onMounted(fetchNotifications);
   color: #64748b;
   pointer-events: none;
 }
-.nt-page {
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-  transition: border-color .15s, color .15s;
-}
-.nt-page:hover:not(:disabled):not(.is-current) { border-color: #1e4b8f; color: #1e4b8f; }
-.nt-page:disabled { opacity: .45; cursor: default; }
-.nt-page.is-current { background: #1e4b8f; border-color: #1e4b8f; color: #fff; }
 </style>

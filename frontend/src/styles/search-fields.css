@@ -11,3 +11,15 @@
   border:0 !important; outline:none !important; box-shadow:none !important;
   background:transparent; min-width:0;
 }
+
+/* Admin search box: one design for every admin page (taken from New applications).
+   The input owns the border and focus ring, so this class is kept out of the wrapper rules above. */
+.admin-search { position: relative; flex: 1 1 320px; min-width: 0; }
+.admin-search > i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
+.admin-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 400; color: #334155; outline: none; box-shadow: none; }
+.admin-search input::placeholder { color: #94a3b8; }
+.admin-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.admin-search:has(.admin-search-clear) input { padding-right: 40px; }
+.admin-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-height: 28px !important; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer; }
+.admin-search-clear:hover { background: #f1f5f9; color: #475569; }
+.admin-search-clear:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }

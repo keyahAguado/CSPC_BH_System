@@ -1,7 +1,8 @@
 <script setup>
 import UserAvatar from "../../components/UserAvatar.vue";
 import { confirmTone } from '../../utils/confirmTone.js';
-import { documentAttachments } from '../../utils/documentFiles.js';
+import DocumentAttachmentList from '../../components/DocumentAttachmentList.vue';
+import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
 import RoomFeatures from '../../components/RoomFeatures.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
@@ -133,12 +134,12 @@ const openPreview = (url) => {
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
-const openPreviewSet = (files) => {
+const openPreviewSet = (files, initialIndex = 0) => {
   const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
   if (!urls.length) return;
   previewFiles.value = urls;
-  previewIndex.value = 0;
-  previewImageUrl.value = urls[0];
+  previewIndex.value = Math.max(0, Math.min(initialIndex, urls.length - 1));
+  previewImageUrl.value = urls[previewIndex.value];
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
@@ -360,14 +361,13 @@ const DETAIL_TABS = [
 const buildDocs = (house) => {
   // All files for a permit; falls back to the single permit column for older records.
   const toDoc = (p) => {
-    const listed = permitFiles.value.filter(f => f.house_id === house.id && f.permit_key === p.key).map(f => f.file_path);
-    const files = listed.length ? listed : (house[p.key] ? [house[p.key]] : []);
+    const files = permitAttachments(house, p.key, permitFiles.value);
     return { label: p.label, file: files[0] || null, files, expiry: house['expiry_' + p.key] || null };
   };
   requiredDocs.value = REQUIRED_PERMITS.map(toDoc);
   const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, files: [house.img], expiry: null }] : [];
   const dynamicUploaded = dynamicDocs.value
-    .filter(d => d.house_id === house.id)
+    .filter(d => Number(d.house_id) === Number(house.id))
     .map(d => ({ label: d.criteria_label || 'Additional document', file: documentAttachments(d)[0] || null, files: documentAttachments(d), expiry: d.expiry_date || null, required: d.requirement_type === 'required' }));
   requiredDocs.value.push(...dynamicUploaded.filter(d => d.required));
   optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded.filter(d => !d.required)];
@@ -567,14 +567,9 @@ const loadError = ref('');
       <!-- Filter Bar -->
       <div v-if="!isLoading" class="mb-4 flex flex-col sm:flex-row items-center gap-3 animate-fade-in">
         <!-- Search Input -->
-        <div class="relative flex-1 min-w-0 w-full sm:w-auto">
-          <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
-          <input aria-label="Search by boarding house name, date, location..."
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search by boarding house name, date, location..."
-            class="w-full h-[40px] pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[13.5px] font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
-          />
+        <div class="admin-search w-full sm:w-auto">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input v-model="searchQuery" type="text" aria-label="Search by boarding house name, date, location..." placeholder="Search by boarding house name, date, location..." />
         </div>
 
         <!-- Barangay Filter Dropdown -->
@@ -820,21 +815,16 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Supplementary documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
             <div class="rp-card-head">
               <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
               <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === REQUIRED_PERMITS.length ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
             </div>
             <ul class="rp-doc-grid">
               <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
-                <button v-if="doc.file" type="button" class="rp-doc-preview" :aria-label="'View ' + doc.label + (doc.files.length > 1 ? ` (${doc.files.length} files)` : '')" @click="openPreviewSet(doc.files)">
-                  <img v-if="!isPdfFile(doc.file)" :src="getImageUrl(doc.file)" alt="" />
-                  <span v-else class="rp-doc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF</span>
-                  <span v-if="doc.files.length > 1" class="rp-doc-count" aria-hidden="true">{{ doc.files.length }} files</span>
-                </button>
-                <span v-else class="rp-doc-preview is-empty" aria-hidden="true"><i class="fa-regular fa-file"></i></span>
                 <div class="min-w-0 flex-1">
                   <p class="rp-doc-name">{{ doc.label }}</p>
+                  <DocumentAttachmentList v-if="doc.files.length" :files="doc.files" :label="doc.label" @preview="index => openPreviewSet(doc.files, index)" />
                   <p class="rp-doc-meta">
                     <span v-if="!doc.file" :class="group.required ? 'text-rose-600 font-semibold' : 'text-slate-400'">Not submitted</span>
                     <template v-else>
@@ -882,13 +872,13 @@ const loadError = ref('');
                 <button type="button" class="rp-back" @click="isOccupantsView = false"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back to rooms</button>
                 <h2 class="rp-card-title !mb-0">Room {{ activeRoomData ? activeRoomData.room_number : '' }} occupants</h2>
               </div>
-              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active CSPC student boarders in this room.</div>
+              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active occupants in this room.</div>
               <div v-else class="rp-room-grid">
                 <div v-for="(occ, i) in activeRoomOccupants" :key="occ.id" class="rp-room">
                   <div class="flex items-center justify-between gap-2 mb-3">
                     <div>
                       <p class="rp-strong">{{ occ.name }}</p>
-                      <p class="rp-muted">CSPC resident #{{ i + 1 }}</p>
+                      <p class="rp-muted">{{ Number(occ.is_non_cspc) ? 'Non-CSPC occupant' : 'CSPC student' }} #{{ i + 1 }}</p>
                     </div>
                     <span :class="['rp-chip', occ.payment_status === 'Paid' ? 'is-success' : 'is-danger']">{{ occ.payment_status }}</span>
                   </div>
@@ -1026,6 +1016,8 @@ const loadError = ref('');
 @media (min-width: 1180px) { .rp-page { left: 248px; } }
 @keyframes rp-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .rp-page-inner { max-width: 1440px; margin: 0 auto; padding: 20px clamp(16px, 2.6vw, 36px) 40px; display: flex; flex-direction: column; gap: 16px; }
+/* The dialog helper tags this wrapper as a dialog panel (max-height + its own scroll); the full page already scrolls */
+.rp-page-inner.management-dialog-panel { max-height: none; overflow: visible; border-radius: 0; }
 .rp-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rp-back { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; min-height: 38px !important; border-radius: 10px; border: 1px solid var(--a-border); background: var(--a-surface); color: var(--a-primary); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .rp-back:hover { background: var(--a-primary-soft); border-color: var(--a-primary-tint); }

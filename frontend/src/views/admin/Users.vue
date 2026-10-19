@@ -265,10 +265,10 @@ const loadError = ref('');
 
       <!-- Filters -->
       <div class="reg-filters">
-        <div class="reg-search">
+        <div class="admin-search">
           <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
           <input v-model="searchQuery" type="text" aria-label="Search accounts" placeholder="Search by name, email, or phone..." />
-          <button v-if="searchQuery" type="button" class="reg-search-clear" aria-label="Clear search" @click="searchQuery = ''"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          <button v-if="searchQuery" type="button" class="admin-search-clear" aria-label="Clear search" @click="searchQuery = ''"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         </div>
         <label class="reg-select"><i class="fa-solid fa-id-badge" aria-hidden="true"></i>
           <select aria-label="Filter by role" v-model="filterRole">
@@ -285,7 +285,6 @@ const loadError = ref('');
             <option value="pending">Pending</option>
           </select>
         </label>
-        <span class="reg-count">{{ filteredUsers.length }} result{{ filteredUsers.length !== 1 ? 's' : '' }}</span>
       </div>
 
       <!-- Loading -->
@@ -471,13 +470,6 @@ const loadError = ref('');
 
 /* Filter bar */
 .reg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
-.reg-search { position: relative; flex: 1 1 280px; min-width: 0; }
-.reg-search > i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.reg-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 40px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
-.reg-search input::placeholder { font-weight: 400; color: #94a3b8; }
-.reg-search input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
-.reg-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-height: 28px !important; border: 0; border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer; }
-.reg-search-clear:hover { background: #f1f5f9; color: #475569; }
 .reg-select { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 40px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 .reg-select i { color: #94a3b8; font-size: 12px; }
 .reg-select select { border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #334155; outline: none; cursor: pointer; min-height: 0 !important; max-width: 220px; }
