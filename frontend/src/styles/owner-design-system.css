@@ -233,3 +233,12 @@ body[data-owner-theme] :is(.management-page,.admin-shell,.ob-drawer) textarea::p
 @media (prefers-reduced-motion: reduce) {
   body[data-owner-theme] :is(button,a,input,select,textarea,summary,.ob-drawer[open]) { transition: none !important; animation: none !important; }
 }
+
+/* Owner readability: black table header labels; numbers in the body font (no dotted zero from
+   IBM Plex Mono), kept column-aligned with tabular digits; white table and detail containers. */
+body[data-owner-theme] { --o-mono: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif; }
+body[data-owner-theme] :is(.boarder-reference,.ob-ref,.upcoming-ref,.mono,.money,.pending-deadline time,.boarder-check-in,.boarder-check-out,.boarder-upfront-amount) { font-variant-numeric: tabular-nums; }
+body[data-owner-theme] table th, body[data-owner-theme] table th * { color: #0f172a !important; }
+body[data-owner-theme] .room-details-refined :is(.pending-requests,.boarder-table) th { background: #fff !important; }
+body[data-owner-theme] .boarder-expanded-panel { background: #fff; }
+body[data-owner-theme] .tp-bar { background: #fff; }
