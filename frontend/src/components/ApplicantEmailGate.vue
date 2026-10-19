@@ -30,35 +30,52 @@ const PENDING_KEY = 'cspc_applicant_pending_request';
 const savePending = (value) => { try { value ? sessionStorage.setItem(PENDING_KEY, JSON.stringify(value)) : sessionStorage.removeItem(PENDING_KEY); } catch { /* storage unavailable: polling still runs in this tab */ } };
 const readPending = () => { try { return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } };
 const stopWaiting = () => { clearInterval(poller); poller = null; clearTimeout(longWaitTimer); longWaitTimer = null; waiting.value = false; waitingLong.value = false; };
+// One check at a time, and only for the current request: on a slow connection a second check
+// could otherwise find the request already completed by the first and wrongly report "expired".
+let checking = false;
+let activeRequestId = '';
 const checkStatus = async (requestId) => {
+  if (checking || requestId !== activeRequestId) return;
+  checking = true;
   try {
     const { data } = await axios.post('/api/applications/email/status', { requestId, remember: rememberChoice });
+    if (requestId !== activeRequestId) return;
     if (data.verified && data.token) {
+      activeRequestId = '';
       stopWaiting(); savePending(null);
       if (data.deviceToken) saveRememberedDevice(data.deviceToken, data.deviceExpiresAt);
       setApplicantToken(data.token);
       if (data.hasApplications && route.path !== '/track') router.replace('/track');
     } else if (data.expired) {
+      activeRequestId = '';
       stopWaiting(); savePending(null);
       message.value = '';
-      error.value = 'This verification link has expired or was already used. Send a new link.';
+      error.value = data.reason === 'claimed'
+        ? 'This verification was already completed, possibly in another tab or window. Continue there, or send a new link.'
+        : 'This verification link expired (links last 30 minutes). Send a new link.';
     }
   } catch (err) {
+    if (requestId !== activeRequestId) return;
     if (err.response?.status === 409 || err.response?.status === 400) {
+      activeRequestId = '';
       stopWaiting(); savePending(null); message.value = '';
       error.value = err.response?.data?.message || 'Send a new verification link.';
     }
     // Network blips and rate limits: keep waiting and try again on the next tick.
+  } finally {
+    checking = false;
   }
 };
 const startWaiting = (requestId, sinceMs = 0) => {
   stopWaiting();
+  activeRequestId = requestId;
   waiting.value = true;
   poller = setInterval(() => checkStatus(requestId), 3000);
   longWaitTimer = setTimeout(() => { if (waiting.value) waitingLong.value = true; }, Math.max(0, LONG_WAIT_MS - sinceMs));
 };
 // Lets the applicant abandon a pending request (wrong address, or an email that already has an account)
 const startOver = () => {
+  activeRequestId = '';
   stopWaiting(); savePending(null);
   clearTimeout(timer); cooldown.value = false;
   message.value = ''; error.value = ''; requestedEmail.value = '';

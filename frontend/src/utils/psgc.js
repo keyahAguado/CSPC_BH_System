@@ -1,15 +1,24 @@
-// Philippine address lists (Region → Province → City/Municipality → Barangay) from the
-// public PSGC API (Philippine Standard Geographic Code). Responses are cached per session.
-const PSGC_BASE = 'https://psgc.gitlab.io/api';
+// Philippine address lists (Region → Province → City/Municipality → Barangay, PSGC).
+// Served by our backend from a local copy (/api/locations); the public PSGC API is only a
+// fallback if the backend cannot answer. Responses are cached per session.
+import axios from 'axios';
+
+const PUBLIC_PSGC = 'https://psgc.gitlab.io/api';
 const cache = new Map();
+
+async function fetchRows(path) {
+  try {
+    const { data } = await axios.get(`/api/locations${path}`);
+    if (Array.isArray(data)) return data;
+  } catch { /* fall back to the public API below */ }
+  const res = await fetch(`${PUBLIC_PSGC}${path}`);
+  if (!res.ok) throw new Error(`PSGC request failed (${res.status})`);
+  return res.json();
+}
 
 async function getList(path) {
   if (cache.has(path)) return cache.get(path);
-  const request = fetch(`${PSGC_BASE}${path}`)
-    .then(res => {
-      if (!res.ok) throw new Error(`PSGC request failed (${res.status})`);
-      return res.json();
-    })
+  const request = fetchRows(path)
     .then(rows => rows
       .map(r => ({ code: r.code, name: r.name, label: r.regionName ? `${r.regionName} – ${r.name}` : r.name }))
       .sort((a, b) => a.name.localeCompare(b.name)));

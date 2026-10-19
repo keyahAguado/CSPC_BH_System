@@ -1,5 +1,6 @@
 import { validateBody } from '../config/inputValidation.js';
 import { notificationForRole } from '../config/notificationAudience.js';
+import { visiblePropertyNames, propertyMatcher } from '../config/notificationProperty.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
@@ -34,9 +35,12 @@ router.get('/', authenticateToken, async (req, res) => {
             const [rows]=await pool.query('SELECT r.id, r.room_number, bh.name AS house_name FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id WHERE r.id IN (?) AND bh.owner_id = ?',[roomIds,req.user.id]);
             for (const row of rows) byRoom.set(Number(row.id),row);
         }
+        // Otherwise a quoted property name counts only if it is one of this account's real properties.
+        const namedProperty=propertyMatcher(await visiblePropertyNames(pool,req.user));
         res.json({ success: true, notifications:notifications.map(n=>{
             const found=byBooking.get(Number(String(n.message || '').match(/\bREF-(\d{1,15})\b/)?.[1])) || byRoom.get(Number(String(n.link || '').match(/^\/owner\/rooms\/details\/(\d{1,15})$/)?.[1]));
-            return {...n,message:notificationForRole(n.message,req.user.role).replace(/\s+PHT\b/g,''),...(found ? {house_name:found.house_name,room_number:found.room_number} : {})};
+            const houseName=found?.house_name || namedProperty(n.message);
+            return {...n,message:notificationForRole(n.message,req.user.role).replace(/\s+PHT\b/g,''),...(houseName ? {house_name:houseName} : {}),...(found?.room_number ? {room_number:found.room_number} : {})};
         }) });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Failed to fetch notifications.' });

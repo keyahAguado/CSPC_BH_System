@@ -982,7 +982,7 @@ router.post('/criteria/add', authenticateToken, verifyAdmin, validateBody('crite
         await connection.beginTransaction();
         const label = req.body.label.trim();
         const [result] = await connection.query('INSERT INTO checklist_criteria (label, house_id, requirement_type) VALUES (?, NULL, ?)', [label, req.body.requirement_type || 'supplementary']);
-        await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", ['SASO added a document requirement for all properties: "' + label + '". Please review Documents for each property.']);
+        await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", ['SASO added a ' + (req.body.requirement_type === 'required' ? 'required' : 'supplementary (optional)') + ' document for all properties: "' + label + '". Please review Documents for each property.']);
         await connection.commit();
         res.json({ success: true, criteriaId: result.insertId });
     } catch (err) {
@@ -1010,7 +1010,7 @@ for (const action of ['update', 'delete']) {
             if (action === 'update') await connection.query('UPDATE checklist_criteria SET label = ?, requirement_type = ? WHERE id = ?', [req.body.label.trim(), req.body.requirement_type || item.requirement_type || 'supplementary', item.id]);
             else await connection.query('UPDATE checklist_criteria SET is_active = 0 WHERE id = ?', [item.id]);
             const message = action === 'update'
-                ? 'SASO updated document requirement "' + item.label + '" to "' + req.body.label.trim() + '" (' + (req.body.requirement_type || item.requirement_type || 'supplementary') + '). Existing uploads are retained; please review your documents.'
+                ? 'SASO updated document requirement "' + item.label + '" to "' + req.body.label.trim() + '" (' + ((req.body.requirement_type || item.requirement_type) === 'required' ? 'Required' : 'Supplementary, optional') + '). Existing uploads are retained; please review your documents.'
                 : 'SASO removed document requirement "' + item.label + '" from the checklist. Previously submitted files are retained.';
             if (item.house_id === null) await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", [message]);
             else await connection.query('INSERT INTO notifications (user_id, message) SELECT owner_id, ? FROM boarding_houses WHERE id = ? AND owner_id IS NOT NULL', [message, item.house_id]);

@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
+import AddressPicker from '../../components/AddressPicker.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
 import { bookingNow } from '../../utils/bookingClock.js';
@@ -286,15 +287,6 @@ const handleSuccessModalClose = () => {
 };
 
 
-import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
-
-const initAddressAutocomplete = (el) => {
-  if (el) {
-    setupAddressAutocomplete(el, (selectedAddress) => {
-      form.value.address = selectedAddress;
-    });
-  }
-};
 
 // Availability is scoped to the requested stay. Ignore stale responses after date changes.
 const scheduleReady = computed(() => validDate(form.value.check_in_date) && !checkInTooSoon.value && Number.isInteger(Number(form.value.months)) && Number(form.value.months)>0);
@@ -479,9 +471,10 @@ onUnmounted(() => {
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
               </div>
               <div class="md:col-span-2">
-                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Home Address</label>
-                <input type="text" :ref="initAddressAutocomplete" v-model="form.address" placeholder="Barangay, Municipality, Province"
-                  class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
+                <p class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Home Address</p>
+                <AddressPicker v-model="form.address" id-prefix="book-address"
+                  field-class="w-full bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition"
+                  label-class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1" />
               </div>
             </div>
           </div>

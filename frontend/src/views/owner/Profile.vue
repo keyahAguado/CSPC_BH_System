@@ -11,6 +11,7 @@ import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import AddressPicker from '../../components/AddressPicker.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 // State Variables
@@ -240,16 +241,6 @@ const handleChangePassword = async () => {
   }
 };
 
-import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
-
-const initAddressAutocomplete = (el) => {
-  if (el) {
-    setupAddressAutocomplete(el, (selectedAddress) => {
-      addressInput.value = selectedAddress;
-    });
-  }
-};
-
 onMounted(() => {
   fetchProfile();
 });
@@ -315,8 +306,10 @@ const loadError = ref('');
                 </div>
 
                 <div class="sm:col-span-2">
-                  <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Residential / Contact Address</label>
-                  <input aria-label="Residential / Contact Address" :ref="initAddressAutocomplete" v-model="addressInput" type="text" class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" placeholder="Street Name, Barangay, Town" />
+                  <p class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1 tracking-wide">Residential / Contact Address</p>
+                  <AddressPicker v-model="addressInput" id-prefix="owner-profile-address"
+                    field-class="w-full bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition"
+                    label-class="block text-[11px] font-semibold text-slate-400 uppercase mb-1.5 ml-1 tracking-wide" />
                 </div>
               </div>
 

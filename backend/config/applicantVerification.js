@@ -50,6 +50,9 @@ export function requireVerifiedEmail(req, res, next) {
 }
 
 // Separate from the existing disabled notification service: Phase 1 sends verification only.
+// Shown in the subject so each email is distinct; otherwise mail apps stack older links in one thread.
+const sentAt = () => new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date());
+
 export async function sendApplicantVerification(email, token) {
     const { BREVO_API_KEY, EMAIL_FROM_ADDRESS, FRONTEND_URL } = process.env;
     if (process.env.APPLICANT_EMAIL_ENABLED !== 'true' || !BREVO_API_KEY || !EMAIL_FROM_ADDRESS || !FRONTEND_URL) throw new Error('Verification email is not configured.');
@@ -60,9 +63,9 @@ export async function sendApplicantVerification(email, token) {
     link.hash = new URLSearchParams({ token }).toString();
     await axios.post('https://api.brevo.com/v3/smtp/email', {
         sender: { email: EMAIL_FROM_ADDRESS, name: process.env.EMAIL_FROM_NAME || 'CSPC BH Finder' },
-        to: [{ email }], subject: 'Verify your email — CSPC BH Finder',
-        textContent: `Verify your email to submit or track your boarding-house application:\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you did not request it, ignore this email.`,
-        htmlContent: `<html><body style="margin:0;background:#f2f5fa;font-family:Arial,sans-serif;color:#243449"><table role="presentation" width="100%"><tr><td align="center" style="padding:32px 16px"><table role="presentation" width="100%" style="max-width:600px;background:white;border:1px solid #e2e8f0;border-radius:16px" cellspacing="0" cellpadding="0"><tr><td style="padding:26px;background:#142b4a;color:white;font-size:20px;font-weight:bold;border-radius:16px 16px 0 0">CSPC BH Finder</td></tr><tr><td style="padding:28px"><h1 style="font-size:22px">Verify your applicant email</h1><p style="line-height:1.8">Confirm access to your inbox to submit or track your property application. This does not approve your property or activate an owner account.</p><p style="margin:26px 0"><a href="${escapeEmailHtml(link.href)}" style="display:inline-block;background:#1e4a8d;color:white;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:bold">Verify my email</a></p><p style="font-size:14px;color:#526174;line-height:1.7">This link expires in 30 minutes and can be used once. If you did not request it, ignore this email. Do not share this link.</p></td></tr></table></td></tr></table></body></html>`
+        to: [{ email }], subject: `Verify your email — CSPC BH Finder (${sentAt()})`,
+        textContent: `Verify your email to submit or track your boarding-house application:\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you requested more than one link, use the newest email. If you did not request it, ignore this email.`,
+        htmlContent: `<html><body style="margin:0;background:#f2f5fa;font-family:Arial,sans-serif;color:#243449"><table role="presentation" width="100%"><tr><td align="center" style="padding:32px 16px"><table role="presentation" width="100%" style="max-width:600px;background:white;border:1px solid #e2e8f0;border-radius:16px" cellspacing="0" cellpadding="0"><tr><td style="padding:26px;background:#142b4a;color:white;font-size:20px;font-weight:bold;border-radius:16px 16px 0 0">CSPC BH Finder</td></tr><tr><td style="padding:28px"><h1 style="font-size:22px">Verify your applicant email</h1><p style="line-height:1.8">Confirm access to your inbox to submit or track your property application. This does not approve your property or activate an owner account.</p><p style="margin:26px 0"><a href="${escapeEmailHtml(link.href)}" style="display:inline-block;background:#1e4a8d;color:white;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:bold">Verify my email</a></p><p style="font-size:14px;color:#526174;line-height:1.7">This link expires in 30 minutes and can be used once. If you requested more than one link, use the newest email. If you did not request it, ignore this email. Do not share this link.</p></td></tr></table></td></tr></table></body></html>`
     }, { headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 });
 }
 
@@ -124,8 +127,13 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, n
                 await connection.beginTransaction();
                 const [rows] = await connection.query('SELECT id, email FROM applicant_email_verifications WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() FOR UPDATE', [hashVerificationToken(token)]);
                 if (!rows.length) {
+                    // Say why, so an applicant who opened an older or second email knows what to do.
+                    const [[link]] = await connection.query('SELECT used_at, expires_at > NOW() AS active FROM applicant_email_verifications WHERE token_hash = ?', [hashVerificationToken(token)]);
                     await connection.rollback();
-                    return res.status(400).json({ success: false, message: 'This verification link has expired or was already used. Request another link.' });
+                    const message = !link ? 'This verification link is invalid. Request another link.'
+                        : link.used_at ? 'This link was already used, so your email is likely verified. Go back to the page where you requested it; it continues on its own. If it does not, request another link.'
+                        : 'This verification link expired (links last 30 minutes). Request another link.';
+                    return res.status(400).json({ success: false, message });
                 }
                 const email = rows[0].email;
                 const [users] = await connection.query('SELECT id, role, status, password, google_id FROM users WHERE email = ? FOR UPDATE', [email]);
@@ -158,7 +166,7 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, n
                 const row = rows[0];
                 if (!row || row.claimed_at || !row.active) {
                     await connection.rollback();
-                    return res.json({ success: true, verified: false, expired: true });
+                    return res.json({ success: true, verified: false, expired: true, reason: row?.claimed_at ? 'claimed' : 'expired' });
                 }
                 if (!row.verified_at) {
                     await connection.rollback();

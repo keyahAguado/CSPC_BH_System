@@ -3,6 +3,7 @@ import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import DropdownSelect from '../../components/DropdownSelect.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import { verifiedApplicantEmail } from '../../utils/applicantSession.js';
+import { shrinkImage, shrinkDocumentImage } from '../../utils/imageShrink.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import { normalizePhPhone, formatHouseContact, normalizeHouseContact, isValidHouseContact } from '../../utils/phoneValidation.js';
 import { getRegions, getProvinces, getCitiesByRegion, getCities, getBarangays } from '../../utils/psgc.js';
@@ -316,6 +317,8 @@ const resetFormToCleanSlate = () => {
   description.value = '';
   permitFiles.value = {};
   permitExpiries.value = {};
+  permitFileErrors.value = {};
+  permitExpiryErrors.value = {};
   existingFiles.value = {};
   mainHouseImg.value = null;
   mainHouseImgPreview.value = '';
@@ -505,6 +508,7 @@ const NABUA_BOUNDS = {
 
 // Reactive Instant Validation Error Trackers
 const permitFileErrors = ref({});
+const permitExpiryErrors = ref({});
 const mainImgError = ref('');
 const photosError = ref('');
 const fieldErrors = ref({});
@@ -611,21 +615,25 @@ const validateCurrentStep = () => {
   if (activeStep.value === 0 && includeOwnerStep) {
     errors.push(...validateOwnerDetails());
   } else if (activeStep.value === 1) {
+    // File problems stay in the File column and date problems in the Expiration column, so a missing
+    // date never hides the files that are already attached.
     criteria.value.forEach(p => {
-      const hasFile = permitHasFile(p.permit_key);
-      const hasExpiry = !!permitExpiries.value[p.permit_key];
-
-      if (hasExpiry && !isValidPermitDate(permitExpiries.value[p.permit_key])) {
+      const key = p.permit_key;
+      const hasFile = permitHasFile(key);
+      const expiry = permitExpiries.value[key];
+      delete permitExpiryErrors.value[key];
+      // A rejected replacement leaves the earlier valid files attached; its notice no longer blocks.
+      if (hasFile) delete permitFileErrors.value[key];
+      if (expiry && !isValidPermitDate(expiry)) {
+        permitExpiryErrors.value[key] = 'Enter a complete, valid date.';
         errors.push(p.label + ' expiry date is invalid. Please enter a complete, valid date.');
+      } else if (hasFile && !expiry) {
+        permitExpiryErrors.value[key] = 'Add the expiration date.';
+        errors.push(`Expiration date is required for ${p.label}.`);
       }
       if (p.required && !hasFile) {
-        permitFileErrors.value[p.permit_key] = `${p.label} document is required.`;
+        permitFileErrors.value[key] = `${p.label} document is required.`;
         errors.push(`${p.label} document is required.`);
-      } else if (hasFile && !hasExpiry) {
-        permitFileErrors.value[p.permit_key] = `Expiration date is required for ${p.label}.`;
-        errors.push(`Expiration date is required for ${p.label}.`);
-      } else if (hasFile && hasExpiry && permitFileErrors.value[p.permit_key] === `Expiration date is required for ${p.label}.`) {
-        delete permitFileErrors.value[p.permit_key];
       }
     });
 
@@ -803,10 +811,11 @@ const handlePermitFile = async (key, event) => {
   const files = Array.from(event.target.files || []);
   if (files.length === 0) return;
 
+  // A rejected selection never removes files that were already attached.
   const reject = (message) => {
-    permitFileErrors.value[key] = message;
+    const kept = permitFiles.value[key]?.length;
+    permitFileErrors.value[key] = kept ? `${message} Your previous file${kept > 1 ? 's were' : ' was'} kept.` : message;
     event.target.value = '';
-    delete permitFiles.value[key];
   };
   if (files.length > MAX_FILES_PER_DOCUMENT) return reject(`You can attach up to ${MAX_FILES_PER_DOCUMENT} files per document.`);
   for (const file of files) {
@@ -819,7 +828,7 @@ const handlePermitFile = async (key, event) => {
   }
 
   delete permitFileErrors.value[key];
-  permitFiles.value[key] = await Promise.all(files.map(f => (isPdfUpload(f) ? f : transcodeHeicFile(f))));
+  permitFiles.value[key] = await Promise.all(files.map(async f => (isPdfUpload(f) ? f : shrinkDocumentImage(await transcodeHeicFile(f)))));
 };
 
 // Legal documents table: one row per document, paged like the admin tables
@@ -838,9 +847,9 @@ const docSections = computed(() => {
   ].filter(section => section.items.length);
 });
 const permitHasFile = (key) => !!permitFiles.value[key]?.length || !!existingFiles.value[key];
-const permitDone = (key) => permitHasFile(key) && !!permitExpiries.value[key] && !permitFileErrors.value[key];
+const permitDone = (key) => permitHasFile(key) && !!permitExpiries.value[key] && !permitFileErrors.value[key] && !permitExpiryErrors.value[key];
 const permitStatus = (key) => {
-  if (permitFileErrors.value[key]) return { tone: 'error', text: 'Needs attention' };
+  if (permitFileErrors.value[key] || permitExpiryErrors.value[key]) return { tone: 'error', text: 'Needs attention' };
   const count = permitFiles.value[key]?.length || 0;
   if (count) return { tone: permitExpiries.value[key] ? 'done' : 'partial', text: `${count} file${count > 1 ? 's' : ''} attached${permitExpiries.value[key] ? '' : ' · add expiry date'}` };
   if (existingFiles.value[key]) return { tone: permitExpiries.value[key] ? 'done' : 'partial', text: 'On file' };
@@ -848,10 +857,16 @@ const permitStatus = (key) => {
 };
 const formatFileSize = (bytes) => (bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB');
 // When "Next: Photos" flags a document, show the page that holds it
-watch(() => Object.keys(permitFileErrors.value).join(), () => {
-  const i = allPermits.value.findIndex(p => permitFileErrors.value[p.permit_key]);
+watch(() => Object.keys(permitFileErrors.value).join() + '|' + Object.keys(permitExpiryErrors.value).join(), () => {
+  const i = allPermits.value.findIndex(p => permitFileErrors.value[p.permit_key] || permitExpiryErrors.value[p.permit_key]);
   if (i >= 0) docPage.value = Math.floor(i / docPerPage.value) + 1;
 });
+// Entering a valid date clears that row's date message right away (no need to press Next again).
+watch(permitExpiries, (values) => {
+  for (const key of Object.keys(permitExpiryErrors.value)) {
+    if (values[key] && isValidPermitDate(values[key])) delete permitExpiryErrors.value[key];
+  }
+}, { deep: true });
 
 // Handle Main House Image with instant validation
 const handleMainImg = async (event) => {
@@ -867,7 +882,7 @@ const handleMainImg = async (event) => {
   }
 
   mainImgError.value = '';
-  const processedFile = await transcodeHeicFile(file);
+  const processedFile = await shrinkImage(await transcodeHeicFile(file));
   mainHouseImg.value = processedFile;
   mainHouseImgPreview.value = URL.createObjectURL(processedFile);
 };
@@ -899,7 +914,7 @@ const handlePhotosSelected = async (event, category = null) => {
   }
 
   for (const file of files) {
-    const processedFile = await transcodeHeicFile(file);
+    const processedFile = await shrinkImage(await transcodeHeicFile(file));
     selectedPhotos.value.push({
       file: processedFile,
       previewUrl: URL.createObjectURL(processedFile),
@@ -1852,8 +1867,7 @@ const submitApplication = async () => {
                             <input type="file" multiple accept="image/*,application/pdf,.pdf" :aria-label="'Upload ' + p.label" @change="(e) => handlePermitFile(p.permit_key, e)" />
                             <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> {{ permitFiles[p.permit_key]?.length ? 'Replace' : 'Upload' }}
                           </span>
-                          <span v-if="permitFileErrors[p.permit_key]" class="dt-file-text is-error">{{ permitFileErrors[p.permit_key] }}</span>
-                          <span v-else-if="permitFiles[p.permit_key]?.length" class="dt-file-text is-ok" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
+                          <span v-if="permitFiles[p.permit_key]?.length" class="dt-file-text is-ok" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
                             <i :class="['fa-solid', isPdfUpload(permitFiles[p.permit_key][0]) ? 'fa-file-pdf' : 'fa-file-image']" aria-hidden="true"></i>
                             {{ permitFiles[p.permit_key].length > 1 ? permitFiles[p.permit_key].length + ' files' : permitFiles[p.permit_key][0].name }}
                             <small>{{ formatFileSize(permitFiles[p.permit_key].reduce((t, f) => t + f.size, 0)) }}</small>
@@ -1861,11 +1875,13 @@ const submitApplication = async () => {
                           <span v-else-if="existingFiles[p.permit_key]" class="dt-file-text is-ok">
                             <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener">View</a>
                           </span>
-                          <span v-else class="dt-file-text">No file chosen</span>
+                          <span v-else-if="!permitFileErrors[p.permit_key]" class="dt-file-text">No file chosen</span>
                         </div>
+                        <p v-if="permitFileErrors[p.permit_key]" class="dt-cell-error">{{ permitFileErrors[p.permit_key] }}</p>
                       </td>
                       <td data-label="Expiration date">
-                        <input type="date" class="dt-date" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" :aria-label="'Expiration date of ' + p.label" />
+                        <input type="date" :class="['dt-date', permitExpiryErrors[p.permit_key] ? 'is-invalid' : '']" min="1000-01-01" max="9999-12-31" v-model="permitExpiries[p.permit_key]" :aria-label="'Expiration date of ' + p.label" :aria-invalid="!!permitExpiryErrors[p.permit_key]" />
+                        <p v-if="permitExpiryErrors[p.permit_key]" class="dt-cell-error">{{ permitExpiryErrors[p.permit_key] }}</p>
                       </td>
                       <td data-label="Status">
                         <span :class="['dt-status', 'is-' + permitStatus(p.permit_key).tone]">
@@ -2407,6 +2423,8 @@ const submitApplication = async () => {
 .dt-file-text a { color: #1d4ed8; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .dt-date { width: 160px; height: 34px; min-height: 34px !important; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; font-size: 13px; color: #0f172a; outline: none; }
 .dt-date:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .15); }
+.dt-date.is-invalid { border-color: #f87171; }
+.dt-cell-error { margin: 5px 0 0; font-size: 12px; line-height: 1.35; color: #b91c1c; }
 .dt-status { display: inline-flex; align-items: center; gap: 5px; width: 140px; padding: 3px 9px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; background: #f1f5f9; color: #64748b; }
 .dt-status.is-done { background: #dcfce7; color: #15803d; }
 .dt-status.is-partial { background: #fef3c7; color: #b45309; }

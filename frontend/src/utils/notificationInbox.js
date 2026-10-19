@@ -1,8 +1,10 @@
+// The property comes only from the server, which names it only when it is one of the account's
+// real properties; message text is never guessed. Notices sent to every property are flagged instead.
 export function notificationContext(n){
  const text=String(n.message||'');
- const property=n.house_name || text.match(/(?:property|boarding house|at)\s+"([^"]+)"/i)?.[1] || (/extension/i.test(text)?text.match(/for\s+"([^"]+)"/i)?.[1]:null);
- const room=n.room_number || text.match(/\bRoom\s+([A-Za-z0-9_-]+)/i)?.[1];
- return {property:property || (/\ball (?:properties|boarding houses)\b|for all properties/i.test(text)?'All properties':''),room:room?'Room '+room:''};
+ const property=String(n.house_name||'').trim();
+ const room=n.room_number || (property ? text.match(/\bRoom\s+([A-Za-z0-9_-]+)/i)?.[1] : null);
+ return {property,room:room?'Room '+room:'',allProperties:!property && /\ball (?:properties|boarding houses)\b|for all properties/i.test(text)};
 }
 // Leading "PREFIX:" of a stored message (letters, spaces and hyphens, e.g. CASH NO-SHOW CANCELLED).
 export const notificationPrefix=message=>String(message||'').match(/^([A-Z][A-Z -]{2,60}):/)?.[1];

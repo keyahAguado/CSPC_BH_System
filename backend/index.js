@@ -38,6 +38,7 @@ import notificationRouter from './routes/notifications.js';    // Real-time unre
 import paymentRoutes from './routes/payment.js';
 import siteContentRouter from './routes/siteContent.js';        // Public landing page content (managed by admin)
 import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
+import locationsRouter from './routes/locations.js';           // Philippine address lists (local PSGC copy)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -153,6 +154,7 @@ app.use('/api/payment', paymentRoutes);
 // B. Public landing page content (Core Features + footer), edited under /api/admin/site-content
 app.use('/api/site-content', siteContentRouter);
 app.use('/api/applications', applicationsRouter);
+app.use('/api/locations', locationsRouter);
 
 // Multer validation failures use the same user-facing JSON contract as forms.
 app.use(uploadErrorHandler);

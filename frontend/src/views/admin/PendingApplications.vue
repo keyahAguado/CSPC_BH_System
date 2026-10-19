@@ -69,7 +69,12 @@ const downloadOriginal = () => {
 
 // Criteria management
 const newCriteriaLabel = ref('');
-const newCriteriaType = ref('required');
+// No preset: SASO chooses the category explicitly so a requirement is never classified by default.
+const newCriteriaType = ref('');
+const requirementTypeOptions = [
+  { value: 'required', label: 'Required', note: 'Owners must upload it before submitting.' },
+  { value: 'supplementary', label: 'Supplementary', note: 'Optional. Owners may upload it.' }
+];
 const editCriteriaId = ref(null);
 const editCriteriaLabel = ref('');
 const editCriteriaType = ref('supplementary');
@@ -388,6 +393,7 @@ const submitAddCriteria = async () => {
   const inputError = validateInput('criterion', { label: newCriteriaLabel.value });
   if (inputError) { showSystemAlert(inputError, 'error'); return; }
   if (!newCriteriaLabel.value.trim()) return;
+  if (!newCriteriaType.value) { showSystemAlert('Choose whether this document is Required or Supplementary.', 'error'); return; }
   try {
     const res = await axios.post(`/api/admin/criteria/add`, {
       label: newCriteriaLabel.value,
@@ -398,6 +404,7 @@ const submitAddCriteria = async () => {
 
     if (res.data.success) {
       newCriteriaLabel.value = '';
+      newCriteriaType.value = '';
       showAddCriteriaModal.value = false;
       showSystemAlert('Requirement added for all boarding houses.', 'success');
       await fetchPendingApplications();
@@ -456,7 +463,7 @@ const submitUpdateCriteria = async () => {
     if (res.data.success) {
       showEditItemModal.value = false;
       showUpdateCriteriaModal.value = true; 
-      showSystemAlert('Criteria label updated successfully!', 'success');
+      showSystemAlert('Requirement updated.', 'success');
       await fetchPendingApplications();
     }
   } catch (err) { 
@@ -1036,6 +1043,16 @@ const loadError = ref('');
             <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Criteria Label</label>
             <input aria-label="Criteria Label" type="text" v-model="newCriteriaLabel" required placeholder="e.g. Health Certificate" class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-emerald-500 outline-none transition font-bold text-slate-700">
           </div>
+          <fieldset class="mb-8">
+            <legend class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Category</legend>
+            <div class="grid grid-cols-2 gap-3">
+              <label v-for="opt in requirementTypeOptions" :key="opt.value" :class="['cursor-pointer rounded-2xl border-2 px-4 py-3 transition', newCriteriaType === opt.value ? (opt.value === 'required' ? 'border-red-400 bg-red-50' : 'border-[#245b99] bg-blue-50') : 'border-slate-100 bg-slate-50 hover:border-slate-300']">
+                <input type="radio" name="new-criteria-type" :value="opt.value" v-model="newCriteriaType" class="sr-only">
+                <span class="block text-sm font-bold text-slate-800">{{ opt.label }}</span>
+                <span class="block text-xs text-slate-500 mt-1 leading-snug">{{ opt.note }}</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="flex justify-end gap-4">
             <button @click="showAddCriteriaModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
             <button @click="submitAddCriteria" class="bg-green-700 hover:bg-green-800 text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button">Add Item</button>
@@ -1080,6 +1097,16 @@ const loadError = ref('');
             <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Update Label</label>
             <input aria-label="Update Label" type="text" v-model="editCriteriaLabel" required class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-amber-500 outline-none transition font-bold text-slate-700" />
           </div>
+          <fieldset class="mb-8">
+            <legend class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Category</legend>
+            <div class="grid grid-cols-2 gap-3">
+              <label v-for="opt in requirementTypeOptions" :key="opt.value" :class="['cursor-pointer rounded-2xl border-2 px-4 py-3 transition', editCriteriaType === opt.value ? (opt.value === 'required' ? 'border-red-400 bg-red-50' : 'border-[#245b99] bg-blue-50') : 'border-slate-100 bg-slate-50 hover:border-slate-300']">
+                <input type="radio" name="edit-criteria-type" :value="opt.value" v-model="editCriteriaType" class="sr-only">
+                <span class="block text-sm font-bold text-slate-800">{{ opt.label }}</span>
+                <span class="block text-xs text-slate-500 mt-1 leading-snug">{{ opt.note }}</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="flex justify-end gap-4">
             <button @click="showEditItemModal = false" class="px-8 py-3 text-slate-400 font-semibold text-[12px] uppercase tracking-wide hover:text-slate-600">Cancel</button>
             <button @click="submitUpdateCriteria" class="bg-[#245b99] hover:bg-[#194775] text-white px-10 py-3 rounded-xl font-semibold text-[12px] uppercase tracking-wide shadow-lg transition management-button management-button-primary">Save Changes</button>

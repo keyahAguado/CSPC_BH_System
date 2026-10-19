@@ -626,13 +626,45 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             return new Date(timestamp);
         };
 
+        // All new files are uploaded together (a few at a time) instead of one after another;
+        // each later step awaits its own file's upload. Started only after validation passes.
+        const UPLOAD_CONCURRENCY = 6;
+        const uploadQueue = [];
+        let uploadsRunning = 0;
+        const runNextUpload = () => {
+            while (uploadsRunning < UPLOAD_CONCURRENCY && uploadQueue.length) {
+                const job = uploadQueue.shift();
+                uploadsRunning++;
+                job().finally(() => { uploadsRunning--; runNextUpload(); });
+            }
+        };
+        const startedUploads = new Map();
+        const uploadOnce = (file, folder) => {
+            if (!startedUploads.has(file)) {
+                startedUploads.set(file, new Promise((resolve, reject) => {
+                    uploadQueue.push(() => saveUploadedFile(file.buffer, file.originalname, folder).then(resolve, reject));
+                    runNextUpload();
+                }));
+                startedUploads.get(file).catch(() => {}); // awaited (and reported) by the step that uses it
+            }
+            return startedUploads.get(file);
+        };
+        const uploadFolder = (field) => (field === 'house_img' ? 'house_images' : field === 'house_photos' ? 'house_photos' : 'permits');
+        const startAllUploads = () => {
+            for (const [field, files] of Object.entries(req.files || {})) for (const f of files) uploadOnce(f, uploadFolder(field));
+        };
+        const uploadedFile = (buffer, originalname, folder) => {
+            const file = Object.values(req.files || {}).flat().find(f => f.buffer === buffer);
+            return file ? uploadOnce(file, folder) : saveUploadedFile(buffer, originalname, folder);
+        };
+
         // Upload a field buffer via unified storage provider; returns the URL/path or null if no new file
         const uploadField = async (fieldName, folder) => {
             if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
                 try {
                     submissionStep = 'upload:' + fieldName;
                     const f = req.files[fieldName][0];
-                    return await saveUploadedFile(f.buffer, f.originalname, folder);
+                    return await uploadOnce(f, folder);
                 } catch (uploadErr) {
                     throw new Error('File upload failed.', { cause: uploadErr });
                 }
@@ -652,7 +684,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 const extra = (req.files && req.files[key]) ? req.files[key].slice(1) : [];
                 if (extra.length === 0) continue;
                 submissionStep = 'upload:' + key;
-                extraPermitFiles[key] = await Promise.all(extra.map(f => saveUploadedFile(f.buffer, f.originalname, 'permits')));
+                extraPermitFiles[key] = await Promise.all(extra.map(f => uploadOnce(f, 'permits')));
             }
         };
         const savePermitFileList = async (targetHouseId, firstFiles) => {
@@ -708,12 +740,14 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             return res.status(400).json({ success: false, message: 'Please refresh the application and select your photos again.' });
         }
 
+        startAllUploads();
+
         // Upload all house photos via unified storage provider concurrently in parallel
         let uploadedPhotoUrls = [];
         if (req.files && req.files['house_photos'] && req.files['house_photos'].length > 0) {
             console.log(`[ACCREDITATION PHOTOS] Received ${req.files['house_photos'].length} new photo file(s)`);
             submissionStep = 'gallery-upload';
-            const photoPromises = req.files['house_photos'].map(f => saveUploadedFile(f.buffer, f.originalname, 'house_photos'));
+            const photoPromises = req.files['house_photos'].map(f => uploadOnce(f, 'house_photos'));
             uploadedPhotoUrls = await Promise.all(photoPromises);
             console.log(`[ACCREDITATION PHOTOS] Uploaded: ${JSON.stringify(uploadedPhotoUrls)}`);
         }
@@ -752,7 +786,8 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             const img_3 = combinedPhotos[2] || null;
 
             const newPermitFiles = {};
-            for (const key of permitFileKeys) newPermitFiles[key] = await uploadField(key, 'permits');
+            const firstPermitFiles = await Promise.all(permitFileKeys.map(key => uploadField(key, 'permits')));
+            permitFileKeys.forEach((key, i) => { newPermitFiles[key] = firstPermitFiles[i]; });
             await uploadExtraPermitFiles();
             const permit_business_form = newPermitFiles.permit_business_form || existingHouse.permit_business_form;
             const permit_cedula        = newPermitFiles.permit_cedula        || existingHouse.permit_cedula;
@@ -831,7 +866,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 );
             }
             await savePermitFileList(house_id, newPermitFiles);
-            await saveCustomDocuments(connection, house_id, customCriteria, req.files, req.body, saveUploadedFile);
+            await saveCustomDocuments(connection, house_id, customCriteria, req.files, req.body, uploadedFile);
             if (req.applicantEdit) {
                 const { before, after } = req.applicantEdit;
                 submissionStep = 'application-status-save';
@@ -864,15 +899,8 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
         }
 
         // New registrations never overwrite an existing property by name.
-        const house_img        = await uploadField('house_img', 'house_images');
-        const permit_business_form = await uploadField('permit_business_form', 'permits');
-        const permit_cedula        = await uploadField('permit_cedula', 'permits');
-        const permit_dti           = await uploadField('permit_dti', 'permits');
-        const permit_barangay      = await uploadField('permit_barangay', 'permits');
-        const permit_building      = await uploadField('permit_building', 'permits');
-        const permit_zoning        = await uploadField('permit_zoning', 'permits');
-        const permit_sanitary      = await uploadField('permit_sanitary', 'permits');
-        const permit_fire          = await uploadField('permit_fire', 'permits');
+        const [house_img, permit_business_form, permit_cedula, permit_dti, permit_barangay, permit_building, permit_zoning, permit_sanitary, permit_fire] =
+            await Promise.all([uploadField('house_img', 'house_images'), ...permitFileKeys.map(key => uploadField(key, 'permits'))]);
         await uploadExtraPermitFiles();
 
         const img_1 = combinedPhotos[0] || null;
@@ -920,7 +948,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             );
         }
         await savePermitFileList(newHouseId, { permit_business_form, permit_cedula, permit_dti, permit_barangay, permit_building, permit_zoning, permit_sanitary, permit_fire });
-        await saveCustomDocuments(connection, newHouseId, customCriteria, req.files, req.body, saveUploadedFile);
+        await saveCustomDocuments(connection, newHouseId, customCriteria, req.files, req.body, uploadedFile);
 
         await commitApplicationTransaction();
 

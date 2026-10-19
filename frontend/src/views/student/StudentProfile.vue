@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import AddressPicker from '../../components/AddressPicker.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 
 const router = useRouter();
@@ -153,6 +154,7 @@ const handleFileChange = (e) => {
 const validateForm = () => {
   const inputError = validateInput('studentProfile', form.value);
   if (inputError) return inputError;
+  if (!String(form.value.address || '').trim()) return 'Please complete your permanent home address (select down to the barangay).';
   if (form.value.dob) {
     if (form.value.dob > maxDobDate) {
       return `Date of birth is invalid — you must be at least ${MIN_STUDENT_AGE} years old.`;
@@ -214,16 +216,6 @@ const saveProfile = async () => {
 };
 
 const userInitial = () => (user.value.name || 'S').charAt(0).toUpperCase();
-
-import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
-
-const initAddressAutocomplete = (el) => {
-  if (el) {
-    setupAddressAutocomplete(el, (selectedAddress) => {
-      form.value.address = selectedAddress;
-    });
-  }
-};
 
 onMounted(() => {
   fetchProfile();
@@ -364,9 +356,10 @@ onMounted(() => {
                   <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Tied to your CSPC Google Account.</p>
                 </div>
                 <div class="col-span-1 md:col-span-3">
-                  <label class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Permanent Home Address</label>
-                  <input type="text" :ref="initAddressAutocomplete" v-model="form.address" placeholder="e.g. Zone 4, Barangay San Isidro, Nabua, Camarines Sur" required
-                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm" />
+                  <p class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Permanent Home Address</p>
+                  <AddressPicker v-model="form.address" id-prefix="student-address"
+                    field-class="w-full bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 outline-none transition shadow-sm"
+                    label-class="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-0.5" />
                   <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Your permanent or family residence, distinct from your current boarding house accommodation.</p>
                 </div>
               </div>

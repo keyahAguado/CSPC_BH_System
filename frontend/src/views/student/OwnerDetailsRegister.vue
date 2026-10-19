@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import Header from '../../components/partials/Header.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
-import { setupAddressAutocomplete } from '../../utils/placesAutocomplete.js';
+import AddressPicker from '../../components/AddressPicker.vue';
 
 const route  = useRoute();
 const router = useRouter();
@@ -19,14 +19,6 @@ const profilePic = ref('');
 
 const phone   = ref('');
 const address = ref('');
-
-const initAddressAutocomplete = (el) => {
-  if (el) {
-    setupAddressAutocomplete(el, (selectedAddress) => {
-      address.value = selectedAddress;
-    });
-  }
-};
 
 const errorMessage   = ref('');
 const successMessage = ref('');
@@ -167,17 +159,12 @@ const handleSubmit = async () => {
 
           <!-- Residential Address -->
           <div>
-            <label class="block text-[10px] font-black text-slate-400 uppercase mb-1">
+            <p class="block text-[10px] font-black text-slate-400 uppercase mb-1">
               Residential Address <span class="text-red-400">*</span>
-            </label>
-            <input
-              :ref="initAddressAutocomplete"
-              v-model="address"
-              type="text"
-              placeholder="e.g. Zone 1, Barangay San Esteban, Nabua, Camarines Sur"
-              class="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:border-blue-500 outline-none font-medium"
-              required
-            />
+            </p>
+            <AddressPicker v-model="address" id-prefix="owner-register-address"
+              field-class="w-full border border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none font-medium"
+              label-class="block text-[10px] font-black text-slate-400 uppercase mb-1" />
             <p class="text-[9px] text-slate-400 mt-1 ml-1 font-medium">Your personal home address — not the boarding house location.</p>
           </div>
 
