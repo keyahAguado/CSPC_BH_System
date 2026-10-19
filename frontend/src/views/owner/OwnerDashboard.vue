@@ -422,7 +422,7 @@ const loadError = ref('');
                     <span class="od-stat-icon" aria-hidden="true"><i class="fa-solid fa-peso-sign"></i></span>
                     <div>
                       <dt>Monthly rate</dt>
-                      <dd>{{ formatPeso(house.price) ? formatPeso(house.price) : '—' }}<small v-if="formatPeso(house.price)"> / mo</small></dd>
+                      <dd>{{ formatPeso(house.price) ? formatPeso(house.price) : '—' }}<small v-if="formatPeso(house.price)"> / month</small></dd>
                     </div>
                   </div>
                   <div>
