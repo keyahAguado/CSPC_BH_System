@@ -28,7 +28,7 @@ async function testConnection(retries = 5, delay = 3000) {
             console.log(`✅ Connected to MySQL database: ${process.env.DB_NAME || 'cspc_boarding_db'} (Host: ${poolConfig.host})`);
             connection.release();
             await ensureSchemaColumns();
-            return; // Success!
+            return true; // Success!
         } catch (err) {
             console.warn(`⚠️  Database connection attempt ${i}/${retries} failed (${err.message}). Retrying in ${delay / 1000}s...`);
 
@@ -41,6 +41,7 @@ async function testConnection(retries = 5, delay = 3000) {
 
             if (i === retries) {
                 console.error('❌ Database connection failed permanently:', err.message);
+                return false;
             } else {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -50,6 +51,43 @@ async function testConnection(retries = 5, delay = 3000) {
 
 async function ensureSchemaColumns() {
     try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS owner_direct_payment_connections (
+            id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+            owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL, current_slot TINYINT NULL DEFAULT 1,
+            merchant_label VARCHAR(120) NOT NULL,
+            secret_ciphertext TEXT NOT NULL, key_fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            key_last_four CHAR(4) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'pending', issue_code VARCHAR(40) NULL,
+            webhook_id VARCHAR(100) NULL, webhook_secret TEXT NULL, checked_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY owner_direct_current (owner_id, mode, current_slot), UNIQUE KEY owner_direct_key (key_fingerprint),
+            KEY owner_direct_history (owner_id, mode)
+        )`);
+        for (const column of ['payment_interruption_notified_at','cash_recovery_requested_at']) {
+            const [columns] = await pool.query('SHOW COLUMNS FROM bookings LIKE ?', [column]);
+            if (!columns.length) await pool.query('ALTER TABLE bookings ADD COLUMN ' + column + ' DATETIME NULL');
+        }
+        const [cashSessionColumn] = await pool.query("SHOW COLUMNS FROM bookings LIKE 'cash_recovery_session_id'");
+        if (!cashSessionColumn.length) await pool.query('ALTER TABLE bookings ADD COLUMN cash_recovery_session_id VARCHAR(255) NULL');
+        const [directBookingColumns] = await pool.query("SHOW COLUMNS FROM bookings LIKE 'paymongo_direct_connection_id'");
+        if (!directBookingColumns.length) await pool.query('ALTER TABLE bookings ADD COLUMN paymongo_direct_connection_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL');
+        await pool.query(`CREATE TABLE IF NOT EXISTS owner_payment_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, owner_id INT NOT NULL,
+            connection_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, action VARCHAR(50) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY owner_payment_event_owner (owner_id,id)
+        )`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS owner_payment_connections (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL,
+            email VARCHAR(254) NOT NULL, invitation_id VARCHAR(100) NOT NULL,
+            account_id VARCHAR(100) NULL, status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            webhook_id VARCHAR(100) NULL, webhook_secret TEXT NULL, checked_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY owner_payment_mode (owner_id, mode), UNIQUE KEY merchant_payment_mode (account_id, mode)
+        )`);
+        for (const [column, definition] of [['paymongo_account_id','VARCHAR(100) NULL'], ['paymongo_mode','VARCHAR(4) NULL']]) {
+            const [columns] = await pool.query('SHOW COLUMNS FROM bookings LIKE ?', [column]);
+            if (!columns.length) await pool.query('ALTER TABLE bookings ADD COLUMN ' + column + ' ' + definition);
+        }
         const [userCols] = await pool.query("SHOW COLUMNS FROM users LIKE 'dpa_accepted'");
         if (userCols.length === 0) {
             await pool.query("ALTER TABLE users ADD COLUMN dpa_accepted TINYINT(1) DEFAULT 0, ADD COLUMN dpa_accepted_at DATETIME NULL DEFAULT NULL");
@@ -256,6 +294,6 @@ async function ensureSiteContentTables() {
 }
 
 // Fire the self-healing test on startup
-testConnection();
+export const databaseReady = testConnection();
 
 export default pool;

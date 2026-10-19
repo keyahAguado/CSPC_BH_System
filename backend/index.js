@@ -19,7 +19,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import passport from 'passport';
-import pool from './config/db.js'; // Database connection pool (resolves natively to 127.0.0.1:3306)
+import pool, { databaseReady } from './config/db.js'; // Database connection pool (resolves natively to 127.0.0.1:3306)
 import './config/passport.js';
 import cron from 'node-cron';
 import { runComplianceCheck } from './config/complianceManager.js';
@@ -36,6 +36,9 @@ import ownerRouter from './routes/owner.js';                    // Owner Profile
 import adminRouter from './routes/admin.js';                    // SASO Admin dashboard & accreditation checklist actions
 import notificationRouter from './routes/notifications.js';    // Real-time unread alerts & inbox manager
 import paymentRoutes from './routes/payment.js';
+import ownerPaymentRoutes from './routes/ownerPayments.js';
+import ownerDirectPaymentRoutes from './routes/ownerDirectPayments.js';
+import { createDirectHealthWorker } from './config/ownerDirectPayments.js';
 import siteContentRouter from './routes/siteContent.js';        // Public landing page content (managed by admin)
 import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
 import locationsRouter from './routes/locations.js';           // Philippine address lists (local PSGC copy)
@@ -150,6 +153,8 @@ app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationRouter);
 
 app.use('/api/payment', paymentRoutes);
+app.use('/api/owner/payment-setup', ownerPaymentRoutes);
+app.use('/api/owner/direct-payments', ownerDirectPaymentRoutes);
 
 // B. Public landing page content (Core Features + footer), edited under /api/admin/site-content
 app.use('/api/site-content', siteContentRouter);
@@ -250,6 +255,10 @@ cron.schedule('* * * * *', () => { if(!clockState().simulated) void runNotificat
 const runRenewalReview=createRenewalWorker({pool});
 cron.schedule('* * * * *',()=>{void runRenewalReview();});
 const runReservationExpiry = createReservationExpiryWorker({ pool });
+const runOwnerPaymentHealth = createDirectHealthWorker({pool});
+// Run as soon as startup schema checks finish, rather than waiting for the next cron boundary.
+void databaseReady.then(ready=>{if(ready)return runOwnerPaymentHealth();}).catch(()=>console.warn('[OWNER PAYMENTS] Startup check deferred to scheduled retry.'));
+cron.schedule('*/10 * * * *',()=>{void runOwnerPaymentHealth();});
 cron.schedule('* * * * *', () => { void runReservationExpiry(); });
 const runScheduledOccupancy = createScheduledOccupancyWorker({ pool });
 const runCheckoutReminders=createCheckoutReminderWorker({pool});

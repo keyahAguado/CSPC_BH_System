@@ -1,12 +1,19 @@
 import { bookingNow } from '../config/bookingClock.js';
 import express from 'express';
 import axios from 'axios';
-import { paymentError, providerOptions, verifyWebhook, settlePayment } from '../config/paymentSettlement.js';
+import { paymentError, providerOptions, bookingProviderOptions, verifyWebhook, settlePayment, assertCheckoutContext } from '../config/paymentSettlement.js';
 import { PAID_RESERVATION_POLICY } from '../config/paidCancellation.js';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
+import { requireOwnerPayments, openSecret, paymentMode } from '../config/ownerPayments.js';
+import { directWebhookSecret, createDirectPaymentService, pauseDirectConnection } from '../config/ownerDirectPayments.js';
 
 const router = express.Router();
+
+router.get('/availability/:houseId', async (req, res) => {
+    try { await requireOwnerPayments(pool, req.params.houseId); res.json({success:true, available:true}); }
+    catch { res.json({success:true, available:false}); }
+});
 
 /**
  * 1. POST - Create PayMongo Checkout Session
@@ -16,7 +23,6 @@ router.post('/checkout', authenticateToken, async (req, res) => {
     let connection;
     try {
         if (req.user.role !== 'student') throw paymentError(403, 'Only students can start booking payments.');
-        const options = providerOptions();
         const { bookingId } = req.body;
 
         if (!Number.isSafeInteger(Number(bookingId)) || Number(bookingId) <= 0) {
@@ -49,8 +55,23 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         if (b.status !== 'confirmed' || b.payment_method !== 'paymongo') throw paymentError(409, 'Only approved online reservations can be paid.');
         if (b.payment_status === 'paid' || b.paymongo_payment_id) throw paymentError(409, 'The upfront payment is already recorded.');
         if (b.payment_due_at && new Date(b.payment_due_at).getTime() <= bookingNow().getTime()) throw paymentError(409, 'The payment deadline has passed. This reservation can no longer start or reopen checkout. Refresh My Bookings for its status.');
+        // Serialize new checkout creation with owner connection changes.
+        await connection.query('SELECT u.id FROM users u JOIN boarding_houses bh ON bh.owner_id = u.id WHERE bh.id = ? FOR UPDATE', [b.house_id]);
+        // Existing sessions retain their original recipient, including historical platform sessions.
+        let accountId = b.paymongo_account_id, directId = b.paymongo_direct_connection_id;
+        if (!b.paymongo_session_id) {
+            const recipient=await requireOwnerPayments(connection,b.house_id);
+            directId=recipient.direct_connection_id||null;
+            accountId=directId?null:recipient.account_id;
+            if(directId) {
+                try{await createDirectPaymentService().check(recipient);}catch(error){await connection.rollback();await pauseDirectConnection(pool,recipient,error.issue);throw error;}
+            }
+        }
+        const contextBooking={...b,paymongo_account_id:accountId,paymongo_direct_connection_id:directId,paymongo_mode:b.paymongo_mode||paymentMode()};
+        const options = await bookingProviderOptions(connection,contextBooking);
         if (b.paymongo_session_id) {
             const existing = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(b.paymongo_session_id), options)).data.data;
+            assertCheckoutContext(existing, b);
             if ((existing.attributes.payments || []).some(p => p.attributes?.status === 'paid')) {
                 await connection.commit();
                 connection.release();
@@ -62,6 +83,10 @@ router.post('/checkout', authenticateToken, async (req, res) => {
                 return res.json({ success: true, checkoutUrl: existing.attributes.checkout_url });
             }
             if (existing.attributes.status !== 'expired') throw paymentError(409, 'This checkout session cannot be reused. Please contact the owner.');
+            if (!accountId && !directId) throw paymentError(409, 'This older checkout has expired. Contact the owner before starting another online payment.');
+            // Never restart a checkout after disconnect; existing active/paid sessions can still be verified.
+            const currentRecipient = await requireOwnerPayments(connection,b.house_id);
+            if (directId ? !currentRecipient.direct_connection_id : currentRecipient.account_id !== accountId) throw paymentError(409, 'The payment connection changed. Contact the owner before paying.');
         }
 
         const [recordedOccupants] = await connection.query('SELECT id FROM occupants WHERE reference_no = ? AND payment_method = ? FOR UPDATE', ['REF-' + String(b.id).padStart(4, '0'), 'paymongo']);
@@ -98,13 +123,14 @@ router.post('/checkout', authenticateToken, async (req, res) => {
                                 currency: 'PHP'
                             }
                         ],
-                        payment_method_types: ['gcash', 'card', 'qrph'],
+                        payment_method_types: ['qrph'],
                         success_url: `${frontendUrl}/student/bookings?payment_success=true&bookingId=${bookingId}`,
                         cancel_url: `${frontendUrl}/student/bookings`,
                         description: `Upfront Payment for Reservation at ${b.house_name}`,
                         send_email_receipt: true,
                         metadata: {
-                            bookingId: bookingId.toString()
+                            bookingId: bookingId.toString(),
+                            ...(directId ? {paymentConnectionId:directId} : {})
                         }
                     }
                 }
@@ -115,7 +141,8 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         const session = paymongoResponse.data.data;
         const checkoutUrl = session?.attributes?.checkout_url;
         if (!session?.id || !checkoutUrl) throw paymentError(502, 'Invalid payment provider response.');
-        await connection.query('UPDATE bookings SET paymongo_session_id = ? WHERE id = ?', [session.id, b.id]);
+        assertCheckoutContext(session, {...contextBooking, paymongo_session_id:session.id});
+        await connection.query('UPDATE bookings SET paymongo_session_id = ?, paymongo_account_id = ?, paymongo_mode = ?, paymongo_direct_connection_id = ? WHERE id = ?', [session.id, accountId, paymentMode(), directId||null, b.id]);
         await connection.commit();
         res.json({ success: true, checkoutUrl });
 
@@ -137,7 +164,7 @@ router.post('/verify-payment', authenticateToken, async (req, res) => {
         if (!b) throw paymentError(404, 'Booking not found.');
         if (b.payment_method !== 'paymongo') throw paymentError(409, 'This is not an online payment booking.');
         if (!b.paymongo_session_id) throw paymentError(409, 'No online checkout session is recorded. Please contact the owner if you already paid.');
-        const session = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(b.paymongo_session_id), providerOptions())).data.data;
+        const session = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(b.paymongo_session_id), await bookingProviderOptions(pool,b))).data.data;
         res.json(await settlePayment(pool, id, session, req.user.id));
     } catch (error) {
         console.error('[PAYMENT VERIFICATION ERROR]:', error.message);
@@ -152,6 +179,8 @@ router.post('/webhook', async (req, res) => {
         const resource = event.data.attributes.data;
         const id = Number(resource?.attributes?.metadata?.bookingId);
         if (!Number.isSafeInteger(id) || id <= 0 || !resource?.id) throw paymentError(400, 'Invalid booking payment event.');
+        const [bookings] = await pool.query('SELECT paymongo_account_id,paymongo_direct_connection_id FROM bookings WHERE id = ?', [id]);
+        if (!bookings.length || bookings[0].paymongo_account_id || bookings[0].paymongo_direct_connection_id) throw paymentError(409, 'Use the merchant payment webhook for this booking.');
         const session = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(resource.id), providerOptions())).data.data;
         await settlePayment(pool, id, session, undefined, true);
         res.status(200).send('Webhook processed successfully.');
@@ -159,6 +188,46 @@ router.post('/webhook', async (req, res) => {
         console.error('[PAYMENT WEBHOOK ERROR]:', error.message);
         res.status(error.status || 500).send(error.status ? error.message : 'Payment processing failed.');
     }
+});
+
+router.post('/webhook/owner/:connectionId', async (req, res) => {
+    try {
+        if (!/^\d+$/.test(req.params.connectionId)) throw paymentError(400, 'Invalid connection.');
+        const [rows] = await pool.query('SELECT * FROM owner_payment_connections WHERE id = ?', [req.params.connectionId]);
+        const connection = rows[0];
+        if (!connection?.webhook_secret || !connection.account_id) throw paymentError(404, 'Payment connection not found.');
+        const event = verifyWebhook(req, openSecret(connection.webhook_secret), connection.mode);
+        if (event.data.attributes.type !== 'checkout_session.payment.paid') return res.status(200).json({success:true});
+        const resource = event.data.attributes.data;
+        const id = Number(resource?.attributes?.metadata?.bookingId);
+        if (!Number.isSafeInteger(id) || id <= 0 || !resource?.id) throw paymentError(400, 'Invalid booking payment event.');
+        const [bookings] = await pool.query('SELECT * FROM bookings WHERE id = ?', [id]);
+        const booking = bookings[0];
+        if (!booking || booking.paymongo_account_id !== connection.account_id || booking.paymongo_mode !== connection.mode || booking.paymongo_session_id !== resource.id) throw paymentError(409, 'Payment recipient or checkout does not match.');
+        const session = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(resource.id), providerOptions(connection.account_id, connection.mode))).data.data;
+        await settlePayment(pool, id, session);
+        res.status(200).json({success:true});
+    } catch (error) {
+        res.status(error.status || 500).json({success:false, message:error.status ? error.message : 'Payment processing failed.'});
+    }
+});
+
+router.post('/webhook/direct/:connectionId',async(req,res)=>{
+    try {
+        if(!/^[0-9a-f-]{36}$/.test(req.params.connectionId))throw paymentError(400,'Invalid payment connection.');
+        const [rows]=await pool.query('SELECT * FROM owner_direct_payment_connections WHERE id = ?',[req.params.connectionId]);
+        const connection=rows[0];
+        if(!connection?.webhook_secret)throw paymentError(404,'Payment connection not found.');
+        // Retired/disconnected versions still receive confirmations for their existing checkouts.
+        const event=verifyWebhook(req,directWebhookSecret(connection),connection.mode);
+        if(event.data.attributes.type!=='checkout_session.payment.paid')return res.status(200).json({success:true});
+        const resource=event.data.attributes.data,id=Number(resource?.attributes?.metadata?.bookingId);
+        if(!Number.isSafeInteger(id)||id<=0||!resource?.id)throw paymentError(400,'Invalid booking payment event.');
+        const [bookings]=await pool.query('SELECT * FROM bookings WHERE id = ?',[id]);const b=bookings[0];
+        if(!b||b.paymongo_direct_connection_id!==connection.id||b.paymongo_mode!==connection.mode||b.paymongo_session_id!==resource.id)throw paymentError(409,'Payment connection or checkout does not match.');
+        const session=(await axios.get('https://api.paymongo.com/v1/checkout_sessions/'+encodeURIComponent(resource.id),await bookingProviderOptions(pool,b))).data.data;
+        await settlePayment(pool,id,session);res.json({success:true});
+    }catch(error){res.status(error.status||500).json({success:false,message:error.status?error.message:'Payment confirmation could not be processed.'});}
 });
 
 export default router;

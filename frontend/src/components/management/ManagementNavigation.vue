@@ -19,7 +19,7 @@ const groups = computed(() => props.role === 'admin' ? [
 ] : [
   { label: 'Workspace', items: [['Overview & properties', '/owner/dashboard', 'fa-house'], ['Booking', '/owner/bookings', 'fa-calendar-check']] },
   { label: 'Compliance', items: [['Legal documents', '/owner/documents', 'fa-folder-open']] },
-  { label: 'Account', items: [['Profile & security', '/owner/profile', 'fa-user'], ['Notifications', '/owner/notifications', 'fa-bell']] }
+  { label: 'Account', items: [['Online payments', '/owner/payments', 'fa-qrcode'], ['Profile & security', '/owner/profile', 'fa-user'], ['Notifications', '/owner/notifications', 'fa-bell']] }
 ]);
 const propertyId = computed(() => ['OwnerEdit', 'OwnerRooms', 'OwnerDocuments'].includes(route.name) ? route.params.id : null);
 const active = (path) => route.path === path || (path === '/owner/documents' && route.path.startsWith(path + '/'));

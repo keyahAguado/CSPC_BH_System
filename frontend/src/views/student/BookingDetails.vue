@@ -37,6 +37,17 @@ const showContact = ref(false);
 const showExtendForm = ref(false);
 const extensionMonths = ref(1);
 const isPaying = ref(false);
+const onlineAvailable = ref(null), showCashRecovery = ref(false), cashRecoveryAccepted = ref(false), isRequestingCash = ref(false);
+const requestCashPayment = async () => {
+  if(!cashRecoveryAccepted.value || !booking.value)return;
+  isRequestingCash.value=true;
+  try {
+    const result=await axios.post('/api/student/bookings/request-cash/'+booking.value.id,{confirm:true},{headers:{Authorization:'Bearer '+token},timeout:60000});
+    showCashRecovery.value=false;cashRecoveryAccepted.value=false;
+    showSystemAlert(result.data.message,'success');await fetchBooking();
+  }catch(error){showCashRecovery.value=false;showSystemAlert(error.response?.data?.message||'Cash payment could not be requested. Refresh your booking; do not pay twice.','error');}
+  finally{isRequestingCash.value=false;}
+};
 
 // Displays the slide-in toast notification banner in the upper right
 const showSystemAlert = (message, type = 'error') => {
@@ -77,6 +88,10 @@ const fetchBooking = async () => {
     });
     const found = (res.data.bookings || []).find(b => String(b.id) === String(route.params.id));
     booking.value = found || null;
+    onlineAvailable.value = null;
+    if(found && found.payment_method==='paymongo' && ['pending','confirmed'].includes(found.status) && found.payment_status!=='paid' && !found.paymongo_payment_id){
+      try{onlineAvailable.value=(await axios.get('/api/payment/availability/'+found.house_id,{timeout:8000})).data.available===true;}catch{}
+    }
     notFound.value = !found;
     if (found) fetchHouse(found.house_id);
   } catch (e) {
@@ -305,6 +320,7 @@ const canCancel = computed(() => !needsReview.value && !isPaid.value && !b.value
   b.value.status === 'pending' || (isConfirmed.value && !isPaid.value && (b.value.payment_method === 'paymongo' || (Number(b.value.move_in_required) === 1 && !b.value.move_in_confirmed_at)))
 ));
 const canPayOnline = computed(() => !!booking.value && needsOnlinePayment(booking.value));
+const canRequestCash = computed(() => onlineAvailable.value===false && ['pending','confirmed'].includes(b.value.status) && b.value.payment_method==='paymongo' && !isPaid.value && !b.value.paymongo_payment_id && !needsReview.value && !b.value.move_in_confirmed_at);
 const canPrintReceipt = computed(() => !needsReview.value && isConfirmed.value && isPaid.value);
 const canRequestExtension = computed(() => canPrintReceipt.value && !b.value.is_extension_requested && (Number(b.value.move_in_required) !== 1 || !!b.value.move_in_confirmed_at));
 const canCancelExtension = computed(() => isConfirmed.value && !!b.value.is_extension_requested);
@@ -312,7 +328,7 @@ const canCancelExtension = computed(() => isConfirmed.value && !!b.value.is_exte
 const showGettingThere = computed(() => !!booking.value && isActiveBooking(booking.value));
 // The cancellation review gets its own card; its header shows whether the review is open or completed.
 const cancellationReview = computed(() => { try { const r = JSON.parse(b.value.cancellation_review || 'null'); return r && r.status !== 'withdrawn' ? r : null; } catch { return null; } });
-const hasAnyAction = computed(() => canPayOnline.value || canPrintReceipt.value || showGettingThere.value || canCancel.value);
+const hasAnyAction = computed(() => canRequestCash.value || canPayOnline.value || canPrintReceipt.value || showGettingThere.value || canCancel.value);
 
 const nextSteps = computed(() => {
   const x = b.value;
@@ -444,6 +460,11 @@ onMounted(fetchBooking);
 
         <div class="bd-banner mt-6"><RenewalDecisionNotice :booking="b" @changed="fetchBooking" @notice="showSystemAlert($event, 'success')" /><ReservationDeadline :booking="b" /></div>
 
+        <div v-if="canRequestCash" class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5" role="status">
+          <h3 class="font-bold text-amber-950">Online payment is currently unavailable</h3>
+          <p class="mt-2 text-sm leading-relaxed text-amber-900">Contact the owner to restore online payment, or request cash payment below. We must safely close any unpaid checkout first. A cash request returns your booking for owner approval; it does not guarantee a bed. Do not pay twice.</p>
+          <button type="button" class="bd-btn mt-4" @click="showCashRecovery = true">Request cash payment</button>
+        </div>
         <!-- On smaller screens the Actions panel sits below the booking, so surface payment here -->
         <div v-if="canPayOnline" class="lg:hidden mt-6 bg-orange-50 border border-orange-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
           <div class="flex-1">
@@ -658,6 +679,12 @@ onMounted(fetchBooking);
       </template>
     </main>
 
+    <AppDialog :open="showCashRecovery" title="Request cash payment?" icon="fa-money-bill-wave" tone="info" :busy="isRequestingCash" @close="showCashRecovery = false">
+      <p class="app-dialog-lead">Your booking will return to the owner for approval as a cash request. Its dates stay the same, but the previous online approval will no longer reserve a bed.</p>
+      <p class="app-dialog-callout warning">The original checkout must be verified and closed first. If payment is processing, paid, or cannot be checked, this request will not proceed. Do not make another payment.</p>
+      <label class="app-dialog-check"><input v-model="cashRecoveryAccepted" type="checkbox"><span>I want to request cash payment and understand that the owner must approve my booking again before arranging cash collection.</span></label>
+      <template #footer><button type="button" class="app-btn secondary" :disabled="isRequestingCash" @click="showCashRecovery = false">Keep current request</button><button type="button" class="app-btn primary" :disabled="isRequestingCash || !cashRecoveryAccepted" @click="requestCashPayment">{{ isRequestingCash ? 'Checking checkout...' : 'Send cash request' }}</button></template>
+    </AppDialog>
     <!-- Paid-reservation policy: accepted before every checkout (the server also requires it) -->
     <AppDialog :open="showPayPolicyModal && !!booking" title="Before you pay" icon="fa-credit-card" tone="info" :busy="isPaying" @close="showPayPolicyModal = false">
       <p class="app-dialog-lead">You are paying <strong>₱{{ formatMoney(b.initial_payment) }}</strong> to secure this reservation.</p>

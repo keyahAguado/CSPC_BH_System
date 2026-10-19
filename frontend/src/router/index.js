@@ -27,6 +27,7 @@ import BookingTestClockPage from '../views/owner/BookingTestClockPage.vue';
 import OwnerEdit from '../views/owner/EditHouse.vue';
 import OwnerRooms from '../views/owner/Rooms.vue';
 import OwnerProfile from '../views/owner/Profile.vue';
+import OwnerPaymentSettings from '../views/owner/PaymentSettings.vue';
 import OwnerViewDetails from '../views/owner/RoomDetails.vue';
 import VerifyApplicantEmail from '../views/owner/VerifyApplicantEmail.vue';
 import TrackApplication from '../views/owner/TrackApplication.vue';
@@ -251,6 +252,7 @@ const routes = [
         meta: { role: 'owner', title: 'Landlord Profile' }
     },
 
+    { path: '/owner/payments', name: 'OwnerPaymentSettings', component: OwnerPaymentSettings, meta: {role:'owner', title:'Online payments'} },
     // Admin Protected Routes
     {
         path: '/admin/dashboard',
@@ -431,6 +433,7 @@ router.beforeEach((to, from, next) => {
         const allowedExemptions = [
             'OwnerDocuments',
             'OwnerProfile',
+            'OwnerPaymentSettings',
             'OwnerNotifications'
         ];
 

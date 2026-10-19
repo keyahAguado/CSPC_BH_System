@@ -367,7 +367,7 @@ export function printTransactions(transactions, reportDate) {
       <td>${escapeHtml(t.house_name || '')}</td>
       <td class="text-center"><span class="badge ${t.status === 'confirmed' ? 'badge-green' : 'badge-blue'}">${escapeHtml(t.status || '')}</span></td>
       <td class="text-center"><span class="badge ${t.payment_status === 'paid' ? 'badge-green' : 'badge-amber'}">${escapeHtml(t.payment_status || '')}</span></td>
-      <td class="text-center">${t.payment_method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash'}</td>
+      <td class="text-center">${t.payment_method === 'paymongo' ? 'Online (PayMongo)' : 'Cash'}</td>
       <td class="text-right bold">&#8369;${parseFloat(t.room_price || 0).toLocaleString()}</td>
     </tr>`).join('');
 

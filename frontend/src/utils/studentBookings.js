@@ -69,7 +69,7 @@ export const monthsLabel = (months) => {
 };
 
 export const paymentMethodLabel = (booking) => {
-  if (booking.payment_method === 'paymongo') return 'Online (GCash/Card)';
+  if (booking.payment_method === 'paymongo') return 'Online (PayMongo)';
   if (booking.payment_method === 'cash') return 'Cash';
   return 'Not recorded';
 };
