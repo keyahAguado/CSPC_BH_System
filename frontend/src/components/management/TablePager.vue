@@ -11,7 +11,9 @@ const props = defineProps({
   total: { type: Number, required: true },
   perPage: { type: Number, default: null },
   noun: { type: String, default: 'entries' },
-  position: { type: String, default: 'bottom' }
+  position: { type: String, default: 'bottom' },
+  // Rows-per-page choices; small lists (e.g. admin room tables) can offer fewer rows
+  options: { type: Array, default: () => [10, 25, 50, 100] }
 });
 const emit = defineEmits(['update:page', 'update:perPage']);
 
@@ -38,10 +40,7 @@ const go = (n) => { if (n >= 1 && n <= props.totalPages && n !== props.page) emi
       <label v-if="perPage" class="tp-rows">
         <span>Rows per page</span>
         <select :value="perPage" aria-label="Rows per page" @change="emit('update:perPage', Number($event.target.value))">
-          <option :value="10">10</option>
-          <option :value="25">25</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
+          <option v-for="n in options" :key="n" :value="n">{{ n }}</option>
         </select>
       </label>
     </div>

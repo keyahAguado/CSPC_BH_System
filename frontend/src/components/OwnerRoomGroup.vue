@@ -3,7 +3,8 @@ import OwnerRoomActions from './OwnerRoomActions.vue';
 import { computed } from 'vue';
 import { getImageUrl } from '../config/api.js';
 import { roomList } from '../utils/roomDetails.js';
-const props = defineProps({ rooms: { type: Array, default: () => [] }, title: String, tone: String, archived: Boolean, busy: Boolean });
+// summary overrides the heading counts (e.g. a paged list); the actions and footer slots let other pages (admin) reuse the table
+const props = defineProps({ rooms: { type: Array, default: () => [] }, title: String, tone: String, archived: Boolean, busy: Boolean, summary: String });
 const emit = defineEmits(['edit','archive','restore']);
 const beds = computed(() => props.rooms.reduce((sum,room) => sum + Number(room.capacity || 0), 0));
 const photos = (room) => roomList(room.photos);
@@ -12,7 +13,8 @@ const status = (room) => vacant(room) === 0 ? (Number(room.occupant_count || 0) 
 </script>
 <template>
   <section class="owner-room-group">
-    <header class="room-group-heading"><h2><span :class="['room-group-marker',tone]" aria-hidden="true"></span>{{ title }}</h2><p>{{ rooms.length }} rooms / {{ beds }} total beds</p></header>
+    <header class="room-group-heading"><h2><span :class="['room-group-marker',tone]" aria-hidden="true"></span>{{ title }}</h2><p>{{ summary || `${rooms.length} rooms / ${beds} total beds` }}</p></header>
+    <slot name="top"></slot>
     <div class="room-group-scroll" role="region" :aria-label="title + ' table'" tabindex="0">
       <table class="owner-room-table"><colgroup><col class="col-room" /><col class="col-rent" /><col class="col-occupancy" /><col class="col-status" /><col class="col-actions" /></colgroup>
         <thead><tr><th scope="col">Room</th><th scope="col">Monthly rent</th><th scope="col">Occupancy</th><th scope="col">Current status</th><th scope="col" class="room-actions-heading">Actions</th></tr></thead>
@@ -21,7 +23,7 @@ const status = (room) => vacant(room) === 0 ? (Number(room.occupant_count || 0) 
           <td><p class="owner-room-rent"><strong>&#8369;{{ Number(room.price ?? 0).toLocaleString('en-PH', {maximumFractionDigits:2}) }}</strong><span> / month</span></p></td>
           <td><p class="owner-room-occupancy">{{ room.occupant_count || 0 }} / {{ room.capacity }} occupied<span v-if="Number(room.reserved_count)"> &middot; {{ room.reserved_count }} reserved today</span><small v-if="Number(room.upcoming_reserved_count)" class="block text-xs mt-1 text-blue-700">{{ room.upcoming_reserved_count }} upcoming reservation{{ Number(room.upcoming_reserved_count) === 1 ? '' : 's' }}</small></p></td>
           <td><span :class="['owner-room-status', archived ? 'archived' : status(room) === 'Vacant' ? 'available' : status(room) === 'Full' ? 'full' : vacant(room) <= 1 ? 'limited' : 'available']">{{ archived ? 'Archived' : status(room) }}</span></td>
-          <td><OwnerRoomActions :room="room" :archived="archived" :busy="busy" @edit="emit('edit',$event)" @archive="emit('archive',$event)" @restore="emit('restore',$event)" /></td>
+          <td><slot name="actions" :room="room"><OwnerRoomActions :room="room" :archived="archived" :busy="busy" @edit="emit('edit',$event)" @archive="emit('archive',$event)" @restore="emit('restore',$event)" /></slot></td>
         </tr></tbody>
       </table>
     </div>
@@ -29,10 +31,10 @@ const status = (room) => vacant(room) === 0 ? (Number(room.occupant_count || 0) 
       <article v-for="room in rooms" :key="room.id" class="owner-room-mobile-card">
         <div class="owner-room-identity"><img v-if="photos(room).length" :src="getImageUrl(photos(room)[0])" :alt="'Room ' + room.room_number" class="owner-room-thumb" loading="lazy" /><span v-else class="owner-room-placeholder" aria-hidden="true"><i class="fa-solid fa-bed"></i></span><div><h3>{{ /^(room|bed|unit|cottage|house)\b/i.test(room.room_number) ? room.room_number : 'Room ' + room.room_number }}</h3><p>{{ room.floor_label || 'Floor not specified' }} · <b>{{ room.capacity }} {{ Number(room.capacity) === 1 ? 'bed' : 'beds' }}</b></p></div></div>
         <dl class="owner-room-mobile-facts"><div><dt>Monthly rent</dt><dd class="owner-room-rent"><strong>&#8369;{{ Number(room.price ?? 0).toLocaleString('en-PH', {maximumFractionDigits:2}) }}</strong><span> / month</span></dd></div><div><dt>Occupancy</dt><dd class="owner-room-occupancy">{{ room.occupant_count || 0 }} / {{ room.capacity }} occupied<span v-if="Number(room.reserved_count)"> &middot; {{ room.reserved_count }} reserved today</span><small v-if="Number(room.upcoming_reserved_count)" class="block text-xs mt-1 text-blue-700">{{ room.upcoming_reserved_count }} upcoming reservation{{ Number(room.upcoming_reserved_count) === 1 ? '' : 's' }}</small></dd></div><div><dt>Current status</dt><dd><span :class="['owner-room-status', archived ? 'archived' : status(room) === 'Vacant' ? 'available' : status(room) === 'Full' ? 'full' : vacant(room) <= 1 ? 'limited' : 'available']">{{ archived ? 'Archived' : status(room) }}</span></dd></div></dl>
-        <OwnerRoomActions :room="room" :archived="archived" :busy="busy" @edit="emit('edit',$event)" @archive="emit('archive',$event)" @restore="emit('restore',$event)" />
+        <slot name="actions" :room="room"><OwnerRoomActions :room="room" :archived="archived" :busy="busy" @edit="emit('edit',$event)" @archive="emit('archive',$event)" @restore="emit('restore',$event)" /></slot>
       </article>
     </div>
-    <footer v-if="!archived" class="room-group-note">Current status shows beds today. Future availability depends on stay dates. Description and amenities are available in <b>Details</b>.</footer>
+    <slot name="footer"><footer v-if="!archived" class="room-group-note">Current status shows beds today. Future availability depends on stay dates. Description and amenities are available in <b>Details</b>.</footer></slot>
   </section>
 </template>
 <style scoped>

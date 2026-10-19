@@ -599,7 +599,7 @@ const loadError = ref('');
 
         <!-- Filters -->
         <div class="na-filters">
-          <div class="na-search">
+          <div class="admin-search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input v-model="naSearch" type="text" aria-label="Search applications" placeholder="Search owner name, boarding house, or reference number..." />
           </div>
@@ -1374,10 +1374,7 @@ const loadError = ref('');
 .na-tiles > div.is-primary { background: #e7eef8; border-color: #c9d7ec; }
 .na-tiles > div.is-primary dd, .na-tiles > div.is-primary dt i { color: #1e4a8d; }
 .na-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.na-search { position: relative; flex: 1 1 320px; min-width: 0; }
-.na-search i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; pointer-events: none; }
-.na-search input { width: 100%; height: 40px; min-height: 40px !important; padding: 0 14px 0 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; color: #334155; outline: none; }
-.na-search input:focus, .na-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
+.na-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .12); }
 .na-select { height: 40px; min-height: 40px !important; padding: 0 32px 0 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: #0f172a; outline: none; cursor: pointer; }
 .na-reset { display: inline-flex; align-items: center; gap: 8px; height: 40px; min-height: 40px !important; padding: 0 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: #0f172a; cursor: pointer; }
 .na-reset:hover { background: #f8fafc; }

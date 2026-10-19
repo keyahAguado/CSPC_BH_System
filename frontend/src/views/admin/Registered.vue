@@ -1,10 +1,9 @@
 <script setup>
 import UserAvatar from "../../components/UserAvatar.vue";
 import { confirmTone } from '../../utils/confirmTone.js';
-import DocumentAttachmentList from '../../components/DocumentAttachmentList.vue';
 import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
-import RoomFeatures from '../../components/RoomFeatures.vue';
 import TablePager from '../../components/management/TablePager.vue';
+import OwnerRoomGroup from '../../components/OwnerRoomGroup.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
@@ -20,6 +19,7 @@ import { getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
 import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
 import { matchesSearch } from '../../utils/search.js';
+import { roomList } from '../../utils/roomDetails.js';
 
 const getAdminCheckoutDate = (occ) => {
   if (!occ.check_in_date) return '—';
@@ -383,6 +383,12 @@ const permitSummary = (h) => {
   if (tone === 'warning') return { label: 'Expiring soon', tone, icon: 'fa-clock' };
   return { label: 'Permits complete', tone: 'success', icon: 'fa-circle-check' };
 };
+// Count chip on each documents section: green when complete, red when required ones are missing
+const docCountTone = (group) => {
+  const onFile = group.items.filter(d => d.file).length;
+  if (group.items.length && onFile === group.items.length) return 'is-complete';
+  return group.required && onFile < group.items.length ? 'is-missing' : '';
+};
 const expiryNote = (value) => {
   const days = daysUntil(value);
   if (days === null) return '';
@@ -537,10 +543,79 @@ const handleCheckoutOccupant = async (occId) => {
 };
 
 const totalOccupants = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.occupant_count || 0), 0));
-const totalUpcomingReserved = computed(() => activeRooms.value.reduce((n,r) => n + Number(r.upcoming_reserved_count || 0),0));
-const totalReserved = computed(() => activeRooms.value.reduce((n,r) => n + Number(r.reserved_count || 0),0));
-const totalCapacity = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.capacity || 0), 0));
 const totalCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.cspc_count || 0), 0));
+
+// Rooms & occupants helpers (room photos, occupant initials, short dates)
+const roomPhotos = (room) => roomList(room.photos);
+const nameInitials = (name = '') => name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '?';
+const shortDate = (value) => {
+  const date = value ? new Date(value) : null;
+  return date && !isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+};
+
+const totalNonCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.non_cspc_count || 0), 0));
+const isNonCspc = (occ) => Number(occ.is_non_cspc) === 1;
+
+// Room list tools: room number search and room type filter, natural order (1A, 1B, 2A, 10A)
+const roomSearch = ref('');
+const roomGender = ref('all');
+const roomGenderOf = (room) => (room.gender_type === 'male' ? 'male' : 'female');
+const sortedRooms = computed(() => [...activeRooms.value].sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true, sensitivity: 'base' })));
+const visibleRooms = computed(() => {
+  const term = roomSearch.value.trim().toLowerCase();
+  return sortedRooms.value.filter(room =>
+    (roomGender.value === 'all' || roomGenderOf(room) === roomGender.value) &&
+    (!term || String(room.room_number).toLowerCase().includes(term.replace(/^room\s*/, '')))
+  );
+});
+const resetRoomTools = () => { roomSearch.value = ''; roomGender.value = 'all'; roomPages.value = { female: 1, male: 1 }; };
+
+// Same paging maths as the admin tables (page, rows per page, "Showing x to y of z")
+const pageSlice = (items, page, perPage) => {
+  const totalPages = Math.max(1, Math.ceil(items.length / perPage));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const start = (current - 1) * perPage;
+  return { total: items.length, page: current, perPage, totalPages, start: items.length ? start + 1 : 0, end: Math.min(start + perPage, items.length), items: items.slice(start, start + perPage) };
+};
+
+// Female and male rooms are separate tables, each with its own pager
+const roomPages = ref({ female: 1, male: 1 });
+const roomPerPage = ref({ female: 5, male: 5 });
+const ROOM_PAGE_SIZES = [3, 5];
+const setRoomPerPage = (key, value) => { roomPerPage.value[key] = value; roomPages.value[key] = 1; };
+const ROOM_GROUPS = [
+  { key: 'female', title: 'Female rooms' },
+  { key: 'male', title: 'Male rooms' }
+];
+const roomGroups = computed(() => ROOM_GROUPS.map(group => {
+  const rooms = visibleRooms.value.filter(r => roomGenderOf(r) === group.key);
+  const paged = pageSlice(rooms, roomPages.value[group.key], roomPerPage.value[group.key]);
+  return { ...group, ...paged, rooms: paged.items, summary: `${rooms.length} room${rooms.length === 1 ? '' : 's'}` };
+}).filter(group => group.total));
+// A new filter starts both tables from page 1
+watch([roomSearch, roomGender], () => { roomPages.value = { female: 1, male: 1 }; });
+
+// Full occupant list (View occupants), paged like the admin tables
+const occupantPage = ref(1);
+const occupantPerPage = ref(10);
+const occupantPaged = computed(() => pageSlice(activeRoomOccupants.value, occupantPage.value, occupantPerPage.value));
+watch(isOccupantsView, (open) => { if (open) occupantPage.value = 1; });
+watch(() => activeHouse.value?.id, resetRoomTools);
+
+// Room photo viewer
+const roomPhotoDialog = ref(null);
+const photoRoom = ref(null);
+const photoIndex = ref(0);
+const photoList = computed(() => (photoRoom.value ? roomPhotos(photoRoom.value) : []));
+const openRoomPhotos = (room) => {
+  photoRoom.value = room;
+  photoIndex.value = 0;
+  nextTick(() => roomPhotoDialog.value?.showModal());
+};
+const stepRoomPhoto = (direction) => {
+  const count = photoList.value.length;
+  if (count) photoIndex.value = (photoIndex.value + direction + count) % count;
+};
 
 const parseAmenities = (val) => {
   if (!val) return [];
@@ -612,14 +687,9 @@ const loadError = ref('');
       <!-- Filter Bar -->
       <div v-if="!isLoading" class="mb-4 flex flex-col sm:flex-row items-center gap-3 animate-fade-in">
         <!-- Search Input -->
-        <div class="relative flex-1 min-w-0 w-full sm:w-auto">
-          <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
-          <input aria-label="Search by boarding house name, date, location..."
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search by boarding house name, date, location..."
-            class="w-full h-[40px] pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[13.5px] font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition shadow-sm"
-          />
+        <div class="admin-search w-full sm:w-auto">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input v-model="searchQuery" type="text" aria-label="Search by boarding house name, date, location..." placeholder="Search by boarding house name, date, location..." />
         </div>
 
         <!-- Barangay Filter Dropdown -->
@@ -740,7 +810,7 @@ const loadError = ref('');
             <div class="min-w-0">
               <h1 class="rp-hero-title">{{ activeHouse.name }}</h1>
               <p class="rp-hero-sub"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ formatAddress(activeHouse) || '—' }}</p>
-              <p class="rp-hero-sub"><i class="fa-solid fa-user-tie" aria-hidden="true"></i> {{ activeHouse.owner_name }}<span v-if="activeHouse.owner_phone || activeHouse.phone_contact"> · {{ activeHouse.owner_phone || activeHouse.phone_contact }}</span></p>
+              <p class="rp-hero-sub"><i class="fa-solid fa-user-tie" aria-hidden="true"></i> {{ activeHouse.owner_name }}</p>
               <div class="rp-chips">
                 <span :class="['rp-chip', 'is-' + permitSummary(activeHouse).tone]"><i :class="['fa-solid', permitSummary(activeHouse).icon]" aria-hidden="true"></i>{{ permitSummary(activeHouse).label }}</span>
                 <span class="rp-chip"><i class="fa-regular fa-calendar" aria-hidden="true"></i>Registered {{ formatDate(activeHouse.created_at) }}</span>
@@ -769,7 +839,7 @@ const loadError = ref('');
         <div v-if="detailTab === 'overview'" class="rp-grid">
           <div class="rp-col">
             <section class="rp-card">
-              <h2 class="rp-card-title">Owner</h2>
+              <h2 class="rp-card-title">Owner Information</h2>
               <div class="flex items-center gap-4 mb-4">
                 <UserAvatar :src="activeHouse.profile_pic" :name="activeHouse.owner_name" class="rp-avatar" />
                 <div>
@@ -785,7 +855,7 @@ const loadError = ref('');
             </section>
 
             <section class="rp-card">
-              <h2 class="rp-card-title">Property</h2>
+              <h2 class="rp-card-title">Property Details</h2>
               <dl class="rp-facts">
                 <div><dt>Monthly rate</dt><dd>{{ Number(activeHouse.price) > 0 ? '₱' + Number(activeHouse.price).toLocaleString('en-PH') : '—' }}</dd></div>
                 <div><dt>Property contact</dt><dd>{{ activeHouse.phone_contact || '—' }}</dd></div>
@@ -858,24 +928,39 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
-            <div class="rp-card-head">
-              <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
-              <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === requiredCount(activeHouse) ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card dc-card">
+            <div class="dc-head">
+              <h2 class="dc-title">{{ group.title }}</h2>
+              <span :class="['dc-count', docCountTone(group)]">
+                <i v-if="docCountTone(group) === 'is-complete'" class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                <i v-else-if="docCountTone(group) === 'is-missing'" class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                {{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted
+              </span>
             </div>
-            <ul class="rp-doc-grid">
-              <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
-                <div class="min-w-0 flex-1">
-                  <p class="rp-doc-name">{{ doc.label }}</p>
-                  <DocumentAttachmentList v-if="doc.files.length" :files="doc.files" :label="doc.label" @preview="index => openPreviewSet(doc.files, index)" />
-                  <p class="rp-doc-meta">
-                    <span v-if="!doc.file" :class="group.required ? 'text-rose-600 font-semibold' : 'text-slate-400'">Not submitted</span>
-                    <template v-else>
-                      <span class="text-emerald-700 font-semibold"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
-                      <span v-if="doc.expiry" :class="['rp-exp', 'is-' + expiryTone(doc.expiry)]"> · {{ expiryNote(doc.expiry) }}</span>
+            <p v-if="!group.items.length" class="rp-empty">No {{ group.required ? 'required' : 'optional' }} documents for this property.</p>
+            <ul v-else class="dc-grid">
+              <li v-for="doc in group.items" :key="doc.label" :class="['dc-doc', { 'is-missing': !doc.file }]">
+                <button v-if="doc.file" type="button" class="dc-thumb" :aria-label="'View ' + doc.label" @click="openPreviewSet(doc.files)">
+                  <span v-if="isPdfFile(doc.file)" class="dc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i>PDF</span>
+                  <img v-else :src="getImageUrl(doc.file)" :alt="''" loading="lazy" />
+                  <span v-if="doc.files.length > 1" class="dc-thumb-count">{{ doc.files.length }} files</span>
+                </button>
+                <span v-else class="dc-thumb is-empty" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
+
+                <div class="dc-body">
+                  <p class="dc-name">{{ doc.label }}</p>
+                  <p class="dc-meta">
+                    <template v-if="doc.file">
+                      <span class="dc-status is-submitted"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
+                      <template v-if="doc.expiry"><span class="dc-dot" aria-hidden="true">·</span><span :class="['dc-exp', 'is-' + expiryTone(doc.expiry)]">{{ expiryNote(doc.expiry) }}</span></template>
                     </template>
+                    <span v-else :class="['dc-status', group.required ? 'is-required' : 'is-optional']">
+                      <i :class="['fa-solid', group.required ? 'fa-circle-exclamation' : 'fa-circle-minus']" aria-hidden="true"></i> Not submitted
+                    </span>
                   </p>
-                  <button v-if="doc.file" type="button" class="rp-link-btn" @click="openPreviewSet(doc.files)"><i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View all ${doc.files.length} files` : 'View full screen' }}</button>
+                  <button v-if="doc.file" type="button" class="dc-view" @click="openPreviewSet(doc.files)">
+                    <i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View documents (${doc.files.length})` : 'View document' }}
+                  </button>
                 </div>
               </li>
             </ul>
@@ -884,59 +969,123 @@ const loadError = ref('');
 
         <!-- ROOMS & OCCUPANTS -->
         <div v-else class="rp-col">
-          <div class="rp-card-head" aria-label="Room and occupant views">
-            <button type="button" class="rp-back" :aria-pressed="!isOccupantsView" @click="isOccupantsView = false">View rooms</button>
-            <button v-if="activeRoomData" type="button" class="rp-link-btn" :aria-pressed="isOccupantsView" @click="viewBoarderDetails(activeRoomData)">View occupants · Room {{ activeRoomData.room_number }}</button>
-          </div>
           <template v-if="!isOccupantsView">
-            <section class="rp-card">
-              <div class="rp-card-head">
-                <h2 class="rp-card-title !mb-0">Rooms</h2>
-                <span class="rp-muted">{{ totalOccupants }} of {{ totalCapacity }} beds occupied &middot; {{ totalReserved }} reserved today &middot; {{ totalUpcomingReserved }} upcoming reservations &middot; {{ Math.max(totalCapacity-totalOccupants-totalReserved,0) }} available</span>
+            <section class="rp-card ro-card">
+              <div class="ro-head">
+                <div>
+                  <h2 class="ro-title">Rooms &amp; occupants</h2>
+                  <p class="ro-subtitle">Scan all rooms quickly, then open a room's occupants or photos.</p>
+                </div>
+                <div class="ro-stats">
+                  <div class="ro-stat">
+                    <span class="ro-stat-icon" aria-hidden="true"><i class="fa-solid fa-bed"></i></span>
+                    <div><strong class="ro-stat-value">{{ isLoadingRooms ? '…' : activeRooms.length }}</strong><span class="ro-stat-label">Total rooms</span></div>
+                  </div>
+                  <div class="ro-stat">
+                    <span class="ro-stat-icon" aria-hidden="true"><i class="fa-solid fa-users"></i></span>
+                    <div>
+                      <strong class="ro-stat-value">{{ isLoadingRooms ? '…' : totalOccupants }}</strong><span class="ro-stat-label">Total occupants</span>
+                      <span class="ro-split-tags"><span class="ro-tag is-cspc">{{ totalCspc }} CSPC</span><span class="ro-tag is-non">{{ totalNonCspc }} non-CSPC</span></span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p class="rp-muted mb-3">Occupied beds count active booked stays. Reserved beds are held for approved bookings due today or earlier. Upcoming reservations are shown separately; future availability depends on the stay dates.</p>
+
               <div v-if="isLoadingRooms" class="py-8 flex justify-center"><div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>
               <div v-else-if="activeRooms.length === 0" class="rp-empty">No rooms listed for this boarding house.</div>
-              <div v-else class="rp-room-grid">
-                <div v-for="room in activeRooms" :key="room.id" class="rp-room">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="rp-strong">Room {{ room.room_number }}</span>
-                    <span :class="['rp-chip', room.occupant_count >= room.capacity ? 'is-danger' : 'is-success']">{{ Number(room.occupant_count) >= Number(room.capacity) ? 'Full' : Number(room.occupant_count) + Number(room.reserved_count || 0) >= Number(room.capacity) ? 'Reserved' : 'Available' }}</span>
+              <div v-else class="ro-rooms">
+                <!-- Search on the left, room type filter in the right corner -->
+                <div class="ro-owner-toolbar">
+                  <div class="admin-search ro-room-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input v-model="roomSearch" type="text" aria-label="Search room number" placeholder="Search room no." /></div>
+                  <div class="ro-owner-filters">
+                    <select v-model="roomGender" aria-label="Filter by room type">
+                      <option value="all">All room types</option>
+                      <option value="female">Female rooms</option>
+                      <option value="male">Male rooms</option>
+                    </select>
                   </div>
-                  <RoomFeatures :room="room" />
-                  <span class="rp-tag mt-2" :class="room.gender_type === 'female' ? 'is-female' : 'is-male'">{{ room.gender_type }}</span>
-                  <div class="rp-bar" aria-hidden="true"><span :style="{ width: Math.min(100, (room.occupant_count / Math.max(room.capacity, 1)) * 100) + '%' }"></span></div>
-                  <p class="rp-muted mt-1">{{ room.occupant_count }} / {{ room.capacity }} occupied &middot; {{ room.reserved_count || 0 }} reserved today &middot; {{ Math.max(0, Number(room.capacity)-Number(room.occupant_count)-Number(room.reserved_count || 0)) }} available</p><p v-if="Number(room.upcoming_reserved_count)" class="rp-muted mt-1">{{ room.upcoming_reserved_count }} upcoming reservations</p>
-                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span></p>
-                  <button type="button" class="rp-link-btn mt-2" @click="viewBoarderDetails(room)">View occupants <i class="fa-solid fa-chevron-right text-[10px]" aria-hidden="true"></i></button>
+                </div>
+
+                <OwnerRoomGroup v-for="group in roomGroups" :key="group.key" :rooms="group.rooms" :title="group.title" :tone="group.key" :summary="group.summary">
+                  <template #top>
+                    <TablePager position="top" noun="rooms" :page="group.page" :total-pages="group.totalPages" :start="group.start" :end="group.end" :total="group.total" :per-page="group.perPage" :options="ROOM_PAGE_SIZES" @update:page="roomPages[group.key] = $event" @update:per-page="setRoomPerPage(group.key, $event)" />
+                  </template>
+                  <template #actions="{ room }">
+                    <div class="ro-owner-actions">
+                      <button type="button" class="ro-act is-primary" :disabled="!Number(room.occupant_count)" :aria-label="'View occupants of Room ' + room.room_number" @click="viewBoarderDetails(room)">View occupants</button>
+                      <button type="button" class="ro-act" :disabled="!roomPhotos(room).length" :aria-label="'View photos of Room ' + room.room_number" @click="openRoomPhotos(room)">Photos<template v-if="roomPhotos(room).length"> ({{ roomPhotos(room).length }})</template></button>
+                    </div>
+                  </template>
+                  <template #footer>
+                    <TablePager position="bottom" noun="rooms" :page="group.page" :total-pages="group.totalPages" :start="group.start" :end="group.end" :total="group.total" :per-page="group.perPage" :options="ROOM_PAGE_SIZES" @update:page="roomPages[group.key] = $event" @update:per-page="setRoomPerPage(group.key, $event)" />
+                  </template>
+                </OwnerRoomGroup>
+
+                <div v-if="!visibleRooms.length" class="ro-owner-empty">
+                  <i class="fa-solid fa-door-open" aria-hidden="true"></i>
+                  <h3>No rooms match your filters</h3>
+                  <p>Try another room number or room type.</p>
+                  <button type="button" class="ro-link-btn" @click="resetRoomTools">Clear filters</button>
                 </div>
               </div>
             </section>
+
+            <dialog ref="roomPhotoDialog" class="ro-photo-dialog" @close="photoRoom = null" @keydown.left.prevent="stepRoomPhoto(-1)" @keydown.right.prevent="stepRoomPhoto(1)">
+              <div class="ro-photo-bar">
+                <span>Room {{ photoRoom?.room_number }} · Photo {{ photoIndex + 1 }} of {{ photoList.length }}</span>
+                <button type="button" @click="roomPhotoDialog?.close()">Close</button>
+              </div>
+              <img v-if="photoList.length" :src="getImageUrl(photoList[photoIndex])" :alt="'Room ' + (photoRoom?.room_number || '') + ', photo ' + (photoIndex + 1)" />
+              <div v-if="photoList.length > 1" class="ro-photo-nav">
+                <button type="button" @click="stepRoomPhoto(-1)">Previous</button>
+                <button type="button" @click="stepRoomPhoto(1)">Next</button>
+              </div>
+            </dialog>
           </template>
 
           <template v-else>
             <section class="rp-card">
               <div class="rp-card-head">
                 <h2 class="rp-card-title !mb-0">Room {{ activeRoomData ? activeRoomData.room_number : '' }} occupants</h2>
+                <button type="button" class="ro-primary" @click="isOccupantsView = false"><i class="fa-solid fa-door-open" aria-hidden="true"></i> View rooms</button>
               </div>
-              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active CSPC student boarders in this room.</div>
-              <div v-else class="rp-room-grid">
-                <div v-for="(occ, i) in activeRoomOccupants" :key="occ.id" class="rp-room">
-                  <div class="flex items-center justify-between gap-2 mb-3">
-                    <div>
-                      <p class="rp-strong">{{ occ.name }}</p>
-                      <p class="rp-muted">CSPC resident #{{ i + 1 }}</p>
-                    </div>
-                    <span :class="['rp-chip', occ.payment_status === 'Paid' ? 'is-success' : 'is-danger']">{{ occ.payment_status }}</span>
-                  </div>
-                  <dl class="rp-facts">
-                    <div><dt>Age / contact</dt><dd>{{ occ.age ? `${occ.age} yrs old` : '—' }} · {{ occ.contact_number || 'No contact' }}</dd></div>
-                    <div><dt>Duration &amp; ledger</dt><dd>{{ occ.months }} month{{ occ.months > 1 ? 's' : '' }} — ₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</dd></div>
-                    <div><dt>Check-in</dt><dd>{{ occ.check_in_date ? new Date(occ.check_in_date).toLocaleDateString() : '—' }}</dd></div>
-                    <div><dt>Check-out</dt><dd>{{ getAdminCheckoutDate(occ) }}</dd></div>
-                    <div v-if="occ.emergency_contact" class="rp-span-2"><dt>Emergency contact</dt><dd>{{ occ.emergency_contact }}</dd></div>
-                  </dl>
+              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active occupants in this room.</div>
+              <div v-else class="admin-table-card ro-occ-card">
+                <TablePager position="top" noun="occupants" :page="occupantPaged.page" :total-pages="occupantPaged.totalPages" :start="occupantPaged.start" :end="occupantPaged.end" :total="occupantPaged.total" :per-page="occupantPerPage" @update:page="occupantPage = $event" @update:per-page="occupantPerPage = $event; occupantPage = 1" />
+                <div class="overflow-x-auto">
+                  <table class="admin-table w-full ro-occ-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Occupant</th>
+                        <th>Payment</th>
+                        <th>Age / contact</th>
+                        <th>Duration &amp; amount</th>
+                        <th>Check-in</th>
+                        <th>Check-out</th>
+                        <th>Emergency contact</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(occ, i) in occupantPaged.items" :key="occ.id">
+                        <td class="ro-occ-num">{{ occupantPaged.start + i }}</td>
+                        <td>
+                          <div class="ro-occ-person">
+                            <span :class="['ro-avatar', 'is-small', { 'is-non': isNonCspc(occ) }]" aria-hidden="true">{{ nameInitials(occ.name) }}</span>
+                            <span><strong class="admin-table-name">{{ occ.name }}</strong><span class="admin-table-sub">{{ isNonCspc(occ) ? 'Non-CSPC occupant' : 'CSPC student' }}</span></span>
+                          </div>
+                        </td>
+                        <td><span :class="['ro-pill', 'has-dot', occ.payment_status === 'Paid' ? 'is-available' : 'is-full']">{{ occ.payment_status || 'Not Paid' }}</span></td>
+                        <td><span class="admin-table-main">{{ occ.age ? `${occ.age} yrs old` : '—' }}</span><span class="admin-table-sub">{{ occ.contact_number || 'No contact' }}</span></td>
+                        <td><span class="admin-table-main">{{ occ.months }} month{{ occ.months > 1 ? 's' : '' }}</span><span class="admin-table-sub">₱{{ occ.amount ? Number(occ.amount).toLocaleString() : '0' }}</span></td>
+                        <td>{{ occ.check_in_date ? shortDate(occ.check_in_date) : '—' }}</td>
+                        <td>{{ getAdminCheckoutDate(occ) }}</td>
+                        <td>{{ occ.emergency_contact || '—' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
+                <TablePager position="bottom" noun="occupants" :page="occupantPaged.page" :total-pages="occupantPaged.totalPages" :start="occupantPaged.start" :end="occupantPaged.end" :total="occupantPaged.total" :per-page="occupantPerPage" @update:page="occupantPage = $event" @update:per-page="occupantPerPage = $event; occupantPage = 1" />
               </div>
             </section>
           </template>
@@ -1079,6 +1228,8 @@ const loadError = ref('');
 @media (min-width: 1180px) { .rp-page { left: 248px; } }
 @keyframes rp-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .rp-page-inner { max-width: 1440px; margin: 0 auto; padding: 20px clamp(16px, 2.6vw, 36px) 40px; display: flex; flex-direction: column; gap: 16px; }
+/* The dialog helper tags this wrapper as a dialog panel (max-height + its own scroll); the full page already scrolls */
+.rp-page-inner.management-dialog-panel { max-height: none; overflow: visible; border-radius: 0; }
 .rp-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rp-back { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; min-height: 38px !important; border-radius: 10px; border: 1px solid var(--a-border); background: var(--a-surface); color: var(--a-primary); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .rp-back:hover { background: var(--a-primary-soft); border-color: var(--a-primary-tint); }
@@ -1095,7 +1246,7 @@ const loadError = ref('');
 .rp-text { margin: 0; font-size: 14px; line-height: 1.65; color: var(--a-text); white-space: pre-wrap; }
 
 /* Summary card */
-.rp-hero { display: flex; flex-direction: column; gap: 18px; border-top: 4px solid var(--a-gold); }
+.rp-hero { display: flex; flex-direction: column; gap: 18px; }
 .rp-hero-main { display: flex; gap: 20px; align-items: flex-start; }
 .rp-hero-photo { width: 168px; height: 120px; flex-shrink: 0; border-radius: 14px; object-fit: cover; border: 1px solid var(--a-border); cursor: zoom-in; }
 .rp-hero-photo.is-empty { display: flex; align-items: center; justify-content: center; background: var(--a-primary-soft); color: var(--a-primary); font-size: 32px; cursor: default; }
@@ -1160,22 +1311,44 @@ const loadError = ref('');
 .rp-review { padding: 12px 14px; border-radius: 12px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
 
 /* Documents */
-.rp-doc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-@media (min-width: 900px) { .rp-doc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.rp-doc { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: 16px; border: 1px solid var(--a-border); background: var(--a-surface-2); }
-.rp-doc.is-missing { background: #fff; border-style: dashed; }
-.rp-doc-preview { width: 112px; height: 84px; flex-shrink: 0; padding: 0; min-height: 0 !important; border-radius: 12px; overflow: hidden; border: 1px solid var(--a-border); background: #fff; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
-.rp-doc-preview img { width: 100%; height: 100%; object-fit: cover; }
-.rp-doc-preview.is-empty { background: var(--a-surface-2); color: var(--a-faint); font-size: 26px; cursor: default; border-style: dashed; }
-.rp-doc-pdf { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #e11d48; font-size: 12px; font-weight: 700; }
-.rp-doc-pdf i { font-size: 28px; }
-.rp-doc-name { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--a-heading); line-height: 1.35; }
-.rp-doc-meta { margin: 4px 0 0; font-size: 13px; }
-.rp-doc-preview { position: relative; }
-.rp-doc-count { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.5; }
-.rp-exp.is-success, .rp-exp.is-none { color: var(--a-muted); }
-.rp-exp.is-warning { color: #ea580c; font-weight: 600; }
-.rp-exp.is-danger { color: #be123c; font-weight: 600; }
+/* Documents tab: two-column document cards with a thumbnail, status and a View button */
+.dc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.dc-title { margin: 0; font-size: 21px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
+.dc-count { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--a-border); background: #f1f5f9; color: #475569; font-size: 13.5px; font-weight: 700; }
+.dc-count.is-complete { background: #ecfdf3; border-color: #bbf7d0; color: #15803d; }
+.dc-count.is-missing { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.dc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .dc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dc-doc { display: flex; align-items: center; gap: 22px; padding: 18px 20px; border: 1px solid var(--a-border); border-radius: 14px; background: #f8fbff; min-width: 0; }
+.dc-doc.is-missing { background: #fff; }
+.dc-thumb { position: relative; width: 116px; height: 124px; flex-shrink: 0; padding: 6px; min-height: 0 !important; display: flex; align-items: center; justify-content: center; border: 1px solid var(--a-border); border-radius: 10px; background: #fff; overflow: hidden; cursor: zoom-in; box-shadow: 0 1px 3px rgba(15, 23, 42, .08); }
+.dc-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+.dc-thumb:hover { border-color: #93c5fd; }
+.dc-thumb:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.dc-thumb.is-empty { background: #f1f5f9; color: #94a3b8; font-size: 30px; cursor: default; box-shadow: none; }
+.dc-pdf { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e11d48; font-size: 12px; font-weight: 700; }
+.dc-pdf i { font-size: 34px; }
+.dc-thumb-count { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.dc-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.dc-name { margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1.35; }
+.dc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-size: 14.5px; }
+.dc-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.dc-status i { font-size: 17px; }
+.dc-status.is-submitted { color: #15803d; }
+.dc-status.is-required { color: #be123c; }
+.dc-status.is-optional { color: #94a3b8; font-weight: 600; }
+.dc-dot { color: #94a3b8; }
+.dc-exp { color: #64748b; }
+.dc-exp.is-warning { color: #ea580c; font-weight: 600; }
+.dc-exp.is-danger { color: #be123c; font-weight: 600; }
+.dc-view { display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; min-height: 44px !important; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #1e3a8a; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.dc-view:hover { border-color: #2563eb; background: #f5f9ff; }
+.dc-view:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 520px) {
+  .dc-doc { gap: 14px; padding: 14px; }
+  .dc-thumb { width: 84px; height: 92px; }
+  .dc-view { width: 100%; justify-content: center; }
+}
 .rp-link-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 0 12px; min-height: 32px !important; border-radius: 9px; border: 1px solid var(--a-primary-tint); background: #fff; color: var(--a-primary); font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .rp-link-btn:hover { background: var(--a-primary); border-color: var(--a-primary); color: #fff; }
 
@@ -1183,6 +1356,102 @@ const loadError = ref('');
 .rp-room-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 @media (min-width: 768px) { .rp-room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1280px) { .rp-room-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Rooms & occupants: header + owner-style room tables; occupants open in a paged data table */
+.ro-card { container: ro / inline-size; background: #fff; }
+.ro-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.ro-title { margin: 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
+.ro-subtitle { margin: 6px 0 0; font-size: 14.5px; color: #475569; }
+.ro-stats { display: flex; align-items: center; padding: 12px 6px; border: 1px solid var(--a-border); border-radius: 14px; background: var(--a-surface-2); }
+.ro-stat { display: flex; align-items: center; gap: 14px; padding: 2px 18px; min-width: 0; }
+.ro-stat + .ro-stat { border-left: 1px solid var(--a-border); }
+.ro-stat-value { display: block; font-size: 20px; font-weight: 700; color: #0f172a; line-height: 1.2; }
+.ro-stat-label { display: block; font-size: 13.5px; color: #475569; white-space: nowrap; }
+.ro-stat-icon { width: 46px; height: 46px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #e0ebfb; color: #1d4ed8; font-size: 17px; }
+.ro-stats { background: #fff; }
+.ro-split-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ro-tag { padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.ro-tag.is-cspc { background: #dbeafe; color: #1e40af; }
+.ro-tag.is-non { background: #fef3c7; color: #92400e; }
+
+
+.ro-rooms { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* Toolbar, counts and actions mirror the owner's Rooms page */
+.ro-owner-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ro-owner-filters { display: flex; margin-left: auto; }
+.ro-owner-filters select { width: 220px; height: 40px; min-height: 40px !important; padding: 0 30px 0 12px; border: 1px solid #e1e9f4; border-radius: 8px; background-color: #fff; font-size: 12.5px; color: #475569; cursor: pointer; }
+.ro-owner-filters select:focus { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.ro-room-search { flex: 0 1 220px; }
+/* Room tables use the same colours as the occupant data table (admin-table) */
+.ro-rooms :deep(.owner-room-group) { border: 1px solid #e2e8f0; border-radius: 18px; box-shadow: none; }
+.ro-rooms :deep(.room-group-heading h2) { color: #0f172a; }
+.ro-rooms :deep(.owner-room-table th) { padding-top: 10px; padding-bottom: 10px; background: #f8fafc; color: #0f172a; font-size: 12.5px; font-weight: 600; text-transform: none; letter-spacing: 0; border-bottom: 1px solid #e2e8f0 !important; }
+.ro-rooms :deep(.owner-room-table td) { padding-top: 14px; padding-bottom: 14px; border-bottom: 1px solid #eef2f7 !important; }
+.ro-rooms :deep(.owner-room-table tbody tr:last-child td) { border-bottom: 0 !important; }
+.ro-rooms :deep(.owner-room-table tbody tr:hover td) { background: #f5f8fc; }
+.ro-rooms :deep(.owner-room-status) { display: inline-flex; align-items: center; padding: 5px 13px; border: 1px solid transparent; font-size: 13px; font-weight: 600; }
+.ro-rooms :deep(.owner-room-status.available) { background: #ecfdf3; border-color: #bbf7d0; color: #15803d; }
+.ro-rooms :deep(.owner-room-status.limited) { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.ro-rooms :deep(.owner-room-status.full) { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.ro-rooms :deep(.owner-room-mobile-card) { background: #f8fafc; border: 1px solid #eef2f7; }
+.ro-rooms :deep(.owner-room-table) { min-width: 860px; }
+.ro-owner-actions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap; }
+.ro-act { display: inline-flex; align-items: center; justify-content: center; min-height: 34px !important; padding: 6px 12px; border: 0; border-radius: 8px; background: #f1f5f9; color: #334155; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
+.ro-act:hover:not(:disabled) { background: #e2e8f0; }
+.ro-act.is-primary { background: #1d4ed8; color: #fff; }
+.ro-act.is-primary:hover:not(:disabled) { background: #1e40af; }
+.ro-act:disabled { opacity: .5; cursor: not-allowed; }
+.ro-act:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.ro-owner-empty { padding: 45px 20px; background: #fff; border: 1px solid #e1e9f4; border-radius: 15px; text-align: center; color: #71839c; }
+.ro-owner-empty > i { font-size: 26px; margin-bottom: 12px; }
+.ro-owner-empty h3 { margin: 0 0 6px; font-size: 16px; font-weight: 650; color: #314b6e; }
+.ro-owner-empty p { margin: 0; font-size: 13px; }
+@media (max-width: 1023px) {
+  .ro-owner-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ro-act { min-height: 44px !important; font-size: 12px; }
+}
+@media (max-width: 767px) {
+  .ro-owner-filters select { width: 150px; }
+  .ro-room-search { flex: 1 1 auto; }
+}
+.ro-link-btn { margin-left: 6px; padding: 0; border: 0; background: none; color: #1d4ed8; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* Pills (payment status in the occupant table) */
+.ro-pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 13px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.ro-pill.has-dot::before { content: ''; width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+.ro-pill.is-available { background: #ecfdf3; border-color: #bbf7d0; color: #15803d; }
+.ro-pill.is-reserved { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.ro-pill.is-full { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.ro-pill.is-female { background: #fdf2f8; border-color: #fbcfe8; color: #be185d; }
+.ro-pill.is-male { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+/* Occupant data table */
+.ro-avatar.is-non { background: #fef3c7; color: #92400e; }
+.ro-avatar { width: 50px; height: 50px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #dbe7fb; color: #1d4ed8; font-size: 16px; font-weight: 700; }
+.ro-avatar.is-small { width: 36px; height: 36px; font-size: 13px; }
+.ro-occ-card { display: flex; }
+.ro-occ-person { display: flex; align-items: center; gap: 10px; min-width: 180px; }
+.ro-occ-num { width: 44px; color: #64748b; }
+.ro-occ-table td { white-space: nowrap; }
+.ro-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 22px; min-height: 50px !important; border: 0; border-radius: 10px; background: #1d4ed8; color: #fff; font-size: 15.5px; font-weight: 700; white-space: nowrap; cursor: pointer; box-shadow: 0 2px 6px rgba(29, 78, 216, .25); }
+.ro-primary:hover:not(:disabled) { background: #1e40af; }
+.ro-primary:disabled { background: #cbd5e1; box-shadow: none; cursor: not-allowed; }
+.ro-primary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.ro-photo-dialog { width: min(960px, 94vw); max-height: 92dvh; padding: 0; border: 0; border-radius: 12px; background: #020617; color: #fff; }
+.ro-photo-dialog::backdrop { background: rgb(15 23 42 / .8); }
+.ro-photo-dialog img { display: block; width: 100%; height: min(65dvh, 700px); object-fit: contain; }
+.ro-photo-bar, .ro-photo-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; font-size: 14px; }
+.ro-photo-bar button, .ro-photo-nav button { padding: 8px 14px; border: 1px solid #64748b; border-radius: 8px; background: transparent; color: #fff; cursor: pointer; }
+
+@container ro (max-width: 860px) {
+  .ro-head { align-items: flex-start; }
+}
+@container ro (max-width: 560px) {
+  .ro-stats { flex-direction: column; align-items: stretch; gap: 12px; width: 100%; }
+  .ro-stat + .ro-stat { border-left: 0; }
+  .ro-primary { width: 100%; }
+}
 .rp-room { padding: 16px; border-radius: 16px; border: 1px solid var(--a-border); background: var(--a-surface-2); }
 .rp-bar { height: 8px; margin-top: 12px; border-radius: 999px; background: var(--a-border); overflow: hidden; }
 .rp-bar span { display: block; height: 100%; border-radius: 999px; background: var(--a-primary); }

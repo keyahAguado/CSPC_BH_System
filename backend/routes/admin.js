@@ -700,29 +700,45 @@ router.get('/rooms/:houseId', authenticateToken, verifyAdmin, async (req, res) =
     try {
         const [rooms] = await pool.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS occupant_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS occupant_count,
                 (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date <= CURDATE() AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0 AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS reserved_count,
                 (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date > CURDATE() AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0 AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS upcoming_reserved_count,
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS cspc_count
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS cspc_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 1 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS non_cspc_count
              FROM rooms r
              WHERE r.house_id = ?`,
             [req.params.houseId]
         );
+        if (rooms.length) {
+            // Next upcoming reservation per room (shown in the Rooms & occupants panel)
+            const roomIds = rooms.map(r => r.id);
+            const [upcoming] = await pool.query(
+                `SELECT b.room_id, b.check_in_date, DATE_ADD(b.check_in_date, INTERVAL GREATEST(COALESCE(b.months, 1), 1) MONTH) AS check_out_date
+                 FROM bookings b
+                 WHERE b.room_id IN (?) AND b.status = 'confirmed' AND b.check_in_date > CURDATE() AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0 AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))
+                 ORDER BY b.check_in_date, b.id`,
+                [roomIds]
+            );
+            for (const room of rooms) {
+                const next = upcoming.find(b => b.room_id === room.id);
+                room.next_reservation = next ? { check_in_date: next.check_in_date, check_out_date: next.check_out_date } : null;
+            }
+        }
         res.json({ success: true, rooms });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// 7. GET - Fetch CSPC occupants in a specific room (admin only sees CSPC students)
+// 7. GET - Fetch the current occupants of a room: CSPC students first, then non-CSPC occupants (flagged by is_non_cspc)
 router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         const [occupants] = await pool.query(
             `SELECT o.*
              FROM occupants o
-             WHERE o.room_id = ? 
-               AND o.is_non_cspc = 0
-               AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}`,
+             WHERE o.room_id = ?
+               AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
+             ORDER BY o.is_non_cspc, o.check_in_date, o.id`,
             [req.params.roomId]
         );
         res.json({ success: true, occupants });
