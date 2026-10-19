@@ -613,10 +613,10 @@ onUnmounted(() => {
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- PRE-SUBMISSION REVIEW MODAL: Confirm before sending       -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-      <div class="popup-panel bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+    <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 sm:p-6">
+      <div class="popup-panel bg-white w-full max-w-2xl max-h-[calc(100dvh-48px)] flex flex-col rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
         <!-- Header -->
-        <div class="bg-slate-900 px-8 py-6 flex items-center gap-4">
+        <div class="bg-slate-900 px-5 sm:px-8 py-5 sm:py-6 shrink-0 flex items-center gap-4">
           <div class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-clipboard-check text-white text-2xl"></i>
           </div>
@@ -627,8 +627,8 @@ onUnmounted(() => {
         </div>
 
         <!-- Body: Summary of what's about to be submitted -->
-        <div class="p-8 space-y-4 max-h-[65vh] overflow-y-auto">
-          <div class="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+        <div class="p-5 sm:p-8 space-y-4 min-h-0 overflow-y-auto flex-1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm break-words">
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">House</p>
               <p class="font-bold text-slate-800">{{ house.name }}</p>
@@ -673,7 +673,7 @@ onUnmounted(() => {
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p>
               <p class="font-bold text-slate-800 uppercase">{{ form.payment_method === 'paymongo' ? 'GCash / Card (Online)' : 'Cash (Over-the-Counter)' }}</p>
             </div>
-            <div class="col-span-2">
+            <div class="sm:col-span-2">
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Address</p>
               <p class="font-bold text-slate-800">{{ form.address || '—' }}</p>
             </div>
@@ -690,7 +690,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Footer Actions -->
-        <div class="px-8 pb-8 pt-4 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100">
+        <div class="px-5 sm:px-8 pb-5 sm:pb-8 pt-4 shrink-0 flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-100">
           <button type="button" @click="showConfirmModal = false"
             class="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-[11px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
             <i class="fa-solid fa-arrow-left text-[10px]"></i> Back to Form

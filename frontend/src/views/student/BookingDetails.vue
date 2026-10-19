@@ -371,7 +371,7 @@ onMounted(fetchBooking);
     <StudentNav />
 
     <!-- Alert Panel (slide-in toasts) -->
-    <div class="fixed top-8 right-8 z-[9999] max-w-sm w-full px-4 pointer-events-none space-y-4">
+    <div class="fixed top-4 left-4 right-4 sm:top-8 sm:left-auto sm:right-8 z-[9999] sm:max-w-sm sm:w-full sm:px-4 pointer-events-none space-y-4">
       <div v-for="alert in alerts" :key="alert.id"
            class="pointer-events-auto relative flex items-stretch bg-white border-l-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-r-xl overflow-hidden"
            :class="alert.borderClass">
