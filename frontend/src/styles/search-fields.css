@@ -1,0 +1,13 @@
+/* A bordered search wrapper owns the focus indicator, not its nested input.
+   Explicit wrapper classes avoid changing standalone fields or their layout. */
+:is(body,body[data-owner-theme]) :is(.ob-search,.ni-search,.sr-search,.picker-search,.room-search,.management-search,.reg-search,.cp-search,.ml-search):focus-within {
+  border-color:#2563eb;
+  outline:2px solid #93c5fd;
+  outline-offset:2px;
+}
+:is(body,body[data-owner-theme]) :is(.ob-search,.ni-search,.sr-search,.picker-search,.room-search,.management-search,.reg-search,.cp-search,.ml-search):has(input) input,
+:is(body,body[data-owner-theme]) :is(.ob-search,.ni-search,.sr-search,.picker-search,.room-search,.management-search,.reg-search,.cp-search,.ml-search):has(input) input:focus,
+:is(body,body[data-owner-theme]) :is(.ob-search,.ni-search,.sr-search,.picker-search,.room-search,.management-search,.reg-search,.cp-search,.ml-search):has(input) input:focus-visible {
+  border:0 !important; outline:none !important; box-shadow:none !important;
+  background:transparent; min-width:0;
+}

@@ -290,7 +290,7 @@ const sexTone = (sex) => {
             <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">{{ c.course_code }}</option>
           </select>
         </label>
-        <button type="button" class="reg-btn-primary reg-btn-print" @click="handleExport"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> {{ printLabel }}</button>
+        <button type="button" class="reg-btn-primary reg-btn-print app-print-button" @click="handleExport"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> {{ printLabel }}</button>
       </div>
 
       <!-- Loading -->

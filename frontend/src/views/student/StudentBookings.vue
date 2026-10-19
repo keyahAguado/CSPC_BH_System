@@ -1,4 +1,5 @@
 <script setup>
+const cancellationPrompt = booking => { try { const review=JSON.parse(booking.cancellation_review || 'null'); return review?.status==='pending' ? 'An earlier cancellation request did not cancel this reservation. See booking details.' : review?.status==='resolved' ? 'View the cancellation reason in booking details.' : ''; } catch { return ''; } };
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
@@ -25,7 +26,7 @@ const savedState = (() => {
   try { return JSON.parse(sessionStorage.getItem(STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
 })();
 const VIEWS = ['all', 'active', 'history', 'awaiting'];
-const STATUSES = ['', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
+const STATUSES = ['', 'pending', 'confirmed', 'completed', 'not_arrived', 'cancelled', 'rejected'];
 const SORTS = ['recent', 'oldest', 'move_in', 'amount'];
 
 const searchQuery = ref(typeof savedState.q === 'string' ? savedState.q : '');
@@ -136,8 +137,8 @@ const filteredBookings = computed(() => {
 
   const byBooked = (dir) => (x, y) => ((timeOf(x.b.booking_date) ?? 0) - (timeOf(y.b.booking_date) ?? 0)) * dir || x.index - y.index;
   if (sortBy.value === 'recent') {
-    // Active bookings first, then past ones, newest booking first within each group
-    list.sort((x, y) => Number(isActiveBooking(y.b)) - Number(isActiveBooking(x.b)) || byBooked(-1)(x, y));
+    // Booking creation order, independent of lifecycle status.
+    list.sort(byBooked(-1));
   } else if (sortBy.value === 'oldest') {
     list.sort(byBooked(1));
   } else if (sortBy.value === 'move_in') {
@@ -230,8 +231,8 @@ onMounted(() => {
           <i class="fa-solid text-xl" :class="[alert.iconClass, alert.iconColorClass]"></i>
         </div>
         <div class="flex-1 p-5 pr-8 text-left">
-          <h4 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{{ alert.title }}</h4>
-          <p class="text-[13px] font-bold text-slate-700 leading-relaxed">{{ alert.message }}</p>
+          <h4 class="text-[14px] font-bold text-slate-800 mb-1">{{ alert.title }}</h4>
+          <p class="text-[13px] font-medium text-slate-700 leading-relaxed">{{ alert.message }}</p>
         </div>
         <button @click="closeAlert(alert.id)" aria-label="Dismiss" class="absolute top-3 right-3 text-slate-300 hover:text-slate-900 transition-colors">
           <i class="fa-solid fa-xmark text-xs"></i>
@@ -322,6 +323,7 @@ onMounted(() => {
                 <option value="pending">Pending</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="completed">Checked out</option>
+                <option value="not_arrived">Did not arrive</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="rejected">Rejected</option>
               </select>
@@ -391,13 +393,13 @@ onMounted(() => {
                     <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <p class="text-[17px] font-bold text-slate-900 leading-tight">₱{{ formatMoney(booking.amount) }}</p>
                       <p class="mt-1 text-[12px] text-slate-500">₱{{ formatMoney(booking.monthly_rent) }}/month</p>
-                      <p class="mt-1 text-[12px] text-slate-500">Room {{ booking.room_number }} · {{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</p>
+                      <p class="mt-1.5 flex flex-wrap items-center gap-1.5"><span class="text-[12.5px] font-bold text-slate-900">Room {{ booking.room_number }}</span><span class="bk-method" :class="booking.payment_method"><i :class="['fa-solid', booking.payment_method === 'paymongo' ? 'fa-credit-card' : booking.payment_method === 'cash' ? 'fa-money-bill-wave' : 'fa-circle-question']" aria-hidden="true"></i>{{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</span></p>
                     </td>
                     <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <p class="text-[14px] font-bold text-slate-900">{{ formatShortDate(booking.booking_date) }}</p>
                     </td>
                     <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
-                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] text-center leading-tight whitespace-normal xl:whitespace-nowrap" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+                      <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] text-center leading-tight whitespace-normal xl:whitespace-nowrap" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span><router-link v-if="cancellationPrompt(booking)" :to="'/student/bookings/'+booking.id" class="booking-cancel-prompt">{{ cancellationPrompt(booking) }} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
                     </td>
                     <td class="px-3 xl:px-4 py-[22px] align-middle whitespace-nowrap">
                       <span class="inline-block px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.06em] text-center leading-tight whitespace-normal xl:whitespace-nowrap" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
@@ -442,7 +444,7 @@ onMounted(() => {
                   <span v-else class="shrink-0 text-[13px] font-bold text-[#1e4b8f] flex items-center gap-1">View <i class="fa-solid fa-chevron-right text-[10px]"></i></span>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-2">
-                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span><router-link v-if="cancellationPrompt(booking)" :to="'/student/bookings/'+booking.id" class="booking-cancel-prompt mobile">{{ cancellationPrompt(booking) }} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
                   <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em]" :class="badgeClass(paymentStatusBadge(booking))">{{ paymentStatusBadge(booking).label }}</span>
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[12px]">
@@ -456,7 +458,7 @@ onMounted(() => {
                     <p class="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Payment</p>
                     <p class="mt-0.5 font-bold text-slate-900 text-[14px]">₱{{ formatMoney(booking.amount) }}</p>
                     <p class="text-slate-500">₱{{ formatMoney(booking.monthly_rent) }}/month</p>
-                    <p class="text-slate-500">Room {{ booking.room_number }} · {{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</p>
+                    <p class="mt-1 flex flex-wrap items-center gap-1.5"><span class="text-[12.5px] font-bold text-slate-900">Room {{ booking.room_number }}</span><span class="bk-method" :class="booking.payment_method"><i :class="['fa-solid', booking.payment_method === 'paymongo' ? 'fa-credit-card' : booking.payment_method === 'cash' ? 'fa-money-bill-wave' : 'fa-circle-question']" aria-hidden="true"></i>{{ booking.payment_method === 'paymongo' ? 'Online' : (booking.payment_method === 'cash' ? 'Cash' : 'Not recorded') }}</span></p>
                   </div>
                   <div class="col-span-2">
                     <p class="text-slate-500">Booked on <span class="font-bold text-slate-900">{{ formatShortDate(booking.booking_date) }}</span></p>
@@ -494,7 +496,7 @@ onMounted(() => {
           </template>
         </section>
 
-        <p v-if="sortBy === 'recent'" class="mt-4 text-[12px] text-slate-400">Tip: Your active bookings stay at the top, followed by your past booking history.</p>
+        <p v-if="sortBy === 'recent'" class="mt-4 text-[12px] text-slate-400">Newest bookings appear first. Use the status filters to find active stays.</p>
       </template>
     </main>
   </div>
@@ -542,4 +544,7 @@ onMounted(() => {
 .bk-page:hover:not(:disabled):not(.is-current) { border-color: #1e4b8f; color: #1e4b8f; }
 .bk-page:disabled { opacity: .45; cursor: default; }
 .bk-page.is-current { background: #1e4b8f; border-color: #1e4b8f; color: #fff; }
+</style>
+
+<style scoped>.booking-cancel-prompt{display:block;max-width:250px;margin-top:8px;font-size:12px;font-weight:500;line-height:1.6;white-space:normal;color:#1d4ed8;text-decoration:none}.booking-cancel-prompt:hover{text-decoration:underline}.booking-cancel-prompt i{display:inline-block;margin-left:4px;font-size:10px;text-decoration:none}.booking-cancel-prompt:focus-visible{outline:2px solid #60a5fa;outline-offset:3px;border-radius:3px}.booking-cancel-prompt.mobile{flex-basis:100%;max-width:none}.bk-method{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px solid #dbe4ef;background:#f8fafc;color:#475569;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap}.bk-method i{font-size:10px}.bk-method.paymongo{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}.bk-method.cash{border-color:#bbf7d0;background:#f0fdf4;color:#15803d}
 </style>

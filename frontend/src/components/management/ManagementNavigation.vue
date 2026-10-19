@@ -1,4 +1,6 @@
 <script setup>
+import UserAvatar from "../UserAvatar.vue";
+const accountPhoto = (()=>{try{return JSON.parse(sessionStorage.getItem("cspc_user") || "{}").profile_pic || ""}catch{return ""}})();
 import { computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import '../../styles/management.css';
@@ -32,7 +34,7 @@ const pageTitle = computed(() => {
   }
   return route.meta.title;
 });
-// Owners and SASO share the same sidebar design (admin theme), only the links differ.
+// Navigation behavior is shared; each portal has its own visual theme.
 const adminName = (() => {
   try { return JSON.parse(sessionStorage.getItem('cspc_user') || '{}').name || (props.role === 'admin' ? 'Administrator' : 'Property owner'); } catch { return props.role === 'admin' ? 'Administrator' : 'Property owner'; }
 })();
@@ -70,13 +72,13 @@ onUnmounted(() => desktopQuery?.removeEventListener('change', closeOnDesktop));
     </nav>
     <div class="management-nav-footer">
       <div class="admin-nav-user">
-        <span class="admin-avatar" aria-hidden="true">{{ adminInitials }}</span>
+        <UserAvatar :src="accountPhoto" :name="adminName" class="admin-avatar" />
         <span class="admin-nav-user-text"><strong :title="adminName">{{ adminName }}</strong><small>{{ roleLabel }}</small></span>
         <button type="button" class="admin-nav-signout" aria-label="Sign out" title="Sign out" @click="emit('logout')"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button>
       </div>
     </div>
   </aside>
-  <header class="management-topbar no-print is-admin">
+  <header class="management-topbar no-print is-admin" :class="{ 'is-owner': !isAdmin }">
     <div class="management-topbar-title"><button class="management-menu-toggle hamburger-btn" aria-label="Toggle navigation" :aria-expanded="open" aria-controls="management-navigation" @click="emit('toggle')"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><nav aria-label="Breadcrumb" class="management-breadcrumb"><router-link :to="homePath" class="management-crumb">{{ role === 'admin' ? 'Administration' : 'Property management' }}</router-link><span class="management-topbar-separator" aria-hidden="true">/</span><router-link :to="route.path" class="management-crumb is-current" aria-current="page"><strong>{{ pageTitle }}</strong></router-link></nav></div>
     <div class="admin-topbar-tools">
       <span v-if="isAdmin" class="admin-topbar-date"><i class="fa-regular fa-calendar" aria-hidden="true"></i>{{ today }}</span>

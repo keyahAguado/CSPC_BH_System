@@ -1,4 +1,6 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
+import { confirmTone } from '../../utils/confirmTone.js';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
@@ -300,7 +302,7 @@ const loadError = ref('');
           <div v-if="filteredUsers.length === 0" class="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm font-semibold">No matching user accounts.</div>
           <div v-for="user in paginatedUsers" :key="'m-' + user.id" class="reg-card">
             <div class="flex items-center gap-3">
-              <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`" class="reg-avatar" :alt="user.name" />
+              <UserAvatar :src="user.profile_pic" :name="user.name" class="reg-avatar" />
               <div class="min-w-0 flex-1">
                 <p class="font-semibold text-slate-900 truncate">{{ user.name }}</p>
                 <p class="text-xs text-slate-500 truncate">{{ user.email }}</p>
@@ -340,7 +342,7 @@ const loadError = ref('');
                 <tr v-for="user in paginatedUsers" :key="user.id">
                   <td>
                     <div class="flex items-center gap-3">
-                      <img :src="user.profile_pic ? getImageUrl(user.profile_pic) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=e2e8f0&color=475569&bold=true&size=80`" class="reg-avatar" :alt="user.name" />
+                      <UserAvatar :src="user.profile_pic" :name="user.name" class="reg-avatar" />
                       <div class="min-w-0 text-left">
                         <strong class="block text-slate-900 font-semibold">{{ user.name }}</strong>
                         <span class="block text-slate-500 text-xs mt-0.5">{{ user.email }}</span>
@@ -423,23 +425,15 @@ const loadError = ref('');
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
-        <div class="text-[#2a528a] mb-4 flex justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(confirmTitle).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(confirmTitle).icon]"></i></span>
+          <div><h3 class="cm-title">{{ confirmTitle }}</h3><p class="cm-message popup-message">{{ confirmMessage }}</p></div>
         </div>
-        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
-        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
-        
-        <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button management-button-primary">
-            Confirm
-          </button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
-            Cancel
-          </button>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(confirmTitle).button]" @click="executeConfirm">Confirm</button>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { applicationCriteria, customDocumentError, saveCustomDocuments, customField } from '../config/applicationDocuments.js';
 import { validateImages } from '../config/uploadValidation.js';
 import { requireVerifiedEmail, signVerifiedApplicant } from '../config/applicantVerification.js';
 import { validateBody } from '../config/inputValidation.js';
@@ -13,7 +14,7 @@ import { APPLICATION_STATUS, APPLICANT_EDITABLE, effectiveApplicationStatus, gen
 const router = express.Router();
 
 // Multer using memory storage for buffering file uploads
-export const uploadAccreditationFiles = upload.fields([
+const accreditationFields = [
     { name: 'permit_business_form', maxCount: 5 },
     { name: 'permit_cedula', maxCount: 5 },
     { name: 'permit_dti', maxCount: 5 },
@@ -24,7 +25,21 @@ export const uploadAccreditationFiles = upload.fields([
     { name: 'permit_fire', maxCount: 5 },
     { name: 'house_img', maxCount: 1 },
     { name: 'house_photos', maxCount: 10 }
-]);
+];
+export async function uploadAccreditationFiles(req, res, next) {
+    try {
+        const criteria = await applicationCriteria(pool);
+        // Scoped legacy requirements are accepted only after ownership validation below.
+        const [scoped] = await pool.query("SELECT id FROM checklist_criteria WHERE is_active = 1 AND permit_key IS NULL AND house_id IS NOT NULL");
+        const ids = [...new Set([...criteria, ...scoped].map(c => c.id))];
+        return upload.fields([...accreditationFields, ...ids.map(id => ({ name: customField(id), maxCount: 5 }))])(req, res, next);
+    } catch (err) { next(err); }
+}
+
+router.get('/application-requirements', async (req, res) => {
+    try { res.json({ success: true, criteria: await applicationCriteria(pool) }); }
+    catch { res.status(503).json({ success: false, message: "Document requirements could not be loaded. Please try again." }); }
+});
 
 // Helper: upload a single named field buffer, return URL/path or fallback
 const uploadField = async (files, fieldName, folder) => {
@@ -216,13 +231,13 @@ router.get('/documents/:id', authenticateToken, async (req, res) => {
 
         // 2. Fetch custom requirements specifically assigned to this boarding house
         const [customRows] = await pool.query(
-            'SELECT id, label FROM checklist_criteria WHERE house_id = ?',
+            'SELECT id, label, requirement_type FROM checklist_criteria WHERE is_active = 1 AND (house_id = ? OR (house_id IS NULL AND permit_key IS NULL AND id NOT BETWEEN 30 AND 37))',
             [houseId]
         );
 
         // 3. Fetch any uploaded files for these custom criteria
         const [customDocs] = await pool.query(
-            'SELECT criteria_id, file_path, expiry_date FROM house_documents WHERE house_id = ?',
+            'SELECT criteria_id, file_path, file_paths, expiry_date FROM house_documents WHERE house_id = ?',
             [houseId]
         );
 
@@ -231,8 +246,11 @@ router.get('/documents/:id', authenticateToken, async (req, res) => {
             return {
                 id: c.id,
                 label: c.label,
+                requirement_type: c.requirement_type,
+                required: c.requirement_type === 'required',
                 permit_key: null, // Signals to the frontend that this is a dynamic requirement
                 current_file: doc ? doc.file_path : null,
+                current_files: doc?.file_paths ? (typeof doc.file_paths === 'string' ? JSON.parse(doc.file_paths) : doc.file_paths) : doc?.file_path ? [doc.file_path] : [],
                 current_expiry: doc ? doc.expiry_date : null
             };
         });
@@ -246,7 +264,7 @@ router.get('/documents/:id', authenticateToken, async (req, res) => {
         for (const criterion of criteria) {
             const files = criterion.permit_key
                 ? permitFiles.filter(file => file.permit_key === criterion.permit_key).map(file => file.file_path)
-                : [];
+                : (criterion.current_files || []);
             criterion.current_files = [...new Set(files.length ? files : criterion.current_file ? [criterion.current_file] : [])];
         }
 
@@ -291,12 +309,12 @@ router.get('/documents', authenticateToken, async (req, res) => {
         }));
 
         const [customRows] = await pool.query(
-            'SELECT id, label FROM checklist_criteria WHERE house_id = ?',
+            'SELECT id, label, requirement_type FROM checklist_criteria WHERE is_active = 1 AND (house_id = ? OR (house_id IS NULL AND permit_key IS NULL AND id NOT BETWEEN 30 AND 37))',
             [houseId]
         );
 
         const [customDocs] = await pool.query(
-            'SELECT criteria_id, file_path, expiry_date FROM house_documents WHERE house_id = ?',
+            'SELECT criteria_id, file_path, file_paths, expiry_date FROM house_documents WHERE house_id = ?',
             [houseId]
         );
 
@@ -305,8 +323,11 @@ router.get('/documents', authenticateToken, async (req, res) => {
             return {
                 id: c.id,
                 label: c.label,
+                requirement_type: c.requirement_type,
+                required: c.requirement_type === 'required',
                 permit_key: null,
                 current_file: doc ? doc.file_path : null,
+                current_files: doc?.file_paths ? (typeof doc.file_paths === 'string' ? JSON.parse(doc.file_paths) : doc.file_paths) : doc?.file_path ? [doc.file_path] : [],
                 current_expiry: doc ? doc.expiry_date : null
             };
         });
@@ -319,7 +340,7 @@ router.get('/documents', authenticateToken, async (req, res) => {
         for (const criterion of criteria) {
             const files = criterion.permit_key
                 ? permitFiles.filter(file => file.permit_key === criterion.permit_key).map(file => file.file_path)
-                : [];
+                : (criterion.current_files || []);
             criterion.current_files = [...new Set(files.length ? files : criterion.current_file ? [criterion.current_file] : [])];
         }
 
@@ -331,7 +352,7 @@ router.get('/documents', authenticateToken, async (req, res) => {
 });
 
 // 6. [POST] - Update a single legal document dynamically (Standard or Custom)
-router.post('/documents/update/:id', authenticateToken, upload.single('permit_file'), validateImages, validateBody('document'), async (req, res) => {
+router.post('/documents/update/:id', authenticateToken, upload.array('permit_file', 5), validateImages, validateBody('document'), async (req, res) => {
     if (req.user.role !== 'owner') {
         return res.status(403).json({ success: false, message: 'Only owners can update property documents.' });
     }
@@ -355,7 +376,7 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
             const criteriaId = Number(identifier);
             const [applicableCriteria] = Number.isInteger(criteriaId) && criteriaId > 0
                 ? await connection.query(
-                    'SELECT id FROM checklist_criteria WHERE id = ? AND (house_id IS NULL OR house_id = ?) FOR UPDATE',
+                    'SELECT id FROM checklist_criteria WHERE id = ? AND is_active = 1 AND (house_id IS NULL OR house_id = ?) FOR UPDATE',
                     [criteriaId, houseId]
                 )
                 : [[]];
@@ -366,13 +387,16 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
         }
 
 
-        if (!req.file) {
+        const selectedFiles = Array.isArray(req.files) ? req.files : req.file ? [req.file] : [];
+        if (!selectedFiles.length || selectedFiles.length > 5) {
             await connection.rollback();
-            return res.status(400).json({ success: false, message: 'Please select a file.' });
+            return res.status(400).json({ success: false, message: 'Select between 1 and 5 document files.' });
         }
 
         // Save file via unified storage provider
-        const fileUrl = await saveUploadedFile(req.file.buffer, req.file.originalname, 'permits');
+        const fileUrls = [];
+        for (const file of selectedFiles) fileUrls.push(await saveUploadedFile(file.buffer, file.originalname, 'permits'));
+        const fileUrl = fileUrls[0];
         let reqLabel = '';
 
         // Safe Date Parsing: Converts empty strings to NULL to prevent MySQL Strict Mode errors
@@ -435,13 +459,13 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
 
             if (existingDoc.length > 0) {
                 await connection.query(
-                    'UPDATE house_documents SET file_path = ?, expiry_date = ? WHERE house_id = ? AND criteria_id = ?',
-                    [fileUrl, parsedExpiryDate, houseId, criteriaId]
+                    'UPDATE house_documents SET file_path = ?, expiry_date = ?, file_paths = ? WHERE house_id = ? AND criteria_id = ?',
+                    [fileUrl, parsedExpiryDate, JSON.stringify(fileUrls), houseId, criteriaId]
                 );
             } else {
                 await connection.query(
-                    'INSERT INTO house_documents (house_id, criteria_id, file_path, expiry_date) VALUES (?, ?, ?, ?)',
-                    [houseId, criteriaId, fileUrl, parsedExpiryDate]
+                    'INSERT INTO house_documents (house_id, criteria_id, file_path, expiry_date, file_paths) VALUES (?, ?, ?, ?, ?)',
+                    [houseId, criteriaId, fileUrl, parsedExpiryDate, JSON.stringify(fileUrls)]
                 );
             }
 
@@ -479,8 +503,11 @@ router.post('/documents/update/:id', authenticateToken, upload.single('permit_fi
                  WHERE id = ? AND owner_id = ?`,
                 [fileUrl, parsedExpiryDate, targetStatus, isResubmissionVal, accumulatedDocsStr, houseId, req.user.id]
             );
-            // The re-uploaded file replaces any earlier multi-file set for this document.
+            // Replace this requirement with the complete submitted attachment set.
             await connection.query('DELETE FROM house_permit_files WHERE house_id = ? AND permit_key = ?', [houseId, fileColumn]);
+            for (let index = 0; index < fileUrls.length; index++) {
+                await connection.query('INSERT INTO house_permit_files (house_id, permit_key, file_path, sort_order) VALUES (?, ?, ?, ?)', [houseId, fileColumn, fileUrls[index], index]);
+            }
 
             const labels = {
                 'permit_business_form': 'Business Permit',
@@ -659,6 +686,17 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             }
         }
 
+        // Validate the current shared checklist before any persistent uploads.
+        let existingCustomDocuments = [];
+        if (house_id) {
+            const [owned] = await pool.query('SELECT * FROM boarding_houses WHERE id = ? AND owner_id = ?', [house_id, ownerId]);
+            if (!owned.length) return res.status(404).json({ success: false, message: 'Property not found.' });
+            [existingCustomDocuments] = await pool.query('SELECT criteria_id, file_path, expiry_date FROM house_documents WHERE house_id = ?', [house_id]);
+        }
+        const customCriteria = await applicationCriteria(pool, house_id || null);
+        const documentError = customDocumentError(customCriteria, req.files, req.body, existingCustomDocuments);
+        if (documentError) return res.status(400).json({ success: false, message: documentError, errorCode: 'invalid_input' });
+
         submissionStep = 'photo-list-validation';
         let parsedExistingPhotos;
         try {
@@ -793,6 +831,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 );
             }
             await savePermitFileList(house_id, newPermitFiles);
+            await saveCustomDocuments(connection, house_id, customCriteria, req.files, req.body, saveUploadedFile);
             if (req.applicantEdit) {
                 const { before, after } = req.applicantEdit;
                 submissionStep = 'application-status-save';
@@ -881,6 +920,7 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             );
         }
         await savePermitFileList(newHouseId, { permit_business_form, permit_cedula, permit_dti, permit_barangay, permit_building, permit_zoning, permit_sanitary, permit_fire });
+        await saveCustomDocuments(connection, newHouseId, customCriteria, req.files, req.body, saveUploadedFile);
 
         await commitApplicationTransaction();
 
@@ -1050,7 +1090,8 @@ router.post('/register-property', requireVerifiedEmail, (req, res, next) => {
         success: true,
         message: 'Application submitted! Keep your reference number to track it.',
         reference_no: referenceNo,
-        token: signVerifiedApplicant(ownerEmail, ownerId)
+        // Keeps a remembered-device session (if any) linked, so signing out still applies
+        token: signVerifiedApplicant(ownerEmail, ownerId, { sid: req.verifiedApplicant?.sid, via: req.verifiedApplicant?.via })
     });
 });
 

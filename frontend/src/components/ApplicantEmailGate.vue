@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
-import { setApplicantToken } from '../utils/applicantSession.js';
+import { setApplicantToken, rememberedDevice, saveRememberedDevice, forgetRememberedDevice, takeFreshVerificationFlag } from '../utils/applicantSession.js';
 const route = useRoute();
 const router = useRouter();
 const email = ref('');
@@ -19,6 +19,10 @@ const LONG_WAIT_MS = 45000;
 let timer;
 let poller;
 let longWaitTimer;
+// Opt-in "Remember this device for 7 days" (off by default)
+const remember = ref(false);
+let rememberChoice = false;
+const resuming = ref(false);
 
 // The link can be opened on any device (e.g. a phone). This tab keeps checking and continues
 // by itself once the email is verified; the request survives a page reload for 30 minutes.
@@ -28,9 +32,10 @@ const readPending = () => { try { return JSON.parse(sessionStorage.getItem(PENDI
 const stopWaiting = () => { clearInterval(poller); poller = null; clearTimeout(longWaitTimer); longWaitTimer = null; waiting.value = false; waitingLong.value = false; };
 const checkStatus = async (requestId) => {
   try {
-    const { data } = await axios.post('/api/applications/email/status', { requestId });
+    const { data } = await axios.post('/api/applications/email/status', { requestId, remember: rememberChoice });
     if (data.verified && data.token) {
       stopWaiting(); savePending(null);
+      if (data.deviceToken) saveRememberedDevice(data.deviceToken, data.deviceExpiresAt);
       setApplicantToken(data.token);
       if (data.hasApplications && route.path !== '/track') router.replace('/track');
     } else if (data.expired) {
@@ -58,9 +63,28 @@ const startOver = () => {
   clearTimeout(timer); cooldown.value = false;
   message.value = ''; error.value = ''; requestedEmail.value = '';
 };
-onMounted(() => {
+// A remembered device continues without a new email link (unless an action asked for fresh verification)
+const resumeRememberedDevice = async () => {
+  const device = rememberedDevice();
+  if (!device) return false;
+  resuming.value = true;
+  try {
+    const { data } = await axios.post('/api/applications/session/resume', { deviceToken: device.token });
+    setApplicantToken(data.token);
+    if (data.hasApplications && route.path !== '/track') router.replace('/track');
+    return true;
+  } catch (err) {
+    if (err.response?.status === 401) forgetRememberedDevice();
+    return false;
+  } finally {
+    resuming.value = false;
+  }
+};
+onMounted(async () => {
+  if (!takeFreshVerificationFlag() && await resumeRememberedDevice()) return;
   const pending = readPending();
   if (pending?.requestId && pending.until > Date.now()) {
+    rememberChoice = pending.remember === true; remember.value = rememberChoice;
     requestedEmail.value = pending.email; email.value = pending.email;
     message.value = 'A verification link was sent.';
     // Restored after a reload: count the time already spent waiting
@@ -80,7 +104,8 @@ const request = async () => {
     cooldown.value = true;
     timer = setTimeout(() => { cooldown.value = false; }, 60000);
     if (data.requestId) {
-      savePending({ requestId: data.requestId, email: requestedEmail.value, since: Date.now(), until: Date.now() + 30 * 60 * 1000 });
+      rememberChoice = remember.value;
+      savePending({ requestId: data.requestId, email: requestedEmail.value, remember: rememberChoice, since: Date.now(), until: Date.now() + 30 * 60 * 1000 });
       startWaiting(data.requestId);
     }
   } catch (err) { error.value = err.response?.data?.message || 'We could not request verification. Check your connection and try again.'; }
@@ -113,8 +138,15 @@ const request = async () => {
           <button type="button" @click="startOver" class="gate-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Use a different email</button>
         </div>
       </div>
+      <label v-if="!waiting" class="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
+        <input v-model="remember" type="checkbox" :disabled="busy" class="mt-0.5 w-4 h-4 shrink-0 accent-[#1e4a8d]" />
+        <span>Remember this device for 7 days
+          <span class="block text-[13px] text-slate-500">Skip email verification on this device next time. Do not use on shared or public computers.</span>
+        </span>
+      </label>
       <button :disabled="busy || cooldown" class="gate-focus w-full min-h-[44px] bg-[#1e4a8d] hover:bg-[#163870] text-white text-sm font-semibold rounded-lg px-4 py-3 disabled:bg-slate-200 disabled:text-slate-600 disabled:cursor-not-allowed">{{ busy ? 'Requesting…' : cooldown ? 'Wait a minute before resending' : 'Send verification link' }}</button>
     </form>
+    <p v-if="resuming" role="status" class="mt-4 text-sm text-slate-600 flex items-center gap-2"><i class="fa-solid fa-spinner fa-spin text-[#245b99]" aria-hidden="true"></i> Signing you in on this remembered device…</p>
     <p class="text-sm text-slate-600 mt-5 pt-4 border-t border-slate-100">Already have an activated account? <router-link to="/login" class="gate-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Sign in</router-link>.</p>
   </section>
 </template>

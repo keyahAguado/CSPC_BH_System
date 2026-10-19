@@ -1,3 +1,6 @@
+import { bookingNow } from './bookingClock.js';
+import { startBookedStay } from './scheduledOccupancy.js';
+import { stayPeriod, studentStayConflict, roomStayUsage } from './stayAvailability.js';
 import crypto from 'crypto';
 
 export function paymentError(status, message) {
@@ -42,7 +45,20 @@ export function paidSession(session, booking) {
     if (!payment.id || !Number.isSafeInteger(amount) || amount <= 0 || payment.attributes.currency !== 'PHP' || Number(payment.attributes.amount) !== amount) {
         throw paymentError(409, 'Payment amount could not be verified. Please contact the owner.');
     }
-    return { id: payment.id, amount };
+    const paidAt=Number(payment.attributes.paid_at);
+    return { id: payment.id, amount, paidAt:Number.isFinite(paidAt) && paidAt>0 ? paidAt*1000 : null };
+}
+
+// A payment exception: the verified payment stays on record, but it did not secure the reservation, so no bed is
+// held and no stay starts. The platform cannot cancel, refund or reinstate a paid reservation; the student and the
+// owner settle it outside the platform. Wording must not suggest an in-app review, cancellation or refund step.
+export const PAYMENT_EXCEPTION_RESPONSE = 'Payment received, but it could not secure this reservation. Do not pay again. Open the booking for the reason and next steps.';
+export function paymentExceptionNotices({ reference, amount, roomNumber, studentName, reason, existingStay }) {
+    const bed = existingStay ? 'The existing stay record is unchanged.' : 'No bed is held for these dates, and the stay will not start automatically.';
+    return {
+        student: 'RESERVATION NOT SECURED: ' + reference + '. Your online payment of ₱' + amount + ' was verified, but it could not secure this reservation. Reason: ' + reason + ' ' + bed + ' The platform cannot cancel this reservation or refund the payment. Contact the owner to settle it outside the platform; this does not mean the payment is non-refundable. Do not pay again.',
+        owner: 'PAYMENT EXCEPTION: ' + reference + '. ' + studentName + ' paid ₱' + amount + ' online for Room ' + roomNumber + ', but the payment could not secure the reservation. Reason: ' + reason + ' ' + bed + ' The platform cannot cancel, refund or reinstate this reservation. Settle it with the student outside the platform.'
+    };
 }
 
 // Both return verification and webhooks use this transaction. Lock order matches booking approval.
@@ -68,18 +84,28 @@ export async function settlePayment(pool, bookingId, session, studentId, allowLe
         if (b.paymongo_payment_id) {
             if (b.paymongo_payment_id !== payment.id) throw paymentError(409, 'A different payment is already recorded. Please contact the owner.');
             await connection.commit();
-            return { success: true, requiresReview: !existing.length, message: existing.length ? 'Payment already verified.' : 'Payment received. Please contact the owner to review your reservation.' };
+            const review = !!Number(b.payment_review_required) || !existing.length && !(Number(b.move_in_required) === 1 && b.status === 'confirmed' && !Number(b.payment_review_required));
+            return { success: true, requiresReview: review, message: review ? PAYMENT_EXCEPTION_RESPONSE : 'Payment already verified. Your reservation is secured.' };
         }
         const [rooms] = await connection.query("SELECT r.id, r.capacity FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id WHERE r.id = ? AND r.deleted_at IS NULL AND bh.house_status = 'accredited' FOR UPDATE", [b.room_id]);
-        const [active] = await connection.query('SELECT id FROM occupants WHERE student_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.student_id]);
-        const [other] = await connection.query("SELECT id FROM bookings WHERE student_id = ? AND id != ? AND status = 'confirmed' FOR UPDATE", [b.student_id, b.id]);
-        const [occupied] = await connection.query('SELECT id FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.room_id]);
-        const [reserved] = await connection.query(
-            `SELECT b.id FROM bookings b WHERE b.room_id = ? AND b.id != ? AND b.status = 'confirmed'
-             AND b.payment_method = 'paymongo' AND b.payment_status != 'paid'
-             AND NOT EXISTS (SELECT 1 FROM occupants o WHERE o.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id))
-             AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) FOR UPDATE`, [b.room_id, b.id]);
-        const requiresReview = !existing.length && (b.status !== 'confirmed' || !rooms.length || active.length > 0 || other.length > 0 || occupied.length + reserved.length >= Number(rooms[0].capacity));
+        let scheduleConflict = true;
+        try {
+            const period = stayPeriod(b.check_in_date,b.months);
+            scheduleConflict = await studentStayConflict(connection,b.student_id,period,{excludeBookingId:b.id,excludeReference:ref}) ||
+                !rooms.length || await roomStayUsage(connection,b.room_id,period,{excludeBookingId:b.id,excludeReference:ref}) >= Number(rooms[0].capacity);
+        } catch (error) { if (!error.status) throw error; }
+        const paymentIssues=[];
+        const expected=b.upfront_amount == null ? null : Math.round(Number(b.upfront_amount)*100);
+        if(expected == null && !existing.length)paymentIssues.push('This older booking has no saved upfront amount to compare the payment with.');
+        else if(expected != null && (!Number.isSafeInteger(expected) || expected<=0 || expected!==payment.amount))paymentIssues.push('The amount paid does not match the approved upfront amount.');
+        if(b.payment_due_at){
+            const due=new Date(b.payment_due_at).getTime();
+            if(!Number.isFinite(due))paymentIssues.push('The saved payment deadline is invalid.');
+            else if(payment.paidAt!=null ? payment.paidAt>=due : bookingNow().getTime()>=due)paymentIssues.push(payment.paidAt!=null ? 'PayMongo recorded the payment at or after the payment deadline.' : 'The payment was verified after the payment deadline, and PayMongo gave no payment time.');
+        }
+        if(Number(b.payment_review_required))paymentIssues.push('This booking already has a payment exception on record.');
+        if(!existing.length && (b.status!=='confirmed' || scheduleConflict))paymentIssues.push('When the payment arrived, this booking was no longer active or its dates were no longer available.');
+        const requiresReview=paymentIssues.length>0;
         const [full] = await connection.query(
             `SELECT b.*, u.name AS student_name, u.age, u.address, u.phone, u.emergency_contact, u.guardian_name,
                     bh.owner_id AS house_owner_id, bh.name AS house_name, r.room_number
@@ -87,20 +113,25 @@ export async function settlePayment(pool, bookingId, session, studentId, allowLe
              JOIN rooms r ON r.id = b.room_id WHERE b.id = ?`, [b.id]);
         const fb = full[0];
         if (!fb) throw paymentError(409, 'Booking details are unavailable.');
-        await connection.query("UPDATE bookings SET payment_status = 'paid', paymongo_payment_id = ? WHERE id = ?", [payment.id, b.id]);
-        if (!requiresReview && !existing.length) {
-            await connection.query(
-                `INSERT INTO occupants (room_id, student_id, reference_no, name, age, address, contact_number,
-                  emergency_contact, guardian_name, check_in_date, months, amount, payment_status, payment_method, is_non_cspc)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Paid', 'paymongo', 0)`,
-                [fb.room_id, fb.student_id, ref, fb.student_name, fb.age, fb.address, fb.phone, fb.emergency_contact, fb.guardian_name, fb.check_in_date, fb.months, fb.amount]);
+        if (!existing.length) {
+            await connection.query('UPDATE bookings SET move_in_required = 1 WHERE id = ?', [b.id]);
+            b.move_in_required = 1;
         }
+        await connection.query("UPDATE bookings SET payment_status = 'paid', paymongo_payment_id = ? WHERE id = ?", [payment.id, b.id]);
+        if (requiresReview) await connection.query('UPDATE bookings SET payment_review_required = 1, payment_review_reason = ? WHERE id = ?', [paymentIssues.join(' '),b.id]);
+        if (!requiresReview && !existing.length) await startBookedStay(connection,{...fb,...b,payment_status:'paid',paymongo_payment_id:payment.id});
         const amount = (payment.amount / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const suffix = requiresReview ? 'The reservation needs owner review; no new occupancy was created.' : 'Your room reservation is secured.';
-        await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)', [fb.student_id, 'PAYMENT SETTLED: Your online payment of \u20b1' + amount + ' has been verified. ' + suffix, '/student/bookings/' + b.id]);
-        if (fb.house_owner_id) await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [fb.house_owner_id, 'PAYMENT RECEIVED: ' + fb.student_name + ' paid \u20b1' + amount + ' for Room ' + fb.room_number + '. ' + (requiresReview ? 'Please review this reservation; no new occupancy was created.' : 'Occupancy is recorded.')]);
+        if (requiresReview) {
+            const notice = paymentExceptionNotices({ reference: ref, amount, roomNumber: fb.room_number, studentName: fb.student_name, reason: paymentIssues.join(' '), existingStay: existing.length > 0 });
+            await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)', [fb.student_id, notice.student, '/student/bookings/' + b.id]);
+            if (fb.house_owner_id) await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)', [fb.house_owner_id, notice.owner, '/owner/bookings']);
+        } else {
+            const suffix = existing.length ? 'Your existing move-in record remains unchanged.' : 'Your room reservation is secured. Your secured stay starts automatically on the booked check-in date, with its booked checkout date unchanged.';
+            await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)', [fb.student_id, 'PAYMENT SETTLED: Your online payment of \u20b1' + amount + ' has been verified. ' + suffix, '/student/bookings/' + b.id]);
+            if (fb.house_owner_id) await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [fb.house_owner_id, 'PAYMENT RECEIVED: ' + fb.student_name + ' paid \u20b1' + amount + ' for Room ' + fb.room_number + '. ' + (Number(b.move_in_required) === 1 ? 'The bed is secured. The stay starts automatically on its booked check-in date.' : 'Occupancy is recorded.')]);
+        }
         await connection.commit();
-        return { success: true, requiresReview, message: requiresReview ? 'Payment received. Please contact the owner to review your reservation.' : 'Payment verified and occupancy successfully recorded.' };
+        return { success: true, requiresReview, message: requiresReview ? PAYMENT_EXCEPTION_RESPONSE : (Number(b.move_in_required) === 1 ? 'Payment verified. Your bed is reserved; occupancy starts automatically on the booked check-in date.' : 'Payment verified and occupancy successfully recorded.') };
     } catch (error) {
         if (connection) await connection.rollback();
         throw error;

@@ -1,4 +1,6 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
+
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -491,7 +493,7 @@ onMounted(fetchData);
 
     <!-- Login Modal -->
     <div v-if="showLoginModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-fade-in">
-      <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
+      <div class="popup-panel bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
         <div class="text-blue-600 mb-4 flex justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"
@@ -499,7 +501,7 @@ onMounted(fetchData);
           </svg>
         </div>
         <h2 class="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Login Required</h2>
-        <p class="text-slate-500 mb-6 text-sm">To book or post a review, you must first log in using your <strong>CSPC student email</strong>.</p>
+        <p class="text-slate-900 mb-6 text-sm popup-message">To book or post a review, you must first log in using your <strong>CSPC student email</strong>.</p>
         <div class="flex flex-col gap-3">
           <a href="/login-options" class="bg-blue-600 hover:bg-slate-900 text-white font-black py-3.5 rounded-xl transition-colors uppercase text-xs tracking-widest text-center block shadow-lg shadow-blue-100">Go to Login</a>
           <button @click="showLoginModal = false" class="text-slate-400 text-xs font-bold hover:text-slate-900 uppercase tracking-widest mt-2">Cancel</button>
@@ -842,15 +844,7 @@ onMounted(fetchData);
           </div>
           <div v-for="review in reviews" :key="review.id" class="flex gap-5 group">
             <div class="shrink-0">
-              <img
-                v-if="review.profile_pic"
-                :src="getImageUrl(review.profile_pic)"
-                class="w-12 h-12 rounded-2xl object-cover shadow-sm border border-slate-100"
-              />
-              <div
-                v-else
-                class="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 font-black text-sm"
-              >{{ (review.student_name || 'A').charAt(0).toUpperCase() }}</div>
+              <UserAvatar :src="review.profile_pic" :name="review.student_name" class="w-12 h-12 rounded-2xl" />
             </div>
             <div class="flex-1">
               <div class="flex items-center justify-between mb-1">

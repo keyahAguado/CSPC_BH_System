@@ -4,6 +4,11 @@ import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
 import { getComplianceStatus } from '../config/complianceHelper.js';
+import { bookingIdFromReference } from '../config/stayAvailability.js';
+
+// SASO figures and lists show real residents only: an automatically started stay counts once the owner confirms
+// arrival. Stays awaiting arrival or recorded as not arrived are excluded. Manual and legacy rows never need arrival.
+const RESIDENT = 'NOT (o.arrival_required = 1 AND o.arrival_confirmed_at IS NULL)';
 import { MAX_FEATURES, SITE_SETTING_KEYS, settingsFromRows } from '../config/siteContent.js';
 import {
     APPLICATION_STATUS, REVIEWABLE,
@@ -42,6 +47,10 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             "SELECT COUNT(*) AS count FROM boarding_houses WHERE house_status = 'pending' OR document_update_pending = 1"
         );
 
+        // Residents are occupants whose arrival is confirmed. An automatically started stay that the owner has not
+        // confirmed still holds its bed, but it is not counted as a resident in SASO figures.
+        const ARRIVED = 'NOT (o.arrival_required = 1 AND o.arrival_confirmed_at IS NULL)';
+
         // CSPC student count: active CSPC student residents in accredited boarding houses
         const [[studentsRow]] = await pool.query(`
             SELECT COUNT(DISTINCT o.student_id) AS count
@@ -51,10 +60,11 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
             WHERE bh.house_status = 'accredited'
               AND o.student_id IS NOT NULL 
               AND o.is_non_cspc = 0 
-              AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+              AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${ARRIVED}
         `);
 
-        // Occupancy Rate: capacity of accredited rooms vs active occupants (unique CSPC + manual non-CSPC) in accredited houses
+        // Occupancy Rate: capacity of accredited rooms vs CSPC residents in accredited houses. SASO reports CSPC students only;
+        // non-CSPC boarders recorded by owners are never counted in admin figures.
         const [[capacityRow]] = await pool.query(`
             SELECT SUM(r.capacity) AS total_capacity 
             FROM rooms r
@@ -70,16 +80,15 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
                WHERE bh.house_status = 'accredited'
                  AND o.student_id IS NOT NULL 
                  AND o.is_non_cspc = 0 
-                 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()))
-              +
-              (SELECT COUNT(o.id) 
-               FROM occupants o 
-               INNER JOIN rooms r ON o.room_id = r.id
-               INNER JOIN boarding_houses bh ON r.house_id = bh.id
-               WHERE bh.house_status = 'accredited'
-                 AND o.is_non_cspc = 1 
-                 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()))
+                 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${ARRIVED})
               AS current_occupants
+        `);
+        const [[awaitingRow]] = await pool.query(`
+            SELECT COUNT(o.id) AS count FROM occupants o
+            INNER JOIN rooms r ON o.room_id = r.id
+            INNER JOIN boarding_houses bh ON r.house_id = bh.id
+            WHERE bh.house_status = 'accredited' AND o.is_non_cspc = 0 AND o.arrival_required = 1 AND o.arrival_confirmed_at IS NULL AND o.non_arrival_recorded_at IS NULL
+              AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
         `);
         const totalCapacity = parseInt(capacityRow.total_capacity) || 0;
         const currentOccupants = parseInt(occupantsRow.current_occupants) || 0;
@@ -117,6 +126,7 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
                 LEFT JOIN occupants o ON r.id = o.room_id
                     AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
                     AND o.is_non_cspc = 0
+                    AND ${ARRIVED}
                 LEFT JOIN users u ON o.student_id = u.id
                 WHERE bh.house_status = 'accredited'
                 GROUP BY bh.id, bh.name
@@ -167,6 +177,7 @@ router.get('/dashboard', authenticateToken, verifyAdmin, async (req, res) => {
                 totalHouses: housesRow.count || 0,
                 totalStudents: studentsRow.count || 0,
                 occupancyRate,
+                awaitingArrival: awaitingRow.count || 0,
                 pendingApps: pendingRow.count || 0,
                 mostRated,
                 houses: housesData,
@@ -419,8 +430,8 @@ router.get('/reports/courses', authenticateToken, verifyAdmin, async (req, res) 
             SELECT c.course_code, c.course_name, c.department, COUNT(DISTINCT o.student_id) AS resident_count
             FROM courses c
             LEFT JOIN users u ON u.course = c.course_code
-            LEFT JOIN occupants o ON o.student_id = u.id
-                AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+            LEFT JOIN occupants o ON o.student_id = u.id AND o.is_non_cspc = 0
+                AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
             GROUP BY c.id, c.course_code, c.course_name, c.department
             ORDER BY resident_count DESC, c.course_name ASC
         `);
@@ -448,14 +459,14 @@ router.get('/pending-applications', authenticateToken, verifyAdmin, async (req, 
             ORDER BY bh.created_at DESC, bh.id DESC
         `);
         // Query 2: ALL checklist criteria (both global 8 + any house-specific ones)
-        const [dbCriteria] = await pool.query('SELECT * FROM checklist_criteria');
+        const [dbCriteria] = await pool.query('SELECT * FROM checklist_criteria WHERE is_active = 1');
         // Query 3: Which criteria were already verified (from previous admin reviews)
         const [checklistResults] = await pool.query('SELECT * FROM checklist_results WHERE is_verified = 1');
 
         // Fetch dynamic uploads
         // Query 4: Any custom requirement files uploaded by owners
         const [dynamicDocs] = await pool.query(`
-            SELECT hd.*, cc.label AS criteria_label 
+            SELECT hd.*, cc.label AS criteria_label, cc.requirement_type
             FROM house_documents hd
             JOIN checklist_criteria cc ON hd.criteria_id = cc.id
         `);
@@ -521,7 +532,7 @@ router.get('/applications/registered', authenticateToken, verifyAdmin, async (re
 
 
         const [dynamicDocs] = await pool.query(`
-            SELECT hd.*, cc.label AS criteria_label 
+            SELECT hd.*, cc.label AS criteria_label, cc.requirement_type
             FROM house_documents hd
             JOIN checklist_criteria cc ON hd.criteria_id = cc.id
         `);
@@ -533,7 +544,8 @@ router.get('/applications/registered', authenticateToken, verifyAdmin, async (re
         // Every file uploaded per legal document (multiple images / PDF)
         const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
 
-        res.json({ success: true, houses, dynamicDocs, housePhotos, permitFiles });
+        const [criteria] = await pool.query('SELECT id, label, house_id, requirement_type FROM checklist_criteria WHERE is_active = 1 AND permit_key IS NULL AND id NOT BETWEEN 30 AND 37');
+        res.json({ success: true, houses, dynamicDocs, housePhotos, permitFiles, criteria });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -562,7 +574,8 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
         // Every file uploaded per legal document (multiple images / PDF)
         const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
 
-        res.json({ success: true, houses, housePhotos, permitFiles });
+        const [dynamicDocs] = await pool.query('SELECT hd.*, cc.label AS criteria_label, cc.requirement_type FROM house_documents hd JOIN checklist_criteria cc ON hd.criteria_id = cc.id');
+        res.json({ success: true, houses, housePhotos, permitFiles, dynamicDocs });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -687,9 +700,10 @@ router.get('/rooms/:houseId', authenticateToken, verifyAdmin, async (req, res) =
     try {
         const [rooms] = await pool.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count,
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS cspc_count,
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 1 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS non_cspc_count
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS occupant_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date <= CURDATE() AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0 AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS reserved_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date > CURDATE() AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0 AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS upcoming_reserved_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.is_non_cspc = 0 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}) AS cspc_count
              FROM rooms r
              WHERE r.house_id = ?`,
             [req.params.houseId]
@@ -708,7 +722,7 @@ router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (re
              FROM occupants o
              WHERE o.room_id = ? 
                AND o.is_non_cspc = 0
-               AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
+               AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}`,
             [req.params.roomId]
         );
         res.json({ success: true, occupants });
@@ -719,15 +733,26 @@ router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (re
 
 // 8. POST - Admin check-out override for an occupant row
 router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
+    let connection;
     try {
-        await pool.query(
-            'UPDATE occupants SET check_out_date = CURDATE() WHERE id = ?',
-            [req.params.id]
-        );
+        connection=await pool.getConnection();
+        await connection.beginTransaction();
+        const [rows]=await connection.query('SELECT id, student_id, room_id, reference_no FROM occupants WHERE id = ? AND is_non_cspc = 0',[req.params.id]);
+        if (!rows.length) { await connection.rollback(); return res.status(404).json({success:false,message:'Occupant not found.'}); }
+        const occupant=rows[0];
+        if (occupant.student_id) await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[occupant.student_id]);
+        await connection.query('SELECT id FROM rooms WHERE id = ? FOR UPDATE',[occupant.room_id]);
+        const [current]=await connection.query('SELECT id, check_out_date FROM occupants WHERE id = ? FOR UPDATE',[req.params.id]);
+        if (!current.length || current[0].check_out_date) { await connection.rollback(); return res.status(409).json({success:false,message:'Checkout is already recorded.'}); }
+        await connection.query('UPDATE occupants SET check_out_date = CURDATE() WHERE id = ?',[req.params.id]);
+        if (occupant.reference_no) await connection.query("UPDATE bookings SET status = 'completed' WHERE id = ? AND status = 'confirmed'",[bookingIdFromReference(occupant.reference_no)]);
+        if (occupant.student_id) await connection.query('INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',[occupant.student_id,'CHECKOUT RECORDED: The administrator recorded your checkout. Any separate future reservation remains unchanged.','/student/bookings']);
+        await connection.commit();
         res.json({ success: true });
     } catch (err) {
+        if (connection) await connection.rollback();
         res.status(500).json({ success: false, message: err.message });
-    }
+    } finally { connection?.release(); }
 });
 
 // 9. POST - Approve Accreditation Application — Alerts Owner only
@@ -745,8 +770,14 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
             return res.status(404).json({ success: false, message: 'Boarding house record not found.' });
         }
         const owner_id = house[0].owner_id;
+        const [requiredDocuments] = await connection.query("SELECT id, label FROM checklist_criteria WHERE is_active = 1 AND permit_key IS NULL AND requirement_type = 'required' AND (house_id IS NULL OR house_id = ?) FOR UPDATE", [houseId]);
+        const checkedIds = new Set((checklist || []).map(Number));
+        if (requiredDocuments.some(item => !checkedIds.has(Number(item.id)))) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'Verify all required documents before approving this property.' });
+        }
         if (checklist && checklist.length > 0) {
-            const [applicable] = await connection.query('SELECT id FROM checklist_criteria WHERE id IN (?) AND (house_id IS NULL OR house_id = ?) FOR UPDATE', [checklist, houseId]);
+            const [applicable] = await connection.query('SELECT id FROM checklist_criteria WHERE id IN (?) AND is_active = 1 AND (house_id IS NULL OR house_id = ?) FOR UPDATE', [checklist, houseId]);
             if (applicable.length !== checklist.length) {
                 await connection.rollback();
                 return res.status(400).json({ success: false, message: 'Some checklist requirements do not apply to this property. Please refresh the application.' });
@@ -798,7 +829,7 @@ router.post('/approve/:id', authenticateToken, verifyAdmin, validateBody('approv
         }
 
         // Notify owner only
-        const approveMsg = `CONGRATULATIONS: Your boarding house "${house[0].name}" has been officially ACCREDITED by SASO!`;
+        const approveMsg = `CONGRATULATIONS: Your boarding house "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''} has been officially ACCREDITED by SASO!`;
         await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
             [owner_id, approveMsg]);
 
@@ -859,8 +890,8 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
             }
             const revisionRequested = Boolean(house[0].application_status) && !closeApplication;
             const rejectMsg = revisionRequested
-                ? `REVISION REQUIRED: SASO requested corrections for "${house[0].name}". Feedback: ${admin_comments}. Open Track My Application to update and resubmit.`
-                : `NOTICE: Your application for "${house[0].name}" was REJECTED by SASO. Reason: ${admin_comments}`;
+                ? `REVISION REQUIRED: SASO requested corrections for "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''}. Feedback: ${admin_comments}. Open Track My Application to update and resubmit.`
+                : `NOTICE: Your application for "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''} was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, rejectMsg]);
         } else {
@@ -942,211 +973,59 @@ router.get('/applications/:id/history', authenticateToken, verifyAdmin, async (r
 });
 
 // ===================================================================
-// 11. Custom criteria actions (Guarded from modification of global defaults)
+// 11. Shared document requirements (standard permits remain protected)
 // ===================================================================
 
 router.post('/criteria/add', authenticateToken, verifyAdmin, validateBody('criterion'), async (req, res) => {
-    const { label, house_id } = req.body;
     const connection = await pool.getConnection();
-
-    console.log(`[CRITERIA ADD] Received => label: "${label}", house_id: ${house_id} (type: ${typeof house_id})`);
-
     try {
         await connection.beginTransaction();
+        const label = req.body.label.trim();
+        const [result] = await connection.query('INSERT INTO checklist_criteria (label, house_id, requirement_type) VALUES (?, NULL, ?)', [label, req.body.requirement_type || 'supplementary']);
+        await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", ['SASO added a document requirement for all properties: "' + label + '". Please review Documents for each property.']);
+        await connection.commit();
+        res.json({ success: true, criteriaId: result.insertId });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Add requirement:', err.message);
+        res.status(500).json({ success: false, message: 'Failed to add requirement.' });
+    } finally { connection.release(); }
+});
 
-        // 1. Validate that house_id actually references a real boarding house
-        if (house_id) {
-            const parsedHouseId = parseInt(house_id);
-            if (isNaN(parsedHouseId) || parsedHouseId <= 0) {
+for (const action of ['update', 'delete']) {
+    router.post('/criteria/' + action + '/:id', authenticateToken, verifyAdmin, validateBody(action === 'update' ? 'criterion' : 'ids'), async (req, res) => {
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            const [rows] = await connection.query('SELECT * FROM checklist_criteria WHERE id = ? AND is_active = 1 FOR UPDATE', [req.params.id]);
+            if (!rows.length) {
                 await connection.rollback();
-                console.error(`[CRITERIA ADD] REJECTED — house_id "${house_id}" is not a valid integer.`);
-                return res.status(400).json({ success: false, message: 'Invalid boarding house ID provided.' });
+                return res.status(404).json({ success: false, message: 'Requirement not found.' });
             }
-
-            const [houseCheck] = await connection.query(
-                'SELECT id FROM boarding_houses WHERE id = ?',
-                [parsedHouseId]
-            );
-            if (houseCheck.length === 0) {
+            const item = rows[0];
+            if (item.permit_key || (Number(item.id) >= 30 && Number(item.id) <= 37 && item.house_id === null)) {
                 await connection.rollback();
-                console.error(`[CRITERIA ADD] REJECTED — No boarding house found with id=${parsedHouseId}. Orphan insert blocked.`);
-                return res.status(400).json({ success: false, message: 'Referenced boarding house does not exist.' });
+                return res.status(400).json({ success: false, message: 'Standard permit requirements are protected.' });
             }
-        }
-
-        // 2. Insert the new checklist criteria
-        const [result] = await connection.query(
-            'INSERT INTO checklist_criteria (label, house_id) VALUES (?, ?)',
-            [label, house_id ? parseInt(house_id) : null]
-        );
-        const newCriteriaId = result.insertId;
-        console.log(`[CRITERIA ADD] Inserted criteria id=${newCriteriaId} for house_id=${house_id || 'GLOBAL'}`);
-
-        // 3. Dispatch notifications and emails to the affected property owner(s)
-        if (house_id) {
-            const [houseRows] = await connection.query(
-                'SELECT owner_id, name FROM boarding_houses WHERE id = ?',
-                [parseInt(house_id)]
-            );
-
-            if (houseRows.length > 0) {
-                const house = houseRows[0];
-                const message = `ALERT: SASO Admin has added a new custom requirement: "${label}" for your property "${house.name}". Please upload the required file evidence.`;
-
-                await connection.query(
-                    'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                    [house.owner_id, message]
-                );
-                console.log(`[CRITERIA ADD] Notification dispatched => owner_id=${house.owner_id}, house="${house.name}"`);
-            } else {
-                console.warn(`[CRITERIA ADD] WARNING — No house owner found for house_id=${house_id}. No notification sent.`);
-            }
-        } else {
-            // Global / Institutional requirement addition — notify all active boarding house owners
-            const [owners] = await connection.query("SELECT id FROM users WHERE role = 'owner'");
-            const globalMsg = `ALERT: SASO Admin has added a new institutional requirement: "${label}". Please review your document checklist.`;
-            for (const owner of owners) {
-                await connection.query(
-                    'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                    [owner.id, globalMsg]
-                );
-            }
-            console.log(`[CRITERIA ADD] Global institutional notification dispatched to ${owners.length} owners.`);
-        }
-
-        await connection.commit();
-        res.json({ success: true, criteriaId: newCriteriaId });
-    } catch (err) {
-        await connection.rollback();
-        console.error('[CRITERIA ADD] Transaction Error:', err.message);
-        res.status(500).json({ success: false, message: 'Failed to add criteria.' });
-    } finally {
-        connection.release();
-    }
-});
-
-router.post('/criteria/update/:id', authenticateToken, verifyAdmin, validateBody('criterion'), async (req, res) => {
-    const criteriaId = req.params.id;
-    const { label } = req.body;
-    const connection = await pool.getConnection();
-
-    console.log(`[CRITERIA UPDATE] Received => criteria_id: ${criteriaId}, new label: "${label}"`);
-
-    try {
-        await connection.beginTransaction();
-
-        // 1. Verify existence and make sure it is not a locked institutional/global document
-        const [criteriaRows] = await connection.query(
-            'SELECT house_id, label FROM checklist_criteria WHERE id = ?',
-            [criteriaId]
-        );
-        if (criteriaRows.length === 0) {
+            if (action === 'update') await connection.query('UPDATE checklist_criteria SET label = ?, requirement_type = ? WHERE id = ?', [req.body.label.trim(), req.body.requirement_type || item.requirement_type || 'supplementary', item.id]);
+            else await connection.query('UPDATE checklist_criteria SET is_active = 0 WHERE id = ?', [item.id]);
+            const message = action === 'update'
+                ? 'SASO updated document requirement "' + item.label + '" to "' + req.body.label.trim() + '" (' + (req.body.requirement_type || item.requirement_type || 'supplementary') + '). Existing uploads are retained; please review your documents.'
+                : 'SASO removed document requirement "' + item.label + '" from the checklist. Previously submitted files are retained.';
+            if (item.house_id === null) await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", [message]);
+            else await connection.query('INSERT INTO notifications (user_id, message) SELECT owner_id, ? FROM boarding_houses WHERE id = ? AND owner_id IS NOT NULL', [message, item.house_id]);
+            await connection.commit();
+            res.json({ success: true });
+        } catch (err) {
             await connection.rollback();
-            return res.status(404).json({ success: false, message: 'Criteria record not found.' });
-        }
-        if (criteriaRows[0].house_id === null) {
-            await connection.rollback();
-            return res.status(400).json({ success: false, message: 'Institutional items locked.' });
-        }
+            console.error('Manage requirement:', err.message);
+            res.status(500).json({ success: false, message: 'Failed to change requirement.' });
+        } finally { connection.release(); }
+    });
+}
 
-        console.log(`[CRITERIA UPDATE] Confirmed => house_id=${criteriaRows[0].house_id}, old label="${criteriaRows[0].label}"`);
 
-        // 2. Perform label update
-        await connection.query(
-            'UPDATE checklist_criteria SET label = ? WHERE id = ?',
-            [label, criteriaId]
-        );
 
-        // 3. Notify the owner of the change
-        const [houseRows] = await connection.query(
-            'SELECT owner_id, name FROM boarding_houses WHERE id = ?',
-            [criteriaRows[0].house_id]
-        );
-
-        if (houseRows.length > 0) {
-            const house = houseRows[0];
-            const message = `WARNING: SASO Admin has updated the requirement "${criteriaRows[0].label}" to: "${label}" for your property "${house.name}". Please verify your uploaded file remains accurate.`;
-
-            await connection.query(
-                'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [house.owner_id, message]
-            );
-            console.log(`[CRITERIA UPDATE] Notification dispatched => owner_id=${house.owner_id}, house="${house.name}"`);
-        } else {
-            console.warn(`[CRITERIA UPDATE] WARNING — No house found for house_id=${criteriaRows[0].house_id}. No notification sent.`);
-        }
-
-        await connection.commit();
-        res.json({ success: true });
-    } catch (err) {
-        await connection.rollback();
-        console.error('[CRITERIA UPDATE] Transaction Error:', err.message);
-        res.status(500).json({ success: false, message: 'Failed to update criteria.' });
-    } finally {
-        connection.release();
-    }
-});
-
-router.post('/criteria/delete/:id', authenticateToken, verifyAdmin, validateBody('ids'), async (req, res) => {
-    const criteriaId = req.params.id;
-    const connection = await pool.getConnection();
-
-    console.log(`[CRITERIA DELETE] Received => criteria_id: ${criteriaId}`);
-
-    try {
-        await connection.beginTransaction();
-
-        // 1. Verify eligibility (must not be an institutional requirement)
-        const [criteriaRows] = await connection.query(
-            'SELECT house_id, label FROM checklist_criteria WHERE id = ?',
-            [criteriaId]
-        );
-        if (criteriaRows.length === 0) {
-            await connection.rollback();
-            return res.status(404).json({ success: false, message: 'Criteria record not found.' });
-        }
-        if (criteriaRows[0].house_id === null) {
-            await connection.rollback();
-            return res.status(400).json({ success: false, message: 'Institutional items locked.' });
-        }
-
-        console.log(`[CRITERIA DELETE] Confirmed => house_id=${criteriaRows[0].house_id}, label="${criteriaRows[0].label}"`);
-
-        // 2. Delete criteria from table
-        await connection.query(
-            'DELETE FROM checklist_criteria WHERE id = ?',
-            [criteriaId]
-        );
-
-        // 3. Notify the owner
-        const [houseRows] = await connection.query(
-            'SELECT owner_id, name FROM boarding_houses WHERE id = ?',
-            [criteriaRows[0].house_id]
-        );
-
-        if (houseRows.length > 0) {
-            const house = houseRows[0];
-            const message = `ALERT: SASO Admin has removed the custom requirement: "${criteriaRows[0].label}" for your property "${house.name}".`;
-
-            await connection.query(
-                'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-                [house.owner_id, message]
-            );
-            console.log(`[CRITERIA DELETE] Notification dispatched => owner_id=${house.owner_id}, house="${house.name}"`);
-        } else {
-            console.warn(`[CRITERIA DELETE] WARNING — No house found for house_id=${criteriaRows[0].house_id}. No notification sent.`);
-        }
-
-        await connection.commit();
-        res.json({ success: true });
-    } catch (err) {
-        await connection.rollback();
-        console.error('[CRITERIA DELETE] Transaction Error:', err.message);
-        res.status(500).json({ success: false, message: 'Failed to remove criteria.' });
-    } finally {
-        connection.release();
-    }
-});
 
 // ==========================================
 // 12. USER DIRECTORY MANAGEMENT ENDPOINTS
@@ -1262,7 +1141,8 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                     INNER JOIN rooms ro ON o.room_id = ro.id
                     WHERE ro.house_id = bh.id
                       AND ro.deleted_at IS NULL
-                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND o.is_non_cspc = 0
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
                 ) AS occupied_beds,
                 (
                     SELECT MAX(h.created_at)
@@ -1280,7 +1160,7 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                     WHERE ro.house_id = bh.id
                       AND o.is_non_cspc = 0
                       AND o.student_id IS NOT NULL
-                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
                 ) AS current_occupants,
                 (
                     SELECT COUNT(DISTINCT o.student_id)
@@ -1289,7 +1169,7 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                     INNER JOIN users su ON o.student_id = su.id
                     WHERE ro.house_id = bh.id
                       AND o.is_non_cspc = 0
-                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
                       AND LOWER(su.sex) = 'male'
                 ) AS male_count,
                 (
@@ -1299,7 +1179,7 @@ router.get('/reports/masterlist', authenticateToken, verifyAdmin, async (req, re
                     INNER JOIN users su ON o.student_id = su.id
                     WHERE ro.house_id = bh.id
                       AND o.is_non_cspc = 0
-                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())
+                      AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
                       AND LOWER(su.sex) = 'female'
                 ) AS female_count
             FROM boarding_houses bh
@@ -1369,7 +1249,8 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
             // a student shouldn't vanish from disaster response just because the
             // property's paperwork status changed. Excludes pending/rejected, which
             // never have real occupants since booking requires an accredited listing.
-            "bh.house_status IN ('accredited', 'archived')"
+            "bh.house_status IN ('accredited', 'archived')",
+            RESIDENT
         ];
         let queryParams = [];
 

@@ -5,12 +5,22 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, watchEffect } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import PwaInstallBanner from './components/partials/PwaInstallBanner.vue';
 
 const router = useRouter();
 const route = useRoute();
+
+// Visual theme only. The body marker also reaches Owner dialogs teleported to body.
+// Remove it immediately on navigation so shared Admin/Student components keep their theme.
+watchEffect(() => {
+  if (route.path === '/owner' || route.path.startsWith('/owner/')) {
+    document.body.setAttribute('data-owner-theme', '');
+  } else {
+    document.body.removeAttribute('data-owner-theme');
+  }
+});
 
 const PUBLIC_PATHS = [
   '/',
@@ -100,6 +110,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  document.body.removeAttribute('data-owner-theme');
   window.removeEventListener('pageshow', handlePageShow);
   window.removeEventListener('popstate', verifySessionOrEvict);
   window.removeEventListener('focus', verifySessionOrEvict);

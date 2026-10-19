@@ -1,5 +1,6 @@
 <script setup>
 import TablePager from '../../components/management/TablePager.vue';
+import { confirmTone } from '../../utils/confirmTone.js';
 import LoadError from '../../components/management/LoadError.vue';
 
 import '../../styles/management.css';
@@ -331,7 +332,7 @@ const loadError = ref('');
           <i class="fa-solid text-lg" :class="[alert.iconClass, alert.iconColorClass]"></i>
         </div>
         <div class="flex-1 p-4 pr-8 text-left">
-          <h4 class="text-[12px] font-semibold text-slate-500 mb-0.5">{{ alert.title }}</h4>
+          <h4 class="text-[14px] font-bold text-slate-500 mb-0.5">{{ alert.title }}</h4>
           <p class="text-[13px] font-semibold text-slate-700 leading-relaxed">{{ alert.message }}</p>
         </div>
         <button aria-label="Close" @click="closeAlert(alert.id)" class="absolute top-2.5 right-2.5 text-slate-300 hover:text-slate-700 transition-colors">
@@ -512,7 +513,7 @@ const loadError = ref('');
 
     <!-- Supplementary Document Info Modal -->
     <div v-management-dialog="{ close: () => showSuppModal = false }" v-if="showSuppModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[250] flex items-center justify-center p-4" @click.self="showSuppModal = false">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden">
+      <div class="popup-panel bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
@@ -525,7 +526,7 @@ const loadError = ref('');
           </button>
         </div>
         <div class="px-6 py-5">
-          <p class="text-[13px] font-semibold text-slate-600 leading-relaxed">
+          <p class="text-[13px] font-medium text-slate-900 leading-relaxed popup-message">
             <template v-if="suppModalStatus === 'expired'">
               A supplementary document (e.g. Cedula, DTI, Building Inspection, or Zoning Clearance) has expired. <strong class="text-slate-800">Your listing stays visible and bookable</strong> — these are non-critical documents that don't affect your accreditation status. Renew it when convenient.
             </template>
@@ -545,7 +546,7 @@ const loadError = ref('');
 
     <!-- Pause / Unlist Listing Modal -->
     <div v-management-dialog="{ close: () => closePauseModal() }" v-if="showPauseModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
+      <div class="popup-panel bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
 
         <!-- Modal Header -->
         <div class="bg-amber-50 border-b border-amber-100 px-7 py-5 flex items-center gap-4">
@@ -563,7 +564,7 @@ const loadError = ref('');
           <!-- Info notice -->
           <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
             <i class="fa-solid fa-circle-info text-slate-400 text-sm mt-0.5 shrink-0"></i>
-            <p class="text-[12px] font-semibold text-slate-500 leading-relaxed">
+            <p class="text-[12px] font-medium text-slate-900 leading-relaxed popup-message">
               Your listing will be hidden from student search. Active boarders remain tracked and unaffected. You can reactivate any time.
             </p>
           </div>
@@ -607,7 +608,7 @@ const loadError = ref('');
 
     <!-- Reactivate Listing Confirmation Modal -->
     <div v-management-dialog="{ close: () => closeReactivateConfirmModal() }" v-if="showReactivateConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
+      <div class="popup-panel bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
 
         <!-- Modal Header -->
         <div class="bg-emerald-50 border-b border-emerald-100 px-7 py-5 flex items-center gap-4">
@@ -615,8 +616,8 @@ const loadError = ref('');
             <i class="fa-solid fa-play text-emerald-600 text-lg"></i>
           </div>
           <div>
-            <h3 class="text-sm font-semibold text-slate-900 uppercase tracking-tight leading-tight">Reactivate Listing</h3>
-            <p class="text-[12px] font-bold text-emerald-600 uppercase tracking-wide mt-0.5">Make listing visible to students again</p>
+            <h3 class="text-base font-bold text-slate-900 leading-tight">Reactivate Listing</h3>
+            <p class="text-[13px] font-medium text-emerald-600 mt-0.5">Make listing visible to students again</p>
           </div>
         </div>
 
@@ -624,7 +625,7 @@ const loadError = ref('');
         <div class="px-7 py-6">
           <div class="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
             <i class="fa-solid fa-circle-info text-slate-400 text-sm mt-0.5 shrink-0"></i>
-            <p class="text-[12px] font-semibold text-slate-500 leading-relaxed">
+            <p class="text-[13px] font-medium text-slate-900 leading-relaxed popup-message">
               This will make your boarding house visible to students again in the public listing. The system will verify your permits before reactivation — if any required permits have expired, you will be notified.
             </p>
           </div>
@@ -633,11 +634,11 @@ const loadError = ref('');
         <!-- Modal Footer -->
         <div class="px-7 pb-6 flex gap-3">
           <button @click="execReactivateHouse"
-                  class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition shadow-sm cursor-pointer flex items-center justify-center gap-2 management-button">
+                  class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[13px] font-semibold py-3 rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center gap-2 management-button">
             <i class="fa-solid fa-play text-[12px]"></i> Confirm Reactivate
           </button>
           <button @click="closeReactivateConfirmModal"
-                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">
+                  class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[13px] font-semibold py-3 rounded-xl transition cursor-pointer management-button">
             Cancel
           </button>
         </div>
@@ -646,12 +647,12 @@ const loadError = ref('');
 
     <!-- Reactivation Blocked (Expired Permits) Pop-Up Modal -->
     <div v-management-dialog="{ close: () => closeReactivateBlockedModal() }" v-if="showReactivateBlockedModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
+      <div class="popup-panel bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
         <div class="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
           <i class="fa-solid fa-triangle-exclamation"></i>
         </div>
         <h3 class="text-xl font-semibold text-slate-900 uppercase tracking-tight mb-2">Cannot Reactivate Listing</h3>
-        <p class="text-slate-600 text-xs font-bold leading-relaxed mb-6 bg-red-50/80 border border-red-100 p-4 rounded-xl text-left">
+        <p class="text-slate-900 text-[13px] font-medium leading-relaxed mb-6 bg-red-50/80 border border-red-100 p-4 rounded-xl text-left popup-message">
           {{ blockedErrorMessage }}
         </p>
         <div class="flex flex-col gap-3">
@@ -667,16 +668,15 @@ const loadError = ref('');
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
-        <div class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
-          <i class="fa-solid fa-triangle-exclamation"></i>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(confirmTitle).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(confirmTitle).icon]"></i></span>
+          <div><h3 class="cm-title">{{ confirmTitle }}</h3><p class="cm-message popup-message">{{ confirmMessage }}</p></div>
         </div>
-        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
-        <p class="text-slate-500 text-xs font-bold leading-relaxed mb-6">{{ confirmMessage }}</p>
-        <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-red-600 hover:bg-slate-900 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition shadow-md cursor-pointer management-button">Remove</button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition cursor-pointer management-button">Cancel</button>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(confirmTitle).button]" @click="executeConfirm">Remove</button>
         </div>
       </div>
     </div>
@@ -859,11 +859,11 @@ const loadError = ref('');
 /* Card actions: green rooms, blue documents, orange edit */
 .od-actions .od-act.od-act-rooms, .od-actions .od-act.od-act-docs, .od-actions .od-act.od-act-edit { border: 0 !important; color: #fff !important; font-weight: 700; box-shadow: 0 4px 10px rgba(15, 23, 42, .12); }
 .od-actions .od-act.od-act-rooms { background: #22c55e; }
-.od-actions .od-act.od-act-rooms:hover { background: #16a34a; }
+.od-actions .od-act.od-act-rooms:hover { background: #16a34a !important; }
 .od-actions .od-act.od-act-docs { background: #3b82f6; }
-.od-actions .od-act.od-act-docs:hover { background: #2563eb; }
+.od-actions .od-act.od-act-docs:hover { background: #2563eb !important; }
 .od-actions .od-act.od-act-edit { background: #fb923c; }
-.od-actions .od-act.od-act-edit:hover { background: #f97316; }
+.od-actions .od-act.od-act-edit:hover { background: #f97316 !important; }
 .od-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--a-border); }
 .od-act { border-radius: 10px; }
 .od-act.is-primary { box-shadow: 0 4px 12px rgba(20, 43, 74, .18); }

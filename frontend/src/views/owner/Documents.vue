@@ -196,69 +196,45 @@ const handleHouseSwitch = (e) => {
 };
 
 // Exposing file change handler to Vue Context (_ctx)
-const handleFileChange = async (e, identifier) => {
-  let file = e.target.files[0];
-  if (!file) return;
-
-  // Image-only validation — same as OwnerAccreditation
-  const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif'];
-  const fileName = file.name.toLowerCase();
-  const isImageMime = file.type.startsWith('image/');
-  const hasImageExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-  if (!isImageMime && !hasImageExtension) {
-    showSystemAlert('Invalid file type. Only image files (PNG, JPG, JPEG, WEBP, HEIC) are allowed.', 'error');
-    e.target.value = '';
-    return;
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    showSystemAlert('File is too large. Maximum size is 10MB.', 'error');
-    e.target.value = '';
-    return;
-  }
-
-  // Automatically transcode HEIC files to JPEG standard
-  if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-    try {
-      console.log(`[HEIC] Transcoding ${file.name} to JPEG...`);
-      showSystemAlert('Transcoding HEIC image... Please wait.', 'success');
-      
-      const convertedBlob = await heic2any({
-        blob: file,
-        toType: 'image/jpeg',
-        quality: 0.8
-      });
-      
-      // Reconstruct File instance
-      const targetName = file.name.replace(/\.[^/.]+$/, "") + ".jpeg";
-      file = new File([convertedBlob], targetName, { type: 'image/jpeg' });
-      console.log(`[HEIC] Transcoded successfully as: ${file.name}`);
-    } catch (err) {
-      console.error('[HEIC] Transcoding failed:', err);
-      showSystemAlert('HEIC conversion failed. Please upload a standard JPG/PNG file.', 'error');
+const handleFileChange = async (event, identifier) => {
+  const selected = [...(event.target.files || [])];
+  event.target.value = '';
+  if (!selected.length) return;
+  const previous = fileInputs.value[identifier] || [];
+  if (previous.length + selected.length > 5) { showSystemAlert('Choose up to 5 files per document requirement.', 'error'); return; }
+  const converted = [];
+  for (let file of selected) {
+    if (!/\.(pdf|png|jpe?g|webp|heic|heif)$/i.test(file.name)) { showSystemAlert('Choose PDF or image files (PNG, JPG, WEBP or HEIC).', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { showSystemAlert('Each document file must be 10 MB or smaller.', 'error'); return; }
+    if (/\.(heic|heif)$/i.test(file.name)) {
+      try {
+        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+        file = new File([Array.isArray(blob) ? blob[0] : blob], file.name.replace(/\.[^.]+$/, '.jpeg'), { type: 'image/jpeg' });
+      } catch { showSystemAlert('HEIC conversion failed. Please use JPG, PNG or PDF.', 'error'); return; }
     }
+    converted.push(file);
   }
-
-  fileInputs.value[identifier] = file;
-  console.log(`[DEBUG] Staging file update for "${identifier}":`, file.name);
+  fileInputs.value[identifier] = [...previous, ...converted];
 };
 
 const saveDocumentUpdate = async (p) => {
   const identifier = p.permit_key || p.id;
   const isCustom = p.permit_key ? 'false' : 'true';
-  const file = fileInputs.value[identifier];
+  if (isUpdating.value[identifier]) return;
+  const files = fileInputs.value[identifier] || [];
   const expiry = expiryDates.value[identifier];
 
-  if (!file) {
-    showSystemAlert('Please select a new scanned file to upload.', 'error');
+  if (!files.length) {
+    showSystemAlert('Select at least one PDF or image to upload.', 'error');
     return;
   }
 
-  if (!expiry) {
+  if (!expiry && p.permit_key) {
     showSystemAlert('Please specify the permit expiry date.', 'error');
     return;
   }
 
-  if (!isValidPermitDate(expiry)) {
+  if (expiry && !isValidPermitDate(expiry)) {
     showSystemAlert('The document expiry date is invalid. Please enter a complete, valid date.', 'error');
     return;
   }
@@ -267,7 +243,7 @@ const saveDocumentUpdate = async (p) => {
     houseId: house.value?.id,
     identifier,
     isCustom,
-    fileName: file.name,
+    fileNames: files.map(file => file.name),
     expiryDate: expiry
   });
 
@@ -276,8 +252,8 @@ const saveDocumentUpdate = async (p) => {
     const formData = new FormData();
     formData.append('identifier', identifier);
     formData.append('is_custom', isCustom);
-    formData.append('permit_file', file);
-    formData.append('expiry_date', expiry);
+    for (const file of files) formData.append('permit_file', file);
+    formData.append('expiry_date', expiry || '');
 
     // update endpoint
     const response = await axios.post(`/api/boarding-houses/documents/update/${house.value.id}`, formData, {
@@ -322,7 +298,7 @@ const loadError = ref('');
 
 // Row 1: the four required permits. Row 2: the four additional permits. Extra SASO requirements follow.
 const REQUIRED_KEYS = ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'];
-const isRequiredDoc = (p) => REQUIRED_KEYS.includes(p.permit_key);
+const isRequiredDoc = (p) => p.permit_key ? REQUIRED_KEYS.includes(p.permit_key) : p.requirement_type === 'required';
 const requiredDocs = computed(() => criteria.value.filter(isRequiredDoc));
 const additionalDocs = computed(() => criteria.value.filter(p => !isRequiredDoc(p)));
 const STATUS_TEXT = { expired: 'Expired', warning: 'Expiring soon', valid: 'Valid', none: 'No expiry set' };
@@ -376,7 +352,7 @@ const docSections = computed(() => {
   const rows = allDocs.value.slice(docStart.value - 1, docEnd.value);
   return [
     { key: 'required', title: 'Required documents', icon: 'fa-shield-halved', note: `Items 1–${requiredDocs.value.length}`, rows: rows.filter(r => isRequiredDoc(r.doc)) },
-    { key: 'additional', title: 'Additional documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
+    { key: 'additional', title: 'Supplementary documents', icon: 'fa-folder-open', note: `Items ${requiredDocs.value.length + 1}–${allDocs.value.length} · optional`, rows: rows.filter(r => !isRequiredDoc(r.doc)) }
   ].filter(section => section.rows.length);
 });
 
@@ -454,7 +430,6 @@ const docSections = computed(() => {
                     <td class="dt-col-num">{{ number }}</td>
                     <td>
                       <span class="dt-name">{{ p.label }}</span>
-                      <span :class="['dt-pill', isRequiredDoc(p) ? 'is-required' : '']">{{ isRequiredDoc(p) ? 'Required' : 'Optional' }}</span>
                       <p v-if="docNote(p)" :class="['dx-note', 'is-' + docNote(p).tone]"><i :class="['fa-solid', docNote(p).icon]" aria-hidden="true"></i>{{ docNote(p).text }}</p>
                     </td>
                     <td>
@@ -464,13 +439,16 @@ const docSections = computed(() => {
                           <i class="fa-regular fa-eye" aria-hidden="true"></i> View<span v-if="documentFiles(p).length > 1"> ({{ documentFiles(p).length }})</span>
                         </button>
                         <span v-else class="dt-view is-disabled" aria-disabled="true"><i class="fa-regular fa-eye-slash" aria-hidden="true"></i> View</span>
-                        <label class="dt-upload" :title="fileInputs[docKey(p)]?.name || 'Choose a new scanned file'">
-                          <input :id="'docs-file-' + docKey(p)" type="file" :aria-label="'Scanned file for ' + p.label"
-                                 accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif"
+                        <label class="dt-upload" title="Choose up to 5 PDFs or images">
+                          <input :id="'docs-file-' + docKey(p)" type="file" multiple :aria-label="'Scanned file for ' + p.label"
+                                 accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,.heic,.heif"
                                  @click="e => e.target.value = ''" @change="e => handleFileChange(e, docKey(p))" />
                           <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> {{ p.current_file ? 'Replace' : 'Upload' }}
                         </label>
-                        <span v-if="fileInputs[docKey(p)]" class="dt-file-text is-ok" :title="fileInputs[docKey(p)].name"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ fileInputs[docKey(p)].name }}</span>
+                        <div v-if="fileInputs[docKey(p)]?.length" class="space-y-1 w-full">
+                          <p class="text-xs text-amber-700">Saving replaces all current attachments. Include every page you want to keep.</p>
+                          <div v-for="(file, index) in fileInputs[docKey(p)]" :key="index" class="flex items-center gap-2 text-xs text-slate-700"><span class="break-all">{{ index + 1 }}. {{ file.name }}</span><button type="button" @click="fileInputs[docKey(p)].splice(index, 1)" class="text-red-600 underline shrink-0" :aria-label="'Remove ' + file.name">Remove</button></div>
+                        </div>
                       </div>
                     </td>
                     <td>
@@ -483,7 +461,7 @@ const docSections = computed(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Optional</span>
+                      <span v-if="!isRequiredDoc(p) && !p.current_file" class="dx-pill is-optional dt-status">Supplementary</span>
                       <span v-else :class="['dx-pill', 'dt-status', 'is-' + docTone(p)]">{{ docPill(p) }}</span>
                     </td>
                   </tr>
@@ -540,8 +518,6 @@ const docSections = computed(() => {
 .dt-row:hover td { background: #f8fbff; }
 .dt-row.is-expired td, .dt-row.is-missing td { background: #fffafa; }
 .dt-name { display: block; font-size: 13.5px; font-weight: 600; color: #0f172a; }
-.dt-pill { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: #f1f5f9; color: #64748b; }
-.dt-pill.is-required { background: #fff1f2; color: #be123c; }
 .dt-table .dx-note { margin-top: 4px; }
 .dt-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .dt-view { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 32px !important; padding: 0 12px; border: 1px solid #d6e2f3; border-radius: 9px; background: #fff; color: #1e4a8d; font-size: 12.5px; font-weight: 600; cursor: pointer; }
@@ -570,7 +546,7 @@ const docSections = computed(() => {
 
 /* Legal documents — same look as the accreditation form's Legal Documents step */
 .docs-main { flex: 1; width: 100%; max-width: 1600px !important; padding: 18px clamp(16px, 2.2vw, 32px) 18px !important; text-align: left; }
-.docs-main, .docs-main :is(h1, h2, h3, p, span, a, label, button, input, select, option, strong) { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif !important; }
+.docs-main { font-family: var(--o-font, 'Segoe UI', Arial, sans-serif); }
 .docs-page { min-height: 100vh; height: auto; overflow: visible; }
 .docs-page > .docs-main { display: flex; flex-direction: column; overflow: visible; }
 .dx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -593,9 +569,10 @@ const docSections = computed(() => {
 .dx-head h1 { margin: 0; font-size: 15px !important; font-weight: 600 !important; color: #0f172a; letter-spacing: 0; line-height: 1.3; }
 .dx-head-chips { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dx-chip { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 12.5px; font-weight: 700; }
-.dx-chip-select { padding-right: 30px; }
-.dx-chip-select select { appearance: none; border: 0; background: transparent; color: inherit; font-size: 12.5px; font-weight: 700; min-height: 0 !important; height: 28px; padding: 0 !important; outline: none; cursor: pointer; }
-.dx-chip-select i { position: absolute; right: 11px; font-size: 10px; pointer-events: none; }
+.dx-chip-select { height: 38px; min-width: 180px; padding: 0 36px 0 14px; }
+.dx-chip-select select { appearance: none; width: 100%; border: 0; background: transparent; color: inherit; font-size: 13px; font-weight: 700; line-height: 1.3; min-height: 0 !important; height: 36px; padding: 0 !important; outline: none; cursor: pointer; }
+.dx-chip-select:focus-within { box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+.dx-chip-select i { position: absolute; right: 14px; font-size: 10px; pointer-events: none; }
 .dx-status.is-success { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
 .dx-status.is-warning { background: #fffbeb; border-color: #fde68a; color: #b45309; }
 .dx-status.is-danger { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
@@ -633,11 +610,12 @@ const docSections = computed(() => {
 .dx-note.is-expiry { color: #ea580c; }
 
 /* Status badge (top right of each card) */
-.dx-pill { flex-shrink: 0; padding: 2px 10px; border-radius: 999px; border: 1px solid #e2e8f0; background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.dx-pill.is-valid { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
-.dx-pill.is-warning { background: #fb923c; border-color: #fb923c; color: #fff; }
-.dx-pill.is-expired, .dx-pill.is-missing { background: #fff1f2; border-color: #fecdd3; color: #e11d48; }
-.dx-pill.is-none { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+/* Same palette as the owner status badges (styles/owner-badges.css). */
+.dx-pill { flex-shrink: 0; padding: 4px 10px; border-radius: 999px; border: 0; background: #f1f5f9; color: #475569; font-size: 11.5px; font-weight: 650; line-height: 1.35; white-space: nowrap; }
+.dx-pill.is-valid { background: #dcfce7; color: #15803d; }
+.dx-pill.is-warning { background: #fef3c7; color: #b45309; }
+.dx-pill.is-expired, .dx-pill.is-missing { background: #fee2e2; color: #b91c1c; }
+.dx-pill.is-none { background: #dbeafe; color: #1d4ed8; }
 
 /* Fields */
 .dx-field { display: flex; flex-direction: column; gap: 5px; }

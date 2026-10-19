@@ -4,7 +4,7 @@ import DropdownSelect from '../../components/DropdownSelect.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import { verifiedApplicantEmail } from '../../utils/applicantSession.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
-import { normalizePhPhone } from '../../utils/phoneValidation.js';
+import { normalizePhPhone, formatHouseContact, normalizeHouseContact, isValidHouseContact } from '../../utils/phoneValidation.js';
 import { getRegions, getProvinces, getCitiesByRegion, getCities, getBarangays } from '../../utils/psgc.js';
 import { saveDraftPart, loadDraft, clearDraft } from '../../utils/registrationDraft.js';
 import { applicantToken, applicantHeaders, setApplicantToken, STATUS_INFO } from '../../utils/applicantSession.js';
@@ -210,7 +210,7 @@ const maxPhotosLimit = 10;
 
 const barangaysList = ref(NABUA_BARANGAYS);
 
-const criteria = ref([
+const standardCriteria = [
   { id: 1, label: 'Business Permit Application Form', permit_key: 'permit_business_form', required: true },
   { id: 2, label: 'Community Tax Certificate (Cedula)', permit_key: 'permit_cedula', required: false },
   { id: 3, label: 'DTI Registration Certificate', permit_key: 'permit_dti', required: false },
@@ -219,7 +219,17 @@ const criteria = ref([
   { id: 6, label: 'Zoning Certificate / Locational Clearance', permit_key: 'permit_zoning', required: false },
   { id: 7, label: 'Sanitary Permit / Health Clearance', permit_key: 'permit_sanitary', required: true },
   { id: 8, label: 'Valid Fire Safety Inspection Certificate', permit_key: 'permit_fire', required: true }
-]);
+];
+const criteria = ref([...standardCriteria]);
+const requirementsLoaded = ref(false);
+const applyCustomCriteria = (items, docs = []) => {
+  criteria.value = [...standardCriteria, ...items.map(c => ({ ...c, permit_key: `custom_document_${c.id}`, required: c.requirement_type === 'required' }))];
+  for (const d of docs) {
+    const key = `custom_document_${d.criteria_id}`;
+    if (d.file_path) existingFiles.value[key] = d.file_path;
+    if (d.expiry_date) permitExpiries.value[key] = String(d.expiry_date).slice(0, 10);
+  }
+};
 
 const requiredCriteria = computed(() => criteria.value.filter(p => p.required));
 const optionalCriteria = computed(() => criteria.value.filter(p => !p.required));
@@ -324,6 +334,13 @@ const resetFormToCleanSlate = () => {
 
 const loadOnboardingData = async () => {
   draftReady.value = false;
+  requirementsLoaded.value = false;
+  try {
+    const { data } = await axios.get('/api/boarding-houses/application-requirements');
+    if (!data.success) throw new Error('Requirements unavailable');
+    applyCustomCriteria(data.criteria || []);
+    requirementsLoaded.value = true;
+  } catch { errorMsg.value = 'Document requirements could not be loaded. Refresh before continuing.'; return; }
   if (isPublicRegistration) {
     if (submittedRegistration.value) return;
     resetFormToCleanSlate();
@@ -364,12 +381,13 @@ async function fetchApplicantApplication() {
   try {
     const { data } = await axios.get(`/api/applications/${encodeURIComponent(applicantEditRef)}`, { headers: applicantHeaders() });
     const app = data.application;
+    applyCustomCriteria(data.customCriteria || [], data.customDocuments || []);
     applicantStatus.value = app.status;
     applicantRemarks.value = app.status === 'REVISION_REQUIRED' ? (app.admin_comments || '') : '';
     if (!app.editable) editLocked.value = STATUS_INFO[app.status]?.hint || 'This application can no longer be edited.';
     houseId.value = 'existing';
     houseName.value = app.name || '';
-    contactNumber.value = app.phone_contact || '';
+    contactNumber.value = normalizeHouseContact(app.phone_contact || '');
     price.value = app.price || '';
     advanceMonths.value = String(app.advance_months ?? '0');
     depositMonths.value = String(app.deposit_months ?? '0');
@@ -411,7 +429,7 @@ async function fetchHouseDetails() {
     const house = res.data.data;
     if (house) {
       houseName.value = house.name || '';
-      contactNumber.value = house.phone_contact || '';
+      contactNumber.value = normalizeHouseContact(house.phone_contact || '');
       price.value = house.price || '';
       advanceMonths.value = house.advance_months || '0';
       depositMonths.value = house.deposit_months || '0';
@@ -459,6 +477,9 @@ async function fetchHouseDetails() {
         if (house.img_2) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_2), dbValue: house.img_2 });
         if (house.img_3) selectedPhotos.value.push({ file: null, previewUrl: getImageUrl(house.img_3), dbValue: house.img_3 });
       }
+
+      const { data: documents } = await axios.get(`/api/boarding-houses/documents/${houseId.value}`, { headers: { Authorization: `Bearer ${token}` } });
+      applyCustomCriteria((documents.criteria || []).filter(c => !c.permit_key), (documents.criteria || []).filter(c => !c.permit_key).map(c => ({ criteria_id: c.id, file_path: c.current_file, expiry_date: c.current_expiry })));
 
       // Store current file names for permits preview
       criteria.value.forEach(p => {
@@ -524,10 +545,8 @@ const validateField = (fieldName) => {
     if (!val) {
       fieldErrors.value.contactNumber = 'Contact Phone Number is required.';
     } else {
-      const digitsOnly = val.replace(/\D/g, '');
-      const isValidFormat = /^[\d\s\/,\-\+\(\)]{7,100}$/.test(val);
-      if (!isValidFormat || digitsOnly.length < 7) {
-        fieldErrors.value.contactNumber = 'Please enter valid contact number(s) (e.g., 09123456789 or 09123456789 / 09987654321).';
+      if (!isValidHouseContact(val.replace(/\s*\/\s*$/, ''))) {
+        fieldErrors.value.contactNumber = 'Enter one to three complete 11-digit mobile numbers starting with 09 (e.g., 09123456789 / 09987654321).';
       } else {
         delete fieldErrors.value.contactNumber;
       }
@@ -549,15 +568,15 @@ const validateField = (fieldName) => {
   }
 };
 
+// Contact number: up to three 09XXXXXXXXX numbers; " / " is inserted after each complete number.
 const handleOwnerPhoneKeypress = (e) => {
-  const char = String.fromCharCode(e.which || e.keyCode);
-  if (!/[\d\s\/,\-\+]/.test(char)) {
-    e.preventDefault();
-  }
+  if (e.key && e.key.length === 1 && !/[\d\/]/.test(e.key)) e.preventDefault();
 };
 
 const handleOwnerPhoneInput = (e) => {
-  contactNumber.value = e.target.value.replace(/[^\d\s\/,\-\+]/g, '');
+  const typingForward = e.target.value.length > contactNumber.value.length;
+  contactNumber.value = formatHouseContact(e.target.value, { typingForward });
+  e.target.value = contactNumber.value;
   if (fieldErrors.value.contactNumber) validateField('contactNumber');
 };
 
@@ -593,7 +612,7 @@ const validateCurrentStep = () => {
     errors.push(...validateOwnerDetails());
   } else if (activeStep.value === 1) {
     criteria.value.forEach(p => {
-      const hasFile = !!permitFiles.value[p.permit_key] || !!existingFiles.value[p.permit_key];
+      const hasFile = permitHasFile(p.permit_key);
       const hasExpiry = !!permitExpiries.value[p.permit_key];
 
       if (hasExpiry && !isValidPermitDate(permitExpiries.value[p.permit_key])) {
@@ -814,8 +833,8 @@ const docEnd = computed(() => Math.min(docPage.value * docPerPage.value, allPerm
 const docSections = computed(() => {
   const rows = allPermits.value.slice(docStart.value - 1, docEnd.value);
   return [
-    { key: 'required', title: 'Mandatory documents', note: 'Items 1–4', items: rows.filter(p => p.required) },
-    { key: 'optional', title: 'Additional documents', note: 'Items 5–8 · optional', items: rows.filter(p => !p.required) }
+    { key: 'required', title: 'Mandatory documents', note: `${requiredCriteria.value.length} required`, items: rows.filter(p => p.required) },
+    { key: 'optional', title: 'Additional documents', note: `${optionalCriteria.value.length} optional`, items: rows.filter(p => !p.required) }
   ].filter(section => section.items.length);
 });
 const permitHasFile = (key) => !!permitFiles.value[key]?.length || !!existingFiles.value[key];
@@ -1308,9 +1327,13 @@ watch(mapLink, (newVal) => {
 // ================= THE RIGOROUS CLIENT-SIDE VALIDATOR =================
 const validateForm = () => {
   const errors = includeOwnerStep ? validateOwnerDetails() : [];
+  if (!requirementsLoaded.value) errors.push('Document requirements could not be loaded. Refresh before submitting.');
+  contactNumber.value = contactNumber.value.replace(/\s*\/\s*$/, ''); // a trailing separator is not a number
   const inputError = validateInput('property', { house_name: houseName.value, location: locationAddress.value, price: price.value, contact_number: contactNumber.value, latitude: latitude.value, longitude: longitude.value, advance_months: advanceMonths.value, deposit_months: depositMonths.value, deposit_type: depositType.value, description: description.value, map_link: mapLink.value });
   if (inputError) errors.push(inputError);
   criteria.value.forEach(p => {
+    if (p.required && !permitHasFile(p.permit_key)) errors.push(`${p.label} document is required.`);
+    if (permitHasFile(p.permit_key) && !permitExpiries.value[p.permit_key]) errors.push(`Expiration date is required for ${p.label}.`);
     const value = permitExpiries.value[p.permit_key];
     if (value && !isValidPermitDate(value)) errors.push(p.label + ' expiry date is invalid. Please enter a complete, valid date.');
   });
@@ -1422,8 +1445,7 @@ const submitApplication = async () => {
       const expiry = permitExpiries.value[p.permit_key];
       (Array.isArray(selected) ? selected : (selected ? [selected] : [])).forEach(file => fd.append(p.permit_key, file));
       if (expiry) {
-        const fieldName = p.permit_key.replace('permit_', '');
-        fd.append(`expiry_permit_${fieldName}`, expiry);
+        fd.append(`expiry_${p.permit_key}`, expiry);
       }
     });
 
@@ -2018,8 +2040,10 @@ const submitApplication = async () => {
               <label class="block text-[12px] font-semibold uppercase mb-2 ml-1" :class="fieldErrors.contactNumber ? 'text-red-600' : 'text-slate-400'">Contact Number</label>
               <input aria-label="Contact Number" 
                 type="text" 
-                inputmode="tel"
-                v-model="contactNumber" 
+                inputmode="numeric"
+                autocomplete="tel"
+                maxlength="39"
+                :value="contactNumber"
                 @keypress="handleOwnerPhoneKeypress"
                 @blur="validateField('contactNumber')" 
                 @input="handleOwnerPhoneInput"
@@ -2031,7 +2055,7 @@ const submitApplication = async () => {
                 <i class="fa-solid fa-circle-exclamation"></i> {{ fieldErrors.contactNumber }}
               </p>
               <p v-else class="text-[12px] text-slate-400 font-bold mt-1.5 ml-1">
-                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> For multiple numbers, separate them using a slash (e.g. <code>09123456789 / 09987654321</code>).
+                <i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> Up to 3 mobile numbers starting with 09 (11 digits each). The " / " is added for you after each number.
               </p>
             </div>
 

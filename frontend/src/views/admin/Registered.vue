@@ -1,4 +1,8 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
+import { confirmTone } from '../../utils/confirmTone.js';
+import { documentAttachments } from '../../utils/documentFiles.js';
+import RoomFeatures from '../../components/RoomFeatures.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
@@ -174,6 +178,7 @@ const showConfirmModal = ref(false);
 // Active objects (Guarded safely with v-if checks to prevent early render crashes)
 const activeHouse = ref(null);
 const activeDocs = ref([]);
+const sharedCriteria = ref([]);
 const requiredDocs = ref([]);
 const optionalDocs = ref([]);
 const activeRooms = ref([]);
@@ -257,6 +262,7 @@ const fetchRegisteredHouses = async () => {
     if (response.data.success) {
       houses.value = response.data.houses || [];
       dynamicDocs.value = response.data.dynamicDocs || [];
+      sharedCriteria.value = response.data.criteria || [];
       housePhotos.value = response.data.housePhotos || [];
       permitFiles.value = response.data.permitFiles || [];
     }
@@ -350,15 +356,24 @@ const expiryTone = (value) => {
 };
 
 // Row summary: how many required permits are on file and the earliest required expiry
-const requiredOnFile = (h) => REQUIRED_PERMITS.filter(p => h[p.key]).length;
+const customDocsFor = (h) => sharedCriteria.value
+  .filter(c => c.house_id == null || Number(c.house_id) === Number(h.id))
+  .map(c => {
+    const d = dynamicDocs.value.find(d => Number(d.house_id) === Number(h.id) && Number(d.criteria_id) === Number(c.id));
+    const files = d ? documentAttachments(d) : [];
+    return { label: c.label, file: files[0] || null, files, expiry: d?.expiry_date || null, required: c.requirement_type === 'required' };
+  });
+const requiredDocumentsFor = (h) => [...REQUIRED_PERMITS.map(p => ({ file: h[p.key], expiry: h['expiry_' + p.key] })), ...customDocsFor(h).filter(d => d.required)];
+const requiredCount = h => requiredDocumentsFor(h).length;
+const requiredOnFile = h => requiredDocumentsFor(h).filter(d => d.file).length;
 const nextRequiredExpiry = (h) => {
-  const dates = REQUIRED_PERMITS.map(p => h['expiry_' + p.key]).filter(v => daysUntil(v) !== null);
+  const dates = requiredDocumentsFor(h).map(d => d.expiry).filter(v => daysUntil(v) !== null);
   if (!dates.length) return null;
   return dates.sort((a, b) => new Date(a) - new Date(b))[0];
 };
 const permitSummary = (h) => {
   const onFile = requiredOnFile(h);
-  if (onFile < REQUIRED_PERMITS.length) return { label: `${onFile}/${REQUIRED_PERMITS.length} required on file`, tone: 'danger', icon: 'fa-circle-exclamation' };
+  if (onFile < requiredCount(h)) return { label: `${onFile}/${requiredCount(h)} required on file`, tone: 'danger', icon: 'fa-circle-exclamation' };
   const tone = expiryTone(nextRequiredExpiry(h));
   if (tone === 'danger') return { label: 'Permit expired', tone, icon: 'fa-circle-exclamation' };
   if (tone === 'warning') return { label: 'Expiring soon', tone, icon: 'fa-clock' };
@@ -391,10 +406,9 @@ const buildDocs = (house) => {
   };
   requiredDocs.value = REQUIRED_PERMITS.map(toDoc);
   const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, files: [house.img], expiry: null }] : [];
-  const dynamicUploaded = dynamicDocs.value
-    .filter(d => d.house_id === house.id)
-    .map(d => ({ label: d.criteria_label || 'Additional document', file: d.file_path, files: [d.file_path], expiry: null }));
-  optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded];
+  const dynamicUploaded = customDocsFor(house);
+  requiredDocs.value.push(...dynamicUploaded.filter(d => d.required));
+  optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded.filter(d => !d.required)];
 };
 
 const buildPhotos = (house) => {
@@ -518,9 +532,10 @@ const handleCheckoutOccupant = async (occId) => {
 };
 
 const totalOccupants = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.occupant_count || 0), 0));
+const totalUpcomingReserved = computed(() => activeRooms.value.reduce((n,r) => n + Number(r.upcoming_reserved_count || 0),0));
+const totalReserved = computed(() => activeRooms.value.reduce((n,r) => n + Number(r.reserved_count || 0),0));
 const totalCapacity = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.capacity || 0), 0));
 const totalCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.cspc_count || 0), 0));
-const totalNonCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.non_cspc_count || 0), 0));
 
 const parseAmenities = (val) => {
   if (!val) return [];
@@ -730,8 +745,8 @@ const loadError = ref('');
           </div>
           <dl class="rp-stats">
             <div><dt><i class="fa-solid fa-door-open" aria-hidden="true"></i> Rooms</dt><dd>{{ isLoadingRooms ? '…' : activeRooms.length }}</dd></div>
-            <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> CSPC students</dt><dd>{{ isLoadingRooms ? '…' : totalCspc }}</dd><span v-if="!isLoadingRooms && totalNonCspc > 0" class="rp-stat-sub">+ {{ totalNonCspc }} non-CSPC</span></div>
-            <div><dt><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Required permits</dt><dd>{{ requiredOnFile(activeHouse) }} / {{ REQUIRED_PERMITS.length }}</dd></div>
+            <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> CSPC students</dt><dd>{{ isLoadingRooms ? '…' : totalCspc }}</dd></div>
+            <div><dt><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Required permits</dt><dd>{{ requiredOnFile(activeHouse) }} / {{ requiredCount(activeHouse) }}</dd></div>
             <div :class="'is-' + expiryTone(nextRequiredExpiry(activeHouse))"><dt><i class="fa-regular fa-calendar-xmark" aria-hidden="true"></i> Next permit expiry</dt><dd>{{ nextRequiredExpiry(activeHouse) ? formatDate(nextRequiredExpiry(activeHouse)) : '—' }}</dd></div>
           </dl>
         </section>
@@ -740,7 +755,7 @@ const loadError = ref('');
         <nav class="rp-tabs" role="tablist" aria-label="Property details">
           <button v-for="t in DETAIL_TABS" :key="t.key" type="button" role="tab" :aria-selected="detailTab === t.key" :class="['rp-tab', { 'is-active': detailTab === t.key }]" @click="detailTab = t.key">
             <i :class="['fa-solid', t.icon]" aria-hidden="true"></i>{{ t.label }}
-            <span v-if="t.key === 'documents'" class="rp-tab-count">{{ requiredOnFile(activeHouse) }}/{{ REQUIRED_PERMITS.length }}</span>
+            <span v-if="t.key === 'documents'" class="rp-tab-count">{{ requiredOnFile(activeHouse) }}/{{ requiredCount(activeHouse) }}</span>
             <span v-else-if="t.key === 'rooms' && !isLoadingRooms" class="rp-tab-count">{{ activeRooms.length }}</span>
           </button>
         </nav>
@@ -751,10 +766,7 @@ const loadError = ref('');
             <section class="rp-card">
               <h2 class="rp-card-title">Owner</h2>
               <div class="flex items-center gap-4 mb-4">
-                <span class="rp-avatar">
-                  <img v-if="activeHouse.profile_pic" :src="getImageUrl(activeHouse.profile_pic)" alt="" />
-                  <span v-else>{{ (activeHouse.owner_name || '?').charAt(0).toUpperCase() }}</span>
-                </span>
+                <UserAvatar :src="activeHouse.profile_pic" :name="activeHouse.owner_name" class="rp-avatar" />
                 <div>
                   <p class="rp-strong">{{ activeHouse.owner_name }}</p>
                   <p class="rp-muted">Boarding house owner</p>
@@ -841,10 +853,10 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Supplementary documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
             <div class="rp-card-head">
               <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
-              <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === REQUIRED_PERMITS.length ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
+              <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === requiredCount(activeHouse) ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
             </div>
             <ul class="rp-doc-grid">
               <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
@@ -876,20 +888,22 @@ const loadError = ref('');
             <section class="rp-card">
               <div class="rp-card-head">
                 <h2 class="rp-card-title !mb-0">Rooms</h2>
-                <span class="rp-muted">{{ totalOccupants }} of {{ totalCapacity }} beds occupied · {{ Math.max(totalCapacity - totalOccupants, 0) }} vacant</span>
+                <span class="rp-muted">{{ totalOccupants }} of {{ totalCapacity }} beds occupied &middot; {{ totalReserved }} reserved today &middot; {{ totalUpcomingReserved }} upcoming reservations &middot; {{ Math.max(totalCapacity-totalOccupants-totalReserved,0) }} available</span>
               </div>
+              <p class="rp-muted mb-3">Occupied beds count active booked stays. Reserved beds are held for approved bookings due today or earlier. Upcoming reservations are shown separately; future availability depends on the stay dates.</p>
               <div v-if="isLoadingRooms" class="py-8 flex justify-center"><div class="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>
               <div v-else-if="activeRooms.length === 0" class="rp-empty">No rooms listed for this boarding house.</div>
               <div v-else class="rp-room-grid">
                 <div v-for="room in activeRooms" :key="room.id" class="rp-room">
                   <div class="flex items-center justify-between gap-2">
                     <span class="rp-strong">Room {{ room.room_number }}</span>
-                    <span :class="['rp-chip', room.occupant_count >= room.capacity ? 'is-danger' : 'is-success']">{{ room.occupant_count >= room.capacity ? 'Full' : 'Available' }}</span>
+                    <span :class="['rp-chip', room.occupant_count >= room.capacity ? 'is-danger' : 'is-success']">{{ Number(room.occupant_count) >= Number(room.capacity) ? 'Full' : Number(room.occupant_count) + Number(room.reserved_count || 0) >= Number(room.capacity) ? 'Reserved' : 'Available' }}</span>
                   </div>
+                  <RoomFeatures :room="room" />
                   <span class="rp-tag mt-2" :class="room.gender_type === 'female' ? 'is-female' : 'is-male'">{{ room.gender_type }}</span>
                   <div class="rp-bar" aria-hidden="true"><span :style="{ width: Math.min(100, (room.occupant_count / Math.max(room.capacity, 1)) * 100) + '%' }"></span></div>
-                  <p class="rp-muted mt-1">{{ room.occupant_count }} / {{ room.capacity }} occupied ({{ room.capacity - room.occupant_count }} vacant)</p>
-                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span><span v-if="room.non_cspc_count > 0"> + {{ room.non_cspc_count }} non-CSPC</span></p>
+                  <p class="rp-muted mt-1">{{ room.occupant_count }} / {{ room.capacity }} occupied &middot; {{ room.reserved_count || 0 }} reserved today &middot; {{ Math.max(0, Number(room.capacity)-Number(room.occupant_count)-Number(room.reserved_count || 0)) }} available</p><p v-if="Number(room.upcoming_reserved_count)" class="rp-muted mt-1">{{ room.upcoming_reserved_count }} upcoming reservations</p>
+                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span></p>
                   <button type="button" class="rp-link-btn mt-2" @click="viewBoarderDetails(room)">View occupants <i class="fa-solid fa-chevron-right text-[10px]" aria-hidden="true"></i></button>
                 </div>
               </div>
@@ -928,22 +942,24 @@ const loadError = ref('');
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
-        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
-        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
-        <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-blue-600 hover:bg-black text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button management-button-primary">Confirm</button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Cancel</button>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(confirmTitle).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(confirmTitle).icon]"></i></span>
+          <div><h3 class="cm-title">{{ confirmTitle }}</h3><p class="cm-message popup-message">{{ confirmMessage }}</p></div>
+        </div>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(confirmTitle).button]" @click="executeConfirm">Confirm</button>
         </div>
       </div>
     </div>
 
     <!-- Manual Archive Modal (captures WHY, so the owner sees the real reason instead of generic "permits expired") -->
     <div v-management-dialog="{ close: () => closeArchiveModal() }" v-if="showArchiveModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
+      <div class="popup-panel bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
         <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">Archive Property?</h3>
-        <p class="text-slate-500 text-xs font-medium mb-4 leading-relaxed">
+        <p class="text-slate-900 text-[13px] font-medium mb-4 leading-relaxed popup-message">
           "{{ archiveTargetHouse?.name }}" will be moved to the archive list and hidden from students. This is separate from the system's automatic archiving for expired permits — the owner will see this reason instead.
         </p>
         <textarea aria-label="Reason (optional) — e.g. Owner requested, currently at full capacity" v-model="archiveReasonInput" rows="3" placeholder="Reason (optional) — e.g. Owner requested, currently at full capacity"

@@ -1,5 +1,6 @@
 <script setup>
 import LoadError from '../../components/management/LoadError.vue';
+import { confirmTone } from '../../utils/confirmTone.js';
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
@@ -403,14 +404,15 @@ onMounted(fetchContent);
     </div>
 
     <!-- Delete confirmation -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="admin-dialog-backdrop z-[250]">
-      <div class="admin-dialog max-w-sm" style="padding: 28px; text-align: center;">
-        <div class="admin-confirm-icon" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></div>
-        <h3 class="text-lg font-bold mb-2" style="color: var(--a-heading);">Delete feature?</h3>
-        <p class="text-[13px] leading-relaxed mb-6" style="color: var(--a-muted);">“{{ pendingDelete?.title }}” will be removed from the landing page permanently. To keep it for later, hide it instead.</p>
-        <div class="flex gap-3">
-          <button type="button" class="admin-btn admin-btn-secondary flex-1" @click="showConfirmModal = false">Cancel</button>
-          <button type="button" class="admin-btn admin-btn-danger flex-1" @click="confirmDelete">Delete</button>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone('Delete feature?').tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone('Delete feature?').icon]"></i></span>
+          <div><h3 class="cm-title">{{ 'Delete feature?' }}</h3><p class="cm-message popup-message"><strong>{{ pendingDelete?.title }}</strong> will be removed from the landing page permanently. To keep it for later, hide it instead.</p></div>
+        </div>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone('Delete feature?').button]" @click="confirmDelete">Delete</button>
         </div>
       </div>
     </div>

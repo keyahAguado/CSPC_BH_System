@@ -23,6 +23,29 @@ export const clearApplicantToken = () => {
 };
 export const applicantHeaders = () => ({ Authorization: `Bearer ${applicantToken()}` });
 
+// "Remember this device for 7 days": an opaque device token kept in localStorage. The server stores
+// only its hash, enforces the 7-day expiry and can revoke it (sign out / sign out everywhere).
+const DEVICE_KEY = 'cspc_applicant_device';
+export const rememberedDevice = () => {
+  try {
+    const device = JSON.parse(localStorage.getItem(DEVICE_KEY) || 'null');
+    if (device && typeof device.token === 'string' && device.expiresAt > Date.now()) return device;
+    localStorage.removeItem(DEVICE_KEY);
+  } catch { /* storage unavailable */ }
+  return null;
+};
+export const saveRememberedDevice = (token, expiresAt) => {
+  const until = Date.parse(expiresAt) || Date.now() + 7 * 24 * 60 * 60 * 1000;
+  try { localStorage.setItem(DEVICE_KEY, JSON.stringify({ token, expiresAt: until })); } catch { /* storage unavailable */ }
+};
+export const forgetRememberedDevice = () => { try { localStorage.removeItem(DEVICE_KEY); } catch { /* storage unavailable */ } };
+// Set when an action needs a fresh email link, so the gate does not silently resume the device session
+const SKIP_RESUME_KEY = 'cspc_applicant_skip_resume';
+export const requireFreshVerification = () => { try { sessionStorage.setItem(SKIP_RESUME_KEY, '1'); } catch { /* storage unavailable */ } };
+export const takeFreshVerificationFlag = () => {
+  try { const flag = sessionStorage.getItem(SKIP_RESUME_KEY) === '1'; sessionStorage.removeItem(SKIP_RESUME_KEY); return flag; } catch { return false; }
+};
+
 // Display only. The server verifies the signature, expiry and current identity.
 export const verifiedApplicantEmail = () => {
   try {

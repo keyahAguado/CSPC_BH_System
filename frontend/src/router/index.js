@@ -23,6 +23,7 @@ import OwnerAccreditation from '../views/owner/OwnerAccreditation.vue';
 import OwnerPendingReview from '../views/owner/PendingReview.vue';
 import OwnerDocuments from '../views/owner/Documents.vue';
 import OwnerBookings from '../views/owner/Bookings.vue';
+import BookingTestClockPage from '../views/owner/BookingTestClockPage.vue';
 import OwnerEdit from '../views/owner/EditHouse.vue';
 import OwnerRooms from '../views/owner/Rooms.vue';
 import OwnerProfile from '../views/owner/Profile.vue';
@@ -196,6 +197,12 @@ const routes = [
         name: 'OwnerDocuments',
         component: OwnerDocuments,
         meta: { role: 'owner', title: 'Legal Documents Management' }
+    },
+    {
+        path: '/owner/testing-clock',
+        name: 'OwnerBookingTestClock',
+        component: BookingTestClockPage,
+        meta: { role: 'owner', title: 'Booking test calendar' }
     },
     {
         path: '/owner/bookings',

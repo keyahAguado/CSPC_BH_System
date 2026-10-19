@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
+import { confirmTone } from '../../utils/confirmTone.js';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import FlashAlert from './FlashAlert.vue';
@@ -251,21 +252,15 @@ onUnmounted(() => {
   </transition>
 
   <!-- Secure Logout Confirm Modal Overlay -->
-  <div v-if="showConfirmModal" class="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in text-left">
-    <div class="bg-[#f8fafc] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100 animate-in zoom-in duration-300">
-      <div class="text-[#d9534f] mb-4 flex justify-center">
-        <i class="fa-solid fa-circle-exclamation text-5xl text-red-500"></i>
+  <div v-if="showConfirmModal" class="cm-backdrop">
+    <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+      <div class="cm-body">
+        <span :class="['cm-icon', confirmTone('Log out?').tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone('Log out?').icon]"></i></span>
+        <div><h3 class="cm-title">{{ 'Log out?' }}</h3><p class="cm-message popup-message">You will be signed out and redirected to the login page.</p></div>
       </div>
-      <h2 class="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">Logout session?</h2>
-      <p class="text-slate-500 mb-6 text-sm">You will be redirected to the login page.</p>
-      
-      <div class="flex gap-3 justify-center">
-        <button @click="handleLogout" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1 shadow-md shadow-red-100 cursor-pointer">
-          Yes, Logout
-        </button>
-        <button @click="showConfirmModal = false" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-widest flex-1 cursor-pointer">
-          Cancel
-        </button>
+      <div class="cm-actions">
+        <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+        <button type="button" :class="['cm-btn', confirmTone('Log out?').button]" @click="handleLogout">Log out</button>
       </div>
     </div>
   </div>

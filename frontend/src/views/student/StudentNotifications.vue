@@ -1,4 +1,7 @@
 <script setup>
+import { formalDatesInText } from '../../utils/dateHelper.js';
+import MessageText from "../../components/MessageText.vue";
+import {studentNotificationPresentation} from '../../utils/studentNotification.js';
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
@@ -94,11 +97,12 @@ const CATEGORY_TAG = {
 const sentenceCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
 
 const parseNotification = (n) => {
-  const raw = String(n.message || '').trim();
+  const raw = String(n.message || '').replace(/\s+PHT\b/g,'').trim();
+  const friendly=studentNotificationPresentation(raw);
   const m = raw.match(/^([A-Z][A-Z ]{2,40}):\s*(.*)$/s);
   const prefix = m ? m[1].trim() : '';
-  const body = m ? m[2] : raw;
-  let meta = KNOWN_TYPES[prefix];
+  const body = formalDatesInText(m ? m[2] : raw);
+  let meta = friendly || KNOWN_TYPES[prefix];
   if (!meta && /checked out/i.test(body)) meta = { title: 'Checked out', category: 'booking', icon: 'fa-door-open' };
   // Fallbacks only match phrases about a specific reservation, so general text that merely
   // mentions "booking" (e.g. "complete your profile to start booking") stays an "Update"
@@ -370,8 +374,9 @@ onMounted(fetchNotifications);
                   <span v-if="!n.is_read" class="sr-only">Unread</span>
                 </div>
                 <p class="mt-1.5 text-[13px] leading-relaxed text-slate-500 break-words">
-                  <template v-for="(seg, i) in bodySegments(n.body)" :key="i"><b v-if="seg.strong" class="font-bold text-slate-700">{{ seg.text }}</b><template v-else>{{ seg.text }}</template></template>
+                  <MessageText :text="n.body" />
                 </p>
+                <p v-if="n.guidance" class="mt-2 text-[12px] leading-relaxed text-slate-600">{{ n.guidance }}</p>
                 <div v-if="!n.is_read || targetFor(n)" class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
                   <button v-if="!n.is_read" type="button" @click="markRead(n.id)" class="inline-flex items-center gap-1.5 text-[12px] font-bold tracking-[0.03em] text-[#1e4b8f] hover:underline">
                     <i class="fa-solid fa-check text-[10px]"></i> Mark as read

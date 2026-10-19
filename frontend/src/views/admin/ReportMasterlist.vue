@@ -124,7 +124,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
             <input v-model="searchQuery" type="text" aria-label="Search masterlist" placeholder="Search by boarding house, owner, or address..." />
           </div>
           <span class="ml-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
-          <button type="button" class="ml-print" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
+          <button type="button" class="ml-print app-print-button" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
         </div>
       </div>
 

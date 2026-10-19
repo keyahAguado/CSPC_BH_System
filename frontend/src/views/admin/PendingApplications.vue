@@ -1,4 +1,5 @@
 <script setup>
+import { documentAttachments } from '../../utils/documentFiles.js';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
@@ -68,8 +69,10 @@ const downloadOriginal = () => {
 
 // Criteria management
 const newCriteriaLabel = ref('');
+const newCriteriaType = ref('required');
 const editCriteriaId = ref(null);
 const editCriteriaLabel = ref('');
+const editCriteriaType = ref('supplementary');
 
 const alertRef = ref(null);
 const token = sessionStorage.getItem('cspc_token');
@@ -187,12 +190,12 @@ const openPreview = (url) => {
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
-const openPreviewSet = (files) => {
+const openPreviewSet = (files, initialIndex = 0) => {
   const urls = files.map(f => getImageUrl(f)).filter(u => u && !u.endsWith('#'));
   if (!urls.length) return;
   previewFiles.value = urls;
-  previewIndex.value = 0;
-  previewImageUrl.value = urls[0];
+  previewIndex.value = Math.min(initialIndex, urls.length - 1);
+  previewImageUrl.value = urls[previewIndex.value];
   previewZoomed.value = false;
   showPreviewModal.value = true;
 };
@@ -232,6 +235,10 @@ const getFilteredCriteria = () => {
   });
 };
 
+const getCriterionFiles = (item) => item.permit_key
+  ? getPermitFiles(activeApp.value, item.permit_key)
+  : dynamicDocs.value.filter(d => d.house_id === activeApp.value?.id && d.criteria_id === item.id).flatMap(documentAttachments);
+
 const getActiveHouseDynamicDocs = () => {
   if (!activeApp.value) return [];
   return dynamicDocs.value.filter(d => d.house_id === activeApp.value.id);
@@ -242,9 +249,9 @@ const getActiveHouseDynamicDocs = () => {
 const REQUIRED_PERMIT_KEYS = ['permit_business_form', 'permit_barangay', 'permit_fire', 'permit_sanitary'];
 
 // Returns true if this checklist item is a required document that hasn't been verified yet
+const isRequiredCriterion = (item) => item.permit_key ? REQUIRED_PERMIT_KEYS.includes(item.permit_key) : item.requirement_type === 'required';
 const isRequiredAndUnchecked = (item) => {
-  if (!item.permit_key) return false;
-  if (!REQUIRED_PERMIT_KEYS.includes(item.permit_key)) return false;
+  if (!isRequiredCriterion(item)) return false;
   return !checkedChecklist.value[item.id];
 };
 
@@ -256,7 +263,7 @@ const handleApprove = () => {
   if (!activeApp.value) return;
 
   const requiredCriteria = criteria.value.filter(
-    c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)
+    c => (!c.house_id || c.house_id === activeApp.value?.id) && isRequiredCriterion(c)
   );
 
   const unchecked = requiredCriteria.filter(c => !checkedChecklist.value[c.id]);
@@ -380,11 +387,11 @@ const execReject = async () => {
 const submitAddCriteria = async () => {
   const inputError = validateInput('criterion', { label: newCriteriaLabel.value });
   if (inputError) { showSystemAlert(inputError, 'error'); return; }
-  if (!newCriteriaLabel.value.trim() || !activeApp.value) return;
+  if (!newCriteriaLabel.value.trim()) return;
   try {
     const res = await axios.post(`/api/admin/criteria/add`, {
       label: newCriteriaLabel.value,
-      house_id: activeApp.value.id
+      requirement_type: newCriteriaType.value
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -392,7 +399,7 @@ const submitAddCriteria = async () => {
     if (res.data.success) {
       newCriteriaLabel.value = '';
       showAddCriteriaModal.value = false;
-      showSystemAlert('Custom requirement added successfully!', 'success');
+      showSystemAlert('Requirement added for all boarding houses.', 'success');
       await fetchPendingApplications();
     }
   } catch (err) { 
@@ -430,6 +437,7 @@ const execDeleteCriteria = async () => {
 const startEditCriteria = (id, currentLabel) => {
   editCriteriaId.value = id;
   editCriteriaLabel.value = currentLabel;
+  editCriteriaType.value = criteria.value.find(c => c.id === id)?.requirement_type || 'supplementary';
   showUpdateCriteriaModal.value = false;
   showEditItemModal.value = true;
 };
@@ -440,7 +448,8 @@ const submitUpdateCriteria = async () => {
   if (!editCriteriaLabel.value.trim() || !editCriteriaId.value) return;
   try {
     const res = await axios.post(`/api/admin/criteria/update/${editCriteriaId.value}`, {
-      label: editCriteriaLabel.value
+      label: editCriteriaLabel.value,
+      requirement_type: editCriteriaType.value
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -576,6 +585,15 @@ const loadError = ref('');
           <div><dt><i class="fa-solid fa-rotate" aria-hidden="true"></i> Resubmissions &amp; updates</dt><dd>{{ typeCount('resubmission') + typeCount('update') }}</dd><span class="na-tile-sub">Returned or updated documents</span></div>
         </dl>
 
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-5 p-4 bg-white border border-slate-200 rounded-xl">
+          <div><p class="font-semibold text-sm text-slate-800">Document requirements</p><p class="text-sm text-slate-500">Manage the shared checklist for all boarding houses.</p></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" @click="showAddCriteriaModal = true" class="px-4 py-2 rounded-lg bg-[#245b99] text-white text-sm font-semibold management-button">Add requirement</button>
+            <button type="button" @click="showUpdateCriteriaModal = true" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Edit</button>
+            <button type="button" @click="showDeleteCriteriaModal = true" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Remove</button>
+          </div>
+        </div>
+
         <!-- Filters -->
         <div class="na-filters">
           <div class="na-search">
@@ -697,23 +715,21 @@ const loadError = ref('');
           <button aria-label="Close dialog" @click="closeDocumentModal" class="text-white hover:text-red-200 transition flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/10 shrink-0 management-button"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-6 sm:p-10 overflow-y-auto grow bg-white custom-scrollbar text-left">
-          <!-- Section label for required docs -->
-          <p class="text-[12px] font-semibold text-rose-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Required Documents
-          </p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 mb-8">
-            <div v-for="p in criteria.filter(c => !c.house_id && ['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
+          <section v-for="group in [{ title: 'Required documents', required: true }, { title: 'Supplementary documents', required: false }]" :key="group.title" class="mb-8">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">{{ group.title }}</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+            <div v-for="p in getFilteredCriteria().filter(c => isRequiredCriterion(c) === group.required)" :key="p.id"
                  class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative p-3">
-                <div class="grid h-full gap-2" :class="getPermitFiles(activeApp, p.permit_key).length > 1 ? 'grid-cols-2 auto-rows-[minmax(0,1fr)] overflow-y-auto' : 'grid-cols-1'">
-                  <button v-for="(file, i) in getPermitFiles(activeApp, p.permit_key)" :key="file + i" type="button" @click="openPreview(getImageUrl(file))"
+              <div v-if="getCriterionFiles(p).length" class="h-56 bg-slate-50 relative p-3">
+                <div class="grid h-full gap-2" :class="getCriterionFiles(p).length > 1 ? 'grid-cols-2 auto-rows-[minmax(0,1fr)] overflow-y-auto' : 'grid-cols-1'">
+                  <button v-for="(file, i) in getCriterionFiles(p)" :key="file + i" type="button" @click="openPreviewSet(getCriterionFiles(p), i)"
                           class="relative rounded-xl overflow-hidden bg-white border border-slate-100 hover:border-blue-400 flex items-center justify-center min-h-0 transition"
                           :aria-label="(isPdfFile(file) ? 'Open PDF ' : 'Preview image ') + (i + 1)">
                     <span v-if="isPdfFile(file)" class="flex flex-col items-center gap-1 text-rose-600"><i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[11px] font-bold uppercase">PDF</span></span>
                     <img v-else :src="getImageUrl(file)" class="w-full h-full object-contain" alt="" />
                   </button>
                 </div>
-                <span v-if="getPermitFiles(activeApp, p.permit_key).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getPermitFiles(activeApp, p.permit_key).length }} files</span>
+                <span v-if="getCriterionFiles(p).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getCriterionFiles(p).length }} files</span>
               </div>
               <div v-else class="bg-slate-50 border-2 border-dashed border-rose-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center h-56">
                 <i class="fa-solid fa-file-circle-exclamation text-4xl text-rose-300 mb-4"></i>
@@ -723,35 +739,9 @@ const loadError = ref('');
                 <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
               </div>
             </div>
-          </div>
-
-          <!-- Section label for optional docs -->
-          <p class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> Optional Documents
-          </p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-            <div v-for="p in criteria.filter(c => !c.house_id && !['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(c.permit_key))" :key="p.id"
-                 class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-              <div v-if="activeApp[p.permit_key]" class="h-56 bg-slate-50 relative p-3">
-                <div class="grid h-full gap-2" :class="getPermitFiles(activeApp, p.permit_key).length > 1 ? 'grid-cols-2 auto-rows-[minmax(0,1fr)] overflow-y-auto' : 'grid-cols-1'">
-                  <button v-for="(file, i) in getPermitFiles(activeApp, p.permit_key)" :key="file + i" type="button" @click="openPreview(getImageUrl(file))"
-                          class="relative rounded-xl overflow-hidden bg-white border border-slate-100 hover:border-blue-400 flex items-center justify-center min-h-0 transition"
-                          :aria-label="(isPdfFile(file) ? 'Open PDF ' : 'Preview image ') + (i + 1)">
-                    <span v-if="isPdfFile(file)" class="flex flex-col items-center gap-1 text-rose-600"><i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[11px] font-bold uppercase">PDF</span></span>
-                    <img v-else :src="getImageUrl(file)" class="w-full h-full object-contain" alt="" />
-                  </button>
-                </div>
-                <span v-if="getPermitFiles(activeApp, p.permit_key).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getPermitFiles(activeApp, p.permit_key).length }} files</span>
-              </div>
-              <div v-else class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 flex flex-col items-center justify-center text-center opacity-60 h-56">
-                <i class="fa-solid fa-file-circle-exclamation text-4xl text-slate-300 mb-4"></i>
-                <h3 class="font-semibold text-[12px] text-slate-400 uppercase tracking-wide">Not Submitted</h3>
-              </div>
-              <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ p.label }}</h3>
-              </div>
             </div>
-
+          </section>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <!-- Facade Image -->
             <div class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
               <div v-if="activeApp.img" class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
@@ -768,18 +758,7 @@ const loadError = ref('');
               </div>
             </div>
 
-            <!-- Custom / Dynamic Criteria -->
-            <div v-for="doc in getActiveHouseDynamicDocs()" :key="doc.id" class="bg-white border border-slate-100 rounded-[2rem] shadow-md overflow-hidden flex flex-col group transition hover:shadow-2xl">
-              <div class="h-56 bg-slate-50 relative flex items-center justify-center p-6">
-                <img :src="getImageUrl(doc.file_path)" class="w-full h-full object-contain filter group-hover:scale-110 transition duration-500" />
-                <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-300 flex items-center justify-center">
-                  <button @click="openPreview(getImageUrl(doc.file_path))" class="bg-white text-slate-900 px-6 py-2.5 rounded-full text-[12px] font-semibold uppercase tracking-wide shadow-lg management-button">Preview</button>
-                </div>
-              </div>
-              <div class="p-4 border-t border-slate-50 text-center">
-                <h3 class="font-semibold text-[12px] text-slate-800 uppercase tracking-tight leading-snug">{{ doc.criteria_label || 'Additional Doc' }}</h3>
-              </div>
-            </div>
+
           </div>
         </div>
       </div>
@@ -879,13 +858,13 @@ const loadError = ref('');
                                 class="inline-flex items-center gap-1 bg-amber-500 text-white text-[12px] font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full shrink-0 shadow-sm animate-pulse">
                             <i class="fa-solid fa-clock-rotate-left text-[12px]"></i> UPDATED
                           </span>
-                          <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
+                          <span v-if="isRequiredCriterion(item)"
                                 class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                             Required
                           </span>
-                          <span v-else-if="item.permit_key"
+                          <span v-else
                                 class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
-                            Optional
+                            Supplementary
                           </span>
                         </div>
                       </td>
@@ -896,7 +875,7 @@ const loadError = ref('');
                           <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
                           <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                         </button>
-                        <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
+                        <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreviewSet(documentAttachments(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)))" class="text-blue-600 hover:text-blue-800 font-bold text-[12px] uppercase tracking-wide flex items-center justify-center gap-2 mx-auto">
                           <i class="fa-solid fa-eye"></i> Preview
                         </button>
                         <span v-else class="text-slate-200 italic text-[12px] font-bold uppercase">No File Attached</span>
@@ -936,13 +915,13 @@ const loadError = ref('');
                   <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Requirement</span>
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="text-slate-900 font-bold text-sm leading-snug">{{ item.label }}</span>
-                    <span v-if="['permit_business_form','permit_barangay','permit_fire','permit_sanitary'].includes(item.permit_key)"
+                    <span v-if="isRequiredCriterion(item)"
                           class="inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
                       Required
                     </span>
-                    <span v-else-if="item.permit_key"
+                    <span v-else
                           class="inline-block bg-slate-100 text-slate-500 border border-slate-200 text-[12px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0">
-                      Optional
+                      Supplementary
                     </span>
                   </div>
                 </div>
@@ -956,7 +935,7 @@ const loadError = ref('');
                       <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
                       <span v-if="getPermitFiles(activeApp, item.permit_key).length > 1" class="inline-flex items-center rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal leading-none">{{ getPermitFiles(activeApp, item.permit_key).length }} files</span>
                     </button>
-                    <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreview(getImageUrl(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id).file_path))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
+                    <button type="button" v-else-if="!item.permit_key && getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)" @click="openPreviewSet(documentAttachments(getActiveHouseDynamicDocs().find(d => d.criteria_id === item.id)))" class="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-[12px] uppercase tracking-wide flex items-center gap-1.5 transition management-button">
                       <i class="fa-solid fa-eye"></i> Preview
                     </button>
                     <span v-else class="text-slate-400 italic text-[12px] font-semibold uppercase">No File Attached</span>
@@ -990,12 +969,12 @@ const loadError = ref('');
           </div>
 
           <!-- Required docs status bar — only shown when some required docs are still unchecked -->
-          <div v-if="activeApp && criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).some(c => !checkedChecklist[c.id])"
+          <div v-if="activeApp && getFilteredCriteria().filter(isRequiredCriterion).some(c => !checkedChecklist[c.id])"
                class="px-4 sm:px-8 pt-4 sm:pt-6 border-t border-slate-100">
             <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl text-[12px] font-semibold uppercase tracking-wide mb-4 bg-rose-50 text-rose-700 border border-rose-200">
               <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
               <span>
-                {{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).filter(c => checkedChecklist[c.id]).length }}/{{ criteria.filter(c => !c.house_id && REQUIRED_PERMIT_KEYS.includes(c.permit_key)).length }} Required documents verified — Check all 4 to enable approval
+                {{ getFilteredCriteria().filter(isRequiredCriterion).filter(c => checkedChecklist[c.id]).length }}/{{ getFilteredCriteria().filter(isRequiredCriterion).length }} Required documents verified — Verify all required documents before approval
               </span>
             </div>
           </div>
@@ -1012,18 +991,7 @@ const loadError = ref('');
               </button>
             </div>
 
-            <!-- Secondary Criteria Management Buttons (Add / Update / Delete) -->
-            <div class="grid grid-cols-3 gap-2 w-full sm:w-auto">
-              <button type="button" @click="showAddCriteriaModal = true" class="bg-green-700 hover:bg-green-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
-                <i class="fa-solid fa-plus text-[12px]"></i> Add
-              </button>
-              <button type="button" @click="showUpdateCriteriaModal = true" class="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
-                <i class="fa-solid fa-pen-to-square text-[12px]"></i> Edit
-              </button>
-              <button type="button" @click="showDeleteCriteriaModal = true" class="bg-red-600 hover:bg-red-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer management-button">
-                <i class="fa-solid fa-trash-can text-[12px]"></i> Delete
-              </button>
-            </div>
+
           </div>
         </form>
       </div>
@@ -1058,7 +1026,7 @@ const loadError = ref('');
 
     <!-- Management Modals -->
     <div v-management-dialog="{ close: () => showAddCriteriaModal = false }" v-if="showAddCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
-      <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+      <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#10b981] text-white px-8 py-5 flex justify-between items-center">
           <h3 class="font-semibold text-lg uppercase tracking-tight">Add New Criteria</h3>
           <button aria-label="Close dialog" @click="showAddCriteriaModal = false" class="text-white hover:text-emerald-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
@@ -1079,20 +1047,20 @@ const loadError = ref('');
     <div v-management-dialog="{ close: () => showUpdateCriteriaModal = false }" v-if="showUpdateCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
       <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#f59e0b] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-semibold text-lg uppercase tracking-tight">Update System Criteria</h3>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">Document requirements</h3>
           <button aria-label="Close dialog" @click="showUpdateCriteriaModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10 max-h-[60vh] overflow-y-auto custom-scrollbar">
           <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 flex gap-3">
             <i class="fa-solid fa-circle-info mt-1"></i>
-            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Note: You can only update custom criteria that you have added. The 8 required institutional documents cannot be modified here.</p>
+            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Shared requirements apply to every boarding house. Standard permits are protected. Existing property-specific items keep their original scope.</p>
           </div>
           <div class="space-y-4">
-            <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
-              <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
+            <div v-for="item in criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id))" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
+              <span class="text-sm font-semibold text-slate-700">{{ item.label }}<small class="block text-xs text-slate-500 mt-1">{{ item.house_id ? 'This property only' : 'All boarding houses' }} / {{ isRequiredCriterion(item) ? 'Required' : 'Supplementary' }}</small></span>
               <button @click="startEditCriteria(item.id, item.label)" class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Edit</button>
             </div>
-            <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
+            <div v-if="criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id)).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
               <p class="text-[12px] font-semibold uppercase tracking-wide">No custom criteria to manage</p>
             </div>
@@ -1102,7 +1070,7 @@ const loadError = ref('');
     </div>
 
     <div v-management-dialog="{ close: () => showEditItemModal = false }" v-if="showEditItemModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[130] flex justify-center items-center p-4">
-      <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+      <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#f59e0b] text-white px-8 py-5 flex justify-between items-center">
           <h3 class="font-semibold text-lg uppercase tracking-tight">Edit Criteria</h3>
           <button aria-label="Close dialog" @click="showEditItemModal = false" class="text-white hover:text-amber-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
@@ -1121,7 +1089,7 @@ const loadError = ref('');
     </div>
 
     <div v-management-dialog="{ close: () => showDeleteCriteriaModal = false }" v-if="showDeleteCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
-      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
+      <div class="popup-panel bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#ef4444] text-white px-8 py-5 flex justify-between items-center">
           <h3 class="font-semibold text-lg uppercase tracking-tight">Remove Criteria</h3>
           <button aria-label="Close dialog" @click="showDeleteCriteriaModal = false" class="text-white hover:text-red-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
@@ -1147,7 +1115,7 @@ const loadError = ref('');
 
     <!-- Confirm Modals -->
     <div v-management-dialog="{ close: () => showApproveConfirmModal = false }" v-if="showApproveConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showApproveConfirmModal = false">
-      <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-[#2563eb] px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-circle-check text-white text-xl"></i>
@@ -1155,7 +1123,7 @@ const loadError = ref('');
           <h3 class="text-white font-semibold text-base uppercase tracking-tight">Confirm Accreditation</h3>
         </div>
         <div class="px-10 py-8">
-          <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
+          <p class="text-slate-900 font-medium text-sm leading-relaxed mb-2 popup-message">
             Are you sure you want to <strong class="text-blue-600">approve</strong> this boarding house application with the selected requirements?
           </p>
           <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">
@@ -1177,7 +1145,7 @@ const loadError = ref('');
     </div>
 
     <div v-management-dialog="{ close: () => showRejectConfirmModal = false }" v-if="showRejectConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showRejectConfirmModal = false">
-      <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-red-500 px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-circle-xmark text-white text-xl"></i>
@@ -1215,7 +1183,7 @@ const loadError = ref('');
     </div>
 
     <div v-management-dialog v-if="showDeleteCriteriaConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" @click.self="showDeleteCriteriaConfirmModal = false">
-      <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div class="bg-red-600 px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-trash-can text-white text-xl"></i>
@@ -1223,7 +1191,7 @@ const loadError = ref('');
           <h3 class="text-white font-semibold text-base uppercase tracking-tight">Modal Title</h3>
         </div>
         <div class="px-10 py-8">
-          <p class="text-slate-700 font-semibold text-sm leading-relaxed mb-2">
+          <p class="text-slate-900 font-medium text-sm leading-relaxed mb-2 popup-message">
             Are you sure you want to permanently <strong class="text-red-600">delete</strong> this custom criteria?
           </p>
           <p class="text-slate-400 font-bold text-[12px] uppercase tracking-wide">This action cannot be undone.</p>
@@ -1240,7 +1208,7 @@ const loadError = ref('');
     </div>
     <!-- Required Documents Not Verified Modal -->
     <div v-management-dialog="{ close: () => showRequiredDocsModal = false }" v-if="showRequiredDocsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
+      <div class="popup-panel bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden">
         <div class="bg-rose-600 px-6 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-triangle-exclamation text-white text-lg"></i>
@@ -1251,7 +1219,7 @@ const loadError = ref('');
           </div>
         </div>
         <div class="px-6 py-5">
-          <p class="text-[12px] font-semibold text-slate-600 mb-4 leading-relaxed">
+          <p class="text-[12px] font-medium text-slate-900 mb-4 leading-relaxed popup-message">
             The following <strong class="text-slate-800">required document{{ uncheckedRequiredDocs.length > 1 ? 's have' : ' has' }}</strong> not been checked in the verification checklist:
           </p>
           <ul class="space-y-2 mb-5">
@@ -1261,7 +1229,7 @@ const loadError = ref('');
               <span class="text-[12px] font-bold text-rose-800 uppercase tracking-wide">{{ doc.label }}</span>
             </li>
           </ul>
-          <p class="text-[12px] font-semibold text-slate-400 leading-relaxed">
+          <p class="text-[12px] font-semibold text-slate-600 leading-relaxed popup-message">
             Review each required document in the checklist and check the verification box before approving.
           </p>
         </div>
@@ -1276,7 +1244,7 @@ const loadError = ref('');
 
     <!-- Owner account activation link issued on approval (property-first registration) -->
     <div v-management-dialog="{ close: () => closeCredentialsModal() }" v-if="issuedCredentials" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
-      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div class="popup-panel bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <div class="bg-emerald-600 px-8 py-5 flex items-center gap-4">
           <div class="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shrink-0">
             <i class="fa-solid fa-key text-white text-lg"></i>

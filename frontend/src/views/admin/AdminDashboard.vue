@@ -1,5 +1,6 @@
 <script setup>
 import LoadError from '../../components/management/LoadError.vue';
+import { confirmTone } from '../../utils/confirmTone.js';
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
@@ -555,7 +556,7 @@ const loadError = ref('');
             <div>
               <p class="admin-kpi-label">Occupancy rate</p>
               <p class="admin-kpi-value">{{ stats.occupancyRate || 0 }}%</p>
-              <p class="admin-kpi-note">Active occupants against accredited room capacity</p>
+              <p class="admin-kpi-note">Residents with confirmed arrival against accredited room capacity<span v-if="Number(stats.awaitingArrival)"> · {{ stats.awaitingArrival }} scheduled {{ Number(stats.awaitingArrival)===1 ? 'stay awaits' : 'stays await' }} arrival confirmation</span></p>
             </div>
           </router-link>
 
@@ -779,18 +780,15 @@ const loadError = ref('');
     </div>
 
     <!-- Custom Confirmation Modal (consistent with the rest of the admin UI) -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="admin-dialog-backdrop z-[250]">
-      <div class="admin-dialog max-w-sm" style="padding: 28px; text-align: center;">
-        <div class="admin-confirm-icon" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></div>
-        <h3 class="text-lg font-bold mb-2" style="color: var(--a-heading);">{{ confirmTitle }}</h3>
-        <p class="text-[13px] leading-relaxed mb-6" style="color: var(--a-muted);">{{ confirmMessage }}</p>
-        <div class="flex gap-3">
-          <button type="button" @click="showConfirmModal = false" class="admin-btn admin-btn-secondary flex-1">
-            Cancel
-          </button>
-          <button type="button" @click="executeConfirm" class="admin-btn admin-btn-danger flex-1">
-            Confirm
-          </button>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(confirmTitle).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(confirmTitle).icon]"></i></span>
+          <div><h3 class="cm-title">{{ confirmTitle }}</h3><p class="cm-message popup-message">{{ confirmMessage }}</p></div>
+        </div>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(confirmTitle).button]" @click="executeConfirm">Confirm</button>
         </div>
       </div>
     </div>

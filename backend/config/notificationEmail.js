@@ -1,21 +1,27 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { notificationForRole } from './notificationAudience.js';
 
 export const escapeEmailHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export function notificationEmailContent(user, message, base) {
+    message=notificationForRole(message,user.role).replace(/\s+PHT\b/g,'');
     const url = new URL(base);
     if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Invalid frontend URL');
     const pending = user.role === 'owner' && user.status === 'pending';
     url.pathname = pending ? '/track' : `/${['admin', 'owner', 'student'].includes(user.role) ? user.role : 'student'}/notifications`;
     url.search = ''; url.hash = '';
+    // Applicants can check the status with just the reference number (random-format references only)
+    const reference = pending ? (String(message).match(/\bBH-\d{4}-[A-HJ-NP-Z2-9]{6}\b/) || [])[0] : undefined;
+    if (reference) url.search = new URLSearchParams({ ref: reference }).toString();
+    const referenceNote = reference ? ` You can also check the status anytime with reference number ${reference} on Track My Application, without signing in.` : '';
     const prefix = String(message).split(':', 1)[0].trim();
     const approval = prefix === 'CONGRATULATIONS' && /\bACCREDITED\b/i.test(message);
     const note = pending
-        ? approval
+        ? (approval
             ? 'SASO has approved this property. Open Track My Application and verify your registered email to activate your owner account. Activation links expire after seven days; you can request a fresh link from tracking. Your approval does not expire with the link. Activation requires a property that is still approved and accredited.'
-            : 'Open Track My Application and verify your registered email to view the current status, SASO feedback, and available actions. Submitting or verifying an application does not activate an owner account.'
+            : 'Open Track My Application and verify your registered email to view the current status, SASO feedback, and available actions. Submitting or verifying an application does not activate an owner account.') + referenceNote
         : 'Sign in to view the latest information and any available actions. This email records an event; the system shows the current status.';
-    const titles = { 'APPLICATION SUBMITTED': 'Application received', 'APPLICATION UNDER REVIEW': 'SASO review started', 'REVISION REQUIRED': 'Your application needs corrections', CONGRATULATIONS: 'Your property has been accredited', 'PAYMENT SETTLED': 'Your payment has been verified', 'PAYMENT RECEIVED': 'Payment received' };
+    const titles = { 'CHECKOUT REMINDER':'Your planned checkout needs attention', 'APPLICATION SUBMITTED': 'Application received', 'APPLICATION UNDER REVIEW': 'SASO review started', 'REVISION REQUIRED': 'Your application needs corrections', CONGRATULATIONS: 'Your property has been accredited', 'PAYMENT SETTLED': 'Your payment has been verified', 'PAYMENT RECEIVED': 'Payment received', 'RENEWAL DECISION REQUIRED':'Your renewal decision is needed','RENEWAL DECISION OPENED':'Resident renewal decision opened','WAITING FOR RENEWAL DECISION':'Reservation waiting for renewal decision','RENEWAL DECISION UPDATE':'Renewal decision update','RENEWAL DECISION RECORDED':'Departure intention recorded','RENEWAL EXTENSION REQUESTED':'Renewal extension needs approval','RENEWAL DECISION RESOLVED':'Renewal decision resolved','RENEWAL REVIEW COMPLETE':'Reservation ready for owner review','REPLACEMENT REQUEST UPDATE':'Future request update','REPLACEMENT REQUEST CLOSED':'Future request closed','RENEWAL WAIT ENDED':'Renewal waiting stage ended','REQUEST CLOSED':'Reservation request closed','FUTURE RESERVATION APPROVED':'Future room capacity reserved','REPLACEMENT APPROVAL RECORDED':'Replacement reservation approved','REQUEST EXPIRED AFTER RENEWAL REVIEW':'Reservation request expired' };
     const title = prefix === 'CONGRATULATIONS' && /\bRESTORED\b/i.test(message)
         ? 'Your property has been restored'
         : titles[prefix] || 'Your system notification';

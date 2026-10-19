@@ -8,8 +8,10 @@ import '../../styles/admin-theme.css';
 import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
-import { ref, onMounted, watch, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
+import { formatHouseContact, normalizeHouseContact } from '../../utils/phoneValidation.js';
+import { onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
@@ -36,6 +38,14 @@ const pinNeedsConfirmation = ref(false);
 const advanceMonths = ref(1);
 const depositMonths = ref(1);
 const depositType = ref('refundable');
+// What a student pays at move-in with these terms. Same rule as booking approval: at least one month's advance.
+const moveInPreview = computed(() => {
+  const rent = Number(price.value) || 0;
+  const advance = Math.max(1, Number(advanceMonths.value) || 0);
+  const deposit = Number(depositMonths.value) || 0;
+  return { rent, advance, deposit, total: rent * (advance + deposit), forcedAdvance: !Number(advanceMonths.value) };
+});
+const peso = value => '₱' + Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const barangaysList = ref(NABUA_BARANGAYS);
 
@@ -155,16 +165,55 @@ const addCustomAmenity = (type) => {
   }
 };
 
+// Contact number: up to three 09XXXXXXXXX numbers; " / " is inserted after each complete number.
 const handleOwnerPhoneKeypress = (e) => {
-  const char = String.fromCharCode(e.which || e.keyCode);
-  if (!/[\d\s\/,\-\+]/.test(char)) {
-    e.preventDefault();
-  }
+  if (e.key && e.key.length === 1 && !/[\d\/]/.test(e.key)) e.preventDefault();
+};
+const handleOwnerPhoneInput = (e) => {
+  const typingForward = e.target.value.length > contactNumber.value.length;
+  contactNumber.value = formatHouseContact(e.target.value, { typingForward });
+  e.target.value = contactNumber.value;
 };
 
-const handleOwnerPhoneInput = (e) => {
-  contactNumber.value = e.target.value.replace(/[^\d\s\/,\-\+]/g, '');
+// Monthly rent: typed as plain digits, shown with thousands separators; stored as a plain number string.
+const priceFocused = ref(false);
+const groupDigits = digits => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const priceDisplay = computed(() => {
+  const raw = String(price.value ?? '');
+  if (!raw) return '';
+  if (!priceFocused.value && Number.isFinite(Number(raw))) return Number(raw).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const [whole, fraction] = raw.split('.');
+  return groupDigits(whole || '0') + (fraction !== undefined ? '.' + fraction : '');
+});
+const handlePriceInput = (e) => {
+  let cleaned = e.target.value.replace(/[^\d.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot >= 0) cleaned = cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+  const [whole, fraction] = cleaned.split('.');
+  price.value = (whole || '').replace(/^0+(?=\d)/, '').slice(0, 8) + (fraction !== undefined ? '.' + fraction : '');
+  e.target.value = priceDisplay.value;
 };
+const handlePriceBlur = () => {
+  priceFocused.value = false;
+  if (price.value !== '' && Number.isFinite(Number(price.value))) price.value = Number(price.value).toFixed(2);
+};
+
+// Unsaved changes: compare the form with what was loaded (or last saved).
+const DESCRIPTION_LIMIT = 16000;
+const formSnapshot = () => JSON.stringify([houseName.value, contactNumber.value, Number(price.value) || 0, locationAddress.value, selectedBarangay.value,
+  description.value, String(latitude.value), String(longitude.value), Number(advanceMonths.value), Number(depositMonths.value), depositType.value,
+  [...selectedFreeAmenities.value].sort(), [...selectedPaidAmenities.value].sort(), selectedPhotos.value.map(p => p.dbValue || p.previewUrl), !!houseImgFile.value]);
+const savedSnapshot = ref('');
+const isDirty = computed(() => !isLoading.value && !!savedSnapshot.value && formSnapshot() !== savedSnapshot.value);
+const leaveDialog = ref(null); // { resolve } while the "unsaved changes" confirmation is open
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true;
+  return new Promise(resolve => { leaveDialog.value = { resolve }; });
+});
+const answerLeave = (leave) => { const dialog = leaveDialog.value; leaveDialog.value = null; dialog?.resolve(leave); };
+const warnBeforeUnload = (e) => { if (isDirty.value) { e.preventDefault(); e.returnValue = ''; } };
+window.addEventListener('beforeunload', warnBeforeUnload);
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload));
 
 // Modern Google Places Autocomplete & Advanced Marker initialization
 const NABUA_CENTER = { lat: 13.4072, lng: 123.3748 };
@@ -552,8 +601,8 @@ const loadHouseDetails = async () => {
 
       if (houseData) {
         houseName.value = houseData.name || '';
-        contactNumber.value = houseData.phone_contact || '';
-        price.value = houseData.price || '';
+        contactNumber.value = normalizeHouseContact(houseData.phone_contact || '');
+        price.value = houseData.price !== undefined && houseData.price !== null && houseData.price !== '' ? Number(houseData.price).toFixed(2) : '';
         locationAddress.value = houseData.location || '';
         selectedBarangay.value = houseData.barangay || '';
         mapLink.value = houseData.map_link || '';
@@ -587,6 +636,7 @@ const loadHouseDetails = async () => {
         selectedPaidAmenities.value.forEach(tag => {
           if (!paidAmenities.value.includes(tag)) paidAmenities.value.push(tag);
         });
+        savedSnapshot.value = formSnapshot();
       }
     }
   } catch (error) {
@@ -612,6 +662,7 @@ const loadHouseDetails = async () => {
 
 const handleSubmit = async () => {
   if (isSubmitting.value) return;
+  contactNumber.value = contactNumber.value.replace(/\s*\/\s*$/, ''); // a trailing separator is not a number
   const validationError = validateInput('property', { house_name: houseName.value, location: locationAddress.value, price: price.value, contact_number: contactNumber.value, latitude: latitude.value, longitude: longitude.value, advance_months: advanceMonths.value, deposit_months: depositMonths.value, deposit_type: depositType.value, description: description.value, map_link: mapLink.value });
   if (validationError) { showSystemAlert(validationError, 'error'); return; }
   if (pinNeedsConfirmation.value) {
@@ -668,6 +719,7 @@ const handleSubmit = async () => {
       } else {
         showSystemAlert('Boarding house updated successfully!', 'success');
       }
+      savedSnapshot.value = formSnapshot(); // saved: leaving no longer needs a warning
       setTimeout(() => {
         router.push('/owner/dashboard');
       }, 1500);
@@ -696,7 +748,8 @@ const loadError = ref('');
     <OwnerNav />
     <main id="management-content" tabindex="-1" class="management-content eh-main">
       <LoadError :message="loadError" />
-      <PageHeader title="Edit property" :eyebrow="houseName">
+      <PageHeader title="Edit property" description="Update your property information, photos, amenities and location.">
+        <span v-if="isDirty" class="eh-dirty" role="status"><i class="fa-solid fa-circle" aria-hidden="true"></i> Unsaved changes</span>
         <router-link to="/owner/dashboard" class="eh-btn eh-btn-ghost">Cancel</router-link>
         <button v-if="!isLoading" type="submit" form="eh-form" :disabled="isSubmitting" class="eh-btn eh-btn-primary">
           <i :class="isSubmitting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
@@ -733,87 +786,36 @@ const loadError = ref('');
 
     <form v-else id="eh-form" @submit.prevent="handleSubmit" class="eh-grid">
 
-      <!-- Column 1: photos + amenities -->
+      <!-- Main column: details, policy, description, photos, amenities -->
       <div class="eh-col">
         <section class="eh-card">
-          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Photos</h2>
-          <div class="eh-cover">
-            <img class="eh-cover-photo" :src="mainHouseImgPreview" :alt="houseName" @error="e => e.target.src = '/img/cspc_bg.webp'" />
-            <label class="eh-cover-change">
-              <i class="fa-solid fa-camera" aria-hidden="true"></i> Change main photo
-              <input aria-label="Main Boarding House Photo" type="file" @change="handleHouseImgChange" accept="image/*" class="eh-sr" />
-            </label>
-          </div>
-
-          <div class="eh-row-head">
-            <span class="eh-label">Interior photos <small>max 10</small></span>
-            <label class="eh-btn eh-btn-soft eh-btn-sm">
-              <i class="fa-solid fa-plus" aria-hidden="true"></i> Add photos
-              <input aria-label="Additional Interior Photos" type="file" multiple accept="image/*" @change="handlePhotosSelected" class="eh-sr" />
-            </label>
-          </div>
-          <div v-if="selectedPhotos.length > 0" class="eh-thumbs">
-            <div v-for="(photo, index) in selectedPhotos" :key="index" class="eh-thumb">
-              <img :src="photo.previewUrl" alt="Interior preview" />
-              <button aria-label="Remove photo" type="button" @click="removePhoto(index)" class="eh-thumb-del">
-                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-              </button>
+          <h2 class="eh-title"><i class="fa-solid fa-building eh-ico" aria-hidden="true"></i>Property details</h2>
+          <div class="eh-fields eh-fields-details">
+            <div class="eh-name">
+              <label class="eh-label" for="eh-name">Boarding house name</label>
+              <input id="eh-name" type="text" v-model="houseName" required class="eh-input" />
+            </div>
+            <div>
+              <label class="eh-label" for="eh-price">Monthly rent (₱)</label>
+              <div class="eh-money"><span aria-hidden="true">₱</span><input id="eh-price" type="text" inputmode="decimal" autocomplete="off" :value="priceDisplay" @focus="priceFocused = true" @input="handlePriceInput" @blur="handlePriceBlur" placeholder="0.00" required class="eh-input" /></div>
+            </div>
+            <div>
+              <label class="eh-label" for="eh-brgy">Barangay (Nabua)</label>
+              <select id="eh-brgy" v-model="selectedBarangay" required class="eh-input">
+                <option value="">Select barangay</option>
+                <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
+              </select>
+            </div>
+            <div class="eh-name">
+              <label class="eh-label" for="eh-phone">Contact number</label>
+              <input id="eh-phone" type="text" inputmode="numeric" autocomplete="tel" maxlength="39" :value="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="09123456789 / 09987654321" required class="eh-input" aria-describedby="eh-phone-hint" />
+              <p id="eh-phone-hint" class="eh-hint">Up to 3 mobile numbers starting with 09 (11 digits each). The " / " is added for you after each number.</p>
             </div>
           </div>
-          <p v-else class="eh-hint">No interior photos yet.</p>
         </section>
 
         <section class="eh-card">
-          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Amenities</h2>
-          <div v-for="group in [{ key: 'free', label: 'Free', icon: 'fa-gift', items: freeAmenities, model: 'free' }, { key: 'paid', label: 'Paid', icon: 'fa-coins', items: paidAmenities, model: 'paid' }]" :key="group.key" class="eh-amen-group">
-            <div class="eh-row-head">
-              <span :class="['eh-label', 'is-' + group.key]"><i :class="['fa-solid', group.icon]" aria-hidden="true"></i> {{ group.label }}</span>
-              <div class="eh-add">
-                <input v-if="group.key === 'free'" aria-label="Add custom free amenity" type="text" v-model="newFreeAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('free')" />
-                <input v-else aria-label="Add custom paid amenity" type="text" v-model="newPaidAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('paid')" />
-                <button type="button" @click="addCustomAmenity(group.key)" class="eh-btn eh-btn-soft eh-btn-sm">Add</button>
-              </div>
-            </div>
-            <div class="eh-chips">
-              <label v-for="item in group.items" :key="item" :class="['eh-chip', 'is-' + group.key]">
-                <input v-if="group.key === 'free'" :aria-label="item" type="checkbox" :value="item" v-model="selectedFreeAmenities" />
-                <input v-else :aria-label="item" type="checkbox" :value="item" v-model="selectedPaidAmenities" />
-                <i class="fa-solid fa-check" aria-hidden="true"></i>
-                <span>{{ item }}</span>
-              </label>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Column 2: details -->
-      <section class="eh-card eh-col">
-        <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Property details</h2>
-        <div class="eh-fields">
-          <div class="eh-span-2">
-            <label class="eh-label" for="eh-name">Boarding house name</label>
-            <input id="eh-name" type="text" v-model="houseName" required class="eh-input" />
-          </div>
-          <div>
-            <label class="eh-label" for="eh-price">Monthly rent (₱)</label>
-            <input id="eh-price" type="number" min="0.01" max="99999999.99" step="0.01" v-model="price" required class="eh-input" />
-          </div>
-          <div>
-            <label class="eh-label" for="eh-brgy">Barangay (Nabua)</label>
-            <select id="eh-brgy" v-model="selectedBarangay" required class="eh-input">
-              <option value="">Select barangay</option>
-              <option v-for="b in barangaysList" :key="b" :value="b">{{ b }}</option>
-            </select>
-          </div>
-          <div class="eh-span-2">
-            <label class="eh-label" for="eh-phone">Contact number</label>
-            <input id="eh-phone" type="text" inputmode="tel" v-model="contactNumber" @keypress="handleOwnerPhoneKeypress" @input="handleOwnerPhoneInput" placeholder="09123456789 / 09987654321" required class="eh-input" />
-            <p class="eh-hint"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Separate multiple numbers with a slash.</p>
-          </div>
-        </div>
-
-        <div class="eh-sub">
-          <p class="eh-sub-title"><i class="fa-solid fa-coins" aria-hidden="true"></i> Advance &amp; deposit policy</p>
+          <h2 class="eh-title"><i class="fa-solid fa-coins eh-ico is-gold" aria-hidden="true"></i>Advance &amp; deposit policy</h2>
           <div class="eh-fields eh-fields-3">
             <div>
               <label class="eh-label" for="eh-adv">Advance rent</label>
@@ -834,23 +836,80 @@ const loadError = ref('');
             <div v-show="depositMonths > 0">
               <label class="eh-label" for="eh-deptype">Deposit type</label>
               <select id="eh-deptype" v-model="depositType" class="eh-input">
-                <option value="consumable">Consumable</option>
-                <option value="refundable">Refundable</option>
+                <option value="consumable">Consumable (used for the final month)</option>
+                <option value="refundable">Refundable (returned at move-out)</option>
               </select>
             </div>
           </div>
-        </div>
+          <p v-if="moveInPreview.rent > 0" class="eh-preview">
+            <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+            <span>Students pay <strong>{{ peso(moveInPreview.total) }}</strong> at move-in: {{ moveInPreview.advance }} month{{ moveInPreview.advance === 1 ? '' : 's' }} advance<template v-if="moveInPreview.deposit"> + {{ moveInPreview.deposit }} month{{ moveInPreview.deposit === 1 ? '' : 's' }} {{ depositType }} deposit</template>.<template v-if="moveInPreview.forcedAdvance"> At least one month's advance is always collected.</template> Changes apply to new approvals only.</span>
+          </p>
+        </section>
 
-        <div class="eh-grow">
-          <label class="eh-label" for="eh-desc">Description &amp; house rules</label>
-          <textarea id="eh-desc" v-model="description" class="eh-input eh-textarea"></textarea>
-        </div>
-      </section>
+        <section class="eh-card">
+          <h2 class="eh-title"><i class="fa-solid fa-image eh-ico" aria-hidden="true"></i>Photos</h2>
+          <div class="eh-photos">
+            <div class="eh-cover">
+              <img class="eh-cover-photo" :src="mainHouseImgPreview" :alt="houseName" @error="e => e.target.src = '/img/cspc_bg.webp'" />
+              <label class="eh-cover-change">
+                <i class="fa-solid fa-camera" aria-hidden="true"></i> Change main photo
+                <input aria-label="Main Boarding House Photo" type="file" @change="handleHouseImgChange" accept="image/*" class="eh-sr" />
+              </label>
+            </div>
+            <div class="eh-interior">
+              <span class="eh-label">Interior photos <small>{{ selectedPhotos.length }} of 10</small></span>
+              <div class="eh-thumbs">
+                <div v-for="(photo, index) in selectedPhotos" :key="index" class="eh-thumb">
+                  <img :src="photo.previewUrl" alt="Interior preview" />
+                  <button aria-label="Remove photo" type="button" @click="removePhoto(index)" class="eh-thumb-del">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+              <label v-if="selectedPhotos.length < 10" class="eh-add-photos">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i> Add photos
+                <input aria-label="Additional Interior Photos" type="file" multiple accept="image/*" @change="handlePhotosSelected" class="eh-sr" />
+              </label>
+            </div>
+          </div>
+        </section>
 
-      <!-- Column 3: location -->
-      <section class="eh-card eh-col eh-col-location">
+        <section class="eh-card">
+          <h2 class="eh-title"><i class="fa-solid fa-file-lines eh-ico" aria-hidden="true"></i><label for="eh-desc">Description &amp; house rules</label></h2>
+          <textarea id="eh-desc" v-model="description" :maxlength="DESCRIPTION_LIMIT" class="eh-input eh-textarea" placeholder="Describe the house and list rules such as curfew, visitors and quiet hours." aria-describedby="eh-desc-count"></textarea>
+          <p id="eh-desc-count" :class="['eh-count', { near: description.length > DESCRIPTION_LIMIT * 0.9 }]">{{ description.length.toLocaleString() }} / {{ DESCRIPTION_LIMIT.toLocaleString() }} characters</p>
+        </section>
+
+        <section class="eh-card">
+          <h2 class="eh-title"><i class="fa-solid fa-gift eh-ico" aria-hidden="true"></i>Amenities</h2>
+          <div class="eh-amenities">
+            <div v-for="group in [{ key: 'free', label: 'Free', icon: 'fa-gift', items: freeAmenities }, { key: 'paid', label: 'Paid', icon: 'fa-coins', items: paidAmenities }]" :key="group.key" class="eh-amen-group">
+              <div class="eh-row-head">
+                <span :class="['eh-label', 'is-' + group.key]"><i :class="['fa-solid', group.icon]" aria-hidden="true"></i> {{ group.label }}</span>
+                <div class="eh-add">
+                  <input v-if="group.key === 'free'" aria-label="Add custom free amenity" type="text" v-model="newFreeAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('free')" />
+                  <input v-else aria-label="Add custom paid amenity" type="text" v-model="newPaidAmenityInput" placeholder="Add custom…" @keydown.enter.prevent="addCustomAmenity('paid')" />
+                  <button type="button" @click="addCustomAmenity(group.key)" class="eh-btn eh-btn-soft eh-btn-sm">Add</button>
+                </div>
+              </div>
+              <div class="eh-chips">
+                <label v-for="item in group.items" :key="item" :class="['eh-chip', 'is-' + group.key]">
+                  <input v-if="group.key === 'free'" :aria-label="item" type="checkbox" :value="item" v-model="selectedFreeAmenities" />
+                  <input v-else :aria-label="item" type="checkbox" :value="item" v-model="selectedPaidAmenities" />
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                  <span>{{ item }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Side column: location (stays in view while the main column scrolls) -->
+      <section class="eh-card eh-location">
         <div class="eh-row-head">
-          <h2 class="eh-title"><span class="eh-bar" aria-hidden="true"></span>Location</h2>
+          <h2 class="eh-title"><i class="fa-solid fa-location-dot eh-ico" aria-hidden="true"></i>Location</h2>
           <div class="eh-map-actions">
             <button type="button" @click="detectMyLocation" :disabled="isGpsLoading" class="eh-btn eh-btn-soft eh-btn-sm">
               <i :class="isGpsLoading ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-location-crosshairs'" aria-hidden="true"></i> Use GPS
@@ -862,12 +921,12 @@ const loadError = ref('');
         </div>
 
         <div>
-          <span class="eh-label"><span class="eh-step">A</span> Search your property address</span>
+          <span class="eh-label">Search your property address</span>
           <div id="autocomplete-wrapper" class="w-full"></div>
         </div>
 
         <div class="eh-map-block">
-          <span class="eh-label"><span class="eh-step">B</span> Verify or pin exactly on the map</span>
+          <span class="eh-label">Verify or pin exactly on the map</span>
           <div class="eh-map group">
             <div id="map" ref="mapContainer" class="w-full h-full"></div>
             <div class="eh-map-overlay" @click="toggleFullscreenMap">
@@ -891,6 +950,29 @@ const loadError = ref('');
       </section>
     </form>
 
+    <!-- Phones: keep Save in reach at the bottom of the screen -->
+    <div v-if="!isLoading" class="eh-mobile-bar">
+      <span v-if="isDirty" class="eh-dirty"><i class="fa-solid fa-circle" aria-hidden="true"></i> Unsaved changes</span>
+      <button type="submit" form="eh-form" :disabled="isSubmitting" class="eh-btn eh-btn-primary">
+        <i :class="isSubmitting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'" aria-hidden="true"></i>
+        {{ isSubmitting ? 'Saving…' : 'Save changes' }}
+      </button>
+    </div>
+
+    <!-- Leaving with unsaved changes -->
+    <div v-if="leaveDialog" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true" aria-labelledby="eh-leave-title">
+        <div class="cm-body">
+          <span class="cm-icon is-warning" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></span>
+          <div><h3 id="eh-leave-title" class="cm-title">Leave without saving?</h3><p class="cm-message popup-message">You have changes on this page that are not saved. If you leave now, they will be lost.</p></div>
+        </div>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="answerLeave(true)">Leave without saving</button>
+          <button type="button" class="cm-btn cm-confirm" @click="answerLeave(false)">Stay on this page</button>
+        </div>
+      </div>
+    </div>
+
     </main>
 </div>
 </template>
@@ -910,28 +992,29 @@ const loadError = ref('');
 /* Edit property: full-width card grid that fits one screen on desktop (same card language as Profile) */
 .eh-main { display: flex; flex-direction: column; padding-top: 24px !important; padding-bottom: 24px !important; }
 .eh-main :deep(.management-page-header) { margin-bottom: 18px; }
-.eh-grid { flex: 1; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
-@media (min-width: 900px) { .eh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .eh-col-location { grid-column: 1 / -1; } }
-@media (min-width: 1360px) {
-  .eh-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr); }
-  .eh-col-location { grid-column: auto; }
+/* Two columns on wide screens: a stack of cards, and Location that stays in view while scrolling. */
+.eh-grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1100px) {
+  .eh-grid { grid-template-columns: minmax(0, 1.75fr) minmax(360px, 1fr); }
+  .eh-location { position: sticky; top: 88px; min-height: min(760px, calc(100vh - 112px)); }
 }
 .eh-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.eh-location { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .eh-card { background: #fff; border: 1px solid var(--a-border); border-radius: 18px; padding: 18px 20px; box-shadow: var(--a-shadow); min-width: 0; }
-section.eh-card.eh-col { gap: 16px; }
-.eh-col > .eh-card:last-child { flex: 1; }
 .eh-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px; color: var(--a-muted); font-weight: 600; }
 
 .eh-title { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 17px !important; font-weight: 700 !important; color: var(--a-heading); }
-section.eh-col > .eh-title, .eh-row-head .eh-title { margin-bottom: 0; }
-.eh-bar { width: 5px; height: 20px; border-radius: 999px; background: var(--a-primary); }
+.eh-title label { cursor: text; }
+.eh-row-head .eh-title { margin-bottom: 0; }
+.eh-ico { width: 20px; text-align: center; font-size: 17px; color: var(--a-primary); }
+.eh-ico.is-gold { color: var(--a-gold); }
 .eh-row-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 14px 0 10px; }
-.eh-col-location > .eh-row-head:first-child { margin-top: 0; margin-bottom: 0; }
+.eh-location > .eh-row-head:first-child { margin: 0; }
 .eh-label { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12.5px; font-weight: 600; color: var(--a-muted); }
 .eh-row-head .eh-label { margin-bottom: 0; }
 .eh-label small { font-weight: 500; color: var(--a-faint); }
-.eh-label.is-free i { color: #059669; }
-.eh-label.is-paid i { color: #e11d48; }
+.eh-label.is-free i { color: #18ad72; }
+.eh-label.is-paid i { color: #ed9220; }
 .eh-hint { margin: 6px 0 0; font-size: 12px; color: var(--a-faint); }
 .eh-hint i { color: var(--a-primary); margin-right: 4px; }
 .eh-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -956,15 +1039,24 @@ section.eh-col > .eh-title, .eh-row-head .eh-title { margin-bottom: 0; }
 .eh-cover-change { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 9px; background: rgba(255, 255, 255, .94); color: var(--a-heading); font-size: 12.5px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(15, 31, 54, .25); transition: background .15s; }
 .eh-cover-change:hover { background: #fff; }
 .eh-cover-change:focus-within { outline: 3px solid #7fa6db; outline-offset: 2px; }
-.eh-thumbs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.eh-photos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 720px) { .eh-photos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.eh-interior { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.eh-interior > .eh-label { margin-bottom: 0; }
+.eh-thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.eh-thumbs:empty { display: none; }
+.eh-add-photos { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 64px; flex: 1; border: 1.5px dashed #a9c2e6; border-radius: 12px; background: #f6f9fe; color: var(--a-primary); font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.eh-add-photos:hover { background: var(--a-primary-soft); border-color: var(--a-primary); }
+.eh-add-photos:focus-within { outline: 3px solid #7fa6db; outline-offset: 2px; }
 .eh-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--a-border); }
 .eh-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.eh-thumb-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 999px; border: 0; background: rgba(169, 60, 52, .92); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.eh-thumb-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; min-width: 0 !important; min-height: 0 !important; padding: 0 !important; line-height: 1; box-sizing: border-box; border-radius: 999px; border: 0; background: rgba(169, 60, 52, .92); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .eh-thumb-del:hover { background: #8f2f28; }
 
 /* Amenities */
-.eh-amen-group + .eh-amen-group { margin-top: 14px; border-top: 1px dashed var(--a-border); }
-.eh-amen-group:first-of-type .eh-row-head { margin-top: 0; }
+.eh-amenities { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+@media (min-width: 900px) { .eh-amenities { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .eh-amen-group + .eh-amen-group { border-left: 1px solid var(--a-border); padding-left: 18px; } }
+.eh-amen-group .eh-row-head { margin-top: 0; }
 .eh-add { display: flex; gap: 6px; }
 .eh-add input { width: 130px; height: 34px; min-height: 34px !important; padding: 0 10px; border: 1px solid var(--a-border); border-radius: 9px !important; background: var(--a-surface-2); font-size: 12.5px; }
 .eh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -974,27 +1066,28 @@ section.eh-col > .eh-title, .eh-row-head .eh-title { margin-bottom: 0; }
 .eh-chip:hover { border-color: var(--a-primary-tint); background: var(--a-surface-2); }
 .eh-chip:focus-within { outline: 3px solid #7fa6db; outline-offset: 1px; }
 .eh-chip.is-free:has(input:checked) { background: #e3f6ea; border-color: #9fd8b7; color: #1d7a45; }
-.eh-chip.is-paid:has(input:checked) { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+.eh-chip.is-paid:has(input:checked) { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
 .eh-chip:has(input:checked) i { display: inline; }
 
 /* Details */
 .eh-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .eh-fields-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.eh-fields-details { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.eh-fields-details .eh-name { grid-column: span 1; }
+.eh-fields-details .eh-name:last-child { grid-column: 1 / -1; }
+.eh-preview { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--a-gold-soft); color: var(--a-gold-ink); font-size: 13px; line-height: 1.55; }
+.eh-preview i { margin-top: 3px; color: var(--a-gold); }
+.eh-preview strong { color: var(--a-heading); }
 .eh-span-2 { grid-column: 1 / -1; }
 .eh-input { width: 100%; height: 42px; min-height: 42px !important; padding: 0 12px; border: 1px solid var(--a-border); border-radius: 10px !important; background: var(--a-surface-2); color: var(--a-heading); font-size: 14px; font-weight: 600; outline: none; transition: background .15s, border-color .15s; }
 .eh-input:focus { background: #fff; }
-.eh-sub { padding: 14px; border-radius: 14px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
-.eh-sub .eh-input { background: #fff; }
-.eh-sub-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--a-heading); }
-.eh-sub-title i { color: var(--a-gold); }
-.eh-grow { flex: 1; display: flex; flex-direction: column; min-height: 120px; }
-.eh-textarea { flex: 1; height: auto; min-height: 110px !important; padding: 10px 12px; line-height: 1.55; font-weight: 500; resize: vertical; }
+.eh-textarea { display: block; height: auto; min-height: 120px !important; padding: 10px 12px; line-height: 1.55; font-weight: 500; resize: vertical; }
 
 /* Location */
 .eh-map-actions { display: flex; gap: 8px; }
-.eh-step { width: 20px; height: 20px; border-radius: 999px; background: var(--a-primary); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .eh-map-block { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.eh-map { position: relative; flex: 1; min-height: 300px; border-radius: 14px; overflow: hidden; border: 1px solid var(--a-border); background: var(--a-surface-2); cursor: pointer; }
+.eh-map > #map { position: absolute !important; inset: 0; width: 100%; height: 100%; }
+.eh-map { position: relative; flex: 1; min-height: 360px; border-radius: 14px; overflow: hidden; border: 1px solid var(--a-border); background: var(--a-surface-2); cursor: pointer; }
 .eh-map-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15, 31, 54, .04); transition: background .15s; }
 .eh-map-overlay span { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, .94); color: var(--a-heading); font-size: 12.5px; font-weight: 600; box-shadow: 0 4px 12px rgba(15, 31, 54, .18); opacity: 0; transition: opacity .15s; }
 .eh-map:hover .eh-map-overlay { background: transparent; }
@@ -1003,9 +1096,27 @@ section.eh-col > .eh-title, .eh-row-head .eh-title { margin-bottom: 0; }
 .eh-warn i { color: var(--a-gold); margin-top: 2px; font-size: 13px; }
 .eh-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--a-warning); font-weight: 500; }
 
+/* Rent with a peso prefix */
+.eh-money { position: relative; }
+.eh-money > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; font-weight: 700; color: var(--a-muted); pointer-events: none; }
+.eh-money .eh-input { padding-left: 28px; }
+/* Description counter, unsaved marker, phone save bar */
+.eh-count { margin: 6px 0 0; text-align: right; font-size: 12px; color: var(--a-faint); }
+.eh-count.near { color: var(--a-warning); font-weight: 600; }
+.eh-dirty { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--a-warning-soft); color: var(--a-warning); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.eh-dirty i { font-size: 6px; }
+.eh-mobile-bar { display: none; }
+@media (max-width: 720px) {
+  .eh-main { padding-bottom: 96px !important; }
+  .eh-main :deep(.management-header-actions) .eh-btn-primary, .eh-main :deep(.management-header-actions) .eh-dirty { display: none; }
+  .eh-mobile-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--a-border); box-shadow: 0 -8px 24px rgba(15, 31, 54, .08); }
+  .eh-mobile-bar .eh-btn-primary { flex: 1; height: 46px; }
+}
+
 @media (max-width: 560px) {
-  .eh-fields, .eh-fields-3 { grid-template-columns: minmax(0, 1fr); }
-  .eh-thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .eh-fields, .eh-fields-3, .eh-fields-details { grid-template-columns: minmax(0, 1fr); }
+  .eh-fields-details .eh-name:last-child { grid-column: auto; }
+  .eh-thumbs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .eh-add { width: 100%; }
   .eh-add input { flex: 1; width: auto; }
   .eh-main :deep(.management-header-actions) { width: 100%; }

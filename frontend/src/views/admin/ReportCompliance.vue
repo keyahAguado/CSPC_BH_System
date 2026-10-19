@@ -147,7 +147,7 @@ const formatDay = (v) => { const d = new Date(v); return Number.isNaN(d.getTime(
             <input v-model="searchQuery" type="text" aria-label="Search compliance records" placeholder="Search by boarding house, owner, or status..." />
           </div>
           <span class="cp-count">{{ filteredHouses.length }} result{{ filteredHouses.length !== 1 ? 's' : '' }}</span>
-          <button type="button" class="cp-print" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
+          <button type="button" class="cp-print app-print-button" @click="handlePrint"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Print / Save as PDF</button>
         </div>
       </div>
 

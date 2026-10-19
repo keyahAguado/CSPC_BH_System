@@ -1,8 +1,25 @@
 /* Owner pages theme (Reservations, Rooms, Room details, Edit property, Profile).
    Aligns the older owner screens with the owner dashboard / admin design system:
-   CSPC navy + blue (#1E4A8D) + gold, Plus Jakarta Sans, 16px cards, soft shadows,
+   Legacy Owner page utilities; typography and components are unified by
+   owner-design-system.css under the Owner route marker. 16px cards, soft shadows,
    sentence-case headings. Visual only; scoped to .owner-page so nothing else changes.
    The colour tokens come from admin-theme.css (.owner-page is added to its token selector). */
+
+.owner-page,
+.management-sidebar.is-owner {
+  --a-primary: #2563eb;
+  --a-primary-strong: #1d4ed8;
+  --a-primary-soft: #eff6ff;
+  --a-primary-tint: #bfdbfe;
+  --a-sidebar: #1b4781;
+  --a-bg: #f2f7ff;
+}
+
+.management-sidebar.is-owner .management-nav-link.is-active {
+  background: #2563eb;
+  color: #fff;
+}
+.management-sidebar.is-owner .management-nav-link.is-active:hover { background: #1d4ed8; }
 
 .management-page.owner-page {
   background: var(--a-bg) !important;
@@ -50,16 +67,16 @@
 .owner-page main input[type=file]:hover::file-selector-button { background: var(--a-primary-tint); }
 
 /* Tables */
-.owner-page main table thead :is(th, tr) { background: var(--a-surface-2) !important; color: var(--a-muted) !important; text-transform: none !important; letter-spacing: 0 !important; font-weight: 600; }
-.owner-page main table thead th { border-color: var(--a-border) !important; }
-.owner-page main table tbody tr { border-color: #edf2f8 !important; }
-.owner-page main table tbody tr:hover { background: #f6f9fd; }
+.owner-page main table:not(.ob-table) thead :is(th, tr) { background: var(--a-surface-2) !important; color: var(--a-muted) !important; text-transform: none !important; letter-spacing: 0 !important; font-weight: 600; }
+.owner-page main table:not(.ob-table) thead th { border-color: var(--a-border) !important; }
+.owner-page main table:not(.ob-table) tbody tr { border-color: #edf2f8 !important; }
+.owner-page main table:not(.ob-table) tbody tr:hover { background: #f6f9fd; }
 
 /* Modals keep their layout; just round and soften them */
 .owner-page [class*="fixed"][class*="inset-0"] > div.bg-white { border-radius: 18px !important; }
 
 /* Tables: sentence-case headers and tighter cells so action columns stay in view */
-.owner-page main table thead * { text-transform: none !important; letter-spacing: 0 !important; }
-.owner-page main table :is(th, td) { padding-left: 10px !important; padding-right: 10px !important; }
-.owner-page main table thead th { font-size: 12px !important; }
+.owner-page main table:not(.ob-table) thead * { text-transform: none !important; letter-spacing: 0 !important; }
+.owner-page main table:not(.ob-table) :is(th, td) { padding-left: 10px !important; padding-right: 10px !important; }
+.owner-page main table:not(.ob-table) thead th { font-size: 12px !important; }
 .owner-page main .booking-table-wrapper table { min-width: 0 !important; }

@@ -26,6 +26,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cspc_backend_api
+    # Forward signals and reap orphaned child processes. Applied on container recreation.
+    init: true
     restart: always
     env_file:
       - ./backend/.env

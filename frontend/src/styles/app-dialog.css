@@ -1,0 +1,62 @@
+/* Shared dialog design (components/AppDialog.vue). Global on purpose: dialogs are teleported to <body> and their
+   body content comes from each page. Every selector is prefixed with app-dialog/app-btn, so nothing else changes. */
+dialog.app-dialog::backdrop{background:rgb(15 23 42 / .55);backdrop-filter:blur(2px)}
+dialog.app-dialog{margin:auto;padding:0;border:0;width:calc(100% - 32px);max-height:calc(100dvh - 32px);background:#fff;border-radius:16px;box-shadow:0 24px 70px rgb(15 23 42 / .28);color:#0f172a;font-size:14px;line-height:1.6;text-align:left;overflow:hidden}dialog.app-dialog[open]{display:flex;flex-direction:column;animation:app-dialog-in .16s ease-out}
+.app-dialog:focus{outline:none}
+.app-dialog.size-sm{max-width:420px}.app-dialog.size-md{max-width:520px}.app-dialog.size-lg{max-width:680px}
+@keyframes app-dialog-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+
+.app-dialog-header{display:flex;align-items:flex-start;gap:14px;padding:20px 24px 14px}
+.app-dialog-icon{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;border-radius:12px;font-size:17px;background:#dbeafe;color:#1d4ed8}
+.tone-danger .app-dialog-icon{background:#fee2e2;color:#b91c1c}.tone-warning .app-dialog-icon{background:#fef3c7;color:#b45309}.tone-success .app-dialog-icon{background:#dcfce7;color:#15803d}
+.app-dialog-heading{flex:1;min-width:0;padding-top:1px}
+.app-dialog .app-dialog-heading h2{margin:0;font-size:17px;font-weight:700;line-height:1.4;color:#102e50;letter-spacing:0;text-transform:none;overflow-wrap:anywhere}
+.app-dialog-heading p{margin:3px 0 0;font-size:13px;line-height:1.55;color:#526b89}
+.app-dialog-close{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;margin:-4px -8px 0 0;padding:0;border:0;border-radius:9px;background:transparent;color:#64748b;font-size:16px;cursor:pointer}
+.app-dialog-close:hover{background:#f1f5f9;color:#0f172a}.app-dialog-close:disabled{opacity:.4;cursor:not-allowed}
+
+.app-dialog-body{display:grid;gap:14px;padding:2px 24px 20px;overflow-y:auto;overflow-wrap:anywhere}
+.app-dialog-body p{margin:0}
+.app-dialog-lead{font-size:14px;line-height:1.65;color:#334e6e}
+.app-dialog-lead strong{color:#102e50}
+.app-dialog-message{font-size:14px;line-height:1.65;color:#334e6e;white-space:pre-line}
+
+/* Key facts as label / value rows */
+.app-dialog-facts{display:grid;margin:0;border:1px solid #e3eaf4;border-radius:11px;overflow:hidden}
+.app-dialog-facts>div{display:grid;grid-template-columns:minmax(110px,38%) minmax(0,1fr);gap:12px;padding:9px 14px;border-top:1px solid #edf2f8;font-size:13px;line-height:1.5}
+.app-dialog-facts>div:first-child{border-top:0}
+.app-dialog-facts dt{color:#5a708c;font-weight:500}
+.app-dialog-facts dd{margin:0;color:#102e50;font-weight:650}
+
+.app-dialog-callout{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-radius:11px;font-size:13px;line-height:1.55;background:#eff6ff;color:#1e3a8a}
+.app-dialog-callout>i{margin-top:3px;font-size:13px;flex-shrink:0}
+.app-dialog-callout.warning{background:#fffbeb;color:#92400e}.app-dialog-callout.danger{background:#fef2f2;color:#991b1b}.app-dialog-callout.success{background:#f0fdf4;color:#166534}.app-dialog-callout.neutral{background:#f8fafc;color:#475569}
+
+.app-dialog-check{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #dbe6f3;border-radius:11px;background:#f8fbff;font-size:13px;font-weight:600;line-height:1.5;color:#1f334d;cursor:pointer}
+.app-dialog-check input{flex-shrink:0;width:16px;height:16px;margin:2px 0 0;accent-color:#2563eb;cursor:pointer}
+.tone-danger .app-dialog-check input{accent-color:#dc2626}
+
+.app-dialog-field{display:grid;gap:6px;font-size:13px;font-weight:600;color:#27476d}
+.app-dialog-field small{font-weight:400;color:#64748b}
+.app-dialog-field :is(input,textarea,select){width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #cfdcec;border-radius:9px;background:#fff;font:inherit;font-size:13.5px;font-weight:400;color:#1f334d}
+.app-dialog-field textarea{resize:vertical;min-height:72px}
+.app-dialog-field :is(input,textarea,select):focus{outline:none;border-color:#60a5fa;box-shadow:0 0 0 3px #dbeafe}
+
+.app-dialog-error{margin:0;padding:10px 12px;border-radius:9px;background:#fef2f2;color:#b91c1c;font-size:13px;line-height:1.5}
+
+.app-dialog-footer{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:14px 24px;border-top:1px solid #e8eef6;background:#f8fbff}
+.app-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:9px 16px;border:1px solid transparent;border-radius:9px;font:inherit;font-size:13px;font-weight:650;line-height:1.2;text-transform:none;letter-spacing:0;text-decoration:none;cursor:pointer;transition:background .15s,border-color .15s}
+.app-btn.secondary{background:#fff;border-color:#d6e1ee;color:#334155}.app-btn.secondary:hover{background:#f1f5f9}
+.app-btn.primary{background:#2563eb;color:#fff}.app-btn.primary:hover{background:#1d4ed8}
+.app-btn.danger{background:#dc2626;color:#fff}.app-btn.danger:hover{background:#b91c1c}
+.app-btn.success{background:#16a34a;color:#fff}.app-btn.success:hover{background:#15803d}
+.app-btn:disabled{opacity:.5;cursor:not-allowed}
+.app-btn:focus-visible,.app-dialog-close:focus-visible,.app-dialog-check input:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+
+@media(max-width:560px){
+    dialog.app-dialog{width:calc(100% - 20px);max-height:calc(100dvh - 20px);margin:auto auto 10px}
+  .app-dialog-header{padding:18px 18px 12px}.app-dialog-body{padding:2px 18px 18px}.app-dialog-footer{padding:12px 18px;flex-direction:column-reverse;align-items:stretch}
+  .app-dialog-facts>div{grid-template-columns:1fr;gap:2px}
+}
+@media(pointer:coarse){.app-btn{min-height:44px}.app-dialog-close{width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.app-dialog{animation:none}.app-btn{transition:none}}

@@ -1,14 +1,17 @@
 // Track My Application: accountless access for boarding house applicants.
 // Verified email grants restricted tracking access; ownership is checked on every route.
 import express from 'express';
-import { requireVerifiedEmail, verificationHandlers } from '../config/applicantVerification.js';
+import {
+    requireVerifiedEmail, verificationHandlers, signVerifiedApplicant, hashVerificationToken,
+    isTrackingSessionActive, readVerifiedApplicant
+} from '../config/applicantVerification.js';
 import pool from '../config/db.js';
 import { validateImages } from '../config/uploadValidation.js';
 import { validateBody, validateInput } from '../config/inputValidation.js';
 import { uploadAccreditationFiles, submitAccreditationAs, markApplicationSubmitted } from './boardingHouses.js';
 import {
     APPLICATION_STATUS, APPLICANT_EDITABLE, effectiveApplicationStatus, isPendingApplicant,
-    REFERENCE_PATTERN, normalizeReference, signApplicantToken, verifyApplicant, issueActivationToken, activationUrl,
+    REFERENCE_PATTERN, normalizeReference, verifyApplicant, issueActivationToken, activationUrl,
     recordStatusChange, createRateLimiter, ACTIVATION_TTL_DAYS, isPlaceholderEmail
 } from '../config/applicationWorkflow.js';
 
@@ -48,6 +51,10 @@ const verifyCurrentApplicant = async (req, res, next) => {
         if (!isPendingApplicant(user) || user.email.toLowerCase() !== req.verifiedApplicant.email) {
             return res.status(401).json({ success: false, message: 'Applicant access is no longer available. Activated owners should sign in.' });
         }
+        // Remembered-device sessions are checked every time, so signing out takes effect immediately
+        if (req.verifiedApplicant?.sid && !(await isTrackingSessionActive(pool, req.verifiedApplicant.sid, req.verifiedApplicant.email))) {
+            return res.status(401).json({ success: false, message: 'You signed out on this device or your 7-day session ended. Please verify your email again.' });
+        }
         next();
     } catch {
         return res.status(503).json({ success: false, message: 'We could not check your application access. Please try again later.' });
@@ -82,6 +89,113 @@ async function notifyAdmins(message) {
     }
 }
 
+// ── Reference-number tracking (no email needed) ──────────────────────────────
+// Returns only the status, progress dates and nothing private (no name, remarks, documents, contacts).
+// Only the random reference format is accepted: older sequential numbers (e.g. BH-2026-00014) are
+// guessable, so those must be tracked with the registered email instead.
+const RANDOM_REFERENCE = /^BH-\d{4}-[A-HJ-NP-Z2-9]{6}$/;
+const LEGACY_REFERENCE = /^BH-\d{4}-\d{5}$/;
+const trackByIp = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 15 });
+const trackByReference = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+const REFERENCE_NOT_FOUND = 'No application was found with that reference number. Check it and try again, or track with your registered email.';
+
+router.post('/track', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const reference = normalizeReference(req.body?.reference_no);
+    if (!trackByIp(`track:${req.ip || 'unknown'}`) || (reference && !trackByReference(`track:${reference}`))) {
+        return res.status(429).json({ success: false, message: 'Too many attempts. Please wait 15 minutes and try again.' });
+    }
+    if (LEGACY_REFERENCE.test(reference)) {
+        return res.status(404).json({ success: false, legacy: true, message: 'Older reference numbers can only be tracked with your registered email. Use "Track with email" below.' });
+    }
+    if (!RANDOM_REFERENCE.test(reference)) return res.status(404).json({ success: false, message: REFERENCE_NOT_FOUND });
+    try {
+        const [rows] = await pool.query(
+            'SELECT id, reference_no, house_status, application_status, is_resubmission, created_at FROM boarding_houses WHERE reference_no = ?',
+            [reference]
+        );
+        if (rows.length === 0) return res.status(404).json({ success: false, message: REFERENCE_NOT_FOUND });
+        const house = rows[0];
+        const [history] = await pool.query(
+            'SELECT to_status, created_at FROM application_status_history WHERE house_id = ? ORDER BY created_at ASC, id ASC',
+            [house.id]
+        );
+        const timeline = history.map(h => ({ status: h.to_status, at: h.created_at }));
+        return res.json({
+            success: true,
+            application: {
+                reference_no: house.reference_no,
+                status: effectiveApplicationStatus(house),
+                submitted_at: timeline[0]?.at || house.created_at || null,
+                updated_at: timeline[timeline.length - 1]?.at || house.created_at || null,
+                timeline
+            }
+        });
+    } catch (err) {
+        console.error('Reference tracking error:', err.code || err.message);
+        return res.status(500).json({ success: false, message: 'We could not check that reference right now. Please try again.' });
+    }
+});
+
+// ── Remembered device (7 days) ───────────────────────────────────────────────
+const resumeByIp = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+const DEVICE_TOKEN = /^[a-f0-9]{64}$/;
+
+// POST /api/applications/session/resume — continue a remembered device without a new email link.
+router.post('/session/resume', async (req, res) => {
+    if (!resumeByIp(`resume:${req.ip || 'unknown'}`)) return res.status(429).json({ success: false, message: 'Too many attempts. Please wait and try again.' });
+    const deviceToken = req.body?.deviceToken;
+    const ended = () => res.status(401).json({ success: false, message: 'Your remembered session has ended. Please verify your email again.' });
+    if (typeof deviceToken !== 'string' || !DEVICE_TOKEN.test(deviceToken)) return ended();
+    try {
+        const [rows] = await pool.query(
+            'SELECT id, email FROM applicant_tracking_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()',
+            [hashVerificationToken(deviceToken)]
+        );
+        if (rows.length === 0) return ended();
+        const session = rows[0];
+        const [users] = await pool.query('SELECT id, role, status, password, google_id FROM users WHERE email = ?', [session.email]);
+        const user = users[0];
+        // Activated owners (or other accounts) must sign in normally; this device session ends
+        if (user && !isPendingApplicant(user)) {
+            await pool.query('UPDATE applicant_tracking_sessions SET revoked_at = NOW() WHERE id = ?', [session.id]);
+            return res.status(401).json({ success: false, message: 'Applicant access is no longer available. Activated owners should sign in.' });
+        }
+        await pool.query('UPDATE applicant_tracking_sessions SET last_used_at = NOW() WHERE id = ?', [session.id]);
+        return res.json({
+            success: true, email: session.email, hasApplications: Boolean(user),
+            token: signVerifiedApplicant(session.email, user?.id, { sid: session.id, via: 'device' })
+        });
+    } catch (err) {
+        console.error('Tracking session resume error:', err.code || err.message);
+        return res.status(503).json({ success: false, message: 'We could not restore your session. Please try again.' });
+    }
+});
+
+// POST /api/applications/session/revoke — sign out this device, or every device for the verified email.
+// Always answers success so it reveals nothing about other sessions.
+router.post('/session/revoke', async (req, res) => {
+    try {
+        const deviceToken = req.body?.deviceToken;
+        if (typeof deviceToken === 'string' && DEVICE_TOKEN.test(deviceToken)) {
+            const [rows] = await pool.query('SELECT id, email FROM applicant_tracking_sessions WHERE token_hash = ?', [hashVerificationToken(deviceToken)]);
+            if (rows[0]) {
+                if (req.body?.all === true) await pool.query('UPDATE applicant_tracking_sessions SET revoked_at = NOW() WHERE email = ? AND revoked_at IS NULL', [rows[0].email]);
+                else await pool.query('UPDATE applicant_tracking_sessions SET revoked_at = NOW() WHERE id = ? AND revoked_at IS NULL', [rows[0].id]);
+            }
+        } else if (req.body?.all === true) {
+            // No remembered device here: "sign out everywhere" uses the current verified session's email
+            let payload = null;
+            try { payload = readVerifiedApplicant(req.headers.authorization || ''); } catch { payload = null; }
+            if (payload) await pool.query('UPDATE applicant_tracking_sessions SET revoked_at = NOW() WHERE email = ? AND revoked_at IS NULL', [payload.email]);
+        }
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Tracking session revoke error:', err.code || err.message);
+        return res.status(503).json({ success: false, message: 'We could not sign out everywhere right now. Please try again.' });
+    }
+});
+
 // POST /api/applications/access — open a 2-hour tracking session with the reference number.
 router.post('/access', requireVerifiedEmail, validateBody('applicationAccess'), async (req, res) => {
     const reference = normalizeReference(req.body.reference_no);
@@ -96,7 +210,7 @@ router.post('/access', requireVerifiedEmail, validateBody('applicationAccess'), 
             [reference, req.verifiedApplicant.email]
         );
         if (rows.length === 0) return res.status(401).json({ success: false, message: GENERIC_ACCESS_ERROR });
-        return res.json({ success: true, token: signApplicantToken(rows[0].id, req.verifiedApplicant.email) });
+        return res.json({ success: true, token: signVerifiedApplicant(req.verifiedApplicant.email, rows[0].id, { sid: req.verifiedApplicant.sid, via: req.verifiedApplicant.via }) });
     } catch (err) {
         console.error('Application access error:', err.code || err.message);
         return res.status(500).json({ success: false, message: 'We could not verify your application right now. Please try again.' });
@@ -146,6 +260,8 @@ router.get('/:reference', applicantAccess, async (req, res) => {
         const [photos] = await pool.query('SELECT photo_url, category FROM house_photos WHERE house_id = ? ORDER BY sort_order ASC, id ASC', [house.id]);
         const [permitFiles] = await pool.query('SELECT permit_key, file_path FROM house_permit_files WHERE house_id = ? ORDER BY permit_key, sort_order, id', [house.id]);
         const [history] = await pool.query('SELECT to_status AS status, remarks, created_at FROM application_status_history WHERE house_id = ? ORDER BY created_at ASC, id ASC', [house.id]);
+        const [customDocuments] = await pool.query('SELECT criteria_id, file_path, file_paths, expiry_date FROM house_documents WHERE house_id = ?', [house.id]);
+        const [customCriteria] = await pool.query('SELECT id, label, requirement_type FROM checklist_criteria WHERE is_active = 1 AND permit_key IS NULL AND id NOT BETWEEN 30 AND 37 AND (house_id IS NULL OR house_id = ?)', [house.id]);
         const status = effectiveApplicationStatus(house);
         const fields = ['reference_no', 'name', 'img', 'location', 'barangay', 'map_link', 'price', 'phone_contact', 'description',
             'amenities_free', 'amenities_paid', 'latitude', 'longitude', 'advance_months', 'deposit_months', 'deposit_type', 'admin_comments', 'created_at'];
@@ -155,6 +271,7 @@ router.get('/:reference', applicantAccess, async (req, res) => {
             application: { ...Object.fromEntries([...fields, ...permits].map(f => [f, house[f] ?? null])), status, editable: APPLICANT_EDITABLE.has(status) },
             photos,
             permitFiles,
+            customDocuments, customCriteria,
             history
         });
     } catch (err) {
@@ -227,6 +344,10 @@ router.post('/new', applicantAccess, markApplicationUpload, uploadAccreditationF
 
 // POST /api/applications/activation-link — approved applicant gets a fresh one-time activation link.
 router.post('/activation-link', applicantAccess, async (req, res) => {
+    // Setting the owner password needs a fresh email verification, not a remembered device
+    if (req.verifiedApplicant?.via === 'device') {
+        return res.status(403).json({ success: false, code: 'FRESH_VERIFICATION_REQUIRED', message: 'For your security, verify your email again to activate your owner account.' });
+    }
     if (!changesByApplicant(`activation:${req.applicantId}`)) {
         return res.status(429).json({ success: false, message: 'Too many requests. Please wait a few minutes and try again.' });
     }

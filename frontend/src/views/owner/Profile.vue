@@ -1,4 +1,5 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
@@ -287,10 +288,7 @@ const loadError = ref('');
               <!-- Profile Pic Section -->
               <div class="flex flex-col sm:flex-row gap-5 items-center border-b border-slate-100 pb-5">
                 <div class="w-20 h-20 rounded-full overflow-hidden shadow-lg border-4 border-slate-50 shrink-0 bg-slate-50 relative group">
-                  <img :src="filePreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || nameInput || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`" 
-                       @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'Owner')}&background=dbeafe&color=1d4ed8&bold=true&size=288`"
-                       class="w-full h-full object-cover" 
-                       alt="Profile Picture" />
+                  <UserAvatar :src="filePreview" :name="user.name" class="w-full h-full" />
                 </div>
                 <div class="grow text-center sm:text-left space-y-2">
                   <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Account Photo</h3>

@@ -1,0 +1,235 @@
+/* Owner Portal only. The route marker is maintained by App.vue and includes
+   teleported drawers/dialogs. Never put unscoped resets in this stylesheet.
+   Important declarations bridge legacy scoped/utility rules until those pages
+   are migrated; all values are controlled here rather than changed globally. */
+body[data-owner-theme] {
+  --o-font: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  --o-mono: 'IBM Plex Mono', Consolas, monospace;
+  --o-navy: #123761;
+  --o-heading: #102e50;
+  --o-text: #1f334d;
+  --o-muted: #27476d;
+  --o-blue: #2563eb;
+  --o-blue-strong: #1d4ed8;
+  --o-border: #dfe7f1;
+  --o-canvas: #f3f7fc;
+  --o-shadow: 0 2px 4px rgb(16 46 80 / .02), 0 12px 32px rgb(16 46 80 / .045);
+  font-family: var(--o-font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--o-text);
+  background: var(--o-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Repeat tokens on theme roots: the shared Admin stylesheet defines local
+   --a-* values, so body inheritance alone cannot replace them. */
+body[data-owner-theme],
+body[data-owner-theme] :is(.owner-page, .management-page, .admin-shell, .management-sidebar.is-owner, .management-topbar.is-owner) {
+  --a-font: var(--o-font);
+  --a-heading: var(--o-heading);
+  --a-text: var(--o-text);
+  --a-muted: var(--o-muted);
+  --a-faint: #36577b;
+  --a-primary: var(--o-blue);
+  --a-primary-strong: var(--o-blue-strong);
+  --a-primary-soft: #eff5ff;
+  --a-primary-tint: #c9daf7;
+  --a-sidebar: var(--o-navy);
+  --a-bg: var(--o-canvas);
+  --a-surface: #fff;
+  --a-surface-2: #f8fafd;
+  --a-border: var(--o-border);
+  --a-success: #07804f;
+  --a-success-soft: #e7f8ef;
+  --a-warning: #925a0b;
+  --a-warning-soft: #fff7da;
+  --a-danger: #bd3342;
+  --a-danger-soft: #fff1f2;
+  --a-radius: 20px;
+  --a-radius-sm: 8px;
+  --a-shadow: var(--o-shadow);
+  font-family: var(--o-font) !important;
+}
+body[data-owner-theme] :is(h1,h2,h3,h4,h5,h6,p,span,a,label,button,input,select,textarea,option,strong,small,dt,dd,th,td,summary,time) {
+  font-family: inherit;
+}
+body[data-owner-theme] :is(.notif-owner-theme, .notif-owner-theme :is(h1,h2,h3,h4,p,span,a,label,button,input,select,textarea,strong,small,div), .docs-main, .docs-main :is(h1,h2,h3,p,span,a,label,button,input,select,option,strong), .ni-message-dialog, .ob-detail, .ob-drawer) {
+  font-family: var(--o-font) !important;
+}
+body[data-owner-theme] :is(h1,h2,h3,h4,strong,.font-bold,.font-extrabold,.font-black) { font-weight: 600; }
+body[data-owner-theme] :is(.font-bold,.font-extrabold,.font-black) { font-weight: 600 !important; }
+body[data-owner-theme] :is(.management-page-header h1, .rd-heading h1, .ob-heading h1, .od-head h1) {
+  font-size: clamp(27px, 2.1vw, 34px) !important;
+  line-height: 1.2 !important;
+  font-weight: 600 !important;
+  letter-spacing: -.025em !important;
+  color: var(--o-heading);
+}
+body[data-owner-theme] :is(.management-page-description, .ob-heading p) { font-size: 13px; line-height: 1.6; color: var(--o-muted); }
+body[data-owner-theme] :is(.management-eyebrow, .rd-eyebrow, .room-summary-kicker) { font-size: 10.5px; font-weight: 600; letter-spacing: .09em !important; }
+body[data-owner-theme] :is(button,input,select,textarea) { font-family: var(--o-font); }
+
+/* Navigation: dimensions and mobile open/close behavior remain shared. */
+body[data-owner-theme] .management-sidebar.is-owner { background: linear-gradient(165deg, #153e6e, #102f55); box-shadow: none; }
+body[data-owner-theme] .is-owner .management-brand { padding: 24px 20px; gap: 12px; }
+body[data-owner-theme] .is-owner .management-brand strong { font-size: 16px; font-weight: 600; letter-spacing: -.015em; }
+body[data-owner-theme] .is-owner .management-brand small { font-size: 12px; font-weight: 400; color: #b6cbe3; }
+body[data-owner-theme] .is-owner .management-nav-groups { padding: 8px 14px 16px; }
+body[data-owner-theme] .is-owner .management-nav-groups section { margin-bottom: 18px; }
+body[data-owner-theme] .is-owner .management-nav-label { font-size: 10.5px; line-height: 16px; letter-spacing: .1em; font-weight: 600; color: #9db9da; margin: 22px 10px 9px; }
+body[data-owner-theme] .is-owner .management-nav-link { min-height: 42px; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 500; line-height: 20px; color: #dce8f6; gap: 12px; }
+body[data-owner-theme] .is-owner .management-nav-link i { font-size: 15px; color: #aac7e7; }
+body[data-owner-theme] .is-owner .management-nav-link.is-active { background: #315880; box-shadow: inset 3px 0 #fff; color: white; }
+body[data-owner-theme] .is-owner .management-nav-link.is-active:is(:hover,:focus-visible) { background: #3a628b; color: #fff; }
+body[data-owner-theme] .is-owner .management-nav-link.is-active i { color: #fff; }
+body[data-owner-theme] .is-owner .management-nav-link:not(.is-active):is(:hover,:focus-visible) { background: #ffffff12; color: #fff; }
+body[data-owner-theme] .is-owner .admin-nav-user { background: #ffffff0b; border: 1px solid #ffffff16; border-radius: 14px; padding: 12px; }
+body[data-owner-theme] .is-owner .admin-avatar { background: #e6d6fc; color: #61467d; font-size: 12px; font-weight: 600; }
+body[data-owner-theme] .is-owner .admin-nav-user strong { font-size: 12px; font-weight: 600; }
+body[data-owner-theme] .is-owner .admin-nav-user small { font-size: 11px; color: #b2c9e2; }
+body[data-owner-theme] .management-topbar.is-owner { background: #fff; border-color: var(--o-border); box-shadow: none; }
+body[data-owner-theme] .is-owner .management-breadcrumb { font-size: 12.5px; color: #27476d; }
+body[data-owner-theme] .is-owner .management-breadcrumb strong { color: #193553; font-weight: 600; }
+body[data-owner-theme] .is-owner .management-topbar-notifications { width: 42px; height: 42px; border-radius: 50%; background: #fff; border: 1px solid #e1eaf5; box-shadow: 0 5px 16px #153e6e05; }
+
+/* Forms and common actions; icon-only and text-only controls keep their layout. */
+body[data-owner-theme] :is(.management-button, .ob-btn, .bd-btn, .boarder-upfront-action, .pending-refresh, .ni-mark-all) {
+  min-height: 36px !important; padding: 8px 12px !important;
+  border-radius: 8px !important; font-size: 12.5px !important;
+  line-height: 18px !important; font-weight: 600 !important;
+  letter-spacing: 0 !important; text-transform: none !important;
+  box-shadow: none !important; gap: 7px;
+}
+body[data-owner-theme] :is(.management-button,.ob-btn,.bd-btn) :is(i,svg) { font-size: 12px; }
+body[data-owner-theme] :is(.management-field,.ob-filters,.boarder-type-filter) :is(input,select,textarea),
+body[data-owner-theme] .management-page main :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea) {
+  font-size: 13px; font-weight: 400; line-height: 20px; border-radius: 8px !important; border-color: var(--o-border);
+}
+body[data-owner-theme] .management-page input[type=file]::file-selector-button { font: 500 12px/18px var(--o-font); padding: 7px 10px; border-radius: 6px; }
+body[data-owner-theme] :is(button,a,input,select,textarea,summary):focus-visible { outline: 2px solid #4384ed; outline-offset: 3px; }
+body[data-owner-theme] :is(button,a,input,select,textarea,summary) { transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+
+/* Status and payment remain distinct: filled lifecycle / bordered payment. */
+body[data-owner-theme] .o-badge { border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 500; line-height: 16px; gap: 5px; }
+body[data-owner-theme] .o-badge.small { padding: 2px 7px; font-size: 10.5px; }
+body[data-owner-theme] .o-badge.green { background: #e7f8ef; color: #07804f; }
+body[data-owner-theme] .o-badge.amber { background: #fff5d1; color: #925a0b; }
+body[data-owner-theme] .o-badge.orange { background: #fff3d6; color: #94550a; }
+body[data-owner-theme] .o-badge.red { background: #fff1f2; color: #bd3342; }
+body[data-owner-theme] .o-badge.payment { border-radius: 6px; border: 1px solid currentColor; background: #fff; }
+body[data-owner-theme] .o-badge.payment.green { background: #f0fdfa; color: #087b73; }
+body[data-owner-theme] .o-badge.payment:is(.amber,.orange) { background: #fffbeb; color: #925a0b; }
+
+/* Room Details: keep all functional sections, refine density and hierarchy. */
+body[data-owner-theme] :is(.room-summary,.pending-requests,.boarder-section) { border: 1px solid var(--o-border) !important; border-radius: 20px !important; box-shadow: var(--o-shadow) !important; }
+body[data-owner-theme] .room-details-content { padding-top: 28px !important; }
+body[data-owner-theme] .room-details-page-header { margin-bottom: 24px; }
+body[data-owner-theme] .rd-subtitle { font-size: 13px; font-weight: 400; gap: 12px; margin-top: 8px; }
+body[data-owner-theme] .room-details-sections { gap: 24px; }
+body[data-owner-theme] .room-summary-description { padding: 26px 28px; }
+body[data-owner-theme] .room-summary-description h2 { font-size: 19px; font-weight: 600; line-height: 26px; }
+body[data-owner-theme] .room-summary-description>p:not(.room-summary-kicker) { font-size: 12.5px; line-height: 20px; color: var(--o-muted); }
+body[data-owner-theme] .room-summary-kicker { font-weight: 600; font-size: 10.5px; }
+body[data-owner-theme] .room-summary-amenities { grid-template-columns: 125px minmax(0,1fr); gap: 12px; margin-top: 16px; }
+body[data-owner-theme] .room-summary-amenities h3 { font-size: 11.5px; font-weight: 600; line-height: 20px; }
+body[data-owner-theme] .room-summary-amenities span { padding: 4px 9px; font-size: 11px; line-height: 16px; font-weight: 400; }
+body[data-owner-theme] .room-summary-amenities .is-free { color: #10b981; }
+body[data-owner-theme] .room-summary-amenities .is-paid { color: #f59e0b; }
+body[data-owner-theme] .room-summary-facts dt { font-size: 11px; color: var(--o-muted); }
+body[data-owner-theme] .room-summary-facts dd { font-size: 12.5px; font-weight: 600; }
+body[data-owner-theme] .room-summary-rent { background: #effbf6; border-radius: 16px; }
+body[data-owner-theme] .room-summary-rent>strong { font-family: var(--o-font); font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+body[data-owner-theme] .room-summary-rent>p { font-size: 11.5px; font-weight: 500; }
+body[data-owner-theme] .room-summary-rent>span { font-size: 11px; font-weight: 500; }
+body[data-owner-theme] .room-today-heading h3 { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] .room-today-counts dd { font-size: 19px; font-weight: 500; font-variant-numeric: tabular-nums; }
+body[data-owner-theme] .room-details-refined .rd-section-heading { padding: 20px 24px !important; min-height: 76px; }
+body[data-owner-theme] :is(.rd-section-title h2,.rd-boarder-title) { font-size: 15px !important; font-weight: 600 !important; line-height: 21px !important; }
+body[data-owner-theme] :is(.rd-section-title p,.boarder-row-hint) { font-size: 11.5px !important; line-height: 17px; color: var(--o-muted); }
+body[data-owner-theme] .boarder-type-filter select { min-height: 36px; font-size: 12px; font-weight: 400; }
+body[data-owner-theme] .rd-section-marker { background: #f59e0b; width: 6px; height: 27px; }
+body[data-owner-theme] .pending-student p:first-child { font-size: 12px; font-weight: 600; color: var(--o-heading); }
+body[data-owner-theme] .pending-student p:last-child { font-size: 11px; font-weight: 400; color: var(--o-muted); }
+body[data-owner-theme] .pending-deadline .reservation-deadline { border-radius: 10px; background: #fffdf5; border-color: #f5d479; padding: 11px 13px; }
+body[data-owner-theme] .pending-deadline .rd-label { font-size: 10px; font-weight: 600; color: #99600a; }
+body[data-owner-theme] .pending-deadline .rd-time-row time { font-family: var(--o-mono); font-size: 11px; font-weight: 500; }
+body[data-owner-theme] .pending-deadline .rd-body small { font-size: 10.5px; line-height: 16px; color: var(--o-muted); }
+body[data-owner-theme] .rd-remaining { border-radius: 4px; font-size: 10px; font-weight: 500; }
+body[data-owner-theme] .room-details-refined :is(.pending-requests,.boarder-table) th {
+  font-size: 11.5px !important; line-height: 17px; font-weight: 500 !important; color: var(--o-muted) !important;
+  padding: 13px 18px !important; background: #fbfcfe !important; text-transform: none !important; letter-spacing: 0 !important;
+}
+body[data-owner-theme] .room-details-refined :is(.pending-requests,.boarder-table) td { padding: 16px 18px !important; font-size: 12.5px; line-height: 19px; }
+body[data-owner-theme] .room-details-refined .boarder-expanded-row>td { padding: 0 18px 18px !important; }
+body[data-owner-theme] .boarder-name { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] :is(.boarder-reference,.ob-ref) { font-family: var(--o-mono) !important; font-size: 12px; font-weight: 600; color: #111827 !important; }
+body[data-owner-theme] :is(.boarder-check-in,.boarder-check-out,.boarder-upfront-amount) { font-family: var(--o-mono); font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+body[data-owner-theme] .boarder-row-actions { max-width: 148px; gap: 6px; }
+body[data-owner-theme] .boarder-row-actions .bd-btn { min-height: 32px !important; font-size: 11.5px !important; padding: 6px 10px !important; }
+body[data-owner-theme] .boarder-table-footer { padding: 12px 22px; font-size: 11.5px; }
+body[data-owner-theme] .boarder-expanded-panel h3 { font-weight: 600; }
+body[data-owner-theme] .boarder-expanded-grid dt { font-size: 13px; font-weight: 600; color: var(--o-muted); }
+body[data-owner-theme] .boarder-expanded-grid dd { font-size: 14px; line-height: 1.7; color: var(--o-text); }
+
+/* Booking workspace and body-teleported details panel. */
+body[data-owner-theme] :is(.ob-workspace,.ob-detail) { --ink: var(--o-heading); --text: var(--o-text); --muted: var(--o-muted); --line: var(--o-border); --mono: var(--o-mono); font-family: var(--o-font); font-size: 13px; line-height: 1.5; }
+body[data-owner-theme] :is(.ob-name,.ob-room) { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] .ob-method { font-size: 10.5px; font-weight: 500; }
+body[data-owner-theme] :is(.ob-pager,.datatable-top,.datatable-bottom) { font-size: 12px; font-weight: 400 !important; text-transform: none !important; letter-spacing: 0 !important; }
+body[data-owner-theme] .datatable-table>thead>tr>th, body[data-owner-theme] .datatable-sorter { font-size: 11.5px !important; font-weight: 500 !important; text-transform: none !important; letter-spacing: 0 !important; }
+body[data-owner-theme] .datatable-table>tbody>tr>td { font-size: 12.5px !important; font-weight: 400 !important; padding-top: 13px !important; padding-bottom: 13px !important; }
+body[data-owner-theme] .ob-detail h2 { font-size: 21px; line-height: 28px; font-weight: 600; }
+body[data-owner-theme] .ob-person h3 { font-size: 14px; font-weight: 600; }
+body[data-owner-theme] .ob-detail-tabs button { font-size: 13px; font-weight: 600; color: #102e50; }
+body[data-owner-theme] .ob-detail-tabs button[aria-selected=true] { color: #1d4ed8; }
+body[data-owner-theme] .ob-detail :is(.ob-facts dt,.ob-ledger dt,.ob-ledger dt small,.ob-when,.ob-subtle) { color: #27476d; font-weight: 500; }
+body[data-owner-theme] .ob-detail :is(.ob-detail-header p,.ob-person p,.ob-person small) { color: #111827; font-weight: 600; }
+body[data-owner-theme] .ob-section h4 { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; }
+body[data-owner-theme] .ob-timeline strong { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] :is(.ob-facts dd.strong,.ob-facts dd.accent) { font-weight: 600; }
+body[data-owner-theme] :is(.ni-message-dialog h2,dialog h2,dialog h3) { font-weight: 600; letter-spacing: -.015em; }
+body[data-owner-theme] .ni-full-message { font-size: 13px; line-height: 1.7; }
+body[data-owner-theme] .ni-tabs button { font-size: 12px; font-weight: 500; padding: 8px 13px; min-height: 36px; }
+body[data-owner-theme] .ni-tabs button>span { font-size: 11px; font-weight: 500; }
+body[data-owner-theme] .owner-test-clock-shortcut { font-family: var(--o-font); border-radius: 9px; font-size: 12px; font-weight: 500; box-shadow: 0 4px 14px #153e6e18; }
+
+/* Remaining Owner management surfaces use the same compact controls and scale. */
+body[data-owner-theme] :is(.admin-btn,.admin-button,.od-act,.od-btn-outline,.od-btn-gold,.od-btn-glass) { min-height: 36px; padding: 8px 12px; font-size: 12.5px; font-weight: 600 !important; border-radius: 8px; box-shadow: none !important; }
+body[data-owner-theme] :is(.od-switch-name,.od-title,.od-property-name) { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] .od-welcome h1 { font-size: 28px !important; font-weight: 600 !important; }
+body[data-owner-theme] .od-welcome-summary { font-size: 13px; }
+body[data-owner-theme] :is(.od-portal,.od-switch-count) { border-radius: 6px; font-weight: 500; }
+body[data-owner-theme] .tp-bar { padding: 11px 16px; font-size: 12px; font-weight: 400; background: #fbfcfe; }
+body[data-owner-theme] :is(.tp-pages button,.tp-rows select) { font-size: 12px; font-weight: 500; border-radius: 7px; }
+body[data-owner-theme] .tp-pages button { height: 34px; min-width: 34px; padding: 0 10px; }
+body[data-owner-theme] :is(.management-field label,.admin-field label) { font-size: 12px; font-weight: 500; }
+body[data-owner-theme] .admin-field { min-height: 40px; font-size: 13px; line-height: 20px; padding: 9px 11px; border-radius: 8px; }
+body[data-owner-theme] .admin-dialog { font-family: var(--o-font); border-radius: 18px; border: 1px solid var(--o-border); }
+body[data-owner-theme] .upcoming h2 { font-size: 15px; font-weight: 600; }
+body[data-owner-theme] .upcoming h3 { font-size: 13px; font-weight: 600; }
+body[data-owner-theme] .upcoming-ref { font-family: var(--o-mono); font-size: 11px; }
+body[data-owner-theme] .upcoming-facts dd { font-weight: 500; font-size: 12px; }
+body[data-owner-theme] .upcoming-count { font-weight: 500; font-size: 11px; }
+
+/* Readable supporting text on Owner content surfaces, including older forms.
+   Semantic status colors and white-on-dark navigation/hero text stay separate. */
+body[data-owner-theme] :is(main,.admin-dialog,.ni-message-dialog) :is(.text-slate-400,.text-slate-500,.text-slate-600,.text-gray-400,.text-gray-500,.text-gray-600,.text-zinc-400,.text-zinc-500) { color: #27476d !important; }
+body[data-owner-theme] :is(.management-page,.admin-shell,.ob-drawer) input::placeholder,
+body[data-owner-theme] :is(.management-page,.admin-shell,.ob-drawer) textarea::placeholder { color: #36577b; opacity: 1; }
+
+@media (max-width: 639px) {
+  body[data-owner-theme] :is(.management-page-header h1,.rd-heading h1,.ob-heading h1) { font-size: 27px !important; }
+  body[data-owner-theme] :is(.room-summary,.pending-requests,.boarder-section) { border-radius: 16px !important; }
+  body[data-owner-theme] .room-details-refined .rd-section-heading { padding: 17px 16px !important; }
+  body[data-owner-theme] .room-summary-description { padding: 20px; }
+  body[data-owner-theme] .room-summary-amenities { grid-template-columns: 110px minmax(0,1fr); gap: 10px; }
+  body[data-owner-theme] .room-details-content { padding-top: 20px !important; }
+}
+@media (pointer: coarse) {
+  body[data-owner-theme] :is(.management-button,.admin-btn,.admin-button,.admin-field,.od-act,.od-btn-outline,.od-btn-gold,.od-btn-glass,.ob-btn,.bd-btn,.boarder-upfront-action,.pending-refresh,.ni-mark-all,.boarder-row-actions .bd-btn,.tp-pages button,.tp-rows select) { min-height: 44px !important; }
+  body[data-owner-theme] :is(.management-nav-link,.ni-tabs button,.boarder-type-filter select) { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-owner-theme] :is(button,a,input,select,textarea,summary,.ob-drawer[open]) { transition: none !important; animation: none !important; }
+}

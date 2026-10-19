@@ -1,0 +1,15 @@
+/* Explicitly tagged Print / Save PDF controls across all portals.
+   Only colors are shared; each page retains its sizing, layout and print handler. */
+button.app-print-button {
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #fff !important;
+}
+button.app-print-button:hover:not(:disabled) {
+  background-color: #b91c1c !important;
+  border-color: #b91c1c !important;
+}
+button.app-print-button:focus-visible {
+  outline: 2px solid #b91c1c;
+  outline-offset: 3px;
+}

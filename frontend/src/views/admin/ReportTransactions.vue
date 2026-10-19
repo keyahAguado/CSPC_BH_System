@@ -125,7 +125,7 @@ const loadError = ref('');
       </div>
 
       <div class="mt-16 flex justify-center no-print">
-        <button @click="handlePrint" class="bg-[#2a528a] hover:bg-slate-800 text-white font-semibold px-12 py-4 rounded-xl transition uppercase text-[12px] tracking-wide flex items-center gap-3 shadow-lg management-button management-button-primary">
+        <button @click="handlePrint" class="app-print-button bg-[#2a528a] hover:bg-slate-800 text-white font-semibold px-12 py-4 rounded-xl transition uppercase text-[12px] tracking-wide flex items-center gap-3 shadow-lg management-button management-button-primary">
           <i class="fa-solid fa-print"></i> Print Reservation Report
         </button>
       </div>

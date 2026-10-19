@@ -1,5 +1,14 @@
+import { notifyRenewalIncomingClosed, notifyRenewalIncomingApproved, rejectRenewalIncoming } from '../config/renewalPriority.js';
+import { bookingNow } from '../config/bookingClock.js';
+import { reviewPaidCancellation, PAID_RESERVATION_POLICY } from '../config/paidCancellation.js';
+import { cancelFutureReservation } from '../config/bookingCancellation.js';
+import { startBookedStay } from '../config/scheduledOccupancy.js';
+import { bookingIdFromReference, formalDate, stayPeriod, studentStayConflict, roomStayUsage, manilaToday, onlinePaymentDeadline, rejectUnfittablePending } from '../config/stayAvailability.js';
+import { updateBookingArrival, confirmOccupantArrival, recordNonArrival, closeNonArrival } from '../config/bookingMoveIn.js';
+import { saveRoomDetails } from '../config/roomDetails.js';
 import { validateImages } from '../config/uploadValidation.js';
 import { validateBody } from '../config/inputValidation.js';
+import { notificationForRole } from '../config/notificationAudience.js';
 import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
@@ -454,7 +463,13 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 
         const [rooms] = await pool.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.check_out_date IS NULL) AS occupant_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date <= CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS reserved_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date > CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS upcoming_reserved_count,
                 (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'pending') AS pending_request_count
              FROM rooms r
              WHERE r.house_id = ? AND (r.deleted_at IS NULL OR r.deleted_at = 0)`,
@@ -463,7 +478,13 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 
         const [archivedRooms] = await pool.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS occupant_count,
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.check_out_date IS NULL) AS occupant_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date <= CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS reserved_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date > CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS upcoming_reserved_count,
                 (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'pending') AS pending_request_count
              FROM rooms r
              WHERE r.house_id = ? AND r.deleted_at IS NOT NULL AND r.deleted_at != 0`,
@@ -477,7 +498,7 @@ router.get('/rooms/:houseId', authenticateToken, verifyOwner, async (req, res) =
 });
 
 // F. POST - Add a new room
-router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, validateBody('room'), async (req, res) => {
+router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, upload.array('room_photos', 6), validateImages, validateBody('room'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -510,16 +531,18 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, validateBody(
         const basePrice = houseRows[0].price || 0;
         const roomPrice = (price !== undefined && price !== null && price !== '') ? parseFloat(price) : basePrice;
 
-        await connection.query(
+        const [createdRoom] = await connection.query(
             "INSERT INTO rooms (house_id, room_number, gender_type, capacity, price, status) VALUES (?, ?, ?, ?, ?, 'available')",
             [req.params.houseId, input.roomNumber, gender_type || 'female', input.capacity, roomPrice]
         );
+
+        await saveRoomDetails(connection, createdRoom.insertId, req, {}, true);
 
         await connection.commit();
         transactionOpen = false;
         res.json({ success: true, message: 'Room created successfully.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(err.status || 500).json({ success: false, message: err.status === 400 ? err.message : 'Could not save this room. Please try again.' });
     } finally {
         if (connection) {
             try { if (transactionOpen) await connection.rollback(); }
@@ -528,21 +551,22 @@ router.post('/rooms/add/:houseId', authenticateToken, verifyOwner, validateBody(
     }
 });
 
-// Occupants and approved online reservations both consume a room's capacity.
+// Occupants and approved reservations both consume a room's capacity.
 async function getRoomCapacityUsage(connection, roomId) {
     const [occupants] = await connection.query(
-        'SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE())',
+        'SELECT COUNT(*) AS count FROM occupants WHERE room_id = ? AND check_out_date IS NULL',
         [roomId]
     );
     const [reservations] = await connection.query(
         `SELECT COUNT(*) AS count FROM bookings b
-         WHERE b.room_id = ? AND b.status = 'confirmed' AND b.payment_method = 'paymongo' AND b.payment_status != 'paid'
+         WHERE b.room_id = ? AND b.status = 'confirmed' AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
          AND NOT EXISTS (SELECT 1 FROM occupants o
              WHERE o.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id))
-             AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()))`,
+             )`,
         [roomId]
     );
-    return { occupants: Number(occupants[0].count), reserved: Number(reservations[0].count) };
+    const requiredCapacity = Math.max(Number(occupants[0].count), await roomStayUsage(connection,roomId,{start:manilaToday(),end:'9999-12-31'}));
+    return { occupants: Number(occupants[0].count), reserved: Number(reservations[0].count), requiredCapacity };
 }
 
 function parseRoomInput(roomNumber, capacity) {
@@ -561,7 +585,7 @@ function parseRoomInput(roomNumber, capacity) {
 }
 
 // F1. PUT - Edit an existing room
-router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('room'), async (req, res) => {
+router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, upload.array('room_photos', 6), validateImages, validateBody('room'), async (req, res) => {
     let connection;
     let transactionOpen = false;
     try {
@@ -572,7 +596,7 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
 
         // Verify room belongs to owner's house
         const [roomRows] = await connection.query(
-            `SELECT r.id, r.house_id, r.price, r.room_number
+            `SELECT r.id, r.house_id, r.price, r.room_number, r.floor_label, r.amenities, r.photos, r.amenities_free, r.amenities_paid
              FROM rooms r 
              JOIN boarding_houses bh ON r.house_id = bh.id 
              WHERE r.id = ? AND bh.owner_id = ? FOR UPDATE`,
@@ -602,11 +626,11 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
 
         // Read after the room lock so concurrent additions/approvals cannot take these places.
         const usage = await getRoomCapacityUsage(connection, req.params.roomId);
-        if (parsedCapacity < usage.occupants + usage.reserved) {
+        if (parsedCapacity < usage.requiredCapacity) {
             return res.status(400).json({
                 success: false,
                 message: usage.reserved > 0
-                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved online reservation(s) awaiting payment.`
+                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved reservation(s) reserved for their booked dates.`
                     : `Cannot set capacity to ${parsedCapacity}. This room currently has ${usage.occupants} active occupant(s).`
             });
         }
@@ -616,12 +640,14 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
             [input.roomNumber, gender_type || 'female', parsedCapacity, roomPrice, req.params.roomId]
         );
 
+        await saveRoomDetails(connection, req.params.roomId, req, roomRows[0]);
+
         await connection.commit();
         transactionOpen = false;
         res.json({ success: true, message: 'Room details updated successfully.' });
     } catch (err) {
         console.error('Edit room error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(err.status || 500).json({ success: false, message: err.status === 400 ? err.message : 'Could not save this room. Please try again.' });
     } finally {
         if (connection) {
             try { if (transactionOpen) await connection.rollback(); }
@@ -656,7 +682,7 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, validateB
             return res.status(400).json({ success: false, message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.' });
         }
         if (usage.reserved > 0) {
-            return res.status(400).json({ success: false, message: 'Cannot archive room with approved online reservations awaiting payment. Resolve those reservations first.' });
+            return res.status(400).json({ success: false, message: 'Cannot archive room with approved reservations awaiting payment. Resolve those reservations first.' });
         }
 
         await connection.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
@@ -725,7 +751,7 @@ router.delete('/boarding-houses/:houseId', authenticateToken, verifyOwner, valid
             `SELECT COUNT(*) AS count
              FROM occupants o
              JOIN rooms r ON o.room_id = r.id
-             WHERE r.house_id = ? AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
+             WHERE r.house_id = ? AND o.check_out_date IS NULL`,
             [req.params.houseId]
         );
 
@@ -792,11 +818,11 @@ router.put('/rooms/edit/:roomId', authenticateToken, verifyOwner, validateBody('
 
         // Read after the room lock so concurrent additions/approvals cannot take these places.
         const usage = await getRoomCapacityUsage(connection, roomId);
-        if (parsedCapacity < usage.occupants + usage.reserved) {
+        if (parsedCapacity < usage.requiredCapacity) {
             return res.status(400).json({
                 success: false,
                 message: usage.reserved > 0
-                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved online reservation(s) awaiting payment.`
+                    ? `Cannot set capacity to ${parsedCapacity}. This room has ${usage.occupants} active occupant(s) and ${usage.reserved} approved reservation(s) for their booked dates.`
                     : `Cannot set capacity to ${parsedCapacity}. This room currently has ${usage.occupants} active occupant(s).`
             });
         }
@@ -846,7 +872,7 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, validateB
             return res.status(400).json({ success: false, message: 'Cannot delete room with active occupants. Please check out or relocate boarders first.' });
         }
         if (usage.reserved > 0) {
-            return res.status(400).json({ success: false, message: 'Cannot archive room with approved online reservations awaiting payment. Resolve those reservations first.' });
+            return res.status(400).json({ success: false, message: 'Cannot archive room with approved reservations awaiting payment. Resolve those reservations first.' });
         }
 
         await connection.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.roomId]);
@@ -869,7 +895,12 @@ router.delete('/rooms/delete/:roomId', authenticateToken, verifyOwner, validateB
 router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req, res) => {
     try {
         const [roomRows] = await pool.query(
-            `SELECT r.*, bh.price as house_price, bh.advance_months, bh.deposit_months, bh.deposit_type, bh.id as house_id
+            `SELECT r.*, (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date <= CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS reserved_count,
+                (SELECT COUNT(*) FROM bookings b WHERE b.room_id = r.id AND b.status = 'confirmed' AND b.check_in_date > CURDATE()
+                    AND (b.move_in_required = 1 OR (b.payment_method = 'paymongo' AND b.payment_status != 'paid')) AND b.payment_review_required = 0
+                    AND NOT EXISTS (SELECT 1 FROM occupants ro WHERE ro.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id,4,'0'),b.id)))) AS upcoming_reserved_count, bh.price as house_price, bh.advance_months, bh.deposit_months, bh.deposit_type, bh.id as house_id
              FROM rooms r
              JOIN boarding_houses bh ON r.house_id = bh.id
              WHERE r.id = ? AND bh.owner_id = ?`,
@@ -885,7 +916,7 @@ router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req,
              FROM occupants o
              JOIN rooms r ON o.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
-             WHERE o.room_id = ? AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())`,
+             WHERE o.room_id = ? AND o.check_out_date IS NULL`,
             [req.params.roomId]
         );
 
@@ -897,7 +928,12 @@ router.get('/rooms/details/:roomId', authenticateToken, verifyOwner, async (req,
             [req.params.roomId]
         );
 
-        res.json({ success: true, room: roomRows[0], occupants, pendingBookings });
+        const [upcomingBookings] = await pool.query(
+            `SELECT b.*, u.name AS student_name, u.profile_pic FROM bookings b JOIN users u ON u.id=b.student_id
+             WHERE b.room_id=? AND b.status='confirmed' AND b.move_in_confirmed_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM occupants o WHERE o.reference_no=CONCAT('REF-',IF(CHAR_LENGTH(b.id)<4,LPAD(b.id,4,'0'),b.id)))
+             ORDER BY b.check_in_date,b.id`,[req.params.roomId]);
+        res.json({ success: true, room: roomRows[0], occupants, pendingBookings, upcomingBookings });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -914,7 +950,7 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, vali
 
         const [roomRows] = await connection.query(
             `SELECT r.*, 
-                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) AS current_count
+                (SELECT COUNT(*) FROM occupants o WHERE o.room_id = r.id AND o.check_out_date IS NULL) AS current_count
              FROM rooms r
              JOIN boarding_houses bh ON r.house_id = bh.id
              WHERE r.id = ? AND bh.owner_id = ? AND r.deleted_at IS NULL`,
@@ -935,7 +971,7 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, vali
         const [upfrontColumns] = await connection.query("SHOW COLUMNS FROM occupants LIKE 'upfront_status'");
         if (upfrontColumns.length === 0) {
             try {
-                await connection.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
+                await connection.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Unpaid'");
             } catch (err) {
                 if (err.code !== 'ER_DUP_FIELDNAME') throw err;
             }
@@ -956,13 +992,14 @@ router.post('/rooms/occupants/add/:roomId', authenticateToken, verifyOwner, vali
         if (usage.occupants >= currentRooms[0].capacity) {
             return res.status(400).json({ success: false, message: 'Room has reached maximum occupant capacity.' });
         }
-        if (usage.occupants + usage.reserved >= currentRooms[0].capacity) {
-            return res.status(400).json({ success: false, message: 'Room has no available places. Remaining places are reserved for approved online bookings awaiting payment.' });
-        }
+
+
+        const manualPeriod = stayPeriod(check_in_date || manilaToday(),parseInt(months)||1);
+        if (await roomStayUsage(connection,roomId,manualPeriod) >= Number(currentRooms[0].capacity)) return res.status(409).json({success:false,message:'This stay would overlap a reserved bed. Choose different dates or a room with availability for the entire stay.'});
 
         const upfrontStatus = upfront_status === 'Paid' ? 'Paid' : 'Unpaid';
 
-        const checkIn = check_in_date || new Date().toISOString().split('T')[0];
+        const checkIn = check_in_date || manilaToday();
         const monthlyRent = parseFloat(currentRooms[0].price || 0);
         const totalAmount = monthlyRent * (parseInt(months) || 1);
         if (!Number.isFinite(totalAmount) || totalAmount < 0 || totalAmount > 99999999.99) {
@@ -1010,13 +1047,21 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, vali
             return res.status(400).json({ success: false, message: 'Invalid monthly rent status.' });
         }
         const [owned] = await connection.query(
-            `SELECT o.student_id, o.room_id FROM occupants o JOIN rooms r ON r.id = o.room_id
+            `SELECT o.student_id, o.room_id, o.reference_no FROM occupants o JOIN rooms r ON r.id = o.room_id
              JOIN boarding_houses bh ON bh.id = r.house_id WHERE o.id = ? AND bh.owner_id = ?`,
             [req.params.id, req.user.id]);
         if (!owned.length) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Occupant not found or access denied.' });
         }
+
+        const payingOccupant=owned[0];
+        if (payingOccupant.student_id) await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[payingOccupant.student_id]);
+        if (payingOccupant.reference_no) {
+            const [linked]=await connection.query("SELECT id, status, expiry_reason FROM bookings WHERE id = ? FOR UPDATE",[bookingIdFromReference(payingOccupant.reference_no)]);
+            if (linked[0]?.expiry_reason==='cash_no_show') { await connection.rollback(); return res.status(409).json({success:false,message:'This booking was closed as a cash no-show, so a payment cannot be recorded on it.'}); }
+        }
+        await connection.query('SELECT id FROM rooms WHERE id = ? FOR UPDATE',[payingOccupant.room_id]);
 
         // Monthly rent is separate from verified online move-in payment.
         await connection.query(
@@ -1034,9 +1079,9 @@ router.post('/rooms/occupants/payment/:id', authenticateToken, verifyOwner, vali
             // 3. Synchronize status with the active booking record
             await connection.query(
                 `UPDATE bookings SET payment_status = ? 
-                 WHERE student_id = ? AND room_id = ? AND status = 'confirmed'
+                 WHERE id = ? AND status = 'confirmed'
                  AND payment_method = 'cash'`,
-                [bookingStatus, student_id, room_id]
+                [bookingStatus, bookingIdFromReference(occupantRows[0].reference_no)]
             );
         }
 
@@ -1059,7 +1104,7 @@ router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwn
 
         // Reject missing or other-owner occupants before any update or schema check.
         const [occupantRows] = await connection.query(
-            `SELECT o.id FROM occupants o
+            `SELECT o.id, o.student_id, o.room_id, o.reference_no FROM occupants o
              JOIN rooms r ON r.id = o.room_id
              JOIN boarding_houses bh ON bh.id = r.house_id
              WHERE o.id = ? AND bh.owner_id = ?`,
@@ -1070,12 +1115,16 @@ router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwn
             return res.status(404).json({ success: false, message: 'Occupant not found or access denied.' });
         }
 
-        // 0. Ensure upfront_status column exists in occupants table
-        try {
-            await connection.query("ALTER TABLE occupants ADD COLUMN upfront_status VARCHAR(50) DEFAULT 'Paid'");
-        } catch (colErr) {
-            // Column already exists, ignore error
+        // Lock in the same order as no-show cancellation and automatic starts.
+        const occupant=occupantRows[0];
+        if (occupant.student_id) await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[occupant.student_id]);
+        if (occupant.reference_no) {
+            const [linked]=await connection.query("SELECT id, status, expiry_reason, payment_method, paymongo_payment_id FROM bookings WHERE id = ? FOR UPDATE",[bookingIdFromReference(occupant.reference_no)]);
+            if (linked[0]?.payment_method==='paymongo' && linked[0]?.paymongo_payment_id) { await connection.rollback(); return res.status(409).json({success:false,message:'Verified online upfront payments cannot be changed using the cash collection control.'}); }
+            if (linked[0]?.expiry_reason==='cash_no_show') { await connection.rollback(); return res.status(409).json({success:false,message:'This booking was closed as a cash no-show, so a payment cannot be recorded on it.'}); }
         }
+        await connection.query('SELECT id FROM rooms WHERE id = ? FOR UPDATE',[occupant.room_id]);
+        await connection.query('SELECT id, upfront_status FROM occupants WHERE id = ? FOR UPDATE',[req.params.id]);
 
         const { status } = req.body;
         const targetStatus = status || 'Paid';
@@ -1097,6 +1146,12 @@ router.post('/rooms/occupants/upfront-payment/:id', authenticateToken, verifyOwn
     }
 });
 
+// I-3. POST - Confirm that an automatically started boarder physically arrived
+router.post('/rooms/occupants/arrival/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
+    try { res.json(await confirmOccupantArrival(pool, req.user.id, req.params.id)); }
+    catch (error) { res.status(error.status || 500).json({ success:false, message:error.status ? error.message : 'Could not confirm arrival. Please try again.' }); }
+});
+
 // J. POST - Checkout boarder (Transaction-safe: notifies student on check-out)
 router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     const connection = await pool.getConnection();
@@ -1105,7 +1160,7 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, val
 
         // 1. Pre-fetch occupant record + linked boarding house name before mutating
         const [occupantRows] = await connection.query(
-            `SELECT o.student_id, o.room_id, bh.name AS house_name
+            `SELECT o.student_id, o.room_id, o.reference_no, bh.name AS house_name
              FROM occupants o
              JOIN rooms r ON o.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
@@ -1120,6 +1175,13 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, val
 
         const { student_id, room_id, house_name } = occupantRows[0];
 
+        if (student_id) await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[student_id]);
+        await connection.query('SELECT id FROM rooms WHERE id = ? FOR UPDATE',[room_id]);
+        const [checkoutRows] = await connection.query('SELECT id, check_out_date, arrival_confirmed_at, non_arrival_recorded_at FROM occupants WHERE id = ? FOR UPDATE',[req.params.id]);
+        if (!checkoutRows.length || checkoutRows[0].check_out_date) { await connection.rollback(); return res.status(409).json({success:false,message:'Checkout is already recorded. Refresh the room details.'}); }
+        // Checkout would mark a stay Completed for a student the owner recorded as never arriving.
+        if (checkoutRows[0].non_arrival_recorded_at && !checkoutRows[0].arrival_confirmed_at) { await connection.rollback(); return res.status(409).json({success:false,message:'This student is recorded as not arrived, so checkout is not available. Confirm arrival if the student has moved in, or close the stay as "Did not arrive" from Bookings to free the bed.'}); }
+
         // 2. Set check_out_date to today
         await connection.query(
             'UPDATE occupants SET check_out_date = CURDATE() WHERE id = ?',
@@ -1131,8 +1193,8 @@ router.post('/rooms/occupants/checkout/:id', authenticateToken, verifyOwner, val
         if (student_id) {
             await connection.query(
                 `UPDATE bookings SET status = 'completed'
-                 WHERE student_id = ? AND room_id = ? AND status = 'confirmed'`,
-                [student_id, room_id]
+                 WHERE id = ? AND status = 'confirmed'`,
+                [bookingIdFromReference(occupantRows[0].reference_no)]
             );
 
             // 4. Notify the student via the notifications inbox
@@ -1168,15 +1230,20 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
         const { houseId } = req.query;
         let query = `
             SELECT b.*,
-                   (b.payment_method = 'paymongo' AND b.paymongo_payment_id IS NOT NULL
+                   (b.payment_method = 'paymongo' AND b.paymongo_payment_id IS NOT NULL AND (b.move_in_required = 0 OR b.payment_review_required = 1 OR b.status != 'confirmed')
                     AND NOT EXISTS (SELECT 1 FROM occupants po WHERE po.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id)))) AS payment_requires_review,
                    u.name as student_name, u.phone as contact_number, u.profile_pic, u.address, u.guardian_name,
                    r.room_number, r.gender_type as room_gender,
+                   ob.check_in_date AS occupant_check_in, ob.check_out_date AS occupant_check_out,
+                   ob.payment_status AS occupant_payment_status, ob.upfront_status AS occupant_upfront_status,
+                   ob.id AS occupant_id, ob.arrival_required AS occupant_arrival_required, ob.arrival_confirmed_at AS occupant_arrival_confirmed_at,
+                   ob.non_arrival_recorded_at AS occupant_non_arrival_recorded_at, ob.non_arrival_note AS occupant_non_arrival_note,
                    bh.name as house_name, bh.location as house_location, bh.advance_months, bh.deposit_months, bh.deposit_type
             FROM bookings b
             JOIN users u ON b.student_id = u.id
             JOIN rooms r ON b.room_id = r.id
             JOIN boarding_houses bh ON r.house_id = bh.id
+            LEFT JOIN occupants ob ON ob.reference_no = CONCAT('REF-', LPAD(b.id, GREATEST(4,CHAR_LENGTH(b.id)), '0'))
             WHERE bh.owner_id = ?
         `;
         const params = [req.user.id];
@@ -1194,7 +1261,7 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
             const advM = parseInt(b.advance_months || 0);
             const depM = parseInt(b.deposit_months || 0);
             const rent = parseFloat(b.monthly_rent || 0);
-            const initial_payment = (Math.max(1, advM) * rent) + (depM * rent);
+            const initial_payment = b.upfront_amount != null ? Number(b.upfront_amount) : (Math.max(1, advM) * rent) + (depM * rent);
 
             return {
                 ...b,
@@ -1205,9 +1272,9 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
         // Non-CSPC boarders are added straight into occupants (no booking row),
         // so surface them here too, shaped like bookings, for the monitoring list.
         let walkInQuery = `
-            SELECT o.id, o.reference_no, o.name AS student_name, o.contact_number, o.address,
+            SELECT o.id, o.room_id, bh.id AS house_id, o.reference_no, o.name AS student_name, o.contact_number, o.address,
                    o.emergency_contact, o.guardian_name, o.check_in_date, o.check_out_date,
-                   o.months, o.amount, o.payment_status, o.payment_method,
+                   o.months, o.amount, o.payment_status, o.payment_method, o.upfront_status,
                    o.created_at AS booking_date,
                    r.room_number, r.gender_type AS room_gender, r.price AS monthly_rent,
                    bh.name AS house_name, bh.location AS house_location,
@@ -1224,14 +1291,15 @@ router.get('/bookings', authenticateToken, verifyOwner, async (req, res) => {
         }
         const [walkIns] = await pool.query(walkInQuery, walkInParams);
 
-        const today = new Date().toISOString().split('T')[0];
         const walkInRows = walkIns.map(o => {
-            const checkOut = o.check_out_date ? new Date(o.check_out_date).toISOString().split('T')[0] : null;
+            // This is an actual recorded checkout, not the projected stay end.
+            // Resetting the test clock must never reopen a closed manual stay.
+            const checkedOut = o.check_out_date != null && o.check_out_date !== '';
             const rent = parseFloat(o.monthly_rent || 0);
             return {
                 ...o,
                 is_non_cspc: 1,
-                status: checkOut && checkOut <= today ? 'completed' : 'confirmed',
+                status: checkedOut ? 'completed' : 'confirmed',
                 payment_status: String(o.payment_status || '').toLowerCase() === 'paid' ? 'paid' : 'unpaid',
                 payment_method: o.payment_method || 'cash',
                 total_amount: o.amount,
@@ -1284,19 +1352,23 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBod
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Reservation request no longer exists.' });
         }
+        if (currentBooking.status==='pending' && Number(currentBooking.renewal_waiting)) { await connection.rollback(); return res.status(409).json({success:false,message:'This request is waiting for a renewal decision. It cannot be approved or paid yet. The system will notify you when review can proceed.'}); }
         if (currentBooking.status === 'confirmed') {
             await connection.rollback();
             return res.json({ success: true, message: 'This reservation is already approved.' });
+        }
+        if (currentBooking.owner_response_due_at && new Date(currentBooking.owner_response_due_at).getTime() <= bookingNow().getTime()) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'The owner response deadline has passed. This request can no longer be approved.', errorCode: 'reservation_expired' });
         }
         if (currentBooking.status !== 'pending') {
             await connection.rollback();
             return res.status(409).json({ success: false, message: 'This reservation is no longer pending. Please refresh the booking list.' });
         }
-        const [otherStays] = await connection.query("SELECT id FROM bookings WHERE student_id = ? AND id != ? AND status = 'confirmed' FOR UPDATE", [b.student_id, bookingId]);
-        const [activeOccupancy] = await connection.query('SELECT id FROM occupants WHERE student_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.student_id]);
-        if (otherStays.length > 0 || activeOccupancy.length > 0) {
+        const period = stayPeriod(currentBooking.check_in_date,currentBooking.months);
+        if (await studentStayConflict(connection,b.student_id,period,{excludeBookingId:b.id,includePending:false})) {
             await connection.rollback();
-            return res.status(409).json({ success: false, message: 'This student already has a confirmed booking or active stay. Please refresh the booking list.' });
+            return res.status(409).json({ success:false, message:'This reservation overlaps another booking or stay for this student.', errorCode:'stay_overlap' });
         }
         const [eligibleRooms] = await connection.query("SELECT r.id, r.capacity FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id WHERE r.id = ? AND bh.owner_id = ? AND r.deleted_at IS NULL AND bh.house_status = 'accredited' FOR UPDATE", [b.room_id, req.user.id]);
         if (eligibleRooms.length === 0) {
@@ -1305,53 +1377,48 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBod
         }
 
         const roomConfig = eligibleRooms[0];
-        // Current reads after the room lock include prior approved online reservations.
-        const [reservedBookings] = await connection.query("SELECT b.id FROM bookings b WHERE b.room_id = ? AND b.status = 'confirmed' AND b.payment_method = 'paymongo' AND b.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM occupants o WHERE o.reference_no = CONCAT('REF-', IF(CHAR_LENGTH(b.id) < 4, LPAD(b.id, 4, '0'), b.id)) AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE())) FOR UPDATE", [b.room_id]);
-        const [currentOccupants] = await connection.query('SELECT id FROM occupants WHERE room_id = ? AND (check_out_date IS NULL OR check_out_date > CURDATE()) FOR UPDATE', [b.room_id]);
-        if (currentOccupants.length + reservedBookings.length >= roomConfig.capacity) {
+        if (await roomStayUsage(connection,b.room_id,period,{excludeBookingId:b.id}) >= Number(roomConfig.capacity)) {
             await connection.rollback();
-            return res.status(400).json({ success: false, message: 'The target room has reached full capacity.', errorCode: 'capacity_full' });
+            return res.status(409).json({ success:false, message:'No bed is available throughout these reservation dates.', errorCode:'capacity_full' });
         }
+
+        const paymentDueAt = currentBooking.payment_method === 'paymongo' ? onlinePaymentDeadline(currentBooking.check_in_date, bookingNow()) : null;
+        if (currentBooking.payment_method === 'paymongo' && !paymentDueAt) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'Less than 2 hours remain before the end of the check-in day, so there is not enough time to pay online. Reject the request; the student can book again with a later date or choose cash.', errorCode: 'payment_cutoff_passed' });
+        }
+        // Keep the upfront amount agreed at approval, even if the property's advance/deposit terms change later.
+        const rent = parseFloat(currentBooking.monthly_rent || 0);
+        const upfrontAmount = Math.round(((Math.max(1, parseInt(b.advance_months || 0)) + parseInt(b.deposit_months || 0)) * rent) * 100) / 100;
 
         // 1. Confirm the booking status
         await connection.query(
-            "UPDATE bookings SET status = 'confirmed' WHERE id = ?",
-            [bookingId]
+            "UPDATE bookings SET status = 'confirmed', move_in_required = 1, payment_due_at = ?, upfront_amount = ? WHERE id = ?",
+            [paymentDueAt, Number.isFinite(upfrontAmount) ? upfrontAmount : null, bookingId]
         );
 
-        // 2. ─── CONDITIONAL OCCUPANCY SEPARATION ───
-        // Only insert the occupant immediately if they are paying via Cash.
-        // If paying via PayMongo, the occupant is created only AFTER successful payment verification.
-        if (b.payment_method === 'cash') {
-            const refNo = `REF-${bookingId.toString().padStart(4, '0')}`;
-            const checkIn = b.check_in_date || new Date().toISOString().split('T')[0];
-
-            await connection.query(
-                `INSERT INTO occupants (
-                    room_id, student_id, reference_no, name, age, address,
-                    contact_number, emergency_contact, guardian_name, check_in_date,
-                    months, amount, payment_status, payment_method, is_non_cspc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Not Paid', 'cash', 0)`,
-                [
-                    b.room_id, b.student_id, refNo, b.student_name, b.age, b.address,
-                    b.phone, b.emergency_contact, b.guardian_name, checkIn,
-                    b.months, b.amount
-                ]
-            );
-        }
+        // Future approvals reserve; eligible due bookings start within this transaction.
+        await startBookedStay(connection,{...b,...currentBooking,status:'confirmed',move_in_required:1});
 
         // 3. Dispatch the appropriate notification
         const notificationMsg = b.payment_method === 'paymongo'
-            ? `RESERVATION APPROVED: Your booking request has been approved! Please complete your online payment to secure your room.`
-            : `RESERVATION APPROVED: Your booking request has been confirmed! Please make arrangements to check-in.`;
+            ? `RESERVATION APPROVED: Your booking request has been approved! Please complete your online payment by ${paymentDueAt.toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} to secure your room. Payment reserves your bed. Your secured stay starts automatically on the booked check-in date; checkout remains the booked end date. Before you pay: ${PAID_RESERVATION_POLICY}`
+            : `RESERVATION APPROVED: Your booking request has been confirmed! Your bed is reserved. Pay the upfront move-in cost in cash when you arrive. Your stay starts automatically on the booked check-in date. Cash remains unpaid until the owner records collection.`;
 
         await connection.query(
             'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
             [b.student_id, notificationMsg, `/student/bookings/${b.id}`]
         );
+        await notifyRenewalIncomingApproved(connection,currentBooking,req.user.id);
 
         await connection.commit();
-        res.json({ success: true, message: 'Reservation request successfully approved.' });
+        let closed = 0;
+        try {
+            const released = await rejectUnfittablePending(pool, b.room_id, { excludeBookingId: b.id, onRejected:(c,rejected)=>notifyRenewalIncomingClosed(c,rejected,req.user.id,'closed because no bed remains for its dates') });
+            closed = released.rejected;
+            if (released.failed) console.error('[PENDING REQUEST RELEASE]', released.failed, 'request(s) could not be rechecked for room', b.room_id);
+        } catch (error) { console.error('[PENDING REQUEST RELEASE]', error.message); }
+        res.json({ success: true, message: 'Reservation request successfully approved.' + (closed ? ` ${closed} other pending request${closed === 1 ? ' was' : 's were'} closed because no bed is left for ${closed === 1 ? 'its' : 'their'} dates.` : '') });
     } catch (err) {
         await connection.rollback();
         console.error('Booking approval error:', err.message);
@@ -1361,11 +1428,36 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBod
     }
 });
 
+// The old manual transition is retired; cash no-show review remains owner-controlled.
+router.post('/bookings/move-in/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
+    res.status(410).json({success:false,message:'Booked stays start automatically on their scheduled check-in date. Refresh Bookings; no move-in confirmation is needed.'});
+});
+router.post('/bookings/cancellation-review/:id', authenticateToken, verifyOwner, validateBody('ids'), async(req,res)=>{
+ try{res.json(await reviewPaidCancellation(pool,req.user.id,req.params.id,req.body));}catch(error){res.status(error.status || 500).json({success:false,message:error.status ? error.message : 'Could not update the cancellation review.'});}
+});
+router.post('/bookings/cancel-reservation/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req,res) => {
+ try { res.json(await cancelFutureReservation(pool,req.user.id,req.params.id,{reason:req.body.reason})); }
+ catch(error) { res.status(error.status || 500).json({success:false,message:error.status ? error.message : 'Could not cancel this reservation. Please try again.'}); }
+});
+// Paid stays whose student never arrives: attendance records, not cancellation (docs/paid-non-arrival.md).
+router.post('/bookings/non-arrival/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
+    try { res.json(await recordNonArrival(pool, req.user.id, req.params.id, { note:req.body.note })); }
+    catch (error) { res.status(error.status || 500).json({ success:false, message:error.status ? error.message : 'Could not record non-arrival. Please try again.' }); }
+});
+router.post('/bookings/non-arrival/close/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
+    try { res.json(await closeNonArrival(pool, req.user.id, req.params.id)); }
+    catch (error) { res.status(error.status || 500).json({ success:false, message:error.status ? error.message : 'Could not close this stay. Please try again.' }); }
+});
+router.post('/bookings/no-show/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
+    try { res.json(await updateBookingArrival(pool, req.user.id, req.params.id, { noShow:true })); }
+    catch (error) { res.status(error.status || 500).json({ success:false, message:error.status ? error.message : 'Could not update the no-show. Please try again.' }); }
+});
+
 // M. POST - Reject Student Reservation Booking Request
 router.post('/bookings/reject/:id', authenticateToken, verifyOwner, validateBody('ids'), async (req, res) => {
     try {
         const [bookingRows] = await pool.query(
-            `SELECT b.student_id, b.id 
+            `SELECT b.student_id, b.id, b.renewal_waiting, b.renewal_sources, b.room_id
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
@@ -1376,6 +1468,7 @@ router.post('/bookings/reject/:id', authenticateToken, verifyOwner, validateBody
             return res.status(404).json({ success: false, message: 'Record not found or access denied.' });
         }
 
+        if(Number(bookingRows[0].renewal_waiting))return res.json(await rejectRenewalIncoming(pool,req.user.id,req.params.id));
         const [rejectResult] = await pool.query("UPDATE bookings SET status = 'rejected' WHERE id = ? AND status = 'pending'", [req.params.id]);
         if (rejectResult.affectedRows === 0) {
             return res.status(409).json({ success: false, message: 'Only a pending reservation can be rejected. Please refresh the booking list.' });
@@ -1400,6 +1493,9 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, v
     try {
         await connection.beginTransaction();
 
+        const [extensionOwner] = await connection.query('SELECT b.student_id FROM bookings b JOIN boarding_houses bh ON bh.id = b.house_id WHERE b.id = ? AND bh.owner_id = ?', [bookingId,req.user.id]);
+        if (!extensionOwner.length) { await connection.rollback(); return res.status(404).json({success:false,message:'Booking not found or access denied.'}); }
+        await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[extensionOwner[0].student_id]);
         const [booking] = await connection.query(
             `SELECT b.* 
              FROM bookings b
@@ -1414,6 +1510,11 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, v
         }
 
         const b = booking[0];
+        if (Number(b.move_in_required) === 1 && !b.move_in_confirmed_at) {
+            await connection.rollback();
+            return res.status(409).json({ success:false, message:'Stay extensions are available after the booked stay starts.' });
+        }
+
         const extraMonths = Number(b.extension_months);
         const newTotalMonths = Number(b.months) + extraMonths;
         if (b.status !== 'confirmed' || !b.is_extension_requested) {
@@ -1437,6 +1538,14 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, v
             return res.status(400).json({ success: false, message: 'The extended rent exceeds the supported amount. Please request fewer months.' });
         }
 
+        const extendedPeriod = stayPeriod(b.check_in_date,newTotalMonths);
+        const reference = 'REF-' + String(b.id).padStart(4,'0');
+        const [extensionRooms] = await connection.query('SELECT id, capacity FROM rooms WHERE id = ? FOR UPDATE',[b.room_id]);
+        if (!extensionRooms.length || await studentStayConflict(connection,b.student_id,extendedPeriod,{excludeBookingId:b.id,excludeReference:reference}) || await roomStayUsage(connection,b.room_id,extendedPeriod,{excludeBookingId:b.id,excludeReference:reference}) >= Number(extensionRooms[0].capacity)) {
+            await connection.rollback();
+            return res.status(409).json({success:false,message:'This extension conflicts with another stay or a later room reservation. The existing checkout date is unchanged.'});
+        }
+
         await connection.query(
             `UPDATE bookings 
              SET months = ?, amount = ?, is_extension_requested = 0, extension_months = 0 
@@ -1447,17 +1556,18 @@ router.post('/bookings/approve-extension/:id', authenticateToken, verifyOwner, v
         await connection.query(
             `UPDATE occupants 
              SET months = ?, amount = ? 
-             WHERE student_id = ? AND room_id = ? AND check_out_date IS NULL`,
-            [newTotalMonths, newTotalAmount, b.student_id, b.room_id]
+             WHERE reference_no = ? AND check_out_date IS NULL`,
+            [newTotalMonths, newTotalAmount, reference]
         );
 
-        const extApprovedMsg = `EXTENSION APPROVED: Your stay extension request of +${extraMonths} months has been approved.`;
+        const extApprovedMsg = `EXTENSION APPROVED: Your stay extension request of +${extraMonths} months has been approved. Your new booked checkout is ${formalDate(extendedPeriod.end)}. Later renewal requests must fit around approved reservations. Any waiting replacement requests will be rechecked and notified.`;
         await connection.query(
             'INSERT INTO notifications (user_id, message, link) VALUES (?, ?, ?)',
             [b.student_id, extApprovedMsg, `/student/bookings/${b.id}`]
         );
-
+        await connection.query('INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)',[req.user.id,notificationForRole(extApprovedMsg,'owner'),'/owner/bookings']);
         await connection.commit();
+        try { await rejectUnfittablePending(pool,b.room_id,{onRejected:(c,rejected)=>notifyRenewalIncomingClosed(c,rejected,req.user.id,'closed because an approved extension leaves no bed for its dates')}); } catch(error) { console.error('[EXTENSION PENDING REVIEW]',error.message); }
         res.json({ success: true });
     } catch (err) {
         await connection.rollback();
@@ -1524,7 +1634,7 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
 
         // 1. Pre-verify ownership of booking before mutating
         const [bookingRows] = await connection.query(
-            `SELECT b.student_id, b.room_id, b.payment_method
+            `SELECT b.student_id, b.room_id, b.payment_method, b.move_in_required, b.move_in_confirmed_at
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
@@ -1545,6 +1655,10 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
             await connection.rollback();
             return res.status(409).json({ success: false, message: 'Online upfront payments are verified through PayMongo. Update monthly rent from the occupant record.' });
         }
+        if (Number(bookingRows[0].move_in_required) === 1 && !bookingRows[0].move_in_confirmed_at) {
+            await connection.rollback();
+            return res.status(409).json({success:false,message:'This future reservation has not started. Record cash upfront collection from Boarder Details after the stay starts.'});
+        }
 
         // 2. Update the cash booking's payment status in bookings table
         await connection.query(
@@ -1559,8 +1673,8 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
             // 3. Synchronize status with the active occupant record
             await connection.query(
                 `UPDATE occupants SET payment_status = ? 
-                 WHERE student_id = ? AND room_id = ? AND check_out_date IS NULL`,
-                [occupantStatus, student_id, room_id]
+                 WHERE reference_no = ? AND check_out_date IS NULL`,
+                [occupantStatus, 'REF-' + String(req.params.id).padStart(4,'0')]
             );
         }
 

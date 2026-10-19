@@ -20,3 +20,34 @@ export const normalizePhPhone = (rawValue) => {
 };
 
 export const isValidPhPhone = (value) => PH_PHONE_REGEX.test(value || '');
+
+// Boarding house public contact: one to three PH mobile numbers (09XXXXXXXXX) separated by " / ".
+export const MAX_HOUSE_CONTACT_NUMBERS = 3;
+export const HOUSE_CONTACT_REGEX = /^09\d{9}( \/ 09\d{9}){0,2}$/;
+export const isValidHouseContact = (value) => HOUSE_CONTACT_REGEX.test(String(value || '').trim());
+
+// Builds the strict form from whatever was typed or pasted: digits only, every number must start with 09 (other
+// leading digits are dropped), 11 digits per number, " / " between numbers, at most three numbers. When the user is
+// typing forward and a number is complete, the separator is added so the next number can be typed straight away.
+export function formatHouseContact(raw, { typingForward = false } = {}) {
+  const numbers = [];
+  let current = '';
+  for (const digit of String(raw || '').replace(/\D/g, '')) {
+    if (numbers.length >= MAX_HOUSE_CONTACT_NUMBERS) break;
+    if (current.length === 0 && digit !== '0') continue;
+    if (current.length === 1 && digit !== '9') continue;
+    current += digit;
+    if (current.length === 11) { numbers.push(current); current = ''; }
+  }
+  const complete = numbers.length;
+  if (current) numbers.push(current);
+  let value = numbers.join(' / ');
+  if (typingForward && !current && complete > 0 && complete < MAX_HOUSE_CONTACT_NUMBERS) value += ' / ';
+  return value;
+}
+
+// Converts a stored value (older free-form entries such as "+63 917 123 4567, 0918...") into the strict form.
+export function normalizeHouseContact(stored) {
+  const parts = String(stored || '').split(/[\/,;|]|\s{2,}/).map(part => normalizePhPhone(part)).filter(isValidPhPhone);
+  return parts.length ? parts.slice(0, MAX_HOUSE_CONTACT_NUMBERS).join(' / ') : formatHouseContact(stored);
+}

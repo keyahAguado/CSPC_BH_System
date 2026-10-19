@@ -1,0 +1,18 @@
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_notice_checkout');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_notice_checkout DATE NULL','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_response_due_at');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_response_due_at DATETIME NULL','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_response');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_response VARCHAR(20) NULL','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_waiting');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_waiting TINYINT(1) NOT NULL DEFAULT 0','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_wait_until');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_wait_until DATETIME NULL','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @present=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bookings' AND COLUMN_NAME='renewal_sources');
+SET @ddl=IF(@present=0,'ALTER TABLE bookings ADD COLUMN renewal_sources TEXT NULL','SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;

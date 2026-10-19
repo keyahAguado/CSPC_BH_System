@@ -54,6 +54,11 @@ export async function saveUploadedFile(buffer, originalname = 'file.jpg', folder
                 transformation: [{ quality: 'auto', fetch_format: 'auto' }]
             };
 
+            if (path.extname(originalname).toLowerCase() === '.pdf') {
+                options.resource_type = 'raw';
+                options.public_id = Date.now() + '_' + Math.random().toString(36).slice(2) + '.pdf';
+                delete options.transformation;
+            }
             const uploadStream = cloudinary.uploader.upload_stream(options, (error, result) => {
                 if (error) {
                     console.error('[CLOUDINARY UPLOAD ERROR]:', error.message);
@@ -112,10 +117,17 @@ export async function cleanupOrphanedUploads(pool) {
         UNION SELECT profile_pic FROM users WHERE profile_pic IS NOT NULL
         UNION SELECT photo_url FROM house_photos WHERE photo_url IS NOT NULL
         UNION SELECT file_path FROM house_documents WHERE file_path IS NOT NULL
+        UNION SELECT CAST(file_paths AS CHAR) FROM house_documents WHERE file_paths IS NOT NULL
         UNION SELECT file_path FROM house_permit_files WHERE file_path IS NOT NULL
+        UNION SELECT CAST(photos AS CHAR) FROM rooms WHERE photos IS NOT NULL
     `);
 
-    const referenced = new Set(rows.map(r => path.basename(String(r.path))));
+    const referenced = new Set();
+    for (const row of rows) {
+        let values = [row.path];
+        try { const parsed = JSON.parse(row.path); if (Array.isArray(parsed)) values = parsed; } catch { /* single file path */ }
+        for (const value of values) if (typeof value === 'string') referenced.add(path.basename(value));
+    }
     const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
     let deleted = 0;
 

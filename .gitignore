@@ -19,3 +19,6 @@ dev-dist/
 
 # Ignore dynamic user uploads 
 **/uploads/
+# Not part of the deployed system: tests, docs, logs, manuscript figures (kept locally only)
+_not-for-deploy/
+docs/*.log

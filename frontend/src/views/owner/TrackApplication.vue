@@ -4,7 +4,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { getImageUrl } from '../../config/api.js';
-import { applicantToken, verifiedApplicantId, clearApplicantToken, applicantHeaders, STATUS_INFO, formatDate } from '../../utils/applicantSession.js';
+import {
+  applicantToken, verifiedApplicantId, clearApplicantToken, applicantHeaders, STATUS_INFO, formatDate,
+  rememberedDevice, forgetRememberedDevice, requireFreshVerification
+} from '../../utils/applicantSession.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -56,13 +59,58 @@ const loadApplications = async () => {
   }
 };
 
-const signOut = () => {
+const clearLocalSession = () => {
   clearApplicantToken();
   applicant.value = null;
   applications.value = [];
   details.value = {};
   expanded.value = {};
 };
+// Sign out also ends a remembered-device session on the server, so it cannot be reused
+const signOut = async () => {
+  const device = rememberedDevice();
+  forgetRememberedDevice();
+  clearLocalSession();
+  if (device) { try { await axios.post('/api/applications/session/revoke', { deviceToken: device.token }); } catch { /* the local sign-out still applies */ } }
+};
+const signOutEverywhere = async () => {
+  const device = rememberedDevice();
+  try {
+    await axios.post('/api/applications/session/revoke', { all: true, ...(device ? { deviceToken: device.token } : {}) }, { headers: applicantHeaders() });
+  } catch {
+    errorMsg.value = 'We could not sign out your other devices right now. Please try again.';
+    return;
+  }
+  forgetRememberedDevice();
+  clearLocalSession();
+};
+const deviceRemembered = ref(Boolean(rememberedDevice()));
+// Owner activation needs a fresh email link: show the email form without resuming the remembered device
+const verifyAgainForActivation = () => {
+  requireFreshVerification();
+  clearLocalSession();
+};
+
+// ── Track with reference number (no email needed) ──
+const referenceInput = ref(typeof route.query.ref === 'string' ? route.query.ref : '');
+const referenceBusy = ref(false);
+const referenceError = ref('');
+const referenceResult = ref(null);
+const checkReference = async () => {
+  referenceError.value = ''; referenceResult.value = null;
+  const value = referenceInput.value.trim();
+  if (!value) { referenceError.value = 'Enter your reference number, for example BH-2026-K7Q2MX.'; return; }
+  referenceBusy.value = true;
+  try {
+    const { data } = await axios.post('/api/applications/track', { reference_no: value });
+    referenceResult.value = data.application;
+  } catch (err) {
+    referenceError.value = err.response?.data?.message || 'We could not check that reference right now. Please try again.';
+  } finally {
+    referenceBusy.value = false;
+  }
+};
+const scrollToEmailTracking = () => document.getElementById('track-with-email')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 const toggleDetails = async (app) => {
   const ref = app.reference_no;
@@ -90,6 +138,10 @@ const startActivation = async () => {
     try { if (applicant.value?.email) sessionStorage.setItem('cspc_activation_email', applicant.value.email); } catch { /* storage unavailable */ }
     router.push(`/activate-account${url.search}`);
   } catch (err) {
+    if (err.response?.data?.code === 'FRESH_VERIFICATION_REQUIRED') {
+      activation.value = { loading: false, error: err.response.data.message, needsFreshVerification: true };
+      return;
+    }
     if (!sessionExpired(err)) activation.value = { loading: false, error: err.response?.data?.message || 'Could not start account activation.' };
   }
 };
@@ -134,8 +186,10 @@ const isLongText = (text, chars) => String(text || '').length > chars || String(
 const toggleText = (key) => { openText.value[key] = !openText.value[key]; };
 
 onMounted(loadApplications);
-const refreshSession = () => { if (applicantToken()) loadApplications(); else { applicant.value = null; applications.value = []; } };
-onMounted(() => window.addEventListener('applicant-session-updated', refreshSession));
+const refreshSession = () => {
+  deviceRemembered.value = Boolean(rememberedDevice());
+  if (applicantToken()) loadApplications(); else { applicant.value = null; applications.value = []; }
+};onMounted(() => window.addEventListener('applicant-session-updated', refreshSession));
 onUnmounted(() => window.removeEventListener('applicant-session-updated', refreshSession));
 </script>
 
@@ -155,6 +209,11 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
         </button>
       </header>
 
+      <div v-if="signedIn" class="-mt-1 mb-4 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[13px] text-slate-600">
+        <span v-if="deviceRemembered"><i class="fa-solid fa-laptop text-[#245b99] mr-1" aria-hidden="true"></i>This device is remembered for up to 7 days.</span>
+        <button type="button" @click="signOutEverywhere" class="track-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Sign out of all devices</button>
+      </div>
+
       <div v-if="updatedRef && signedIn" role="status" class="mb-5 flex items-start gap-2.5 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-900">
         <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i>
         <p class="min-w-0 track-wrap">{{ updatedStatus === 'RESUBMITTED' ? 'Your revision was resubmitted to SASO for' : 'Your changes were saved for' }} <span class="font-semibold">{{ updatedRef }}</span>.</p>
@@ -165,7 +224,55 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
         <p class="min-w-0 track-wrap">{{ errorMsg }}</p>
       </div>
 
-      <ApplicantEmailGate v-if="!signedIn && !isLoading" />
+      <template v-if="!signedIn && !isLoading">
+        <!-- Option 1: reference number only — status and progress, nothing private -->
+        <section class="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 max-w-lg mx-auto my-6 text-left" aria-labelledby="track-ref-title">
+          <h2 id="track-ref-title" class="text-lg font-semibold leading-snug text-[#142b4a]">Track with reference number</h2>
+          <p class="text-sm leading-relaxed text-slate-600 mt-2">Check the status of one application quickly — no email needed. Your reference number is in your confirmation email.</p>
+          <form @submit.prevent="checkReference" class="mt-5 flex flex-col sm:flex-row gap-3" novalidate>
+            <label for="track-reference" class="sr-only">Reference number</label>
+            <input id="track-reference" v-model="referenceInput" type="text" autocomplete="off" spellcheck="false" maxlength="30" placeholder="e.g. BH-2026-K7Q2MX"
+                   class="track-focus flex-1 min-h-[44px] px-3 border border-slate-300 rounded-lg text-[15px] uppercase tracking-wide" :disabled="referenceBusy" />
+            <button type="submit" :disabled="referenceBusy" class="track-focus track-btn justify-center min-h-[44px] bg-[#1e4a8d] hover:bg-[#163870] text-white">
+              <i :class="['fa-solid', referenceBusy ? 'fa-spinner fa-spin' : 'fa-magnifying-glass']" aria-hidden="true"></i>{{ referenceBusy ? 'Checking…' : 'Check status' }}
+            </button>
+          </form>
+          <p v-if="referenceError" role="alert" class="mt-4 text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 track-wrap">{{ referenceError }}</p>
+
+          <div v-if="referenceResult" class="mt-5 border border-slate-200 rounded-xl overflow-hidden" role="status">
+            <div class="px-4 sm:px-5 pt-4 pb-3 flex flex-wrap items-center justify-between gap-2">
+              <p class="text-sm text-slate-600">Reference <span class="font-semibold text-[#142b4a] tracking-wide tabular-nums">{{ referenceResult.reference_no }}</span></p>
+              <span :class="['track-badge', statusTone(referenceResult.status)]">{{ STATUS_INFO[referenceResult.status]?.label || referenceResult.status }}</span>
+            </div>
+            <ol class="track-steps" aria-label="Application progress">
+              <li v-for="(stage, i) in TRACK_STAGES" :key="stage.label" :class="['track-step', stageState(referenceResult.status, i)]">
+                <span class="track-step-dot"><i :class="['fa-solid', stageState(referenceResult.status, i) === 'is-failed' ? 'fa-xmark' : stageState(referenceResult.status, i) === 'is-warning' ? 'fa-pen' : stage.icon]" aria-hidden="true"></i></span>
+                <span class="track-step-label">{{ stageLabel(referenceResult.status, i) }}</span>
+              </li>
+            </ol>
+            <div class="px-4 sm:px-5 pb-4 text-sm space-y-3">
+              <p v-if="STATUS_INFO[referenceResult.status]?.hint" class="text-slate-700"><span class="font-semibold text-[#142b4a]">Next step:</span> {{ STATUS_INFO[referenceResult.status].hint }}</p>
+              <p class="text-slate-600">Submitted {{ formatDate(referenceResult.submitted_at) }} · Last updated {{ formatDate(referenceResult.updated_at, true) }}</p>
+              <ol v-if="referenceResult.timeline.length" class="border-l-2 border-slate-200 pl-4 space-y-1.5">
+                <li v-for="(item, i) in referenceResult.timeline" :key="i" class="text-[13px]">
+                  <span class="font-semibold text-[#142b4a]">{{ STATUS_INFO[item.status]?.label || item.status }}</span>
+                  <span class="text-slate-600 whitespace-nowrap"> · {{ formatDate(item.at, true) }}</span>
+                </li>
+              </ol>
+              <p class="text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+                SASO feedback, documents and corrections are only shown after email verification.
+                <button type="button" @click="scrollToEmailTracking" class="track-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Track with email</button>
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Option 2: email — all applications, feedback and corrections -->
+        <div id="track-with-email" class="scroll-mt-4">
+          <p class="max-w-lg mx-auto text-center text-[12.5px] font-semibold uppercase tracking-wider text-slate-500">or track with email</p>
+          <ApplicantEmailGate />
+        </div>
+      </template>
 
       <div v-if="isLoading" class="text-center text-slate-600 text-sm py-16" role="status">
         <i class="fa-solid fa-spinner fa-spin mr-2 text-[#245b99]" aria-hidden="true"></i>Loading your applications…
@@ -195,7 +302,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
                 <div><dt><i class="fa-regular fa-calendar" aria-hidden="true"></i> Submitted</dt><dd>{{ formatDate(submittedTicket.submitted_at, true) }}</dd></div>
                 <div><dt><i class="fa-solid fa-signal" aria-hidden="true"></i> Status</dt><dd><span :class="['track-badge', statusTone(submittedTicket.status)]">{{ STATUS_INFO[submittedTicket.status]?.label || submittedTicket.status }}</span></dd></div>
               </dl>
-              <p class="track-tip"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Save this reference number to identify this application. Verify your registered email when you return.</p>
+              <p class="track-tip"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Save this reference number. Check its status anytime with just the reference number, or verify your registered email for full details.</p>
             </div>
           </div>
         </aside>
@@ -222,7 +329,10 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
             </router-link>
           </div>
         </section>
-        <p v-if="activation.error" role="alert" class="mb-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-4 py-3 text-sm track-wrap">{{ activation.error }}</p>
+        <p v-if="activation.error" role="alert" class="mb-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-4 py-3 text-sm track-wrap">
+          {{ activation.error }}
+          <button v-if="activation.needsFreshVerification" type="button" @click="verifyAgainForActivation" class="track-focus ml-1 rounded font-semibold underline underline-offset-2">Verify my email now</button>
+        </p>
         <p v-if="applicant.account_status === 'ACCOUNT_PENDING'" class="mb-5 flex items-start gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-3 text-sm leading-relaxed">
           <i class="fa-solid fa-circle-check mt-0.5 text-emerald-700" aria-hidden="true"></i><span>SASO approved your application. Activate your owner account to set your password and manage your property.</span>
         </p>

@@ -1,4 +1,5 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
 import { validateInput } from '../../utils/inputValidation.js';
 import { ref, onMounted, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
@@ -265,12 +266,7 @@ onMounted(() => {
             <!-- Profile Header -->
             <div class="flex flex-col md:flex-row items-center md:items-start gap-8 mb-12 pb-8 border-b border-slate-100 text-center md:text-left">
               <div class="relative group cursor-pointer w-24 h-24 flex-shrink-0 rounded-full border border-blue-200 shadow-sm overflow-hidden">
-                <img
-                  :src="profilePicPreview || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
-                  alt="Profile"
-                  class="w-full h-full object-cover"
-                  @error="(e) => e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=dbeafe&color=1d4ed8&bold=true&size=192`"
-                />
+                <UserAvatar :src="profilePicPreview" :name="user.name" class="w-full h-full" />
                 <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>

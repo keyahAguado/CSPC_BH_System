@@ -30,13 +30,14 @@ export function validateImages(req, res, next) {
     const files = req.file ? [req.file] : Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat();
     // Application uploads: accreditation, public registration and Track My Application routes.
     const isApplicationUpload = req.path === '/accreditation' || req.path === '/register-property' || req.applicationUpload === true;
-    const allowsPermitPdf = isApplicationUpload;
+    const isDocumentUpdate = /^\/documents\/update\/\d+$/.test(req.path || '');
+    const allowsPermitPdf = isApplicationUpload || isDocumentUpdate;
     for (const file of files) {
-        if (allowsPermitPdf && PERMIT_FIELDS.includes(file.fieldname) && supportedPdf(file)) continue;
+        if (allowsPermitPdf && ((PERMIT_FIELDS.includes(file.fieldname) || /^custom_document_[1-9]\d*$/.test(file.fieldname)) || (isDocumentUpdate && file.fieldname === 'permit_file')) && supportedPdf(file)) continue;
         if (!supportedImage(file)) {
             const labels = { profile_pic: 'Profile photo', img: 'Featured property photo', house_img: 'Featured property photo', house_photos: 'Gallery photo', permit_file: 'Document image', permit_business_form: 'Business permit image', permit_cedula: 'Cedula image', permit_dti: 'DTI image', permit_barangay: 'Barangay clearance image', permit_building: 'Building permit image', permit_zoning: 'Zoning permit image', permit_sanitary: 'Sanitary permit image', permit_fire: 'Fire safety permit image' };
             const label = labels[file.fieldname] || 'Selected image';
-            const formats = allowsPermitPdf && PERMIT_FIELDS.includes(file.fieldname) ? 'image or PDF file (JPG, PNG, WEBP, HEIC or PDF)' : 'image file (JPG, PNG, WEBP, GIF, BMP, TIFF, HEIC, HEIF, or AVIF)';
+            const formats = allowsPermitPdf && ((PERMIT_FIELDS.includes(file.fieldname) || /^custom_document_[1-9]\d*$/.test(file.fieldname)) || (isDocumentUpdate && file.fieldname === 'permit_file')) ? 'image or PDF file (JPG, PNG, WEBP, HEIC or PDF)' : 'image file (JPG, PNG, WEBP, GIF, BMP, TIFF, HEIC, HEIF, or AVIF)';
             return res.status(400).json({ success: false, message: `${label} is invalid. Please select a supported ${formats}.`, errorCode: 'invalid_input' });
         }
     }

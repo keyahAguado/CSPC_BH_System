@@ -1,12 +1,17 @@
 <script setup>
+import ReservationFlowSteps from '../../components/ReservationFlowSteps.vue';
+import StudentRoomPicker from '../../components/StudentRoomPicker.vue';
+import { roomMonthlyPrice, roomIsFull } from '../../utils/studentRoomPicker.js';
 import { validateInput, validDate } from '../../utils/inputValidation.js';
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import DataPrivacyModal from '../../components/DataPrivacyModal.vue';
 import { normalizePhPhone, isValidPhPhone } from '../../utils/phoneValidation.js';
 import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
+import { bookingNow } from '../../utils/bookingClock.js';
+import { PAID_RESERVATION_POLICY } from '../../utils/paidReservationPolicy.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -65,14 +70,17 @@ const form = ref({
   payment_method: 'cash' // Default selection
 });
 
-// Dynamic min check-in date (Today)
-const minCheckInDate = computed(() => {
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-});
+// Today in the Philippines (follows the test clock when it is on); past dates are moved up to it.
+const manilaDayOf = date => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+const minCheckInDate = computed(() => manilaDayOf(bookingNow()));
+// Same rule the server applies: the owner needs at least 2 hours before 12:00 noon (PHT) on the check-in day,
+// so a same-day request must be sent before 10:00 AM. After that, tomorrow is the earliest check-in date.
+const MIN_OWNER_WINDOW_MS = 2 * 3600000;
+const tooSoonFor = day => validDate(day) && Date.parse(day + 'T12:00:00+08:00') - bookingNow().getTime() < MIN_OWNER_WINDOW_MS;
+const earliestCheckInDate = computed(() => tooSoonFor(minCheckInDate.value) ? manilaDayOf(new Date(Date.parse(minCheckInDate.value + 'T12:00:00+08:00') + 86400000)) : minCheckInDate.value);
+const checkInTooSoon = computed(() => form.value.check_in_date >= minCheckInDate.value && tooSoonFor(form.value.check_in_date));
+const useEarliestCheckIn = () => { form.value.check_in_date = earliestCheckInDate.value; };
+const focusCheckInDate = () => { const field = document.getElementById('booking-check-in-date'); field?.scrollIntoView({ behavior: 'smooth', block: 'center' }); field?.focus({ preventScroll: true }); };
 
 // Wait until the field loses focus; incomplete dates are checked on submission.
 const handleCheckInDateChange = () => {
@@ -92,6 +100,8 @@ const showBookingError = (message) => {
 };
 
 const isAutoFilledFromProfile = ref(false);
+// Room eligibility uses the sex recorded in the profile; the booking form cannot change a recorded value.
+const profileSex = ref('');
 
 const fetchData = async () => {
   if (isFetchingHouse.value) return;
@@ -141,6 +151,7 @@ const fetchData = async () => {
           }
           if (u.name) form.value.resident_name = u.name;
           if (u.sex || u.gender) form.value.gender = (u.sex || u.gender || '').toLowerCase();
+          profileSex.value = String(u.sex || '').trim().toLowerCase();
           if (u.age) form.value.age = u.age;
           if (u.phone) form.value.contact_number = normalizePhPhone(u.phone);
           if (u.emergency_contact) form.value.emergency_contact = normalizePhPhone(u.emergency_contact);
@@ -164,20 +175,14 @@ const fetchData = async () => {
   }
 };
 
-const femaleRooms = computed(() => rooms.value.filter(r => (r.gender_type || '').trim().toLowerCase() === 'female'));
-const maleRooms = computed(() => rooms.value.filter(r => (r.gender_type || '').trim().toLowerCase() === 'male'));
-const mixedRooms = computed(() => rooms.value.filter(r => {
-  const g = (r.gender_type || '').trim().toLowerCase();
-  return g !== 'female' && g !== 'male';
-}));
+const continueToPersonalDetails = () => {
+  const section = document.getElementById('booking-personal-details');
+  section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  section?.focus({ preventScroll: true });
+};
 
 const selectedRoom = computed(() => rooms.value.find(r => String(r.id) === String(form.value.roomId)));
-const monthlyRent = computed(() => {
-  if (selectedRoom.value && parseFloat(selectedRoom.value.price) > 0) {
-    return parseFloat(selectedRoom.value.price);
-  }
-  return parseFloat(house.value.price) || 0;
-});
+const monthlyRent = computed(() => roomMonthlyPrice(selectedRoom.value, house.value.price));
 const advanceMonths = computed(() => parseInt(house.value.advance_months) || 0);
 const depositMonths = computed(() => parseInt(house.value.deposit_months) || 0);
 
@@ -209,14 +214,6 @@ const depositNote = computed(() => {
 const formatMoney = (val) =>
   Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const formatRoomNumber = (val) => {
-  if (!val) return '';
-  const trimmed = String(val).trim();
-  if (/^(room|bed|unit|cottage|house)\b/i.test(trimmed)) {
-    return trimmed;
-  }
-  return `Room ${trimmed}`;
-};
 
 const sanitizePhoneInput = (fieldKey) => {
   form.value[fieldKey] = normalizePhPhone(form.value[fieldKey]);
@@ -225,7 +222,7 @@ const sanitizePhoneInput = (fieldKey) => {
 // Step 1: Form submit opens the review/confirmation modal — nothing is sent yet
 const openConfirmModal = () => {
   if (isLoading.value || loadError.value || !house.value.id) return;
-  if (reservationBlocked.value) return;
+  if (reservationBlocked.value || scheduleLoading.value || availabilityError.value || !scheduleReady.value) return;
   if (isGuest) {
     errorMsg.value = 'You must be logged in to book.';
     return;
@@ -256,7 +253,7 @@ const openConfirmModal = () => {
 // Step 2: "Ok, Submit Booking" in the confirm modal — this is where the booking is actually sent
 const confirmAndSubmit = async () => {
   if (isLoading.value || loadError.value || !house.value.id) return;
-  if (reservationBlocked.value) return;
+  if (reservationBlocked.value || scheduleLoading.value || availabilityError.value || !scheduleReady.value) return;
   const validationError = validateInput('booking', form.value, { today: minCheckInDate.value });
   if (validationError) {
     showConfirmModal.value = false;
@@ -274,7 +271,7 @@ const confirmAndSubmit = async () => {
     });
     showSuccessModal.value = true;
   } catch (e) {
-    reservationBlocked.value = ['pending_booking', 'confirmed_booking', 'active_stay'].includes(e.response?.data?.errorCode);
+    reservationBlocked.value = ['stay_overlap'].includes(e.response?.data?.errorCode);
     errorMsg.value = e.response?.data?.message || 'Unable to submit booking. Please check your connection and try again.';
     showBookingError(errorMsg.value);
   } finally {
@@ -299,22 +296,46 @@ const initAddressAutocomplete = (el) => {
   }
 };
 
-onMounted(async () => {
-  await fetchData();
-  if (!token) return;
+// Availability is scoped to the requested stay. Ignore stale responses after date changes.
+const scheduleReady = computed(() => validDate(form.value.check_in_date) && !checkInTooSoon.value && Number.isInteger(Number(form.value.months)) && Number(form.value.months)>0);
+const scheduleLoading = ref(false), availabilityError = ref('');
+let availabilityVersion = 0, scheduleTimer;
+const refreshRoomAvailability = async () => {
+  if (document.visibilityState === 'hidden' || !scheduleReady.value) return;
+  const version = ++availabilityVersion;
+  const params = {check_in_date:form.value.check_in_date,months:form.value.months};
+  scheduleLoading.value = true; availabilityError.value = '';
   try {
-    const response = await axios.get('/api/student/bookings', { headers: { Authorization: `Bearer ${token}` } });
-    const existing = (response.data.bookings || []).find(b => b.status === 'pending' || b.status === 'confirmed');
-    if (existing) {
-      reservationBlocked.value = true;
-      errorMsg.value = existing.status === 'pending'
-        ? `You already have a pending reservation at ${existing.house_name}. Cancel it or wait for the owner's decision before reserving another boarding house.`
-        : 'You already have a confirmed booking. View My Bookings to manage your stay.';
-    }
+    const [houseResult,conflictResult] = await Promise.all([
+      axios.get('/api/student/house/'+houseId,{params,timeout:15000,headers:token ? {Authorization:'Bearer '+token} : {}}),
+      token ? axios.get('/api/student/stay-conflict',{params,timeout:15000,headers:{Authorization:'Bearer '+token}}) : Promise.resolve({data:{conflict:false}})
+    ]);
+    if (version !== availabilityVersion) return;
+    const data = houseResult.data;
+    if (typeof conflictResult.data.conflict !== 'boolean' || String(data.house?.id)!==String(houseId) || !Array.isArray(data.rooms) || data.rooms.some(room=>room.available_count == null)) throw Error('Incomplete availability response');
+    rooms.value = data.rooms;
+    reservationBlocked.value = Boolean(conflictResult.data.conflict);
+    if (reservationBlocked.value) errorMsg.value = 'These dates overlap another pending reservation, approved booking, or stay. Choose dates on or after its checkout, or manage that booking first.';
+    else errorMsg.value = '';
+    if (selectedRoom.value && roomIsFull(selectedRoom.value)) form.value.roomId = '';
   } catch (error) {
-    // Submission still checks current reservation eligibility on the server.
-    console.warn('Could not check existing reservations:', error.message);
-  }
+    if (version === availabilityVersion) availabilityError.value = error.response?.data?.message || 'Could not check availability. Please retry before selecting a room.';
+  } finally { if(version === availabilityVersion) scheduleLoading.value=false; }
+};
+watch([() => form.value.check_in_date,() => form.value.months],() => {
+  ++availabilityVersion;clearTimeout(scheduleTimer);form.value.roomId='';reservationBlocked.value=false;errorMsg.value='';availabilityError.value='';
+  scheduleLoading.value=scheduleReady.value;
+  if(scheduleReady.value) scheduleTimer=setTimeout(refreshRoomAvailability,300);
+});
+onMounted(() => {
+  window.addEventListener('focus',refreshRoomAvailability);
+  document.addEventListener('visibilitychange',refreshRoomAvailability);
+  fetchData();
+});
+onUnmounted(() => {
+  ++availabilityVersion;clearTimeout(scheduleTimer);
+  window.removeEventListener('focus',refreshRoomAvailability);
+  document.removeEventListener('visibilitychange',refreshRoomAvailability);
 });
 </script>
 
@@ -322,7 +343,7 @@ onMounted(async () => {
   <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
     <StudentNav />
 
-    <main class="max-w-4xl mx-auto py-10 px-6">
+    <main class="max-w-6xl mx-auto py-10 px-4 sm:px-6">
 
       <!-- LOADING -->
       <div v-if="isLoading" class="text-center py-32">
@@ -350,11 +371,15 @@ onMounted(async () => {
         <div v-if="successMsg" class="mb-6 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold p-5 rounded-2xl flex items-center gap-3 animate-fade-in">
           <i class="fa-solid fa-circle-check text-emerald-500"></i> {{ successMsg }}
         </div>
-        <div v-if="errorMsg" ref="bookingErrorRef" role="alert" class="mb-6 bg-rose-50 border border-rose-200 text-rose-800 text-[13px] font-semibold p-4 sm:p-5 rounded-2xl flex items-start gap-3 animate-fade-in">
-          <i class="fa-solid fa-circle-info text-rose-500 shrink-0 mt-1" aria-hidden="true"></i>
-          <div class="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
-            <p class="min-w-0 flex-1 break-words leading-relaxed">{{ errorMsg }}</p>
-            <router-link v-if="reservationBlocked" to="/student/bookings" class="self-start sm:self-auto font-bold underline shrink-0">My Bookings</router-link>
+        <div v-if="errorMsg" ref="bookingErrorRef" role="alert" class="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5 text-left animate-fade-in">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-100 text-red-600"><i :class="['fa-solid', reservationBlocked ? 'fa-calendar-xmark' : 'fa-circle-exclamation']" aria-hidden="true"></i></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-[14px] font-bold text-red-900">{{ reservationBlocked ? 'These dates overlap another booking' : 'We couldn\'t submit your booking' }}</p>
+            <p class="mt-1 break-words text-[13px] leading-relaxed text-red-800">{{ errorMsg }}</p>
+            <div v-if="reservationBlocked" class="mt-3 flex flex-wrap gap-2">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-red-700" @click="focusCheckInDate"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i>Change dates</button>
+              <router-link to="/student/bookings" class="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-red-700 hover:bg-red-50">View My Bookings<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+            </div>
           </div>
         </div>
 
@@ -369,9 +394,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label for="booking-check-in-date" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Check-In Date</label>
-                <input id="booking-check-in-date" type="date" max="9999-12-31" v-model="form.check_in_date" :min="minCheckInDate" @blur="handleCheckInDateChange" aria-describedby="booking-check-in-help" required
+                <input id="booking-check-in-date" type="date" max="9999-12-31" v-model="form.check_in_date" :min="earliestCheckInDate" @blur="handleCheckInDateChange" :aria-invalid="checkInTooSoon" :aria-describedby="checkInTooSoon ? 'booking-check-in-error' : 'booking-check-in-help'" required
                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition">
-                <p id="booking-check-in-help" class="mt-2 text-xs text-slate-500">Tap the date field or calendar icon to choose your check-in date.</p>
+                <div v-if="checkInTooSoon" id="booking-check-in-error" role="alert" class="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs leading-relaxed text-red-800"><i class="fa-solid fa-circle-exclamation mt-0.5 text-red-600" aria-hidden="true"></i><div><p>This check-in date is too soon for the owner to respond. Requests must be sent at least 2 hours before 12:00 noon on the check-in day. Please choose a later check-in date.</p><button type="button" class="mt-1.5 font-semibold text-blue-700 underline hover:text-blue-800" @click="useEarliestCheckIn">Use {{ formatCheckoutDateString(earliestCheckInDate) }}</button></div></div>
+                <p v-else id="booking-check-in-help" class="mt-2 text-xs text-slate-500">Tap the date field or calendar icon to choose your check-in date. Same-day requests close at 10:00 AM.</p>
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Duration of Stay (Months)</label>
@@ -382,107 +408,26 @@ onMounted(async () => {
           </div>
 
           <!-- STEP 2: ROOM SELECTION -->
-          <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/50">
-            <div class="flex items-center gap-3 mb-8">
-              <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-100">2</div>
-              <h2 class="text-sm font-black uppercase tracking-widest text-slate-900">Choose Your Room</h2>
-            </div>
+          <section class="rounded-2xl border border-amber-200 bg-amber-50/60 px-5 py-4" aria-labelledby="reservation-deadlines-title">
+            <h3 id="reservation-deadlines-title" class="flex items-center gap-2 text-[13px] font-bold text-amber-900"><span class="grid h-7 w-7 place-items-center rounded-full bg-amber-100 text-amber-700"><i class="fa-solid fa-clock text-[12px]" aria-hidden="true"></i></span>Reservation deadlines</h3>
+            <ul class="mt-3 grid gap-3 text-[13px] leading-relaxed text-slate-700 md:grid-cols-3">
+              <li class="flex gap-2.5"><i class="fa-solid fa-user-clock mt-1 text-amber-600" aria-hidden="true"></i><span><strong class="block font-semibold text-slate-900">Owner response</strong>Up to 24 hours, or until 12:00 noon on your check-in day if that is sooner. Send requests at least 2 hours before then.</span></li>
+              <li class="flex gap-2.5"><i class="fa-solid fa-credit-card mt-1 text-amber-600" aria-hidden="true"></i><span><strong class="block font-semibold text-slate-900">Online payment</strong>24 hours after approval, or until the end of your check-in day if that comes first.</span></li>
+              <li class="flex gap-2.5"><i class="fa-solid fa-hourglass-end mt-1 text-amber-600" aria-hidden="true"></i><span><strong class="block font-semibold text-slate-900">Automatic expiry</strong>Unanswered or unpaid online reservations expire automatically.</span></li>
+            </ul>
+          </section>
+          <p v-if="scheduleReady && !scheduleLoading && !availabilityError" class="inline-flex flex-wrap items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-[13px] font-semibold text-blue-800"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Selected stay: {{ formatCheckoutDateString(form.check_in_date) }} &ndash; {{ formatCheckoutDateString(computeCheckoutDate(form.check_in_date,form.months)) }} (checkout)</p>
+          <StudentRoomPicker v-if="scheduleReady && !scheduleLoading && !availabilityError" :rooms="rooms" :base-price="house.price" :student-gender="form.gender" v-model="form.roomId" @continue="continueToPersonalDetails" />
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <!-- Female -->
-              <div class="bg-gradient-to-br from-pink-50 to-rose-50/50 rounded-[1.5rem] p-6 lg:p-8 border border-pink-100 shadow-sm">
-                <h3 class="flex items-center gap-2 text-sm font-black text-pink-700 uppercase tracking-widest mb-6 border-b border-pink-200/40 pb-3">
-                  <span class="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-sm"></span>
-                  Female's Wing
-                </h3>
-                <div class="grid grid-cols-1 gap-y-3">
-                  <p v-if="femaleRooms.length === 0" class="text-slate-400 text-xs font-bold uppercase tracking-widest">No rooms listed.</p>
-                  <label
-                    v-for="room in femaleRooms"
-                    :key="room.id"
-                    class="flex items-center gap-3 group bg-white hover:bg-white rounded-xl p-2.5 transition border border-slate-200/60 shadow-sm hover:shadow cursor-pointer"
-                    :class="{ 'opacity-50 cursor-not-allowed': room.occupant_count >= room.capacity }"
-                  >
-                    <input
-                      type="radio"
-                      name="roomId"
-                      :value="room.id"
-                      v-model="form.roomId"
-                      :disabled="room.occupant_count >= room.capacity"
-                      required
-                      class="w-5 h-5 flex-shrink-0 accent-blue-600"
-                    >
-                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full justify-between pr-1 text-slate-800">
-                      <div class="flex flex-col text-left">
-                        <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
-                        <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
-                      </div>
-                      <div class="flex flex-col items-end gap-1 shrink-0">
-                        <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
-                          {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
-                        </span>
-                        <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
-                          Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
-                        </span>
-                        <span v-if="room.pending_request_count > 0 && room.occupant_count < room.capacity"
-                              class="bg-amber-50 text-amber-700 border border-amber-200/60 text-[9px] px-2 py-0.5 rounded-full font-bold">
-                          {{ room.pending_request_count }} pending request{{ room.pending_request_count > 1 ? 's' : '' }}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Male -->
-              <div class="bg-gradient-to-br from-blue-50 to-cyan-50/50 rounded-[1.5rem] p-6 lg:p-8 border border-blue-100 shadow-sm">
-                <h3 class="flex items-center gap-2 text-sm font-black text-blue-700 uppercase tracking-widest mb-6 border-b border-blue-200/40 pb-3">
-                  <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm"></span>
-                  Male's Wing
-                </h3>
-                <div class="grid grid-cols-1 gap-y-3">
-                  <p v-if="maleRooms.length === 0" class="text-slate-400 text-xs font-bold uppercase tracking-widest">No rooms listed.</p>
-                  <label
-                    v-for="room in maleRooms"
-                    :key="room.id"
-                    class="flex items-center gap-3 group bg-white hover:bg-white rounded-xl p-2.5 transition border border-slate-200/60 shadow-sm hover:shadow cursor-pointer"
-                    :class="{ 'opacity-50 cursor-not-allowed': room.occupant_count >= room.capacity }"
-                  >
-                    <input
-                      type="radio"
-                      name="roomId"
-                      :value="room.id"
-                      v-model="form.roomId"
-                      :disabled="room.occupant_count >= room.capacity"
-                      required
-                      class="w-5 h-5 flex-shrink-0 accent-blue-600"
-                    >
-                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full justify-between pr-1 text-slate-800">
-                      <div class="flex flex-col text-left">
-                        <span class="text-sm sm:text-base font-semibold leading-tight">{{ formatRoomNumber(room.room_number) }}</span>
-                        <span class="text-[11px] font-black text-blue-600">₱{{ formatMoney(room.price || house.price) }}/mo</span>
-                      </div>
-                      <div class="flex flex-col items-end gap-1 shrink-0">
-                        <span v-if="room.occupant_count < room.capacity" class="bg-green-500/10 text-green-700 border border-green-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
-                          {{ room.occupant_count }}/{{ room.capacity }} Occupied ({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)
-                        </span>
-                        <span v-else class="bg-red-500/10 text-red-700 border border-red-200/50 text-[9px] sm:text-[10px] px-2 sm:px-2.5 py-0.5 rounded-full font-bold shadow-sm">
-                          Full ({{ room.capacity }}/{{ room.capacity }} Occupied)
-                        </span>
-                        <span v-if="room.pending_request_count > 0 && room.occupant_count < room.capacity"
-                              class="bg-amber-50 text-amber-700 border border-amber-200/60 text-[9px] px-2 py-0.5 rounded-full font-bold">
-                          {{ room.pending_request_count }} pending request{{ room.pending_request_count > 1 ? 's' : '' }}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
+          <div v-else :class="['flex flex-col items-center gap-3 rounded-2xl border px-6 py-8 text-center text-sm', availabilityError ? 'border-red-200 bg-red-50 text-red-800' : 'border-dashed border-blue-200 bg-white text-slate-600']" role="status">
+            <span :class="['grid h-11 w-11 place-items-center rounded-full', availabilityError ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600']"><i :class="['fa-solid text-base', availabilityError ? 'fa-triangle-exclamation' : scheduleLoading ? 'fa-spinner fa-spin' : 'fa-bed']" aria-hidden="true"></i></span>
+            <p class="max-w-md">{{ availabilityError || (scheduleLoading ? 'Checking beds for your selected stay...' : checkInTooSoon ? 'Choose a later check-in date to see available rooms.' : 'Choose your check-in date and duration above to see available rooms.') }}</p>
+            <button v-if="availabilityError" type="button" @click="refreshRoomAvailability" class="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-700"><i class="fa-solid fa-rotate-right mr-1.5" aria-hidden="true"></i>Retry availability check</button>
           </div>
+          <p class="flex gap-2 px-2 text-xs leading-relaxed text-slate-500"><i class="fa-solid fa-circle-info mt-0.5 text-slate-400" aria-hidden="true"></i><span>You can book another stay when the dates do not overlap an existing request, booking, or stay. Checkout day may be the next check-in day; the previous room must be vacated before actual move-in.</span></p>
 
           <!-- STEP 3: PERSONAL DETAILS -->
-          <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/50">
+          <div id="booking-personal-details" tabindex="-1" class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/50">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
               <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-100">3</div>
@@ -503,12 +448,13 @@ onMounted(async () => {
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Gender Specification</label>
-                <select v-model="form.gender" required
-                  class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer">
+                <select v-model="form.gender" required :disabled="!!profileSex" aria-describedby="gender-source"
+                  class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer disabled:cursor-not-allowed disabled:text-slate-500">
                   <option value="" disabled>Select Gender</option>
                   <option value="female">Female</option>
                   <option value="male">Male</option>
                 </select>
+                <p id="gender-source" class="mt-2 ml-1 text-[11px] font-medium text-slate-500">{{ profileSex ? 'From your profile. Room eligibility uses this value; change it in Profile settings if it is wrong.' : 'Saved to your profile with this request. Room eligibility uses this value.' }}</p>
               </div>
               <div>
                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Age</label>
@@ -580,12 +526,13 @@ onMounted(async () => {
                     <span class="block text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">GCash / Cards (Online)</span>
                     <span class="block text-[9px] text-blue-600 font-black uppercase tracking-widest mt-0.5">Pay via secure PayMongo portal</span>
                     <p class="text-[10px] text-slate-400 mt-3 font-medium leading-relaxed italic">
-                      "Submit your reservation first. Once approved, click the 'Pay Move-In Cost' button on your dashboard to complete payment securely online."
+                      "Submit your reservation first. Once approved, open the booking and pay the move-in cost securely online before the payment deadline."
                     </p>
                   </div>
                 </div>
               </label>
             </div>
+            <p v-if="form.payment_method === 'paymongo'" class="mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[12px] leading-relaxed text-amber-900"><i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i><span><strong>Paid reservations cannot be cancelled in the platform.</strong> {{ PAID_RESERVATION_POLICY }}</span></p>
           </div>
 
           <!-- DYNAMIC COST SUMMARY (Only reveals if a room is actively selected) -->
@@ -659,7 +606,7 @@ onMounted(async () => {
             >Cancel</router-link>
             <button
               type="submit"
-              :disabled="isSaving || reservationBlocked"
+              :disabled="isSaving || reservationBlocked || scheduleLoading || !!availabilityError || !scheduleReady"
               class="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-slate-900 transition-all transform hover:-translate-y-1 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               <div v-if="isSaving" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -674,7 +621,7 @@ onMounted(async () => {
     <!-- PRE-SUBMISSION REVIEW MODAL: Confirm before sending       -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-      <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+      <div class="popup-panel bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
         <!-- Header -->
         <div class="bg-slate-900 px-8 py-6 flex items-center gap-4">
           <div class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
@@ -739,6 +686,8 @@ onMounted(async () => {
             </div>
           </div>
 
+          <ReservationFlowSteps :payment-method="form.payment_method" />
+
           <!-- Move-in cost callout -->
           <div class="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 mt-2">
             <p class="text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">Estimated Move-in Cost</p>
@@ -767,7 +716,7 @@ onMounted(async () => {
     <!-- CUSTOM INFORMATIONAL MODAL: Booking Success & Next Steps   -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div v-if="showSuccessModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 sm:p-6" @click.self="handleSuccessModalClose">
-      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left flex flex-col max-h-[90vh]">
+      <div class="popup-panel bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left flex flex-col max-h-[90vh]">
         <!-- Header -->
         <div class="bg-blue-600 px-8 py-6 flex items-center gap-4 shrink-0">
           <div class="w-12 h-12 bg-white/15 rounded-2xl flex items-center justify-center shrink-0">
@@ -781,7 +730,7 @@ onMounted(async () => {
 
         <!-- Body — scrollable so it never clips on small screens -->
         <div class="p-8 md:p-10 space-y-6 overflow-y-auto flex-1">
-          <p class="text-slate-600 font-semibold text-sm leading-relaxed">
+          <p class="text-slate-900 font-medium text-sm leading-relaxed popup-message">
             Hello, <strong class="text-slate-900">{{ form.resident_name }}</strong>! Your room reservation request for <strong class="text-slate-900">{{ house.name }}</strong> has been successfully sent to the landlord.
           </p>
 
@@ -792,63 +741,11 @@ onMounted(async () => {
             </div>
             <div class="text-left">
               <p class="text-[10px] font-black uppercase tracking-widest text-amber-800">Max Waiting Time: 24 Hours</p>
-              <p class="text-[11px] text-amber-900/90 font-bold leading-tight mt-0.5">Please allow up to 24 hours for the landlord to verify room availability and confirm your request.</p>
+              <p class="text-[11px] text-amber-900/90 font-bold leading-tight mt-0.5">Please allow up to 24 hours (or until 12:00 noon on your check-in day, if sooner) for the landlord to verify room availability and confirm your request.</p>
             </div>
           </div>
 
-          <!-- Conditional Steps: Online PayMongo Flow -->
-          <div v-if="form.payment_method === 'paymongo'" class="space-y-4">
-            <h4 class="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b border-slate-100 pb-2">Next Steps for Online Payment</h4>
-            <div class="space-y-4">
-              <!-- Step 1 -->
-              <div class="flex items-start gap-3.5">
-                <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">1</div>
-                <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review (Max 24h)</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will check room availability and verify your reservation details within 24 hours.</p>
-                </div>
-              </div>
-              <!-- Step 2 -->
-              <div class="flex items-start gap-3.5">
-                <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">2</div>
-                <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Secure your room slot</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">Once approved, you will receive an alert in your inbox notifying you of the approval and instructing you to complete your payment.</p>
-                </div>
-              </div>
-              <!-- Step 3 -->
-              <div class="flex items-start gap-3.5">
-                <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">3</div>
-                <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Settle Upfront Move-in Cost</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">Go to "My Bookings" and click "Pay Move-In Cost" to pay securely via GCash or Card. Completing this payment officially secures your room slot and registers you as an occupant.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Conditional Steps: OTC Cash Flow -->
-          <div v-else class="space-y-4">
-            <h4 class="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b border-slate-100 pb-2">Next Steps for Cash Payment</h4>
-            <div class="space-y-4">
-              <!-- Step 1 -->
-              <div class="flex items-start gap-3.5">
-                <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">1</div>
-                <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Awaiting Landlord Review (Max 24h)</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">The landlord will review your reservation request and approve your slot within 24 hours.</p>
-                </div>
-              </div>
-              <!-- Step 2 -->
-              <div class="flex items-start gap-3.5">
-                <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">2</div>
-                <div>
-                  <h5 class="font-bold text-slate-800 text-xs uppercase tracking-wide">Secure Check-In</h5>
-                  <p class="text-slate-400 text-[11px] leading-relaxed mt-0.5">Once approved, the room is reserved. You will pay the landlord directly in person when you arrive.</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ReservationFlowSteps :payment-method="form.payment_method" />
         </div>
 
         <!-- Footer Actions -->

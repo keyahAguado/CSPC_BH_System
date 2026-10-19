@@ -1,7 +1,12 @@
+import { simulatedBookingTime } from './utils/bookingClock.js';
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
 import './style.css'; // Tailwind CSS
+import './styles/owner-design-system.css';
+import './styles/print-actions.css';
+import './styles/search-fields.css';
+import './styles/popup.css';
 import { registerSW } from 'virtual:pwa-register';
 
 import axios from 'axios';
@@ -34,7 +39,7 @@ if (baseUrl.includes('ngrok')) {
 // Global response interceptor: handle deactivated accounts and expired tokens.
 let isRedirectingToAccountNotice = false;
 axios.interceptors.response.use(
-  response => response,
+  response => {simulatedBookingTime.value=response.headers['x-booking-test-time'] || null;return response;},
   error => {
     const status = error?.response?.status;
     const msg = error?.response?.data?.message || '';

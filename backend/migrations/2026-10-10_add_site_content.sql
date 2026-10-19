@@ -50,4 +50,5 @@ INSERT IGNORE INTO `site_settings` (`setting_key`, `setting_value`) VALUES
 ('footer_hours', ''),
 ('footer_facebook', ''),
 ('footer_website', ''),
+('footer_custom', '[]'),
 ('footer_copyright', '© 2026 CSPC Boarding House Selection & Management System. All rights reserved.');

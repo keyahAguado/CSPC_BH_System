@@ -1,4 +1,8 @@
 <script setup>
+import UserAvatar from "../../components/UserAvatar.vue";
+import { confirmTone } from '../../utils/confirmTone.js';
+import { documentAttachments } from '../../utils/documentFiles.js';
+import RoomFeatures from '../../components/RoomFeatures.vue';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
@@ -364,8 +368,9 @@ const buildDocs = (house) => {
   const facadeDoc = house.img ? [{ label: 'Facade photo', file: house.img, files: [house.img], expiry: null }] : [];
   const dynamicUploaded = dynamicDocs.value
     .filter(d => d.house_id === house.id)
-    .map(d => ({ label: d.criteria_label || 'Additional document', file: d.file_path, files: [d.file_path], expiry: null }));
-  optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded];
+    .map(d => ({ label: d.criteria_label || 'Additional document', file: documentAttachments(d)[0] || null, files: documentAttachments(d), expiry: d.expiry_date || null, required: d.requirement_type === 'required' }));
+  requiredDocs.value.push(...dynamicUploaded.filter(d => d.required));
+  optionalDocs.value = [...OPTIONAL_PERMITS.map(toDoc), ...facadeDoc, ...dynamicUploaded.filter(d => !d.required)];
 };
 
 const buildPhotos = (house) => {
@@ -491,7 +496,6 @@ const handleCheckoutOccupant = async (occId) => {
 const totalOccupants = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.occupant_count || 0), 0));
 const totalCapacity = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.capacity || 0), 0));
 const totalCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.cspc_count || 0), 0));
-const totalNonCspc = computed(() => activeRooms.value.reduce((n, r) => n + Number(r.non_cspc_count || 0), 0));
 
 const parseAmenities = (val) => {
   if (!val) return [];
@@ -708,7 +712,7 @@ const loadError = ref('');
           <p v-if="activeHouse.archive_reason" class="rp-archive-reason"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span><strong>Archive reason:</strong> {{ activeHouse.archive_reason }}</span></p>
           <dl class="rp-stats">
             <div><dt><i class="fa-solid fa-door-open" aria-hidden="true"></i> Rooms</dt><dd>{{ isLoadingRooms ? '…' : activeRooms.length }}</dd></div>
-            <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> CSPC students</dt><dd>{{ isLoadingRooms ? '…' : totalCspc }}</dd><span v-if="!isLoadingRooms && totalNonCspc > 0" class="rp-stat-sub">+ {{ totalNonCspc }} non-CSPC</span></div>
+            <div class="is-primary"><dt><i class="fa-solid fa-user-graduate" aria-hidden="true"></i> CSPC students</dt><dd>{{ isLoadingRooms ? '…' : totalCspc }}</dd></div>
             <div><dt><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Required permits</dt><dd>{{ requiredOnFile(activeHouse) }} / {{ REQUIRED_PERMITS.length }}</dd></div>
             <div :class="'is-' + expiryTone(nextRequiredExpiry(activeHouse))"><dt><i class="fa-regular fa-calendar-xmark" aria-hidden="true"></i> Next permit expiry</dt><dd>{{ nextRequiredExpiry(activeHouse) ? formatDate(nextRequiredExpiry(activeHouse)) : '—' }}</dd></div>
           </dl>
@@ -729,10 +733,7 @@ const loadError = ref('');
             <section class="rp-card">
               <h2 class="rp-card-title">Owner</h2>
               <div class="flex items-center gap-4 mb-4">
-                <span class="rp-avatar">
-                  <img v-if="activeHouse.profile_pic" :src="getImageUrl(activeHouse.profile_pic)" alt="" />
-                  <span v-else>{{ (activeHouse.owner_name || '?').charAt(0).toUpperCase() }}</span>
-                </span>
+                <UserAvatar :src="activeHouse.profile_pic" :name="activeHouse.owner_name" class="rp-avatar" />
                 <div>
                   <p class="rp-strong">{{ activeHouse.owner_name }}</p>
                   <p class="rp-muted">Boarding house owner</p>
@@ -819,7 +820,7 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Supplementary documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
             <div class="rp-card-head">
               <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
               <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === REQUIRED_PERMITS.length ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
@@ -864,10 +865,11 @@ const loadError = ref('');
                     <span class="rp-strong">Room {{ room.room_number }}</span>
                     <span :class="['rp-chip', room.occupant_count >= room.capacity ? 'is-danger' : 'is-success']">{{ room.occupant_count >= room.capacity ? 'Full' : 'Available' }}</span>
                   </div>
+                  <RoomFeatures :room="room" />
                   <span class="rp-tag mt-2" :class="room.gender_type === 'female' ? 'is-female' : 'is-male'">{{ room.gender_type }}</span>
                   <div class="rp-bar" aria-hidden="true"><span :style="{ width: Math.min(100, (room.occupant_count / Math.max(room.capacity, 1)) * 100) + '%' }"></span></div>
                   <p class="rp-muted mt-1">{{ room.occupant_count }} / {{ room.capacity }} occupied ({{ room.capacity - room.occupant_count }} vacant)</p>
-                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span><span v-if="room.non_cspc_count > 0"> + {{ room.non_cspc_count }} non-CSPC</span></p>
+                  <p class="rp-muted"><span class="text-blue-700 font-semibold">{{ room.cspc_count }} CSPC</span></p>
                   <button type="button" class="rp-link-btn mt-2" @click="viewBoarderDetails(room)">View occupants <i class="fa-solid fa-chevron-right text-[10px]" aria-hidden="true"></i></button>
                 </div>
               </div>
@@ -906,13 +908,15 @@ const loadError = ref('');
     </div>
 
     <!-- Custom Confirmation Modal -->
-    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
-        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">{{ confirmTitle }}</h3>
-        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">{{ confirmMessage }}</p>
-        <div class="flex gap-3">
-          <button @click="executeConfirm" class="flex-1 bg-[#245b99] hover:bg-[#194775] text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button management-button-primary">Confirm</button>
-          <button @click="showConfirmModal = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition management-button">Cancel</button>
+    <div v-management-dialog="{ close: () => showConfirmModal = false }" v-if="showConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(confirmTitle).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(confirmTitle).icon]"></i></span>
+          <div><h3 class="cm-title">{{ confirmTitle }}</h3><p class="cm-message popup-message">{{ confirmMessage }}</p></div>
+        </div>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showConfirmModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(confirmTitle).button]" @click="executeConfirm">Confirm</button>
         </div>
       </div>
     </div>

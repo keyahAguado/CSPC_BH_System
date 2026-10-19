@@ -1,3 +1,8 @@
+// Legacy cancellation requests do not change the active booking status.
+const cancellationPending = () => false;
+import { awaitingMoveIn, arrivalPending, nonArrivalRecorded } from './bookingArrival.js';
+import { reservationDeadlineInfo } from './reservationDeadline.js';
+import { paymentException } from './paidReservationPolicy.js';
 // Shared display helpers for the student My Bookings list and Booking Details pages.
 // Booking status (pending/confirmed/completed/cancelled/rejected) and payment status
 // (unpaid/paid/failed) are always presented separately.
@@ -11,7 +16,7 @@ export const formatShortDate = (dateStr) => {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 export const formatLongDate = (dateStr) => {
@@ -47,7 +52,7 @@ const toCalendarDate = (val) => {
 
 export const formatCalendarShort = (val) => {
   const d = toCalendarDate(val);
-  return d ? d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : '—';
+  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 };
 
 export const formatCalendarLong = (val) => {
@@ -71,46 +76,53 @@ export const paymentMethodLabel = (booking) => {
 
 // A PayMongo payment arrived but the owner has not yet recorded the move-in
 export const paymentNeedsReview = (booking) =>
-  booking.payment_method === 'paymongo' && !!booking.paymongo_payment_id && !booking.occupant_check_in;
+  booking.expiry_reason !== 'paid_owner_cancelled' && booking.payment_method === 'paymongo' && !!booking.paymongo_payment_id && !booking.occupant_check_in && (Number(booking.move_in_required) !== 1 || booking.status !== 'confirmed' || Number(booking.payment_review_required) === 1);
 
 export const isActiveBooking = (booking) => ['pending', 'confirmed'].includes(booking.status);
 
 // Confirmed PayMongo booking whose move-in cost can be paid online (same rule as the Pay button)
+export const upfrontIsPaid = booking => !!booking.paymongo_payment_id || (booking.occupant_upfront_status != null ? String(booking.occupant_upfront_status).toLowerCase()==='paid' : booking.payment_status==='paid');
+
 export const needsOnlinePayment = (booking) =>
   !paymentNeedsReview(booking) && booking.status === 'confirmed' &&
-  booking.payment_status !== 'paid' && booking.payment_method === 'paymongo';
+  !upfrontIsPaid(booking) && booking.payment_method === 'paymongo' && !reservationDeadlineInfo(booking)?.overdue;
 
 export const isAwaitingPayment = (booking) =>
-  isActiveBooking(booking) && booking.payment_status !== 'paid' && !paymentNeedsReview(booking);
+  !(booking.status==='pending' && Number(booking.renewal_waiting)) && isActiveBooking(booking) && !upfrontIsPaid(booking) && !paymentNeedsReview(booking);
 
 const BOOKING_STATUS = {
   pending: { label: 'Pending', tone: 'amber' },
   confirmed: { label: 'Confirmed', tone: 'green' },
   completed: { label: 'Checked out', tone: 'blue' },
-  cancelled: { label: 'Cancelled', tone: 'slate' },
+  not_arrived: { label: 'Did not arrive', tone: 'slate' },
+  cancelled: { label: 'Cancelled', tone: 'red' },
   rejected: { label: 'Rejected', tone: 'red' }
 };
 
 export const bookingStatusBadge = (booking) =>
-  BOOKING_STATUS[booking.status] || { label: booking.status || 'Unknown', tone: 'slate' };
+  (cancellationPending(booking) ? {label:'Cancellation requested',tone:'amber'} : paymentException(booking) ? {label:'Payment exception',tone:'amber'} : nonArrivalRecorded(booking) ? {label:'Marked not arrived',tone:'amber'} : booking.status==='pending' && Number(booking.renewal_waiting) ? {label:'Waiting for renewal decision',tone:'amber'} : booking.status==='confirmed' && (booking.occupancy_start_issue || Number(booking.payment_review_required)) ? {label:'Owner review needed',tone:'amber'} : awaitingMoveIn(booking) ? { label: 'Reserved', tone: 'blue' } : arrivalPending(booking) ? { label:'Started · arrival pending', tone:'amber' } : Number(booking.move_in_required) === 1 && booking.status === 'confirmed' ? { label:'Occupied', tone:'green' } : booking.status === 'cancelled' && booking.expiry_reason ? { label: ['cash_no_show','paid_no_show'].includes(booking.expiry_reason) ? 'Cancelled: no-show' : ['owner_cancelled','paid_owner_cancelled'].includes(booking.expiry_reason) ? 'Cancelled by owner' : booking.expiry_reason === 'student_cancelled' ? 'Cancelled' : 'Expired', tone: 'red' } : BOOKING_STATUS[booking.status]) || { label: booking.status || 'Unknown', tone: 'slate' };
 
 export const paymentStatusBadge = (booking) => {
+  if(booking.status==='pending' && Number(booking.renewal_waiting))return {label:'Not due',tone:'slate'};
+  try { const review=JSON.parse(booking.cancellation_review || 'null'); if(booking.status==='cancelled' && review?.status==='resolved' && review.disposition==='refunded') return {label:'External refund recorded',tone:'slate'}; } catch {}
   // Review comes first, as on the previous page: a PayMongo payment arrived but the owner
   // has not recorded the move-in yet
-  if (paymentNeedsReview(booking)) return { label: 'Under review', tone: 'amber' };
-  if (booking.payment_status === 'paid') return { label: 'Paid', tone: 'blue' };
+  if (paymentNeedsReview(booking)) return { label: 'Received · not secured', tone: 'amber' };
+  if (upfrontIsPaid(booking)) return { label: 'Paid', tone: 'blue' };
   if (booking.payment_status === 'failed') return { label: 'Payment failed', tone: 'red' };
-  if (isActiveBooking(booking)) return { label: 'Awaiting payment', tone: 'orange' };
+  if (awaitingMoveIn(booking) && booking.payment_method === 'cash') return { label:'Cash due at move-in', tone:'orange' };
+  if (booking.status === 'pending') return { label: 'Not due — awaiting approval', tone: 'slate' };
+  if (isActiveBooking(booking)) return { label: booking.payment_method === 'cash' ? 'Cash not collected' : 'Awaiting online payment', tone: 'orange' };
   return { label: 'Unpaid', tone: 'slate' };
 };
 
 export const BADGE_TONE_CLASSES = {
-  green: 'bg-emerald-50 text-emerald-700',
-  amber: 'bg-amber-50 text-amber-700',
-  orange: 'bg-orange-50 text-orange-600',
-  blue: 'bg-blue-50 text-blue-700',
-  red: 'bg-rose-50 text-rose-700',
-  slate: 'bg-slate-100 text-slate-500'
+  green: 'bg-green-100 text-green-700',
+  amber: 'bg-amber-100 text-amber-700',
+  orange: 'bg-orange-100 text-orange-700',
+  blue: 'bg-blue-100 text-blue-700',
+  red: 'bg-red-100 text-red-700',
+  slate: 'bg-slate-100 text-slate-600'
 };
 
 // Same wording as the reservation form (Book.vue); owners default to refundable

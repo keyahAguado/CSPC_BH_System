@@ -1,0 +1,19 @@
+/* Owner status badges: one style everywhere in the owner portal (rounded pill, leading icon, bright tint, strong text).
+   Tones: green = paid / confirmed, amber = waiting / due, orange = cash due, blue = reserved, sky = scheduled,
+   red = cancelled / expired / rejected, slate = completed / neutral, purple = online payment. */
+.o-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:650;line-height:1.35;letter-spacing:0;text-transform:none;white-space:nowrap;vertical-align:middle;}
+.o-badge>i{font-size:10.5px;}
+.o-badge.small{padding:3px 8px;font-size:11px;}
+.o-badge.green{background:#dcfce7;color:#15803d;}
+.o-badge.amber{background:#fef3c7;color:#b45309;}
+.o-badge.orange{background:#ffedd5;color:#c2410c;}
+.o-badge.blue{background:#dbeafe;color:#1d4ed8;}
+.o-badge.sky{background:#e0f2fe;color:#0369a1;}
+.o-badge.red{background:#fee2e2;color:#b91c1c;}
+.o-badge.slate{background:#f1f5f9;color:#475569;}
+.o-badge.purple{background:#ede9fe;color:#6d28d9;}
+
+/* Financial state uses an outlined rectangle; stay lifecycle uses filled pills. */
+.o-badge.payment{border:1px solid currentColor;border-radius:6px;background:#fff;}
+.o-badge.payment.green{color:#0f766e;background:#f0fdfa;}
+.o-badge.payment.amber,.o-badge.payment.orange{color:#9a3412;background:#fff7ed;}

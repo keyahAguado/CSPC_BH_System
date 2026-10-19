@@ -8,6 +8,15 @@ const parseCalendarDate = (value) => {
     return new Date(value);
 };
 
+// Formal calendar date used across the app: "Nov 4, 2026" (Month Day, Year).
+export const formalDate = (value) => {
+    const date = parseCalendarDate(value);
+    return Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+};
+// Rewrites calendar dates written as YYYY-MM-DD inside text (for example in stored notifications) to the formal
+// format. A date followed by a clock time is a timestamp and is left as it is.
+export const formalDatesInText = (text) => String(text ?? '').replace(/\b(\d{4}-\d{2}-\d{2})\b(?![T ]\d{2}:)/g, (match, day) => formalDate(day) || match);
+
 /**
  * Computes an exact check-out date from check-in date, duration in months, and optional approved extension months.
  * @param {string|Date} checkInDateStr - Move-in / Check-in starting date

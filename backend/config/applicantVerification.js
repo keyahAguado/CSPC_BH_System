@@ -10,15 +10,35 @@ const secret = () => {
     if (!process.env.JWT_SECRET) throw new Error('Applicant verification is not configured.');
     return `${process.env.JWT_SECRET}:verified-applicant-v2`;
 };
-export const signVerifiedApplicant = (email, applicantId = null) => jwt.sign(
-    { scope: 'verified-applicant', email, ...(applicantId ? { applicantId } : {}) }, secret(), { expiresIn: '2h' }
+// sid: id of a remembered-device session (checked on every request so sign-out takes effect at once)
+// via: 'device' when the session was resumed from a remembered device instead of a fresh email link
+export const signVerifiedApplicant = (email, applicantId = null, { sid = null, via = null } = {}) => jwt.sign(
+    { scope: 'verified-applicant', email, ...(applicantId ? { applicantId } : {}), ...(sid ? { sid } : {}), ...(via ? { via } : {}) },
+    secret(), { expiresIn: '2h' }
 );
 export function readVerifiedApplicant(header = '') {
     if (!header.startsWith('Bearer ')) throw new Error('Missing verification session.');
     const payload = jwt.verify(header.slice(7), secret());
     if (payload.scope !== 'verified-applicant' || !validApplicantEmail(payload.email)
-        || (payload.applicantId !== undefined && !Number.isInteger(payload.applicantId))) throw new Error('Invalid verification session.');
+        || (payload.applicantId !== undefined && !Number.isInteger(payload.applicantId))
+        || (payload.sid !== undefined && !Number.isInteger(payload.sid))
+        || (payload.via !== undefined && payload.via !== 'device')) throw new Error('Invalid verification session.');
     return payload;
+}
+
+// ── "Remember this device for 7 days" (Track My Application) ──
+export const TRACKING_SESSION_DAYS = 7;
+export async function createTrackingSession(db, email) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const [result] = await db.query(
+        'INSERT INTO applicant_tracking_sessions (email, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))',
+        [email, hashVerificationToken(token), TRACKING_SESSION_DAYS]
+    );
+    return { id: result.insertId, token, expiresAt: new Date(Date.now() + TRACKING_SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString() };
+}
+export async function isTrackingSessionActive(db, sid, email) {
+    const [rows] = await db.query('SELECT id FROM applicant_tracking_sessions WHERE id = ? AND email = ? AND revoked_at IS NULL AND expires_at > NOW()', [sid, email]);
+    return rows.length > 0;
 }
 export function requireVerifiedEmail(req, res, next) {
     try {
@@ -151,8 +171,14 @@ export function verificationHandlers({ pool, send = sendApplicantVerification, n
                     return res.status(409).json({ success: false, message: 'Please sign in with your existing account.' });
                 }
                 await connection.query('UPDATE applicant_email_verifications SET claimed_at = NOW() WHERE id = ?', [row.id]);
+                // Optional: remember this device for 7 days (opt-in from the requesting tab)
+                const device = req.body?.remember === true ? await createTrackingSession(connection, row.email) : null;
                 await connection.commit();
-                return res.json({ success: true, verified: true, token: signVerifiedApplicant(row.email, user?.id), email: row.email, hasApplications: Boolean(user) });
+                return res.json({
+                    success: true, verified: true, email: row.email, hasApplications: Boolean(user),
+                    token: signVerifiedApplicant(row.email, user?.id, { sid: device?.id }),
+                    ...(device ? { deviceToken: device.token, deviceExpiresAt: device.expiresAt } : {})
+                });
             } catch {
                 if (connection) await connection.rollback().catch(() => {});
                 return res.status(503).json({ success: false, message: 'We could not check your verification. Please try again.' });

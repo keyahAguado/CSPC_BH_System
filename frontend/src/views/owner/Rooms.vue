@@ -1,4 +1,8 @@
 <script setup>
+import RoomInformationFields from '../../components/RoomInformationFields.vue';
+import { confirmTone } from '../../utils/confirmTone.js';
+import OwnerRoomGroup from '../../components/OwnerRoomGroup.vue';
+import { roomFormDetails, roomFormData, roomDetailsError } from '../../utils/roomDetails.js';
 import LoadError from '../../components/management/LoadError.vue';
 
 import PageHeader from '../../components/management/PageHeader.vue';
@@ -7,7 +11,7 @@ import '../../styles/admin-theme.css';
 import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
 import { validateInput } from '../../utils/inputValidation.js';
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
@@ -19,6 +23,20 @@ const house = ref({ id: '', name: '' });
 const femaleRooms = ref([]);
 const maleRooms = ref([]);
 const archivedRooms = ref([]);
+const roomSearch = ref('');
+const roomTypeFilter = ref('all');
+const roomFloorFilter = ref('all');
+const allActiveRooms = computed(() => [...femaleRooms.value, ...maleRooms.value]);
+const visibleSourceRooms = computed(() => activeTab.value === 'active' ? allActiveRooms.value : archivedRooms.value);
+const floorOptions = computed(() => [...new Set(visibleSourceRooms.value.map(room => room.floor_label).filter(Boolean))].sort((a,b) => a.localeCompare(b, undefined, {numeric:true})));
+const filteredRooms = computed(() => visibleSourceRooms.value.filter(room =>
+  String(room.room_number || '').toLowerCase().includes(roomSearch.value.trim().toLowerCase())
+  && (roomTypeFilter.value === 'all' || room.gender_type === roomTypeFilter.value)
+  && (roomFloorFilter.value === 'all' || (roomFloorFilter.value === 'unspecified' ? !room.floor_label : room.floor_label === roomFloorFilter.value))));
+const roomGroups = computed(() => activeTab.value === 'archived'
+  ? [{ key:'archived', title:'Archived rooms', rooms:filteredRooms.value }]
+  : [{key:'female',title:"Female's room",rooms:filteredRooms.value.filter(room => room.gender_type === 'female')},{key:'male',title:"Male's room",rooms:filteredRooms.value.filter(room => room.gender_type === 'male')}]);
+const clearRoomFilters = () => { roomSearch.value=''; roomTypeFilter.value='all'; roomFloorFilter.value='all'; };
 const activeTab = ref('active'); // 'active' or 'archived'
 
 // Form states for adding new room
@@ -26,6 +44,7 @@ const newRoomNumber = ref('');
 const newGenderType = ref('female');
 const newCapacity = ref('');
 const newPrice = ref('');
+const newDetails = ref(roomFormDetails());
 
 // Form states for editing room
 const showEditModal = ref(false);
@@ -34,6 +53,7 @@ const editRoomNumber = ref('');
 const editGenderType = ref('female');
 const editCapacity = ref('');
 const editPrice = ref('');
+const editDetails = ref(roomFormDetails());
 
 // Delete confirmation modal states
 const showDeleteConfirmModal = ref(false);
@@ -104,6 +124,7 @@ const toggleAddModal = () => {
     newGenderType.value = 'female';
     newCapacity.value = '';
     newPrice.value = '';
+    newDetails.value = roomFormDetails();
   }
 };
 
@@ -125,14 +146,12 @@ const handleSaveRoom = async () => {
     return;
   }
 
+  const detailsError = roomDetailsError(newDetails.value, true);
+  if (detailsError) { showSystemAlert(detailsError, 'error'); return; }
+
   try {
     isSubmitting.value = true;
-    const response = await axios.post(`/api/owner/rooms/add/${house.value.id}`, {
-      room_number: String(newRoomNumber.value).trim(),
-      gender_type: newGenderType.value,
-      capacity: newCapacity.value,
-      price: newPrice.value
-    }, {
+    const response = await axios.post(`/api/owner/rooms/add/${house.value.id}`, roomFormData({ room_number: String(newRoomNumber.value).trim(), gender_type: newGenderType.value, capacity: newCapacity.value, price: newPrice.value }, newDetails.value), {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -155,7 +174,8 @@ const openEditModal = (room) => {
   editRoomNumber.value = room.room_number;
   editGenderType.value = room.gender_type;
   editCapacity.value = room.capacity;
-  editPrice.value = room.price || '';
+  editPrice.value = room.price ?? '';
+  editDetails.value = roomFormDetails(room);
   showEditModal.value = true;
 };
 
@@ -174,14 +194,12 @@ const handleUpdateRoom = async () => {
     return;
   }
 
+  const detailsError = roomDetailsError(editDetails.value, false);
+  if (detailsError) { showSystemAlert(detailsError, 'error'); return; }
+
   try {
     isSubmitting.value = true;
-    const response = await axios.put(`/api/owner/rooms/edit/${editingRoomId.value}`, {
-      room_number: String(editRoomNumber.value).trim(),
-      gender_type: editGenderType.value,
-      capacity: editCapacity.value,
-      price: editPrice.value
-    }, {
+    const response = await axios.put(`/api/owner/rooms/edit/${editingRoomId.value}`, roomFormData({ room_number: String(editRoomNumber.value).trim(), gender_type: editGenderType.value, capacity: editCapacity.value, price: editPrice.value }, editDetails.value), {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -250,401 +268,34 @@ const loadError = ref('');
     <main id="management-content" tabindex="-1" class="flex-1 max-w-6xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
       <LoadError :message="loadError" />
 
-      <!-- Header Section -->
-      <PageHeader title="Rooms & availability" :eyebrow="house.name" />
-
-      <!-- Loading State -->
-      <div v-if="isLoading" class="p-20 text-center bg-white rounded-[2.5rem] shadow-sm border border-slate-200/60 flex flex-col items-center justify-center">
-        <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <p class="text-slate-400 font-bold uppercase text-[12px] tracking-wide">Loading rooms status...</p>
+      <PageHeader title="Rooms & occupants" :eyebrow="house.name" description="Scan all rooms quickly, then open a room to see its full details." />
+      <div class="owner-room-create-row no-print">
+        <button type="button" @click="toggleAddModal" class="owner-room-create-button bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold text-[12px] hover:bg-blue-700 transition inline-flex items-center gap-2 management-button management-button-primary"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add room</button>
       </div>
-
-      <div v-else class="space-y-12">
-        
-        <!-- Bookings Monitoring Section -->
-        <div class="bg-white rounded-3xl shadow-sm border border-slate-200/60 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6 transition-all duration-300 hover:shadow-md">
-          <div class="flex items-center gap-4">
-            <div class="w-12 h-12 md:w-14 md:h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-                <path d="m9 16 2 2 4-4" />
-              </svg>
-            </div>
-            <div>
-              <h2 class="text-base md:text-xl font-semibold text-slate-900 uppercase tracking-tight">Bookings Monitoring</h2>
-              <p class="text-slate-500 text-[12px] md:text-[12px] font-bold uppercase tracking-wider">Review and manage boarder reservations</p>
-            </div>
-          </div>
-          
-          <!-- Native SPA routing link -->
-          <router-link :to="'/owner/bookings?houseId=' + house.id" class="w-full md:w-auto bg-[#2a528a] text-white px-6 py-3 md:px-8 md:py-4 rounded-2xl font-semibold text-[12px] md:text-[12px] uppercase tracking-wide hover:bg-black transition-all duration-300 flex items-center justify-center gap-3 shadow-lg shadow-blue-100 active:scale-95 management-button management-button-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            Manage
-          </router-link>
+      <div v-if="isLoading" class="owner-rooms-loading"><div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><p>Loading rooms...</p></div>
+      <div v-else class="owner-rooms-content">
+        <div class="owner-room-toolbar">
+          <div class="owner-room-tabs" aria-label="Room status"><button type="button" @click="activeTab = 'active'; clearRoomFilters()" :aria-pressed="activeTab === 'active'" :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'">Active rooms ({{ allActiveRooms.length }})</button><button type="button" @click="activeTab = 'archived'; clearRoomFilters()" :aria-pressed="activeTab === 'archived'" :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'">Archived rooms ({{ archivedRooms.length }})</button></div>
+          <div class="owner-room-filters"><select v-model="roomTypeFilter" aria-label="Filter by room type"><option value="all">All room types</option><option value="female">Female rooms</option><option value="male">Male rooms</option></select><select v-model="roomFloorFilter" aria-label="Filter by floor"><option value="all">All floors</option><option v-for="floor in floorOptions" :key="floor" :value="floor">{{ floor }}</option><option value="unspecified">Not specified</option></select></div>
+          <label class="owner-room-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input v-model="roomSearch" type="search" aria-label="Search room number" placeholder="Search room no." /></label>
         </div>
-
-        <!-- Room Filter Tabs: Active Rooms vs Archived Rooms -->
-        <div class="flex items-center justify-between border-b border-slate-200/80 pb-4">
-          <div class="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:gap-3">
-            <button 
-              @click="activeTab = 'active'"
-              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-semibold text-[12px] sm:text-[12px] uppercase tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
-              :class="activeTab === 'active' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
-            >
-              <i class="fa-solid fa-door-open text-xs"></i> Active Rooms ({{ femaleRooms.length + maleRooms.length }})
-            </button>
-            <button 
-              @click="activeTab = 'archived'"
-              class="px-3.5 sm:px-5 py-2.5 rounded-xl font-semibold text-[12px] sm:text-[12px] uppercase tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center"
-              :class="activeTab === 'archived' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-200/60 border border-slate-200/60'"
-            >
-              <i class="fa-solid fa-box-archive text-xs"></i> Archived Rooms ({{ archivedRooms.length }})
-            </button>
-          </div>
-        </div>
-
-        <div v-if="activeTab === 'active'" class="grid grid-cols-1 gap-12">
-          
-          <!-- Female's Room Section -->
-          <section class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
-            <div class="bg-slate-50/80 px-5 md:px-8 py-4 md:py-5 border-b border-slate-200 flex items-center gap-3 justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-2 h-6 bg-pink-400 rounded-full"></div>
-                <h2 class="text-sm font-semibold text-slate-800 uppercase tracking-wide">Female's Room</h2>
-              </div>
-            </div>
-
-            <!-- MOBILE CARD LIST (hidden on sm+) -->
-            <div class="sm:hidden divide-y divide-slate-100">
-              <div v-if="femaleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-                No Female Rooms listed
-              </div>
-              <div v-for="room in femaleRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3">
-                <div class="flex items-center justify-between">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
-                  <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Occupancy</span>
-                  <span class="font-bold text-slate-600 text-sm">
-                    {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[12px] text-slate-400 font-semibold uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
-                  </span>
-                </div>
-                <div class="flex items-center justify-between flex-wrap gap-2">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Full</span>
-                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Vacant</span>
-                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Available</span>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide hover:bg-black transition shadow-sm text-center flex items-center justify-center management-button management-button-primary">
-                    View
-                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                      {{ room.pending_request_count }}
-                    </span>
-                  </router-link>
-                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
-                    Edit
-                  </button>
-                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
-                    Archive
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- DESKTOP TABLE (hidden on mobile) -->
-            <div class="hidden sm:block overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead>
-                  <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100">
-                    <th class="px-8 py-5 text-center">Room No.</th>
-                    <th class="px-8 py-5 text-center">Monthly Rent</th>
-                    <th class="px-8 py-5 text-center">Occupancy</th>
-                    <th class="px-8 py-5 text-center">Current Status</th>
-                    <th class="px-8 py-5 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr v-if="femaleRooms.length === 0">
-                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-                      No Female Rooms listed
-                    </td>
-                  </tr>
-                  <tr v-for="room in femaleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors group">
-                    <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
-                    <td class="px-8 py-5 text-center font-bold text-slate-500">
-                      {{ room.occupant_count }} / {{ room.capacity }}
-                      <span class="block text-[12px] text-slate-400 font-semibold uppercase mt-1 tracking-tighter">
-                        {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
-                      </span>
-                    </td>
-                    <td class="px-8 py-5 text-center">
-                      <div class="flex flex-col items-center gap-1.5">
-                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Full</span>
-                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Vacant</span>
-                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Available</span>
-                      </div>
-                    </td>
-                    <td class="px-8 py-5 text-center">
-                      <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide hover:bg-black transition shadow-sm inline-flex items-center management-button management-button-primary">
-                          Details
-                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                            {{ room.pending_request_count }}
-                          </span>
-                        </router-link>
-                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
-                          Edit
-                        </button>
-                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
-                          Archive
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <!-- Male's Room Section -->
-          <section class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
-            <div class="bg-slate-50/80 px-5 md:px-8 py-4 md:py-5 border-b border-slate-200 flex items-center gap-3">
-              <div class="w-2 h-6 bg-blue-400 rounded-full"></div>
-              <h2 class="text-sm font-semibold text-slate-800 uppercase tracking-wide">Male's Room</h2>
-            </div>
-
-            <!-- MOBILE CARD LIST (hidden on sm+) -->
-            <div class="sm:hidden divide-y divide-slate-100">
-              <div v-if="maleRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-                No Male Rooms listed
-              </div>
-              <div v-for="room in maleRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3">
-                <div class="flex items-center justify-between">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
-                  <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Occupancy</span>
-                  <span class="font-bold text-slate-600 text-sm">
-                    {{ room.occupant_count }} / {{ room.capacity }}
-                    <span class="text-[12px] text-slate-400 font-semibold uppercase ml-1">({{ Math.max(0, room.capacity - room.occupant_count) }} Vacant)</span>
-                  </span>
-                </div>
-                <div class="flex items-center justify-between flex-wrap gap-2">
-                  <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Full</span>
-                    <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Vacant</span>
-                    <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Available</span>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2 pt-2">
-                  <router-link :to="'/owner/rooms/details/' + room.id" class="relative flex-1 bg-[#2a528a] text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide hover:bg-black transition shadow-sm text-center flex items-center justify-center management-button management-button-primary">
-                    View
-                    <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                      {{ room.pending_request_count }}
-                    </span>
-                  </router-link>
-                  <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
-                    Edit
-                  </button>
-                  <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2.5 rounded-xl uppercase tracking-wide transition management-button">
-                    Archive
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- DESKTOP TABLE (hidden on mobile) -->
-            <div class="hidden sm:block overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead>
-                  <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100">
-                    <th class="px-8 py-5 text-center">Room No.</th>
-                    <th class="px-8 py-5 text-center">Monthly Rent</th>
-                    <th class="px-8 py-5 text-center">Occupancy</th>
-                    <th class="px-8 py-5 text-center">Current Status</th>
-                    <th class="px-8 py-5 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr v-if="maleRooms.length === 0">
-                    <td colspan="5" class="px-8 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-                      No Male Rooms listed
-                    </td>
-                  </tr>
-                  <tr v-for="room in maleRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
-                    <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                    <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
-                    <td class="px-8 py-5 text-center font-bold text-slate-500">
-                      {{ room.occupant_count }} / {{ room.capacity }}
-                      <span class="block text-[12px] text-slate-400 font-semibold uppercase mt-1 tracking-tighter">
-                        {{ Math.max(0, room.capacity - room.occupant_count) }} Vacant
-                      </span>
-                    </td>
-                    <td class="px-8 py-5 text-center">
-                      <div class="flex flex-col items-center gap-1.5">
-                        <span v-if="room.occupant_count >= room.capacity" class="inline-block bg-red-50 text-red-600 border border-red-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Full</span>
-                        <span v-else-if="room.occupant_count === 0" class="inline-block bg-emerald-50 text-emerald-600 border border-emerald-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Vacant</span>
-                        <span v-else class="inline-block bg-blue-50 text-blue-600 border border-blue-100 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">Available</span>
-                      </div>
-                    </td>
-                    <td class="px-8 py-5 text-center">
-                      <div class="flex items-center justify-center gap-2">
-                        <router-link :to="'/owner/rooms/details/' + room.id" class="relative bg-[#2a528a] text-white text-[12px] font-semibold px-4 py-2 rounded-lg uppercase tracking-wide hover:bg-black transition shadow-sm inline-flex items-center management-button management-button-primary">
-                          Details
-                          <span v-if="room.pending_request_count > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-[12px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm animate-bounce">
-                            {{ room.pending_request_count }}
-                          </span>
-                        </router-link>
-                        <button @click="openEditModal(room)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
-                          Edit
-                        </button>
-                        <button @click="openDeleteModal(room)" class="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 border border-amber-200/60 text-[12px] font-semibold px-3 py-2 rounded-lg uppercase tracking-wide transition cursor-pointer management-button">
-                          Archive
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
-        <!-- ARCHIVED ROOMS SECTION -->
-        <div v-else class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden">
-          <div class="bg-slate-900 text-white px-5 md:px-8 py-4 md:py-5 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-box-archive text-amber-400"></i>
-              <h2 class="text-sm font-semibold uppercase tracking-wide">Archived Rooms</h2>
-            </div>
-            <span class="text-[12px] font-semibold uppercase tracking-wider bg-amber-400/20 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30">
-              Retained for Records
-            </span>
-          </div>
-
-          <!-- MOBILE CARD LIST (hidden on sm+) -->
-          <div class="sm:hidden divide-y divide-slate-100">
-            <div v-if="archivedRooms.length === 0" class="px-5 py-8 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-              No archived rooms.
-            </div>
-            <div v-for="room in archivedRooms" :key="room.id" class="px-5 py-4 flex flex-col gap-3 text-left">
-              <div class="flex items-center justify-between">
-                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Room No.</span>
-                <span class="font-semibold text-slate-800 text-sm">{{ room.room_number }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Wing / Gender</span>
-                <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
-                  {{ room.gender_type }}'s Wing
-                </span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Monthly Rent</span>
-                <span class="font-semibold text-slate-900 text-sm">₱{{ Number(room.price || 0).toLocaleString() }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Status</span>
-                <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">
-                  Archived
-                </span>
-              </div>
-              <div class="pt-2">
-                <button 
-                  @click="handleRestoreRoom(room.id, room.room_number)"
-                  :disabled="isSubmitting"
-                  class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold py-2.5 rounded-xl uppercase tracking-wide transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 management-button"
-                >
-                  <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- DESKTOP TABLE (hidden on mobile) -->
-          <div class="hidden sm:block overflow-x-auto">
-            <table class="w-full text-sm text-left">
-              <thead>
-                <tr class="text-slate-500 uppercase text-[12px] font-semibold tracking-wider border-b border-slate-100 bg-slate-50/50">
-                  <th class="px-8 py-5 text-center">Room No.</th>
-                  <th class="px-8 py-5 text-center">Wing / Gender</th>
-                  <th class="px-8 py-5 text-center">Monthly Rent</th>
-                  <th class="px-8 py-5 text-center">Status</th>
-                  <th class="px-8 py-5 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-if="archivedRooms.length === 0">
-                  <td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-xs uppercase tracking-wide">
-                    No archived rooms.
-                  </td>
-                </tr>
-                <tr v-for="room in archivedRooms" :key="room.id" class="hover:bg-slate-50/50 transition-colors">
-                  <td class="px-8 py-5 font-bold text-slate-700 text-center">{{ room.room_number }}</td>
-                  <td class="px-8 py-5 text-center font-bold text-slate-600 capitalize">
-                    <span class="inline-block px-3 py-1 rounded-full text-[12px] font-semibold uppercase" :class="room.gender_type === 'female' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-blue-50 text-blue-600 border border-blue-100'">
-                      {{ room.gender_type }}'s Wing
-                    </span>
-                  </td>
-                  <td class="px-8 py-5 text-center font-semibold text-slate-900">₱{{ Number(room.price || 0).toLocaleString() }}</td>
-                  <td class="px-8 py-5 text-center">
-                    <span class="inline-block bg-slate-100 text-slate-600 border border-slate-200 text-[12px] font-semibold px-4 py-1.5 rounded-full uppercase tracking-wide">
-                      Archived
-                    </span>
-                  </td>
-                  <td class="px-8 py-5 text-center">
-                    <button 
-                      @click="handleRestoreRoom(room.id, room.room_number)"
-                      :disabled="isSubmitting"
-                      class="bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold px-5 py-2.5 rounded-xl uppercase tracking-wide transition shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mx-auto management-button"
-                    >
-                      <i class="fa-solid fa-rotate-left text-xs"></i> Restore Room
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Global Action Buttons -->
-        <div class="mt-16 flex flex-wrap justify-center gap-6 pb-20">
-          <button @click="toggleAddModal" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-semibold text-[12px] uppercase tracking-wide shadow-lg shadow-blue-200 hover:bg-black hover:shadow-none transition-all duration-300 flex items-center gap-3 active:scale-95 focus:outline-none cursor-pointer management-button management-button-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 12h14" />
-              <path d="M12 5v14" />
-            </svg>
-            Add Room
-          </button>
-        </div>
-
+        <div class="owner-room-utility"><span>{{ filteredRooms.length }} {{ activeTab === 'archived' ? 'archived' : 'active' }} rooms shown</span><router-link :to="'/owner/bookings?houseId=' + house.id" class="bg-[#2a528a] text-white px-4 py-2 rounded-lg text-[12px] font-semibold hover:bg-black transition management-button management-button-primary"><i class="fa-solid fa-calendar-check mr-2" aria-hidden="true"></i>Manage bookings</router-link></div>
+        <template v-for="group in roomGroups" :key="group.key"><OwnerRoomGroup v-if="group.rooms.length" :rooms="group.rooms" :title="group.title" :tone="group.key" :archived="activeTab === 'archived'" :busy="isSubmitting" @edit="openEditModal" @archive="openDeleteModal" @restore="room => handleRestoreRoom(room.id,room.room_number)" /></template>
+        <div v-if="!filteredRooms.length" class="owner-room-empty"><i class="fa-solid fa-door-open" aria-hidden="true"></i><h2>{{ visibleSourceRooms.length ? 'No rooms match your filters' : activeTab === 'archived' ? 'No archived rooms' : 'No rooms added yet' }}</h2><p>{{ visibleSourceRooms.length ? 'Try another room number, room type or floor.' : activeTab === 'archived' ? 'Archived rooms will appear here for restoration.' : 'Add a room to start managing its details, pricing and occupants.' }}</p><button v-if="visibleSourceRooms.length" type="button" @click="clearRoomFilters" class="text-blue-600 underline">Clear filters</button></div>
       </div>
     </main>
 
     <!-- ===== Add Room Modal ===== -->
-    <div v-management-dialog="{ close: () => toggleAddModal() }" v-show="showAddModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-      <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
-        <div class="flex justify-between items-center mb-8">
-          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Add New Room</h2>
-          <button aria-label="toggle Add Modal" @click="toggleAddModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
+    <div v-management-dialog="{ close: () => toggleAddModal() }" v-show="showAddModal" class="room-modal-overlay fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+      <div class="room-modal-panel bg-white w-full relative text-left shadow-2xl animate-in zoom-in duration-200">
+        <div class="room-modal-header"><div class="room-modal-heading"><span class="room-modal-icon"><i class="fa-solid fa-door-open" aria-hidden="true"></i></span><div>
+          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Add New Room</h2><p>Set up room details, amenities and actual photos.</p></div></div>
+          <button aria-label="Close Add Room dialog" @click="toggleAddModal" class="room-modal-close">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
 
-        <form @submit.prevent="handleSaveRoom" class="space-y-6">
+        <form @submit.prevent="handleSaveRoom" class="room-modal-form"><div class="room-modal-body"><div class="room-modal-basics">
           <div>
             <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
             <input aria-label="Room Number / ID" v-model="newRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
@@ -664,24 +315,27 @@ const loadError = ref('');
             <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
             <input aria-label="Monthly Rent (₱)" v-model="newPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500 (Leave blank to use property base rate)" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
-          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-semibold py-4 rounded-xl text-[12px] uppercase tracking-wide transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer management-button management-button-primary">
+          </div><RoomInformationFields v-model="newDetails" is-new />
+          </div><div class="room-modal-footer"><button type="button" @click="toggleAddModal" :disabled="isSubmitting" class="room-modal-cancel management-button">Cancel</button>
+          <button type="submit" :disabled="isSubmitting" class="room-modal-save bg-blue-600 text-white font-semibold disabled:opacity-50 management-button management-button-primary">
             {{ isSubmitting ? 'Saving Room...' : 'Save Room' }}
           </button>
+          </div>
         </form>
       </div>
     </div>
 
     <!-- ===== Edit Room Modal ===== -->
-    <div v-management-dialog="{ close: () => closeEditModal() }" v-show="showEditModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-      <div class="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-10 relative text-left animate-in zoom-in duration-200">
-        <div class="flex justify-between items-center mb-8">
-          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Edit Room Details</h2>
-          <button aria-label="Close dialog" @click="closeEditModal" class="text-slate-300 hover:text-slate-900 transition focus:outline-none cursor-pointer">
+    <div v-management-dialog="{ close: () => closeEditModal() }" v-show="showEditModal" class="room-modal-overlay fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+      <div class="room-modal-panel bg-white w-full relative text-left shadow-2xl animate-in zoom-in duration-200">
+        <div class="room-modal-header"><div class="room-modal-heading"><span class="room-modal-icon"><i class="fa-solid fa-door-open" aria-hidden="true"></i></span><div>
+          <h2 class="text-xl font-semibold text-slate-900 uppercase tracking-tight">Edit Room Details</h2><p>Keep room details, amenities and photos up to date.</p></div></div>
+          <button aria-label="Close dialog" @click="closeEditModal" class="room-modal-close">
             <i class="fa-solid fa-xmark text-xl"></i>
           </button>
         </div>
 
-        <form @submit.prevent="handleUpdateRoom" class="space-y-6">
+        <form @submit.prevent="handleUpdateRoom" class="room-modal-form"><div class="room-modal-body"><div class="room-modal-basics">
           <div>
             <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Room Number / ID</label>
             <input aria-label="Room Number / ID" v-model="editRoomNumber" type="text" required placeholder="E.g. Room 101" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
@@ -701,36 +355,72 @@ const loadError = ref('');
             <label class="block text-[12px] font-semibold text-slate-400 uppercase mb-2 ml-1">Monthly Rent (₱)</label>
             <input aria-label="Monthly Rent (₱)" v-model="editPrice" type="number" min="0" max="99999999.99" step="0.01" placeholder="E.g. 1500" class="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition" />
           </div>
-          <button type="submit" :disabled="isSubmitting" class="w-full bg-blue-600 hover:bg-black text-white font-semibold py-4 rounded-xl text-[12px] uppercase tracking-wide transition shadow-xl active:scale-95 disabled:opacity-50 cursor-pointer management-button management-button-primary">
+          </div><RoomInformationFields v-model="editDetails" />
+          </div><div class="room-modal-footer"><button type="button" @click="closeEditModal" :disabled="isSubmitting" class="room-modal-cancel management-button">Cancel</button>
+          <button type="submit" :disabled="isSubmitting" class="room-modal-save bg-blue-600 text-white font-semibold disabled:opacity-50 management-button management-button-primary">
             {{ isSubmitting ? 'Updating Room...' : 'Update Room' }}
           </button>
+          </div>
         </form>
       </div>
     </div>
 
     <!-- ===== Archive Room Confirmation Modal ===== -->
-    <div v-management-dialog="{ close: () => closeDeleteModal() }" v-if="showDeleteConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-      <div class="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100 animate-in zoom-in-95 duration-200">
-        <div class="text-amber-500 mb-4 flex justify-center">
-          <div class="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center border border-amber-200/60">
-            <i class="fa-solid fa-box-archive text-amber-500 text-2xl"></i>
-          </div>
+    <div v-management-dialog="{ close: () => closeDeleteModal() }" v-if="showDeleteConfirmModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone('Archive Room ' + deletingRoomNumber + '?').tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone('Archive Room ' + deletingRoomNumber + '?').icon]"></i></span>
+          <div><h3 class="cm-title">{{ 'Archive Room ' + deletingRoomNumber + '?' }}</h3><p class="cm-message popup-message">This room moves to your Archived Rooms tab and is hidden from students. You can restore it at any time.</p></div>
         </div>
-        <h3 class="text-lg font-semibold text-slate-900 uppercase tracking-tight mb-2">Archive Room {{ deletingRoomNumber }}?</h3>
-        <p class="text-slate-500 text-xs font-medium mb-6 leading-relaxed">
-          Are you sure you want to archive this room? It will be safely moved to your Archived Rooms tab and can be restored at any time.
-        </p>
-        
-        <div class="flex gap-3">
-          <button @click="handleDeleteRoom" :disabled="isSubmitting" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 disabled:opacity-50 cursor-pointer management-button">
-            {{ isSubmitting ? 'Archiving...' : 'Archive Room' }}
-          </button>
-          <button @click="closeDeleteModal" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold py-3.5 rounded-xl uppercase tracking-wide transition active:scale-95 cursor-pointer management-button">
-            Cancel
-          </button>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="closeDeleteModal()">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone('Archive Room ' + deletingRoomNumber + '?').button]" :disabled="isSubmitting" @click="handleDeleteRoom">{{ isSubmitting ? 'Archiving...' : 'Archive room' }}</button>
         </div>
       </div>
     </div>
 
   </div>
 </template>
+<style scoped>
+.owner-rooms-content {display:grid;gap:18px;}.owner-rooms-loading {display:flex;flex-direction:column;align-items:center;gap:14px;padding:70px 20px;border:1px solid #e2e8f0;border-radius:16px;background:white;color:#71839c;font-size:13px;}
+.owner-room-toolbar {container-type:inline-size;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:15px;background:white;border:1px solid #e1e9f4;border-radius:14px;box-shadow:0 4px 14px rgb(22 54 94 / .025);}.owner-room-tabs {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}.owner-room-tabs button {font-size:12px;font-weight:650;border-radius:8px;padding:10px 13px;white-space:nowrap;}.owner-room-filters {display:flex;gap:10px;padding-left:15px;border-left:1px solid #e2e8f0;}.owner-room-filters select {font-size:12px;color:#72839d;border:1px solid #e1e9f4;border-radius:7px;padding:9px 28px 9px 11px;background-color:#fff;max-width:180px;}.owner-room-search {display:flex;align-items:center;gap:10px;flex:1 1 260px;max-width:360px;min-width:240px;margin-left:auto;border:1px solid #e1e9f4;border-radius:7px;background:#fbfcff;padding:12px 15px;color:#71839c;}.owner-room-search i {font-size:11px;}.owner-room-search input {border:0;background:transparent;padding:0;outline:none;font-size:13px;min-width:0;width:100%;color:#29415e;}.owner-room-search:focus-within {outline:2px solid #93c5fd;outline-offset:2px;}
+.owner-room-utility {display:flex;align-items:center;justify-content:space-between;gap:12px;color:#8191aa;font-size:11px;}.owner-room-empty {padding:55px 20px;background:white;border:1px solid #e1e9f4;border-radius:15px;text-align:center;color:#71839c;}.owner-room-empty>i {font-size:28px;margin-bottom:15px;}.owner-room-empty h2 {font-size:17px;font-weight:650;color:#314b6e;margin-bottom:8px;}.owner-room-empty p {font-size:13px;}.owner-room-empty button {margin-top:15px;font-size:13px;}
+@media(max-width:767px){.owner-room-toolbar {gap:12px;padding:13px;}.owner-room-tabs{width:100%;}.owner-room-tabs button{flex:1;font-size:11px;}.owner-room-filters{padding-left:0;border:0;flex:1;}.owner-room-filters select{min-width:0;max-width:none;width:50%;}.owner-room-search{width:100%;min-width:0;max-width:none;flex-basis:100%;margin:0;}.owner-room-search input{width:100%;}.owner-room-utility{align-items:center;}}
+@media(min-width:768px) and (max-width:1100px){.owner-room-search {flex-basis:100%;max-width:none;min-width:0;}}
+@media(max-width:420px){.owner-room-filters {width:100%;flex-basis:100%;}.owner-room-tabs {gap:6px;}.owner-room-tabs button {padding:10px 8px;}}
+@container (max-width:1000px){.owner-room-search {flex-basis:100%;min-width:0;max-width:none;}}
+
+.owner-room-create-row{display:flex;justify-content:flex-end;margin:-8px 0 20px;}
+.owner-page .owner-room-create-button{min-height:36px;min-width:0;padding:8px 14px;font-size:12px;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgb(37 99 235 / .12);cursor:pointer;}
+.owner-room-create-button:focus-visible{outline:3px solid #93c5fd;outline-offset:3px;}
+@media(max-width:767px){.owner-room-create-row{margin:0 0 20px;}.owner-page .owner-room-create-button{width:auto;min-height:40px;font-size:12px;}}
+
+/* Add/edit room dialogs share one responsive, independently scrolling layout. */
+.room-modal-overlay{padding:24px;}
+.owner-page .room-modal-panel{max-width:800px;height:min(860px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);display:grid;grid-template-rows:auto minmax(0,1fr);overflow:clip;border-radius:18px;}
+.room-modal-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 26px;border-bottom:1px solid #e4edf8;background:#fff;flex-shrink:0;}
+.room-modal-heading{display:flex;align-items:center;gap:14px;min-width:0;}
+.room-modal-icon{width:44px;height:44px;display:grid;place-items:center;flex-shrink:0;border-radius:12px;background:#eff6ff;color:#2563eb;font-size:20px;}
+.room-modal-heading h2{font-size:20px;font-weight:750;line-height:1.3;}
+.room-modal-heading p{font-size:12px;line-height:1.6;color:#526b89;margin-top:4px;}
+.room-modal-close{width:40px;height:40px;display:grid;place-items:center;flex-shrink:0;border:1px solid #e1e9f4;border-radius:10px;background:#f8faff;color:#46617f;cursor:pointer;}
+.room-modal-close:hover{background:#eff6ff;color:#2563eb;}
+.room-modal-form{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0;overflow:clip;}
+.room-modal-body{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:24px 26px;scrollbar-gutter:stable;}
+.room-modal-basics{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
+.room-modal-basics label{font-size:12px;color:#334c68;margin-left:0;}
+.room-modal-basics :is(input,select){padding:12px 14px;font-size:14px;font-weight:500;background:#fff;min-height:46px;}
+.room-modal-basics select{appearance:auto;padding-right:30px;}
+.room-modal-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-shrink:0;padding:16px 26px;border-top:1px solid #e4edf8;background:#f8faff;}
+.room-modal-footer .management-button{min-height:36px;padding:8px 16px;font-size:12px;cursor:pointer;}
+.room-modal-cancel{border:1px solid #d8e3f0;background:white;color:#334c68;}
+.room-modal-cancel:hover{background:#edf3fb;}
+.room-modal-save{min-width:110px;}
+.room-modal-panel :is(button,input,select):focus-visible{outline:3px solid #93c5fd;outline-offset:2px;}
+@media(max-width:639px){.room-modal-overlay{padding:12px;}.owner-page .room-modal-panel{height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);}.room-modal-header{padding:16px;gap:10px;}.room-modal-heading{gap:10px;}.room-modal-heading h2{font-size:18px;}.room-modal-icon{width:38px;height:38px;font-size:17px;}.room-modal-body{padding:20px 16px;}.room-modal-basics{grid-template-columns:1fr;gap:16px;}.room-modal-footer{padding:14px 16px;}.room-modal-footer>button{flex:0 1 auto;min-width:90px;}.room-modal-heading p{font-size:11px;}}
+
+
+.owner-room-create-button,.owner-room-tabs button,.owner-room-utility a,.room-modal-panel button{transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease,box-shadow 160ms ease;}
+@media(pointer:coarse){.owner-page .owner-room-create-button,.room-modal-footer .management-button{min-height:44px;}}
+@media(prefers-reduced-motion:reduce){.owner-room-create-button,.owner-room-tabs button,.owner-room-utility a,.room-modal-panel button{transition:none;}}
+</style>

@@ -82,7 +82,8 @@ export function validateInput(scope, data, context = {}) {
         add(text(data.description, 'Description', 16000));
         add(text(data.map_link, 'Map link', 16000));
         add(text(data.contact_number, 'Property contact number', 200, true));
-        if (typeof data.contact_number === 'string' && !/^[\d\s/,\-+()]{7,200}$/.test(data.contact_number.trim())) add('Please enter a valid property contact number or list of numbers.');
+        // Up to three 11-digit mobile numbers starting with 09, separated by a slash (the form inserts " / ").
+        if (typeof data.contact_number === 'string' && !/^09\d{9}(\s*\/\s*09\d{9}){0,2}$/.test(data.contact_number.trim())) add('Contact number must be one to three 11-digit mobile numbers starting with 09, separated by a slash (for example 09123456789 / 09987654321).');
         if (!validMoney(data.price)) add('Monthly rent must be greater than zero, with at most two decimal places, and no more than 99,999,999.99.');
         for (const [key, label, limit] of [['latitude', 'Latitude', 90], ['longitude', 'Longitude', 180]]) {
             const value = data[key];
@@ -157,6 +158,7 @@ export function validateInput(scope, data, context = {}) {
     }
     if (scope === 'criterion') {
         add(text(data.label,'Requirement name',255,true));
+        add(choice(data.requirement_type,['required','supplementary'],'document category'));
         whole('house_id','Property ID',1,2147483647);
     }
     if (scope === 'siteFeature') {
@@ -224,7 +226,7 @@ export function validateBody(scope) {
         for (const value of Object.values(req.params || {})) {
             if (!validWhole(value,1,2147483647)) return res.status(400).json({ success: false, message: 'The selected record is invalid. Please refresh the page and select it again.', errorCode: 'invalid_input' });
         }
-        const error = validateInput(scope, req.body || {});
+        const error = validateInput(scope, req.body || {}, ['booking','occupant'].includes(scope) ? {today:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(bookingNow())} : {});
         if (error) return res.status(400).json({ success: false, message: error, errorCode: 'invalid_input' });
         return next();
     };
@@ -246,3 +248,5 @@ export function validateStudentCourse(pool) {
         }
     };
 }
+
+import { bookingNow } from './bookingClock.js';

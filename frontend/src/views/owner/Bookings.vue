@@ -1,47 +1,39 @@
 <script setup>
+import BookingTestClock from '../../components/BookingTestClock.vue';
+import { confirmTone } from '../../utils/confirmTone.js';
+import { ownerDate, ownerDay, ownerStayEnd, ownerMoney, ownerBookingReference } from '../../utils/ownerBookingDisplay.js';
+import OwnerBookingWorkspace from '../../components/OwnerBookingWorkspace.vue';
 import LoadError from '../../components/management/LoadError.vue';
 
-import PageHeader from '../../components/management/PageHeader.vue';
-import TablePager from '../../components/management/TablePager.vue';
 import '../../styles/management.css';
 import '../../styles/admin-theme.css';
 import '../../styles/owner-pages.css';
 import { vManagementDialog } from '../../components/management/dialogAccessibility.js';
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
-import html2pdf from 'html2pdf.js';
 import OwnerNav from '../../components/partials/OwnerNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
-import { matchesSearch } from '../../utils/search.js';
 
 const route = useRoute();
 
 const bookings = ref([]);
 const houseName = ref('');
 const houseId = ref(route.query.houseId || '');
-const searchQuery = ref('');
-const statusFilter = ref('all');
 const isLoading = ref(true);
 const reportDate = ref(new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
 
-// Datatable Pagination State
-const currentPage = ref(1);
-const itemsPerPage = ref(10);
+const workspaceRows = ref(null);
 
 const alertRef = ref(null);
 const token = sessionStorage.getItem('cspc_token');
-const API = import.meta.env.VITE_API_URL;
-
-// Reset to page 1 whenever user types in search query or changes status filter
-watch([searchQuery, statusFilter], () => {
-  currentPage.value = 1;
-});
 
 // Modal States
 const showModal = ref(false);
 const modalTitle = ref('');
 const modalText = ref('');
+// Optional label/value rows shown under the message (for example, extension details).
+const modalDetails = ref([]);
 const modalConfirmAction = ref(null);
 const modalType = ref('info');
 
@@ -53,10 +45,11 @@ const showSystemAlert = (message, type = 'error') => {
 
 const isProcessingDecision = ref(false);
 
-const triggerConfirmModal = (title, text, type, confirmAction) => {
+const triggerConfirmModal = (title, text, type, confirmAction, details = []) => {
   if (isProcessingDecision.value) return;
   modalTitle.value = title;
   modalText.value = text;
+  modalDetails.value = details;
   modalType.value = type;
   modalConfirmAction.value = confirmAction;
   showModal.value = true;
@@ -88,7 +81,7 @@ const fetchBookings = async (silent = false) => {
     if (isLoading.value) return;
     try {
       let url = `/api/owner/bookings`;
-      if (houseId.value) url += `?houseId=${houseId.value}`;
+
       const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       if (response.data.success) {
         bookings.value = response.data.bookings || [];
@@ -101,9 +94,7 @@ const fetchBookings = async (silent = false) => {
   try {
     isLoading.value = true;
     let url = `/api/owner/bookings`;
-    if (houseId.value) {
-      url += `?houseId=${houseId.value}`;
-    }
+
 
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${token}` }
@@ -122,141 +113,18 @@ const fetchBookings = async (silent = false) => {
   }
 };
 
-const filteredBookings = computed(() => {
-  let list = bookings.value;
-
-  if (statusFilter.value && statusFilter.value !== 'all') {
-    const filterVal = statusFilter.value.toLowerCase();
-    if (filterVal === 'rejected' || filterVal === 'cancelled') {
-      list = list.filter(b => ['rejected', 'cancelled'].includes((b.status || '').toLowerCase()));
-    } else {
-      list = list.filter(b => (b.status || '').toLowerCase() === filterVal);
-    }
-  }
-
-  if (!searchQuery.value || !searchQuery.value.trim()) return list;
-
-  return list.filter(b =>
-    matchesSearch(searchQuery.value, [
-      b.student_name,
-      b.room_number != null ? `Room ${b.room_number}` : '',
-      b.room_number != null ? String(b.room_number) : '',
-      b.id != null ? refLabel(b) : '',
-      b.is_non_cspc ? 'non-cspc walk-in' : '',
-      b.id != null ? String(b.id) : '',
-      b.emergency_contact,
-      b.guardian_name,
-      b.status,
-      b.payment_status,
-      b.payment_method,
-      b.house_name
-    ])
-  );
-});
-
-// Datatable Sorting State
-const sortBy = ref('room'); // Default sort by Room (Number & Male/Female)
-const sortOrder = ref('asc');
-
-// Sort arrow for a column key (merged columns have two sortable labels)
-const sortIcon = (col) => (sortBy.value === col ? (sortOrder.value === 'asc' ? 'fa-sort-up text-blue-600' : 'fa-sort-down text-blue-600') : 'fa-sort text-slate-400');
-const toggleSort = (col) => {
-  if (sortBy.value === col) {
-    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
-  } else {
-    sortBy.value = col;
-    sortOrder.value = 'asc';
-  }
-};
-
-const sortedBookings = computed(() => {
-  const list = [...filteredBookings.value];
-  const order = sortOrder.value === 'asc' ? 1 : -1;
-
-  return list.sort((a, b) => {
-    if (sortBy.value === 'ref') {
-      return (a.id - b.id) * order;
-    }
-    if (sortBy.value === 'student') {
-      return (a.student_name || '').localeCompare(b.student_name || '') * order;
-    }
-    if (sortBy.value === 'room') {
-      // Sort by room number first, then room gender (male -> female)
-      const numA = parseInt(a.room_number) || 0;
-      const numB = parseInt(b.room_number) || 0;
-      if (numA !== numB) return (numA - numB) * order;
-      const genderA = (a.room_gender || '').toLowerCase();
-      const genderB = (b.room_gender || '').toLowerCase();
-      return genderA.localeCompare(genderB) * order;
-    }
-    if (sortBy.value === 'checkin') {
-      const dateA = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
-      const dateB = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
-      return (dateA - dateB) * order;
-    }
-    if (sortBy.value === 'contact') {
-      return (a.emergency_contact || '').localeCompare(b.emergency_contact || '') * order;
-    }
-    if (sortBy.value === 'guardian') {
-      return (a.guardian_name || '').localeCompare(b.guardian_name || '') * order;
-    }
-    if (sortBy.value === 'duration') {
-      return ((parseInt(a.months) || 0) - (parseInt(b.months) || 0)) * order;
-    }
-    if (sortBy.value === 'rent') {
-      const valA = parseFloat(a.amount || a.total_amount || 0);
-      const valB = parseFloat(b.amount || b.total_amount || 0);
-      return (valA - valB) * order;
-    }
-    if (sortBy.value === 'payment') {
-      const valA = parseFloat(a.initial_payment || 0);
-      const valB = parseFloat(b.initial_payment || 0);
-      return (valA - valB) * order;
-    }
-    if (sortBy.value === 'status') {
-      return (a.status || '').localeCompare(b.status || '') * order;
-    }
-    return 0;
-  });
-});
-
-// Paginated Slice of Sorted & Filtered Bookings
-const paginatedBookings = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value;
-  return sortedBookings.value.slice(start, start + itemsPerPage.value);
-});
-
-const totalPages = computed(() => {
-  return Math.ceil(sortedBookings.value.length / itemsPerPage.value) || 1;
-});
-
-const pageStart = computed(() => (sortedBookings.value.length ? (currentPage.value - 1) * itemsPerPage.value + 1 : 0));
-const pageEnd = computed(() => Math.min(currentPage.value * itemsPerPage.value, sortedBookings.value.length));
-
-const groupedHouses = computed(() => {
-  const list = [];
-  paginatedBookings.value.forEach(b => {
-    if (!list.includes(b.house_name)) {
-      list.push(b.house_name);
-    }
-  });
-  return list;
-});
+const filteredBookings = computed(() => workspaceRows.value ?? bookings.value);
 
 // Print view uses ALL filtered bookings (not paginated)
 const allGroupedHouses = computed(() => {
   const list = [];
-  sortedBookings.value.forEach(b => {
+  filteredBookings.value.forEach(b => {
     if (!list.includes(b.house_name)) {
       list.push(b.house_name);
     }
   });
   return list;
 });
-
-const getHouseBookings = (houseName) => {
-  return paginatedBookings.value.filter(b => b.house_name === houseName);
-};
 
 const getAllHouseBookings = (houseName) => {
   return filteredBookings.value.filter(b => b.house_name === houseName);
@@ -265,7 +133,7 @@ const getAllHouseBookings = (houseName) => {
 const handleApprove = (booking) => {
   triggerConfirmModal(
     'Approve Booking?',
-    `Confirm this reservation for ${booking.student_name}? The student will be notified.`,
+    `Approve the reservation for ${booking.student_name}?\n\n${booking.payment_method === 'cash' ? 'Approval reserves the booked dates. Cash is due at arrival and remains unpaid until you record collection.' : 'The student has 24 hours after approval to pay online, or until the end of the check-in day if that is sooner. If payment is not verified by the deadline, the reservation expires.'}\n\nThe eligible stay starts automatically on the booked check-in date. Checkout remains the booked end date.`,
     'success',
     async () => {
       try {
@@ -274,11 +142,11 @@ const handleApprove = (booking) => {
         });
         if (response.data.success) {
           showSystemAlert(response.data.message || 'Booking confirmed and student notified!', 'success');
-          await fetchBookings();
+          await fetchBookings(true);
         }
       } catch (error) {
         showSystemAlert(error.response?.data?.message || 'Approval failed.', 'error');
-        if ([404, 409].includes(error.response?.status)) await fetchBookings();
+        if ([404, 409].includes(error.response?.status)) await fetchBookings(true);
       }
     }
   );
@@ -296,7 +164,7 @@ const handleReject = (booking) => {
         });
         if (response.data.success) {
           showSystemAlert('Booking has been rejected.', 'info');
-          fetchBookings();
+          fetchBookings(true);
         }
       } catch (error) {
         showSystemAlert('Rejection failed.', 'error');
@@ -308,17 +176,33 @@ const handleReject = (booking) => {
 // 409 = the request is no longer pending (the student withdrew it, or it was already decided)
 const extensionActionFailed = (error, fallback) => {
   if (error?.response?.status === 409) {
-    showSystemAlert('This extension request is no longer pending — the student may have withdrawn it. The list has been updated.', 'warning');
+    showSystemAlert(error?.response?.data?.message || 'This extension request is no longer pending — the student may have withdrawn it. The list has been updated.', 'warning');
     fetchBookings(true);
     return;
   }
   showSystemAlert(error?.response?.data?.message || fallback, 'error');
 };
 
+const extensionDetails = (booking) => {
+  const months = Number(booking.extension_months) || 0;
+  const start = ownerDay(booking.occupant_check_in || booking.check_in_date);
+  const newEnd = computeCheckoutDate(start, (Number(booking.months) || 0) + months);
+  const rent = Number(booking.monthly_rent) || 0;
+  return [
+    ['Resident', booking.student_name || 'Not recorded'],
+    ['Booking', ownerBookingReference(booking) + (booking.room_number ? ' · Room ' + booking.room_number : '') + (booking.house_name ? ' · ' + booking.house_name : '')],
+    ['Extension requested', '+' + months + ' month' + (months === 1 ? '' : 's')],
+    ['Current checkout', ownerDate(ownerStayEnd(booking))],
+    ['New checkout if approved', newEnd ? ownerDate(`${newEnd.getFullYear()}-${String(newEnd.getMonth() + 1).padStart(2, '0')}-${String(newEnd.getDate()).padStart(2, '0')}`) : 'Not available'],
+    ['Added rent', rent ? '₱' + ownerMoney(rent * months) + ' (' + months + ' × ₱' + ownerMoney(rent) + '/month)' : 'Not recorded']
+  ];
+};
+
 const handleApproveExtension = (booking) => {
+  const months = Number(booking.extension_months) || 0;
   triggerConfirmModal(
-    'Approve Stay Extension?',
-    `Approve extension request for +${booking.extension_months} Month${booking.extension_months > 1 ? 's' : ''}?`,
+    'Approve stay extension?',
+    `${booking.student_name || 'The resident'} asked to stay ${months} more month${months === 1 ? '' : 's'}. Approval checks other stays and future reservations for the added dates; monthly rent for the added months is tracked as usual.`,
     'success',
     async () => {
       try {
@@ -327,19 +211,20 @@ const handleApproveExtension = (booking) => {
         });
         if (response.data.success) {
           showSystemAlert('Stay extension approved!', 'success');
-          fetchBookings();
+          fetchBookings(true);
         }
       } catch (error) {
         extensionActionFailed(error, 'Failed to approve extension.');
       }
-    }
+    },
+    extensionDetails(booking)
   );
 };
 
 const handleRejectExtension = (booking) => {
   triggerConfirmModal(
-    'Reject Stay Extension?',
-    'Are you sure you want to reject this stay extension request?',
+    'Reject stay extension?',
+    `Reject ${booking.student_name || 'the resident'}'s request to stay longer? Their booked checkout stays the same, and they are notified.`,
     'warning',
     async () => {
       try {
@@ -348,12 +233,13 @@ const handleRejectExtension = (booking) => {
         });
         if (response.data.success) {
           showSystemAlert('Stay extension rejected.', 'info');
-          fetchBookings();
+          fetchBookings(true);
         }
       } catch (error) {
         extensionActionFailed(error, 'Failed to reject extension.');
       }
-    }
+    },
+    extensionDetails(booking)
   );
 };
 
@@ -366,7 +252,7 @@ const handleMarkPaid = async (booking) => {
     });
     if (response.data.success) {
       showSystemAlert('Payment marked as Paid!', 'success');
-      fetchBookings();
+      fetchBookings(true);
     }
   } catch (error) {
     showSystemAlert('Failed to mark payment.', 'error');
@@ -380,13 +266,6 @@ const handlePrint = () => {
 // Plain-language payment method label — assume the owner isn't a technical person
 const paymentMethodLabel = (method) => {
   return method === 'paymongo' ? 'Online (GCash/Card)' : 'Cash';
-};
-
-// A confirmed PayMongo booking only becomes an actual resident once the
-// student finishes paying — until then it's a reserved slot, not an
-// occupied room. Distinct from cash, where approval itself seats them.
-const isAwaitingOnlinePayment = (booking) => {
-  return booking.status === 'confirmed' && booking.payment_method === 'paymongo' && booking.payment_status !== 'paid';
 };
 
 import { computeCheckoutDate, formatCheckoutDateString } from '../../utils/dateHelper.js';
@@ -419,37 +298,33 @@ const loadError = ref('');
 </script>
 
 <template>
-  <div class="management-page owner-page bg-slate-100 min-h-screen flex flex-col font-sans">
+  <div class="management-page owner-page owner-bookings-page bg-slate-100 min-h-screen flex flex-col font-sans">
     <div class="no-print">
       <OwnerNav />
     </div>
     <div aria-live="polite" aria-atomic="false"><FlashAlert ref="alertRef" /></div>
 
     <!-- Confirmation Modal Overlay -->
-    <div v-management-dialog="{ close: () => showModal = false }" v-if="showModal" class="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100 animate-in zoom-in duration-200">
-        <div class="mb-4 flex justify-center" :class="[modalType === 'success' ? 'text-emerald-500' : modalType === 'warning' ? 'text-amber-500' : 'text-blue-500']">
-          <i class="fa-solid text-5xl" :class="[modalType === 'success' ? 'fa-circle-check' : modalType === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-info']"></i>
+    <div v-management-dialog="{ close: () => showModal = false }" v-if="showModal" class="cm-backdrop">
+      <div class="cm-panel popup-panel" role="dialog" aria-modal="true">
+        <div class="cm-body">
+          <span :class="['cm-icon', confirmTone(modalTitle, modalType).tone]" aria-hidden="true"><i :class="['fa-solid', confirmTone(modalTitle, modalType).icon]"></i></span>
+          <div><h3 class="cm-title">{{ modalTitle }}</h3><p class="cm-message popup-message">{{ modalText }}</p><dl v-if="modalDetails.length" class="cm-facts"><div v-for="[label, value] in modalDetails" :key="label"><dt>{{ label }}</dt><dd>{{ value }}</dd></div></dl></div>
         </div>
-        <h2 class="text-lg font-semibold text-slate-800 uppercase tracking-tight mb-2">{{ modalTitle }}</h2>
-        <p class="text-slate-500 mb-6 text-sm">{{ modalText }}</p>
-        <div class="flex gap-3">
-          <button @click="executeConfirm" :disabled="isProcessingDecision" class="bg-black hover:bg-slate-800 text-white font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-wide flex-1 management-button">
-            Confirm
-          </button>
-          <button @click="showModal = false" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-6 rounded-xl transition text-xs uppercase tracking-wide flex-1 management-button">
-            Cancel
-          </button>
+        <div class="cm-actions">
+          <button type="button" class="cm-btn cm-cancel" @click="showModal = false">Cancel</button>
+          <button type="button" :class="['cm-btn', confirmTone(modalTitle, modalType).button]" :disabled="isProcessingDecision" @click="executeConfirm">Confirm</button>
         </div>
       </div>
     </div>
 
     <!-- Main Content -->
     <main id="management-content" tabindex="-1" class="flex-1 max-w-[1700px] mx-auto w-[96%] py-12 px-2 lg:px-6">
+      <BookingTestClock />
       <LoadError :message="loadError" />
 
       <!-- Header Section -->
-      <div class="mb-6 text-left">
+      <div class="text-left">
         <!-- Hidden Template for PDF Direct Download & Print -->
         <div id="pdf-report-template" class="hidden print:block">
           <!-- Print Only Header -->
@@ -575,7 +450,7 @@ const loadError = ref('');
           </div>
         </div>
 
-        <PageHeader title="Booking" :eyebrow="houseName" />
+
       </div>
 
       <!-- Main Loader state -->
@@ -585,322 +460,8 @@ const loadError = ref('');
       </div>
 
       <template v-else>
-        <!-- Search, filter and print: their own row above the table card (like the admin lists) -->
-        <div class="bk-toolbar control-bar no-print">
-          <div class="bk-toolbar-left">
-            <!-- Search bar -->
-            <div class="bk-search">
-              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
-                <i class="fa-solid fa-magnifying-glass text-xs"></i>
-              </span>
-              <input aria-label="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..." type="text" v-model="searchQuery" placeholder="SEARCH BY REF, STUDENT, ROOM, GUARDIAN..."
-                  class="bk-input w-full pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold focus:border-[#2a528a] outline-none transition-all placeholder:text-slate-400" />
-            </div>
+        <OwnerBookingWorkspace :bookings="bookings" :initial-property="String(houseId)" :initial-booking="String(route.query.bookingId || '')" :busy="isProcessingDecision" @report-rows="workspaceRows=$event" @print="handlePrint" @approve="handleApprove" @reject="handleReject" @approve-extension="handleApproveExtension" @reject-extension="handleRejectExtension" @mark-paid="handleMarkPaid" @changed="fetchBookings(true)" @notice="n=>typeof n==='string' ? showSystemAlert(n,'success') : showSystemAlert(n?.message,n?.tone || 'success')" />
 
-            <!-- Status Filter -->
-            <div class="relative bk-status">
-              <select aria-label="status Filter" v-model="statusFilter" class="bk-input w-full px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 focus:border-[#2a528a] outline-none cursor-pointer">
-                <option value="all">ALL STATUSES</option>
-                <option value="pending">PENDING REQUESTS</option>
-                <option value="confirmed">CONFIRMED / ACTIVE</option>
-                <option value="completed">COMPLETED / CHECKED OUT</option>
-                <option value="rejected">REJECTED / CANCELLED</option>
-              </select>
-            </div>
-
-          </div>
-
-          <div class="flex items-center gap-3">
-              <!-- Print Trigger button -->
-            <button @click="handlePrint"
-                class="bg-[#d9454f] hover:bg-[#b8323c] text-white px-5 py-2.5 rounded-xl font-semibold text-[12px] uppercase tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg shadow-rose-100 active:scale-95 leading-none cb-pdf-btn management-button">
-              <i class="fa-solid fa-print"></i>
-              <span class="cb-pdf-label">Print / Save PDF</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Table card -->
-        <div class="bg-white rounded-[1.5rem] shadow-xl border border-slate-200/60 overflow-hidden text-left animate-in fade-in duration-300">
-        <TablePager position="top" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
-
-        <!-- ===== DESKTOP TABLE (hidden on mobile, hidden on print) ===== -->
-        <div class="booking-table-wrapper w-full overflow-x-auto shadow-sm rounded-xl border border-slate-200 print:hidden">
-          <table class="w-full text-left border-collapse min-w-[760px] divide-y divide-slate-200" id="bookingsTable">
-            <tbody class="text-[12px] font-semibold text-slate-700 divide-y divide-slate-100">
-              <template v-for="hName in groupedHouses" :key="hName">
-                
-                <!-- House Group Header (Matches User Screenshot) -->
-                <tr class="bg-blue-50/50 border-y border-blue-100 house-group-header">
-                  <td colspan="6" class="px-6 py-3.5">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 bg-[#2a528a] text-white rounded-lg flex items-center justify-center shadow-xs shrink-0">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z"/><path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z"/></svg>
-                        </div>
-                        <div>
-                          <h3 class="text-xs font-semibold text-slate-900 uppercase tracking-tight leading-none">{{ hName }}</h3>
-                          <p v-if="getHouseBookings(hName)[0]?.house_location" class="text-[12px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-                            {{ getHouseBookings(hName)[0]?.house_location }}
-                          </p>
-                        </div>
-                      </div>
-                      <span class="text-[12px] font-semibold text-[#2a528a] bg-blue-100/70 border border-blue-200/50 px-3 py-1 rounded-full uppercase tracking-wider">
-                        {{ getHouseBookings(hName).length }} TOTAL BOOKINGS
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-
-                <!-- Column titles for this boarding house -->
-                <!-- Column titles for this boarding house. Related details share a column so the table
-                     fits without sideways scrolling; each label still sorts its own field. -->
-                <tr class="booking-col-head bg-slate-100/80 border-b border-slate-300 text-slate-800 uppercase text-[12px] font-semibold tracking-wider select-none">
-                  <th class="px-4 py-3 whitespace-nowrap">
-                    <button type="button" class="bk-sort" @click="toggleSort('student')">Student <i class="fa-solid" :class="sortIcon('student')"></i></button>
-                    <button type="button" class="bk-sort is-sub" @click="toggleSort('ref')">Ref no. <i class="fa-solid" :class="sortIcon('ref')"></i></button>
-                  </th>
-                  <th class="px-3 py-3 whitespace-nowrap">
-                    <button type="button" class="bk-sort" @click="toggleSort('room')">Room <i class="fa-solid" :class="sortIcon('room')"></i></button>
-                    <span class="bk-sub">Male / female</span>
-                  </th>
-                  <th class="px-3 py-3 whitespace-nowrap">
-                    <button type="button" class="bk-sort" @click="toggleSort('checkin')">Check-in / out <i class="fa-solid" :class="sortIcon('checkin')"></i></button>
-                    <button type="button" class="bk-sort is-sub" @click="toggleSort('duration')">Duration <i class="fa-solid" :class="sortIcon('duration')"></i></button>
-                  </th>
-                  <th class="px-3 py-3 whitespace-nowrap">
-                    <button type="button" class="bk-sort" @click="toggleSort('guardian')">Guardian <i class="fa-solid" :class="sortIcon('guardian')"></i></button>
-                    <button type="button" class="bk-sort is-sub" @click="toggleSort('contact')">Emergency contact <i class="fa-solid" :class="sortIcon('contact')"></i></button>
-                  </th>
-                  <th class="px-3 py-3 whitespace-nowrap bg-emerald-50/80 text-emerald-800">
-                    <button type="button" class="bk-sort" @click="toggleSort('rent')">Rent / total <i class="fa-solid" :class="sortIcon('rent')"></i></button>
-                    <button type="button" class="bk-sort is-sub" @click="toggleSort('payment')">Due at move-in <i class="fa-solid" :class="sortIcon('payment')"></i></button>
-                  </th>
-                  <th class="px-3 py-3 text-center whitespace-nowrap">
-                    <button type="button" class="bk-sort mx-auto" @click="toggleSort('status')">Action / status <i class="fa-solid" :class="sortIcon('status')"></i></button>
-                  </th>
-                </tr>
-
-                <!-- Bookings Loop (Matches User Screenshot) -->
-                <tr v-for="booking in getHouseBookings(hName)" :key="rowKey(booking)" class="hover:bg-slate-50/40 transition-colors">
-                  <!-- Student: name, Non-CSPC tag, reference and payment method -->
-                  <td class="px-4 py-4">
-                    <span class="block font-bold text-slate-900 text-sm">{{ booking.student_name }}</span>
-                    <span v-if="booking.is_non_cspc" class="inline-block mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-semibold">Non-CSPC</span>
-                    <span class="flex flex-wrap items-center gap-1.5 mt-1">
-                      <span class="font-mono font-bold text-slate-600 text-[11.5px]">{{ refLabel(booking) }}</span>
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide"
-                            :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'">
-                        <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                        {{ paymentMethodLabel(booking.payment_method) }}
-                      </span>
-                    </span>
-                  </td>
-                  <!-- Room -->
-                  <td class="px-3 py-4 whitespace-nowrap">
-                    <span class="font-bold text-slate-900 text-xs block">Room {{ booking.room_number }}</span>
-                    <span class="text-[12px] font-semibold uppercase tracking-wider block" :class="booking.room_gender === 'female' ? 'text-pink-500' : 'text-blue-500'">
-                      {{ booking.room_gender }}
-                    </span>
-                  </td>
-                  <!-- Stay: check-in, check-out, duration -->
-                  <td class="px-3 py-4 whitespace-nowrap">
-                    <span class="block text-xs font-bold text-slate-800">{{ booking.check_in_date ? new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set' }}</span>
-                    <span class="block text-[12px] font-bold text-blue-600">→ {{ getCheckoutDateDisplay(booking) }}</span>
-                    <span class="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11.5px] font-semibold">{{ booking.months }} month{{ booking.months > 1 ? 's' : '' }}</span>
-                  </td>
-                  <!-- Guardian and emergency contact -->
-                  <td class="px-3 py-4">
-                    <span class="block font-bold text-slate-900 text-xs">{{ booking.guardian_name || 'N/A' }}</span>
-                    <span class="block text-[12px] font-semibold text-slate-600 mt-0.5 whitespace-nowrap"><i class="fa-solid fa-phone text-[10px] text-slate-400 mr-1"></i>{{ booking.emergency_contact || 'N/A' }}</span>
-                  </td>
-                  <!-- Payment: rent, total, amount due at move-in -->
-                  <td class="px-3 py-4 bg-emerald-50/40 whitespace-nowrap">
-                    <span class="block text-[12px] font-bold text-slate-600">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }}<span class="text-slate-400">/month</span> · <span class="text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }} total</span></span>
-                    <template v-if="booking.initial_payment > 0">
-                      <span class="block text-sm font-semibold text-emerald-700 mt-1">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} <span class="text-[11px] font-semibold text-emerald-600">due</span></span>
-                      <span class="block text-[11.5px] font-bold text-slate-400 leading-tight">
-                        Adv ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }} +
-                        Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}) ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', {minimumFractionDigits:2}) }}
-                      </span>
-                    </template>
-                    <span v-else class="block text-slate-300 text-xs font-bold mt-1">No initial payment</span>
-                  </td>
-                  <!-- Action/Status Column -->
-                  <td class="px-3 py-4 text-center">
-                    <!-- Screen view: Interactive buttons -->
-                    <div class="print:hidden">
-                      <!-- Extension actions -->
-                      <div v-if="booking.is_extension_requested" class="bg-amber-50 border border-amber-200 p-2 rounded-xl mb-2">
-                        <p class="text-[12px] font-semibold text-amber-700 uppercase leading-tight mb-1">Extension: +{{ booking.extension_months }} Month{{ booking.extension_months > 1 ? 's' : '' }}</p>
-                        <div class="flex gap-2">
-                          <button type="button" @click="handleApproveExtension(booking)" class="bk-approve flex-1 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-sm uppercase tracking-wide management-button">
-                            Approve
-                          </button>
-                          <button type="button" @click="handleRejectExtension(booking)" class="bk-reject flex-1 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-sm uppercase tracking-wide management-button">
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- Main status actions -->
-                      <div v-if="booking.is_non_cspc" class="flex flex-col items-center gap-1">
-                        <span v-if="booking.status === 'completed'" class="bg-slate-100 text-slate-500 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Checked out</span>
-                        <span v-else class="bg-green-100 text-green-700 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">Occupying</span>
-                        <span :class="booking.payment_status === 'paid' ? 'text-emerald-600' : 'text-amber-600'" class="text-[12px] font-semibold uppercase tracking-wide">{{ booking.payment_status === 'paid' ? 'Paid' : 'Not paid' }}</span>
-                        <span class="text-[11px] font-semibold text-slate-400 normal-case">Added in room details</span>
-                      </div>
-                      <div v-else-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold text-center">
-                        Payment received: review required. No occupancy recorded.
-                      </div>
-                      <div v-else-if="booking.status === 'pending'" class="flex flex-col gap-1.5 items-center">
-                        <button @click="handleApprove(booking)" class="bk-approve w-24 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button">
-                          APPROVE
-                        </button>
-                        <button @click="handleReject(booking)" class="bk-reject w-24 px-3 py-1.5 rounded-lg font-semibold text-[12px] transition shadow-xs uppercase tracking-wide cursor-pointer management-button">
-                          REJECT
-                        </button>
-                      </div>
-                      <div v-else-if="isAwaitingOnlinePayment(booking)" class="flex flex-col gap-1 items-center justify-center max-w-[170px] mx-auto text-center whitespace-normal">
-                        <span class="bg-amber-100 text-amber-700 text-[12px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider inline-block text-center leading-snug">
-                          Reserved — Awaiting Payment
-                        </span>
-                        <p class="text-[12px] font-semibold text-slate-400 leading-tight mt-1 text-center">
-                          Won't count as occupied until student pays online.
-                        </p>
-                      </div>
-                      <div v-else-if="booking.status === 'confirmed'" class="flex flex-col items-center">
-                        <span class="bg-green-100 text-green-700 text-[12px] font-semibold px-3 py-1 rounded-full uppercase tracking-wide">APPROVED</span>
-                        <button v-if="booking.payment_status !== 'paid'" @click="handleMarkPaid(booking)" class="mt-1.5 w-24 bg-blue-500 text-white px-2 py-1 rounded-lg font-semibold text-[12px] hover:bg-blue-700 transition shadow-xs uppercase tracking-wide cursor-pointer management-button management-button-primary">
-                          Mark Paid
-                        </button>
-                        <span v-else class="text-emerald-600 text-[12px] font-semibold uppercase tracking-wide mt-1">PAID</span>
-                      </div>
-                      <div v-else-if="booking.status === 'cancelled'" class="text-slate-400 font-semibold text-[12px] uppercase tracking-wider">
-                        CANCELLED
-                      </div>
-                      <div v-else-if="booking.status === 'rejected'" class="text-rose-500 font-semibold text-[12px] uppercase tracking-wider">
-                        REJECTED
-                      </div>
-                      <span v-else class="text-slate-400 text-[12px] font-semibold uppercase">{{ booking.status }}</span>
-                    </div>
-
-                    <!-- Print handled by separate print-only layout above -->
-
-                  </td>
-                </tr>
-
-              </template>
-
-              <tr v-if="filteredBookings.length === 0">
-                <td colspan="6" class="py-20 text-center text-slate-400 font-bold uppercase tracking-wide">
-                  No bookings found under search.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- ===== MOBILE CARD VIEW (shown only on mobile, hidden in print) ===== -->
-        <div class="mobile-cards-wrapper print:hidden md:hidden">
-          <div v-if="filteredBookings.length === 0" class="py-16 text-center text-slate-400 font-bold uppercase tracking-wide text-[12px]">
-            No bookings found under search.
-          </div>
-
-          <template v-for="hName in groupedHouses" :key="'m-' + hName">
-            <!-- House Group Header -->
-            <div class="m-house-hdr">
-              <div class="m-house-icon"><i class="fa-solid fa-house-chimney"></i></div>
-              <div class="m-house-info">
-                <span class="m-house-name">{{ hName }}</span>
-                <span class="m-house-loc">{{ getHouseBookings(hName)[0]?.house_location }}</span>
-              </div>
-              <span class="m-house-count">{{ getHouseBookings(hName).length }} Booking{{ getHouseBookings(hName).length > 1 ? 's' : '' }}</span>
-            </div>
-
-            <!-- Mobile Booking Cards -->
-            <div v-for="booking in getHouseBookings(hName)" :key="'mc-' + rowKey(booking)" class="m-card">
-
-              <div class="m-row">
-                <span class="m-lbl">Ref No.</span>
-                <span class="m-val">{{ refLabel(booking) }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Payment Method</span>
-                <span class="m-val">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[12px] font-semibold uppercase tracking-wide"
-                        :class="booking.payment_method === 'paymongo' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'">
-                    <i class="fa-solid" :class="booking.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : 'fa-money-bill-wave'"></i>
-                    {{ paymentMethodLabel(booking.payment_method) }}
-                  </span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Student Name</span>
-                <span class="m-val">{{ booking.student_name }}<span v-if="booking.is_non_cspc" class="ml-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-semibold">Non-CSPC</span></span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Room</span>
-                <span class="m-val">
-                  Room {{ booking.room_number }}
-                  <span class="m-gender" :class="booking.room_gender === 'female' ? 'f' : 'm'">{{ booking.room_gender }}</span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Check-In / Out</span>
-                <span class="m-val">
-                  <span v-if="booking.check_in_date">{{ new Date(booking.check_in_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</span>
-                  <span v-else style="color:#f97316">Not set</span>
-                  <span class="block text-blue-600 font-bold text-[12px] mt-0.5">{{ getCheckoutDateDisplay(booking) }}</span>
-                </span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Emergency Contact</span>
-                <span class="m-val">{{ booking.emergency_contact || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Guardian Name</span>
-                <span class="m-val">{{ booking.guardian_name || 'N/A' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Duration &amp; Stay</span>
-                <span class="m-val font-semibold text-blue-600">{{ booking.months }} Month{{ booking.months > 1 ? 's' : '' }}</span>
-              </div>
-              <div class="m-row">
-                <span class="m-lbl">Rent / Total</span>
-                <span class="m-val">₱{{ Number(booking.monthly_rent || 0).toLocaleString() }} / <span class="font-semibold text-slate-900">₱{{ Number(booking.amount || booking.total_amount || 0).toLocaleString() }}</span></span>
-              </div>
-
-              <!-- Initial Payment -->
-              <div class="m-row" v-if="booking.initial_payment > 0">
-                <span class="m-lbl">Initial Payment</span>
-                <span class="m-val m-val-col">
-                  <span class="m-init-amt">₱{{ Number(booking.initial_payment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
-                  <span class="m-init-sub">
-                    Adv: ₱{{ (parseInt(booking.advance_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }} +
-                    Dep ({{ booking.deposit_type === 'consumable' ? 'Consum' : 'Refund' }}): ₱{{ (parseInt(booking.deposit_months || 0) * parseFloat(booking.monthly_rent || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
-                  </span>
-                </span>
-              </div>
-
-              <!-- Action / Status -->
-              <div class="m-row m-row-action">
-                <span class="m-lbl">Status</span>
-                <span class="m-val">
-                  <span v-if="booking.is_non_cspc" class="px-2.5 py-1 rounded-full font-semibold text-[12px] uppercase border" :class="booking.status === 'completed' ? 'bg-slate-50 text-slate-500 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'">{{ booking.status === 'completed' ? 'Checked out' : 'Occupying' }} · {{ booking.payment_status === 'paid' ? 'Paid' : 'Not paid' }}</span>
-                  <span v-else-if="booking.payment_requires_review" class="text-amber-700 text-[12px] font-semibold">Payment received: review required</span>
-                  <span v-else-if="booking.status === 'confirmed' || booking.status === 'approved'" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full font-semibold text-[12px] uppercase border border-emerald-200">Confirmed</span>
-                  <span v-else-if="booking.status === 'pending'" class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full font-semibold text-[12px] uppercase border border-amber-200">Pending</span>
-                  <span v-else-if="booking.status === 'cancelled' || booking.status === 'rejected'" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full font-semibold text-[12px] uppercase border border-rose-200">{{ booking.status }}</span>
-                  <span v-else class="text-slate-500 font-bold uppercase text-[12px]">{{ booking.status }}</span>
-                </span>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <TablePager position="bottom" noun="entries" :page="currentPage" @update:page="currentPage = $event" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" :per-page="itemsPerPage" @update:per-page="itemsPerPage = $event; currentPage = 1" />
-        </div>
       </template>
 
     </main>
@@ -908,274 +469,6 @@ const loadError = ref('');
 </template>
 
 <style>
-/* Approve = green, Reject = red (beats the portal's navy button theme) */
-.owner-page .bk-approve, .bk-approve { background: #16a34a !important; border: 1px solid #16a34a !important; color: #fff !important; }
-.owner-page .bk-approve:hover, .bk-approve:hover { background: #15803d !important; border-color: #15803d !important; }
-.owner-page .bk-reject, .bk-reject { background: #dc2626 !important; border: 1px solid #dc2626 !important; color: #fff !important; }
-.owner-page .bk-reject:hover, .bk-reject:hover { background: #b91c1c !important; border-color: #b91c1c !important; }
-
-/* Toolbar above the table card */
-.bk-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
-.bk-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 520px; min-width: 0; }
-.bk-search { position: relative; flex: 1 1 320px; min-width: 0; }
-.bk-status { flex: 0 0 220px; }
-.bk-input { height: 46px; min-height: 46px !important; }
-.bk-toolbar .cb-pdf-btn { height: 46px; }
-
-/* Merged column headers: each label sorts its own field */
-.bk-sort { display: flex; align-items: center; gap: 6px; padding: 0; min-height: 0 !important; background: none; border: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
-.bk-sort:hover { color: #1d4ed8; }
-.bk-sort.is-sub, .bk-sub { display: flex; margin-top: 2px; font-size: 11px; font-weight: 600; color: #64748b; text-transform: none; letter-spacing: 0; }
-.bk-sort i { font-size: 11px; }
-
-/* Column titles under each boarding house */
-.booking-col-head th { background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; border-bottom: 1px solid #dfe7f2; }
-.booking-col-head th * { text-transform: none !important; }
-
-/* Print / Save PDF stays red */
-.cb-pdf-btn { background: #d9454f !important; border-color: #d9454f !important; color: #fff !important; }
-.cb-pdf-btn:hover { background: #b8323c !important; border-color: #b8323c !important; }
-
-/* ======================================================
-   MOBILE CARD VIEW — only active below 768 px
-====================================================== */
-
-/* Hide mobile cards on desktop, show table */
-.mobile-cards-wrapper { display: none; }
-.booking-table-wrapper { display: block; }
-
-@media (max-width: 767px) {
-  /* Swap visibility */
-  .booking-table-wrapper { display: none !important; }
-  .mobile-cards-wrapper  { display: block !important; }
-
-  /* ── Control bar: one flat row on mobile ── */
-  .control-bar {
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    align-items: center !important;
-    gap: 8px !important;
-    padding: 10px 12px !important;
-  }
-  .control-bar > div:first-child {
-    flex-wrap: nowrap !important;
-    gap: 8px !important;
-    width: 100% !important;
-  }
-  /* Search stretches to fill remaining space */
-  .control-bar > div:first-child > div:first-child {
-    flex: 1 1 0% !important;
-    min-width: 0 !important;
-  }
-  /* PDF button — keep icon, hide text label */
-  .cb-pdf-btn {
-    flex-shrink: 0 !important;
-    padding: 10px 14px !important;
-  }
-  .cb-pdf-label { display: none; }
-  /* Back button — square, shows only '<' */
-  .cb-back-btn {
-    flex-shrink: 0 !important;
-    padding: 10px 14px !important;
-    font-size: 15px !important;
-    font-weight: 900 !important;
-  }
-
-  /* ── House group header ── */
-  .m-house-hdr {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #eff6ff;
-    border-top: 1px solid #bfdbfe;
-    border-bottom: 1px solid #bfdbfe;
-    padding: 10px 16px;
-  }
-  .m-house-icon {
-    width: 30px; height: 30px;
-    background: #2a528a;
-    border-radius: 7px;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 12px; flex-shrink: 0;
-  }
-  .m-house-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-  .m-house-name {
-    font-size: 10px; font-weight: 900; color: #2a528a;
-    text-transform: uppercase; letter-spacing: .12em;
-    line-height: 1; margin-bottom: 2px;
-  }
-  .m-house-loc {
-    font-size: 8px; color: #94a3b8; font-weight: 700;
-    text-transform: uppercase; font-style: italic;
-  }
-  .m-house-count {
-    background: rgba(37,99,235,.1); color: #1d4ed8;
-    font-size: 8px; font-weight: 900; padding: 3px 9px;
-    border-radius: 999px; text-transform: uppercase;
-    letter-spacing: .07em; white-space: nowrap;
-  }
-
-  /* ── Booking card wrapper ── */
-  .m-card {
-    background: #fff;
-    border-bottom: 2px solid #e2e8f0;
-  }
-
-  /* ── Row: label | value ── */
-  .m-row {
-    display: flex;
-    align-items: stretch;
-    border-bottom: 1px solid #e8ecf0;
-    min-height: 36px;
-  }
-  .m-row:last-child { border-bottom: none; }
-
-  .m-lbl {
-    width: 44%;
-    flex-shrink: 0;
-    padding: 9px 8px 9px 14px;
-    font-size: 9.5px;
-    font-weight: 900;
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: .055em;
-    line-height: 1.35;
-    display: flex;
-    align-items: center;
-    /* NO right border — clean look matching screenshot */
-  }
-
-  .m-val {
-    flex: 1;
-    padding: 9px 14px 9px 10px;
-    font-size: 12px;
-    font-weight: 400;
-    color: #334155;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-wrap: wrap;
-    line-height: 1.4;
-    border-left: 1px solid #e2e8f0;
-  }
-
-  /* Initial payment stacks vertically */
-  .m-val-col {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding-top: 8px;
-    padding-bottom: 8px;
-  }
-  .m-init-amt {
-    font-size: 13px;
-    font-weight: 900;
-    color: #047857;
-  }
-  .m-init-sub {
-    font-size: 9px;
-    font-weight: 600;
-    color: #94a3b8;
-    line-height: 1.4;
-  }
-
-  /* Gender badge */
-  .m-gender {
-    font-size: 8px; font-weight: 900;
-    text-transform: uppercase;
-    padding: 1px 5px; border-radius: 999px;
-  }
-  .m-gender.f { color: #ec4899; background: #fdf2f8; }
-  .m-gender.m { color: #3b82f6; background: #eff6ff; }
-
-  /* ── Action row ── */
-  .m-row-action { min-height: 48px; align-items: stretch; }
-  .m-row-action .m-lbl { align-self: stretch; align-items: flex-start; padding-top: 12px; }
-  .m-actions {
-    flex: 1;
-    border-left: 1px solid #e2e8f0;
-    padding: 10px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .m-btn-row {
-    display: flex;
-    gap: 8px;
-  }
-
-  /* Buttons — wide like screenshot */
-  .m-btn {
-    flex: 1;
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    border: none;
-    cursor: pointer;
-    transition: opacity .15s;
-    text-align: center;
-  }
-  .m-btn:active { opacity: .8; }
-  .m-btn-green  { background: #108548; color: #fff; }
-  .m-btn-red    { background: #ef4444; color: #fff; }
-  .m-btn-amber  { background: #f59e0b; color: #fff; }
-  .m-btn-blue   { background: #3b82f6; color: #fff; }
-  .m-btn-red-ol { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
-
-  /* Pills / badges */
-  .m-pill {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    padding: 5px 18px;
-    border-radius: 999px;
-  }
-  .m-pill-paid     { background: #16a34a; color: #fff; }
-  .m-pill-approved { background: #dcfce7; color: #15803d; }
-  .m-pill-pending  { background: #fef3c7; color: #b45309; }
-  .m-pill-default  { color: #94a3b8; }
-
-  .m-pending-box { display: flex; flex-direction: column; gap: 5px; }
-  .m-pending-note {
-    font-size: 9px; font-weight: 600; color: #94a3b8; line-height: 1.5;
-  }
-
-  /* Extension box */
-  .m-ext-box {
-    background: #fffbeb; border: 1px solid #fde68a;
-    border-radius: 8px; padding: 6px 8px; margin-bottom: 4px;
-  }
-  .m-ext-title {
-    font-size: 8px; font-weight: 900; color: #b45309;
-    text-transform: uppercase; letter-spacing: .06em;
-    margin: 0 0 4px;
-  }
-
-  /* ── End of Records footer ── */
-  .m-end-of-records {
-    padding: 16px 20px;
-    text-align: center;
-    background: #fff;
-    border-top: 1px solid #e2e8f0;
-  }
-  .m-eor-text {
-    font-size: 9px;
-    font-weight: 900;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: .2em;
-  }
-}
-
-/* ======================================================
-   PRINT STYLES — Card-per-booking layout (Portrait A4)
-====================================================== */
 @media print {
   @page {
     size: A4 portrait;

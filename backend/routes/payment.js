@@ -1,6 +1,8 @@
+import { bookingNow } from '../config/bookingClock.js';
 import express from 'express';
 import axios from 'axios';
 import { paymentError, providerOptions, verifyWebhook, settlePayment } from '../config/paymentSettlement.js';
+import { PAID_RESERVATION_POLICY } from '../config/paidCancellation.js';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 
@@ -19,6 +21,10 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
         if (!Number.isSafeInteger(Number(bookingId)) || Number(bookingId) <= 0) {
             return res.status(400).json({ success: false, message: 'Booking ID is required.' });
+        }
+        // The student must accept the paid-reservation policy before a payable checkout opens.
+        if (req.body.acceptPaidReservationPolicy !== true) {
+            return res.status(400).json({ success: false, errorCode: 'paid_policy_not_accepted', message: 'Before paying, confirm that you understand this policy: ' + PAID_RESERVATION_POLICY });
         }
 
         connection = await pool.getConnection();
@@ -42,6 +48,7 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         const b = bookingRows[0];
         if (b.status !== 'confirmed' || b.payment_method !== 'paymongo') throw paymentError(409, 'Only approved online reservations can be paid.');
         if (b.payment_status === 'paid' || b.paymongo_payment_id) throw paymentError(409, 'The upfront payment is already recorded.');
+        if (b.payment_due_at && new Date(b.payment_due_at).getTime() <= bookingNow().getTime()) throw paymentError(409, 'The payment deadline has passed. This reservation can no longer start or reopen checkout. Refresh My Bookings for its status.');
         if (b.paymongo_session_id) {
             const existing = (await axios.get('https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(b.paymongo_session_id), options)).data.data;
             if ((existing.attributes.payments || []).some(p => p.attributes?.status === 'paid')) {
@@ -65,8 +72,8 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         const depM = parseInt(b.deposit_months || 0);
         const rent = parseFloat(b.monthly_rent || 0);
 
-        // Excludes the non-existent fixed deposit to prevent query failures
-        const initialPayment = (Math.max(1, advM) * rent) + (depM * rent);
+        // Charge the amount saved at approval; older approvals fall back to the current property terms.
+        const initialPayment = b.upfront_amount != null ? Number(b.upfront_amount) : (Math.max(1, advM) * rent) + (depM * rent);
 
         // Convert the upfront cost to centavos
         const amountInCentavos = Math.round(initialPayment * 100);
