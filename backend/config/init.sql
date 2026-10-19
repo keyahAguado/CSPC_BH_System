@@ -115,6 +115,12 @@ CREATE TABLE `bookings` (
   `address` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `payment_method` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'cash',
   `payment_status` enum('unpaid','paid','failed') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'unpaid',
+  `paymongo_account_id` varchar(100) DEFAULT NULL,
+  `paymongo_mode` varchar(4) DEFAULT NULL,
+  `paymongo_direct_connection_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `payment_interruption_notified_at` DATETIME NULL,
+  `cash_recovery_requested_at` DATETIME NULL,
+  `cash_recovery_session_id` VARCHAR(255) NULL,
   `paymongo_session_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `paymongo_payment_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `amount` decimal(10,2) DEFAULT '0.00',
@@ -668,3 +674,37 @@ CREATE TABLE IF NOT EXISTS `notification_email_deliveries` (
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-06-20  4:52:42
+
+-- Owner payment connections (fresh installation)
+DROP TABLE IF EXISTS owner_payment_connections;
+CREATE TABLE owner_payment_connections (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL,
+            email VARCHAR(254) NOT NULL, invitation_id VARCHAR(100) NOT NULL,
+            account_id VARCHAR(100) NULL, status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            webhook_id VARCHAR(100) NULL, webhook_secret TEXT NULL, checked_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY owner_payment_mode (owner_id, mode), UNIQUE KEY merchant_payment_mode (account_id, mode)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Owner payment connections (fresh installation)
+DROP TABLE IF EXISTS owner_direct_payment_connections;
+CREATE TABLE owner_direct_payment_connections (
+            id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+            owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL, current_slot TINYINT NULL DEFAULT 1,
+            merchant_label VARCHAR(120) NOT NULL,
+            secret_ciphertext TEXT NOT NULL, key_fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            key_last_four CHAR(4) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'pending', issue_code VARCHAR(40) NULL,
+            webhook_id VARCHAR(100) NULL, webhook_secret TEXT NULL, checked_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY owner_direct_current (owner_id, mode, current_slot), UNIQUE KEY owner_direct_key (key_fingerprint),
+            KEY owner_direct_history (owner_id, mode)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Owner payment connections (fresh installation)
+DROP TABLE IF EXISTS owner_payment_events;
+CREATE TABLE owner_payment_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, owner_id INT NOT NULL,
+            connection_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, action VARCHAR(50) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY owner_payment_event_owner (owner_id,id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

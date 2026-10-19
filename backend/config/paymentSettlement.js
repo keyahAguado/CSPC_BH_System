@@ -2,25 +2,33 @@ import { bookingNow } from './bookingClock.js';
 import { startBookedStay } from './scheduledOccupancy.js';
 import { stayPeriod, studentStayConflict, roomStayUsage } from './stayAvailability.js';
 import crypto from 'crypto';
+import { paymentMode } from './paymentEnvironment.js';
+import { directOptionsForBooking } from './ownerDirectPayments.js';
+
+export async function bookingProviderOptions(db,booking) {
+    return booking.paymongo_direct_connection_id ? directOptionsForBooking(db,booking) : providerOptions(booking.paymongo_account_id,booking.paymongo_mode);
+}
 
 export function paymentError(status, message) {
     return Object.assign(new Error(message), { status });
 }
-export function providerOptions() {
+export function providerOptions(accountId = null, mode = null) {
     if (!/^sk_(test|live)_/.test(process.env.PAYMONGO_SECRET_KEY || '')) {
         throw paymentError(503, 'Online payment is temporarily unavailable.');
     }
-    return { timeout: 15000, headers: { Authorization: 'Basic ' + Buffer.from(process.env.PAYMONGO_SECRET_KEY + ':').toString('base64') } };
+    if (mode && mode !== (process.env.PAYMONGO_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'test')) throw paymentError(409, 'This payment belongs to a different payment environment. Contact the administrator.');
+    if (accountId && !/^org_[a-zA-Z0-9]+$/.test(accountId)) throw paymentError(409, 'The receiving payment account is invalid.');
+    return { timeout: 15000, headers: { Authorization: 'Basic ' + Buffer.from(process.env.PAYMONGO_SECRET_KEY + ':').toString('base64'), ...(accountId ? {'Account-ID': accountId} : {}) } };
 }
-export function verifyWebhook(req) {
-    const secret = process.env.PAYMONGO_WEBHOOK_SECRET;
+export function verifyWebhook(req, secret = process.env.PAYMONGO_WEBHOOK_SECRET, expectedMode = null) {
     if (!secret) throw paymentError(503, 'Webhook verification is not configured.');
-    providerOptions();
+    if (!expectedMode) providerOptions();
     if (typeof req.rawBody !== 'string' || typeof req.headers['paymongo-signature'] !== 'string') {
         throw paymentError(400, 'Missing raw payload or signature.');
     }
     const parts = Object.fromEntries(req.headers['paymongo-signature'].split(',').map(p => p.trim().split('=')));
-    const mode = process.env.PAYMONGO_SECRET_KEY.startsWith('sk_live_');
+    if (expectedMode && (!['test','live'].includes(expectedMode)||expectedMode!==paymentMode())) throw paymentError(409, 'Webhook payment mode does not match.');
+    const mode = expectedMode ? expectedMode==='live' : process.env.PAYMONGO_SECRET_KEY.startsWith('sk_live_');
     const signature = parts[mode ? 'li' : 'te'];
     if (!/^\d+$/.test(parts.t || '') || !/^[a-f0-9]{64}$/i.test(signature || '')) {
         throw paymentError(401, 'Invalid webhook signature.');
@@ -33,12 +41,20 @@ export function verifyWebhook(req) {
     if (!event?.data?.attributes?.type) throw paymentError(400, 'Invalid webhook event.');
     return event;
 }
-export function paidSession(session, booking) {
+export function assertCheckoutContext(session, booking) {
     const a = session?.attributes;
     if (!a || session.id !== booking.paymongo_session_id || String(a.metadata?.bookingId) !== String(booking.id)) {
         throw paymentError(409, 'Payment session does not match this booking.');
     }
-    if (a.livemode !== process.env.PAYMONGO_SECRET_KEY.startsWith('sk_live_')) throw paymentError(409, 'Payment mode does not match.');
+    const expectedMode=booking.paymongo_mode || (process.env.PAYMONGO_SECRET_KEY?.startsWith('sk_live_')?'live':'test');
+    if (a.livemode !== (expectedMode==='live')) throw paymentError(409, 'Payment mode does not match.');
+    if (booking.paymongo_mode && booking.paymongo_mode !== (a.livemode ? 'live' : 'test')) throw paymentError(409, 'Saved payment mode does not match.');
+    if (booking.paymongo_account_id && a.metadata?.PYM_executed_for !== booking.paymongo_account_id) throw paymentError(409, 'Payment recipient does not match this booking.');
+    if (booking.paymongo_direct_connection_id && a.metadata?.paymentConnectionId !== booking.paymongo_direct_connection_id) throw paymentError(409, 'Payment credential context does not match this booking.');
+    return a;
+}
+export function paidSession(session, booking) {
+    const a = assertCheckoutContext(session, booking);
     const amount = (a.line_items || []).reduce((sum, item) => sum + (item.currency === 'PHP' ? Number(item.amount) * Number(item.quantity) : NaN), 0);
     const payment = (a.payments || []).find(p => p.attributes?.status === 'paid');
     if (!payment) throw paymentError(409, 'PayMongo has not confirmed payment yet. Please refresh your bookings shortly.');

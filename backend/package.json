@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "test": "node --test tests/*.test.cjs",
-    "prepare:booking-test": "node scripts/booking-test.js --prepare",
-    "dev:booking-test": "node scripts/booking-test.js"
+    "test": "node ../_not-for-deploy/run-regression.cjs",
+    "prepare:booking-test": "node ../_not-for-deploy/run-regression.cjs --script booking-test.js --prepare",
+    "dev:booking-test": "node ../_not-for-deploy/run-regression.cjs --script booking-test.js"
   },
   "keywords": [],
   "author": "",

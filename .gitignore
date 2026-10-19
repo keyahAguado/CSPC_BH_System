@@ -22,3 +22,8 @@ dev-dist/
 # Not part of the deployed system: tests, docs, logs, manuscript figures (kept locally only)
 _not-for-deploy/
 docs/*.log
+
+# Local-only validation and review files (runner temporarily stages original paths).
+backend/tests/
+backend/scripts/
+docs/

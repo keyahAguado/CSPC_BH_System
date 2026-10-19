@@ -1,3 +1,4 @@
+import { requestCashRecovery } from '../config/bookingPaymentRecovery.js';
 import { openRenewalWait, recordRenewalChoice, renewalExtensionRequested } from '../config/renewalPriority.js';
 import { stayPeriod, studentStayConflict, roomStayUsage, roomListAvailability, ownerResponseDeadline } from '../config/stayAvailability.js';
 import { bookingNow } from '../config/bookingClock.js';
@@ -8,9 +9,17 @@ import express from 'express';
 import pool from '../config/db.js';
 import { PUBLIC_HOUSE_COLUMNS } from '../config/publicHouseFields.js';
 import { authenticateToken } from './auth.js';
+import { requireOwnerPayments } from '../config/ownerPayments.js';
 import { upload, saveUploadedFile } from '../config/upload.js';
 
 const router = express.Router();
+router.post('/bookings/request-cash/:id', authenticateToken, async(req,res)=>{
+    if(req.user.role!=='student')return res.status(403).json({success:false,message:'Only students can request cash payment for their own booking.'});
+    const id=Number(req.params.id);
+    if(!Number.isSafeInteger(id)||id<=0)return res.status(400).json({success:false,message:'A valid booking is required.'});
+    try{res.json(await requestCashRecovery(pool,req.user.id,id,{confirmed:req.body.confirm===true}));}
+    catch(error){res.status(error.status||503).json({success:false,message:error.status?error.message:'Cash payment could not be requested. Refresh your booking before trying again.'});}
+});
 
 router.get('/stay-conflict', authenticateToken, async (req, res) => {
     try {
@@ -364,6 +373,7 @@ router.post('/book/:houseId', authenticateToken, validateBody('booking'), async 
             await connection.query('UPDATE users SET sex = ? WHERE id = ?', [studentGender, studentId]);
         }
 
+        if (payment_method === 'paymongo') await requireOwnerPayments(connection, houseId);
         const period = stayPeriod(check_in_date, months);
         // The owner needs at least 2 hours before the response cutoff (noon on the check-in day).
         const responseDueAt = ownerResponseDeadline(check_in_date, bookingNow());

@@ -1,14 +1,15 @@
 import { notifyRenewalIncomingClosed } from './renewalPriority.js';
 import axios from 'axios';
-import { providerOptions, settlePayment } from './paymentSettlement.js';
+import { providerOptions, bookingProviderOptions, settlePayment, assertCheckoutContext } from './paymentSettlement.js';
 
 // Closing the provider session first prevents a released room from retaining a payable URL.
-export async function closeExpiredCheckout(booking, { http = axios, options = providerOptions, settle = settlePayment, pool } = {}) {
+export async function closeExpiredCheckout(booking, { http = axios, options = null, settle = settlePayment, pool } = {}) {
     if (!booking.paymongo_session_id) return true;
     const url = 'https://api.paymongo.com/v1/checkout_sessions/' + encodeURIComponent(booking.paymongo_session_id);
-    const config = options();
+    const config = options ? await options(booking.paymongo_account_id, booking.paymongo_mode) : await bookingProviderOptions(pool,booking);
     const inspect = async () => {
         const session = (await http.get(url, config)).data.data;
+        assertCheckoutContext(session, booking);
         if ((session?.attributes?.payments || []).some(payment => payment.attributes?.status === 'paid')) {
             await settle(pool, booking.id, session);
             return { paid: true, expired: false };
@@ -36,7 +37,7 @@ export function createReservationExpiryWorker({ pool, closeCheckout = booking =>
         running = true;
         let expired = 0;
         try {
-            const [candidates] = await pool.query(`SELECT b.id, b.student_id, b.status, b.paymongo_session_id
+            const [candidates] = await pool.query(`SELECT b.id, b.student_id, b.status, b.paymongo_session_id, b.paymongo_account_id, b.paymongo_mode, b.paymongo_direct_connection_id
                 FROM bookings b WHERE b.payment_status != 'paid' AND b.paymongo_payment_id IS NULL
                 AND ((b.status = 'pending' AND b.owner_response_due_at <= NOW())
                   OR (b.status = 'confirmed' AND b.payment_method = 'paymongo' AND b.payment_due_at <= NOW()))

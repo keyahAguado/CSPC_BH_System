@@ -22,6 +22,7 @@ const house = ref({});
 const rooms = ref([]);
 const isLoading = ref(true);
 const loadError = ref('');
+const onlinePaymentAvailable = ref(false);
 const isFetchingHouse = ref(false);
 const isSaving = ref(false);
 const successMsg = ref('');
@@ -125,6 +126,9 @@ const fetchData = async () => {
     }
     house.value = res.data.house;
     rooms.value = res.data.rooms || [];
+    onlinePaymentAvailable.value = false;
+    try { onlinePaymentAvailable.value = (await axios.get(`/api/payment/availability/${houseId}`, {timeout:8000})).data.available === true; } catch {}
+    if (!onlinePaymentAvailable.value) form.value.payment_method = 'cash';
 
     // 1. Initial pre-fill from cached local session
     if (currentUser.phone || currentUser.emergency_contact || currentUser.guardian_name || currentUser.address || currentUser.age || currentUser.sex || currentUser.gender) {
@@ -506,20 +510,20 @@ onUnmounted(() => {
                 </div>
               </label>
 
-              <!-- Option B: PayMongo (GCash / Card) -->
+              <!-- Online payment is offered only after this owner's merchant setup is ready. -->
               <label class="flex items-start p-5 rounded-2xl border cursor-pointer transition"
                      :class="form.payment_method === 'paymongo' ? 'bg-blue-50/50 border-blue-200/60 shadow-sm' : 'bg-slate-50/40 border-slate-200/60 hover:border-slate-300'">
-                <input type="radio" v-model="form.payment_method" value="paymongo" class="w-5 h-5 text-blue-600 mt-2.5" required>
+                <input type="radio" v-model="form.payment_method" value="paymongo" :disabled="!onlinePaymentAvailable" class="w-5 h-5 text-blue-600 mt-2.5" required>
                 <div class="ml-4 flex items-start gap-4">
                   <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm shrink-0"
                        :class="form.payment_method === 'paymongo' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'">
                     <i class="fa-solid fa-credit-card text-base"></i>
                   </div>
                   <div class="text-left">
-                    <span class="block text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">GCash / Cards (Online)</span>
+                    <span class="block text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">QR Ph via PayMongo</span>
                     <span class="block text-[9px] text-blue-600 font-black uppercase tracking-widest mt-0.5">Pay via secure PayMongo portal</span>
                     <p class="text-[10px] text-slate-400 mt-3 font-medium leading-relaxed italic">
-                      "Submit your reservation first. Once approved, open the booking and pay the move-in cost securely online before the payment deadline."
+                      {{ onlinePaymentAvailable ? 'After approval, scan the checkout QR code using a supported banking or e-wallet app, including GCash. Pay before the booking deadline.' : 'This owner has not enabled online payments yet. Please choose cash or contact the owner.' }}
                     </p>
                   </div>
                 </div>
@@ -671,7 +675,7 @@ onUnmounted(() => {
             </div>
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p>
-              <p class="font-bold text-slate-800 uppercase">{{ form.payment_method === 'paymongo' ? 'GCash / Card (Online)' : 'Cash (Over-the-Counter)' }}</p>
+              <p class="font-bold text-slate-800 uppercase">{{ form.payment_method === 'paymongo' ? 'QR Ph via PayMongo' : 'Cash (Over-the-Counter)' }}</p>
             </div>
             <div class="sm:col-span-2">
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Address</p>

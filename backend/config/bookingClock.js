@@ -2,7 +2,7 @@
 let simulated=null;
 // Opt-in and local only: never in production, never with live PayMongo keys, and only against a database on this
 // machine or the Docker Compose service (db). Test sessions (testSession.js) let the data be restored afterwards.
-export function testClockEnabled(env=process.env){return env.NODE_ENV!=='production' && env.ENABLE_BOOKING_TEST_CLOCK==='true' && !String(env.PAYMONGO_SECRET_KEY || '').startsWith('sk_live_') && ['localhost','127.0.0.1','::1','db'].includes(env.DB_HOST || '127.0.0.1');}
+export function testClockEnabled(env=process.env){return env.NODE_ENV!=='production' && env.PAYMONGO_PAYMENT_MODE!=='live' && env.ENABLE_BOOKING_TEST_CLOCK==='true' && !String(env.PAYMONGO_SECRET_KEY || '').startsWith('sk_live_') && ['localhost','127.0.0.1','::1','db'].includes(env.DB_HOST || '127.0.0.1');}
 const privateAddress=ip=>{const a=String(ip || '').replace(/^::ffff:/,'');return a==='::1' || /^127\./.test(a) || /^10\./.test(a) || /^192\.168\./.test(a) || /^172\.(1[6-9]|2\d|3[01])\./.test(a);};
 // A request reaches the clock only from this machine: a private network peer (the Docker nginx proxy counts) and a
 // browser that opened the app as localhost. Any forwarded public address is refused.

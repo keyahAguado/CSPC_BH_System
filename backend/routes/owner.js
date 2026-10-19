@@ -1,3 +1,4 @@
+import { requireOwnerPayments } from '../config/ownerPayments.js';
 import { notifyRenewalIncomingClosed, notifyRenewalIncomingApproved, rejectRenewalIncoming } from '../config/renewalPriority.js';
 import { bookingNow } from '../config/bookingClock.js';
 import { reviewPaidCancellation, PAID_RESERVATION_POLICY } from '../config/paidCancellation.js';
@@ -1382,6 +1383,11 @@ router.post('/bookings/approve/:id', authenticateToken, verifyOwner, validateBod
             return res.status(409).json({ success:false, message:'No bed is available throughout these reservation dates.', errorCode:'capacity_full' });
         }
 
+        if(currentBooking.payment_method==='paymongo') {
+            await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE',[req.user.id]);
+            try { await requireOwnerPayments(connection,currentBooking.house_id); }
+            catch(error) { if(error.status!==409)throw error;await connection.rollback();return res.status(409).json({success:false,errorCode:'online_payment_unavailable',message:'Your online payment connection is not ready. Open Online payments to restore it before approving this online request. The student can request cash payment from their booking details; that request requires your approval.'}); }
+        }
         const paymentDueAt = currentBooking.payment_method === 'paymongo' ? onlinePaymentDeadline(currentBooking.check_in_date, bookingNow()) : null;
         if (currentBooking.payment_method === 'paymongo' && !paymentDueAt) {
             await connection.rollback();

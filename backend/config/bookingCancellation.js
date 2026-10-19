@@ -6,7 +6,7 @@ import { calendarDay, manilaToday } from './stayAvailability.js';
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 export async function cancelFutureReservation(pool,ownerId,bookingId,{reason,closeCheckout=b=>closeExpiredCheckout(b,{pool})}={}) {
  if(typeof reason!=='string' || reason.trim().length<5 || reason.trim().length>1000)throw fail(400,'Enter a cancellation reason for the student (5-1000 characters).');
- const [before]=await pool.query('SELECT b.id, b.student_id, b.status, b.payment_method, b.payment_status, b.paymongo_payment_id, b.paymongo_session_id, b.payment_review_required, b.check_in_date, b.move_in_confirmed_at FROM bookings b JOIN boarding_houses bh ON bh.id=b.house_id WHERE b.id=? AND bh.owner_id=?',[bookingId,ownerId]);
+ const [before]=await pool.query('SELECT b.id, b.student_id, b.status, b.payment_method, b.payment_status, b.paymongo_payment_id, b.paymongo_session_id, b.paymongo_account_id, b.paymongo_mode, b.paymongo_direct_connection_id, b.payment_review_required, b.check_in_date, b.move_in_confirmed_at FROM bookings b JOIN boarding_houses bh ON bh.id=b.house_id WHERE b.id=? AND bh.owner_id=?',[bookingId,ownerId]);
  const initial=before[0];
  if(!initial)throw fail(404,'Reservation not found or access denied.');
  if(initial.status!=='confirmed' || !initial.check_in_date || calendarDay(initial.check_in_date)<=manilaToday() || initial.move_in_confirmed_at)throw fail(409,'Only a future reservation that has not started can be cancelled here. Refresh the booking.');
@@ -39,7 +39,7 @@ export async function cancelFutureReservation(pool,ownerId,bookingId,{reason,clo
 // Nothing has been paid or occupied yet: still pending, approved-but-unpaid online, or a reserved cash stay that has not started.
 const studentCancellable=b=>b.payment_status!=='paid' && !b.paymongo_payment_id && (b.status==='pending' || (b.status==='confirmed' && (b.payment_method==='paymongo' || (Number(b.move_in_required)===1 && !b.move_in_confirmed_at))));
 export async function cancelStudentReservation(pool,studentId,bookingId,{closeCheckout=b=>closeExpiredCheckout(b,{pool})}={}) {
- const [initial]=await pool.query('SELECT id, status, payment_method, payment_status, paymongo_payment_id, paymongo_session_id, move_in_required, move_in_confirmed_at FROM bookings WHERE id=? AND student_id=?',[bookingId,studentId]);
+ const [initial]=await pool.query('SELECT id, status, payment_method, payment_status, paymongo_payment_id, paymongo_session_id, paymongo_account_id, paymongo_mode, paymongo_direct_connection_id, move_in_required, move_in_confirmed_at FROM bookings WHERE id=? AND student_id=?',[bookingId,studentId]);
  if(!initial.length)throw fail(404,'Reservation not found.');
  if(initial[0].payment_status==='paid' || initial[0].paymongo_payment_id)throw fail(400,PAID_RESERVATION_POLICY);
  if(!studentCancellable(initial[0]))throw fail(400,'This reservation is already active. Please contact the property owner to check out.');
