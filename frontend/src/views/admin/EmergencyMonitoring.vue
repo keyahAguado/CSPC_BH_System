@@ -109,7 +109,8 @@ const filteredResidents = computed(() => {
       r.house_name,
       r.house_location,
       r.house_barangay,
-      r.house_owner_phone
+      r.house_owner_phone,
+      r.house_owner_name
     ])
   );
 });
@@ -147,9 +148,11 @@ const groupedResidents = computed(() => {
         house_location: r.house_location || (bh ? bh.location : ''),
         house_barangay: r.house_barangay || (bh ? bh.barangay : ''),
         house_owner_phone: r.house_owner_phone || '',
+        house_owner_name: r.house_owner_name || '',
         residents: []
       };
     }
+    if (!groups[key].house_owner_name && r.house_owner_name) groups[key].house_owner_name = r.house_owner_name;
     if (!groups[key].house_owner_phone && r.house_owner_phone) {
       groups[key].house_owner_phone = r.house_owner_phone;
     }
@@ -325,7 +328,7 @@ const sexTone = (sex) => {
                             <p class="reg-group-sub">
                               <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
                               {{ group.house_barangay ? `Brgy. ${group.house_barangay}, Nabua, Camarines Sur` : group.house_location }}
-                              <span v-if="group.house_owner_phone"> · Owner contact: {{ group.house_owner_phone }}</span>
+                              <span v-if="group.house_owner_name || group.house_owner_phone"> · Owner: {{ group.house_owner_name || 'N/A' }}<template v-if="group.house_owner_phone"> ({{ group.house_owner_phone }})</template></span>
                             </p>
                           </div>
                         </div>

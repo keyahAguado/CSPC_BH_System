@@ -13,6 +13,7 @@ import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
 import AdminNav from '../../components/partials/AdminNav.vue';
 import FlashAlert from '../../components/partials/FlashAlert.vue';
+import DocumentZoomImage from '../../components/DocumentZoomImage.vue';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { downloadOriginalFile } from '../../utils/downloadHelper';
 import { getImageUrl } from '../../config/api';
@@ -1128,10 +1129,6 @@ const loadError = ref('');
       <div class="doc-viewer-bar">
         <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
         <div class="doc-viewer-actions">
-          <button v-if="!isPdfFile(previewImageUrl)" type="button" class="doc-viewer-btn" @click="previewZoomed = !previewZoomed" :aria-pressed="previewZoomed">
-            <i :class="previewZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'" aria-hidden="true"></i>
-            {{ previewZoomed ? 'Fit to screen' : 'Actual size' }}
-          </button>
           <a :href="previewImageUrl" target="_blank" rel="noopener" class="doc-viewer-btn"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open in new tab</a>
           <button type="button" @click="downloadOriginal" :disabled="isDownloading" class="doc-viewer-btn is-primary">
             <i :class="isDownloading ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-download'" aria-hidden="true"></i>
@@ -1142,7 +1139,7 @@ const loadError = ref('');
       </div>
       <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
         <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
-        <img v-else :src="previewImageUrl" class="doc-viewer-img" alt="Document preview" @click="previewZoomed = !previewZoomed" />
+        <DocumentZoomImage v-else :src="previewImageUrl" @backdrop="closePreview" />
         <template v-if="previewFiles.length > 1">
           <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
           <button type="button" class="doc-viewer-nav is-next" aria-label="Next file" @click="stepPreview(1)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
