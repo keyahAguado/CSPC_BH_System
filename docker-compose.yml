@@ -69,7 +69,7 @@ services:
       media_storage:
         condition: service_healthy
 
-  # --- 4. Dedicated Nginx Media Storage Service (ICTU Compliant) ---
+  # --- 4. Dedicated Nginx Media Storage Service ---
   media_storage:
     image: nginx:alpine
     container_name: cspc_media_storage

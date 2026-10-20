@@ -1,8 +1,23 @@
--- MySQL dump 10.13  Distrib 8.0.46, for Linux (x86_64)
---
--- Host: localhost    Database: cspc_boarding_db
--- ------------------------------------------------------
--- Server version	8.0.46
+-- CSPC BH Finder: clean fresh-install schema and reference data.
+-- Import only into a NEW, EMPTY database. This is not an upgrade or a reset script.
+-- Existing databases must be backed up and upgraded using migrations instead.
+-- Preserves the existing SASO admin login; no owners, students, bookings, payments,
+-- notifications, uploaded documents, test fixtures, or test snapshots are seeded.
+-- Use a client that stops on SQL errors; do not import with --force.
+
+DELIMITER $
+CREATE PROCEDURE require_empty_database()
+BEGIN
+  IF DATABASE() IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Select a new empty database before importing init.sql.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE()) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'init.sql requires an empty database. Use migrations for an existing installation.';
+  END IF;
+END$
+DELIMITER ;
+CALL require_empty_database();
+DROP PROCEDURE require_empty_database;
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -19,7 +34,6 @@
 -- Table structure for table `boarding_houses`
 --
 
-DROP TABLE IF EXISTS `boarding_houses`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `boarding_houses` (
@@ -74,6 +88,9 @@ CREATE TABLE `boarding_houses` (
   `deposit_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `reference_no` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `application_status` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `archived_by` varchar(50) DEFAULT NULL,
+  `archive_reason` text DEFAULT NULL,
+  `archived_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `reference_no` (`reference_no`),
   KEY `owner_id` (`owner_id`),
@@ -96,7 +113,6 @@ UNLOCK TABLES;
 -- Table structure for table `bookings`
 --
 
-DROP TABLE IF EXISTS `bookings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `bookings` (
@@ -169,19 +185,20 @@ UNLOCK TABLES;
 -- Table structure for table `checklist_criteria`
 --
 
-DROP TABLE IF EXISTS `checklist_criteria`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `checklist_criteria` (
   `id` int NOT NULL AUTO_INCREMENT,
   `label` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `is_permit_linked` tinyint(1) DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `requirement_type` enum('required','supplementary') NOT NULL DEFAULT 'supplementary',
   `permit_key` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `house_id` int DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `house_id` (`house_id`),
   CONSTRAINT `checklist_criteria_ibfk_1` FOREIGN KEY (`house_id`) REFERENCES `boarding_houses` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -190,7 +207,7 @@ CREATE TABLE `checklist_criteria` (
 
 LOCK TABLES `checklist_criteria` WRITE;
 /*!40000 ALTER TABLE `checklist_criteria` DISABLE KEYS */;
-INSERT INTO `checklist_criteria` VALUES (30,'Business Permit Application Form',1,'permit_business_form',NULL),(31,'Community Tax Certificate (Cedula)',1,'permit_cedula',NULL),(32,'DTI Registration Certificate',1,'permit_dti',NULL),(33,'Barangay Business Clearance',1,'permit_barangay',NULL),(34,'Certificate of Building Inspection',1,'permit_building',NULL),(35,'Zoning Certificate / Locational Clearance',1,'permit_zoning',NULL),(36,'Sanitary Permit / Health Clearance',1,'permit_sanitary',NULL),(37,'Valid Fire Safety Inspection Certificate',1,'permit_fire',NULL);
+INSERT INTO `checklist_criteria` (`id`,`label`,`is_permit_linked`,`permit_key`,`house_id`) VALUES (30,'Business Permit Application Form',1,'permit_business_form',NULL),(31,'Community Tax Certificate (Cedula)',1,'permit_cedula',NULL),(32,'DTI Registration Certificate',1,'permit_dti',NULL),(33,'Barangay Business Clearance',1,'permit_barangay',NULL),(34,'Certificate of Building Inspection',1,'permit_building',NULL),(35,'Zoning Certificate / Locational Clearance',1,'permit_zoning',NULL),(36,'Sanitary Permit / Health Clearance',1,'permit_sanitary',NULL),(37,'Valid Fire Safety Inspection Certificate',1,'permit_fire',NULL);
 /*!40000 ALTER TABLE `checklist_criteria` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -198,7 +215,6 @@ UNLOCK TABLES;
 -- Table structure for table `checklist_results`
 --
 
-DROP TABLE IF EXISTS `checklist_results`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `checklist_results` (
@@ -245,7 +261,6 @@ CREATE TABLE `house_permit_files` (
 -- Table structure for table `house_documents`
 --
 
-DROP TABLE IF EXISTS `house_documents`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `house_documents` (
@@ -253,6 +268,7 @@ CREATE TABLE `house_documents` (
   `house_id` int NOT NULL,
   `criteria_id` int NOT NULL,
   `file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `file_paths` json DEFAULT NULL,
   `expiry_date` date DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -276,7 +292,6 @@ UNLOCK TABLES;
 -- Table structure for table `notifications`
 --
 
-DROP TABLE IF EXISTS `notifications`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `notifications` (
@@ -305,7 +320,6 @@ UNLOCK TABLES;
 -- Table structure for table `occupants`
 --
 
-DROP TABLE IF EXISTS `occupants`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `occupants` (
@@ -354,7 +368,6 @@ UNLOCK TABLES;
 -- Table structure for table `reviews`
 --
 
-DROP TABLE IF EXISTS `reviews`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `reviews` (
@@ -385,13 +398,18 @@ UNLOCK TABLES;
 -- Table structure for table `rooms`
 --
 
-DROP TABLE IF EXISTS `rooms`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `rooms` (
   `id` int NOT NULL AUTO_INCREMENT,
   `house_id` int DEFAULT NULL,
   `description` text DEFAULT NULL,
+  `floor_label` varchar(60) DEFAULT NULL,
+  `amenities` json DEFAULT NULL,
+  `amenities_free` json DEFAULT NULL,
+  `amenities_paid` json DEFAULT NULL,
+  `photos` json DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
   `room_number` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `gender_type` enum('female','male') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT 'female',
   `capacity` int DEFAULT NULL,
@@ -416,7 +434,6 @@ UNLOCK TABLES;
 -- Table structure for table `users`
 --
 
-DROP TABLE IF EXISTS `users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `users` (
@@ -439,10 +456,13 @@ CREATE TABLE `users` (
   `guardian_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `profile_pic` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `applicant_key_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `dpa_accepted` tinyint(1) DEFAULT 0,
+  `dpa_accepted_at` datetime DEFAULT NULL,
+  `email_verified_at` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=26 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -458,7 +478,6 @@ UNLOCK TABLES;
 -- Table structure for table `house_photos`
 --
 
-DROP TABLE IF EXISTS `house_photos`;
 CREATE TABLE `house_photos` (
   `id` int NOT NULL AUTO_INCREMENT,
   `house_id` int NOT NULL,
@@ -511,7 +530,6 @@ CREATE TABLE `account_activation_tokens` (
 -- working without modification.
 --
 
-DROP TABLE IF EXISTS `courses`;
 CREATE TABLE `courses` (
   `id` int NOT NULL AUTO_INCREMENT,
   `course_code` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
@@ -557,13 +575,6 @@ INSERT INTO `courses` (`course_code`, `course_name`, `department`) VALUES
 ('BTVTEd', 'Bachelor in Technical Vocational Teacher Education', 'CTDE'),
 ('BECEd', 'Bachelor of Early Childhood Education', 'CTDE');
 
--- Placeholder for an existing student record whose stored course text ("BHS")
--- doesn't match any known CSPC program. Kept inactive so it never appears in
--- the student dropdown, but still lets that student's record match a course
--- row for reporting, and stays editable via Admin > Manage Courses once
--- confirmed. Department left NULL since it's genuinely unknown.
-INSERT INTO `courses` (`course_code`, `course_name`, `is_active`) VALUES
-('BHS', 'Unconfirmed Program - Pending Verification', 0);
 
 -- Real referential integrity: the database itself now refuses any users.course
 -- value that isn't a real course_code — whether from a bug, a bypassed dropdown,
@@ -621,13 +632,13 @@ INSERT IGNORE INTO `site_settings` (`setting_key`, `setting_value`) VALUES
 ('footer_hours', ''),
 ('footer_facebook', ''),
 ('footer_website', ''),
+('footer_custom', '[]'),
 ('footer_copyright', '© 2026 CSPC Boarding House Selection & Management System. All rights reserved.');
 
 -- ---------------------------------------------------------------------------------------------------
--- Fresh-install additions (same definitions as migrations 2026-10-11 and 2026-10-12). init.sql runs
--- only on an empty database; everything else newer is added by the backend when it starts.
+-- Account verification, notification email delivery, and tracking sessions.
 -- ---------------------------------------------------------------------------------------------------
-ALTER TABLE `users` ADD COLUMN `email_verified_at` DATETIME NULL DEFAULT NULL;
+
 
 CREATE TABLE IF NOT EXISTS `applicant_email_verifications` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -644,6 +655,19 @@ CREATE TABLE IF NOT EXISTS `applicant_email_verifications` (
   UNIQUE KEY `applicant_verification_poll` (`poll_hash`),
   KEY `applicant_verification_email` (`email`,`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS applicant_tracking_sessions (
+        id INT NOT NULL AUTO_INCREMENT,
+        email VARCHAR(255) NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        revoked_at DATETIME NULL DEFAULT NULL,
+        last_used_at DATETIME NULL DEFAULT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY applicant_tracking_token_hash (token_hash),
+        KEY applicant_tracking_email (email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `notification_email_settings` (
   `id` tinyint unsigned NOT NULL,
@@ -663,20 +687,11 @@ CREATE TABLE IF NOT EXISTS `notification_email_deliveries` (
   KEY `notification_email_pending` (`status`,`next_attempt_at`)
 );
 
-/*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
-/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-06-20  4:52:42
+-- Fresh-install payment connection tables; historical verification schema is retained.
 
 -- Owner payment connections (fresh installation)
-DROP TABLE IF EXISTS owner_payment_connections;
 CREATE TABLE owner_payment_connections (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL,
@@ -685,10 +700,9 @@ CREATE TABLE owner_payment_connections (
             webhook_id VARCHAR(100) NULL, webhook_secret TEXT NULL, checked_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY owner_payment_mode (owner_id, mode), UNIQUE KEY merchant_payment_mode (account_id, mode)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Owner payment connections (fresh installation)
-DROP TABLE IF EXISTS owner_direct_payment_connections;
 CREATE TABLE owner_direct_payment_connections (
             id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
             owner_id INT NOT NULL, mode VARCHAR(4) NOT NULL, current_slot TINYINT NULL DEFAULT 1,
@@ -699,12 +713,21 @@ CREATE TABLE owner_direct_payment_connections (
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY owner_direct_current (owner_id, mode, current_slot), UNIQUE KEY owner_direct_key (key_fingerprint),
             KEY owner_direct_history (owner_id, mode)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Owner payment connections (fresh installation)
-DROP TABLE IF EXISTS owner_payment_events;
 CREATE TABLE owner_payment_events (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, owner_id INT NOT NULL,
             connection_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, action VARCHAR(50) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY owner_payment_event_owner (owner_id,id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+/*!40101 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
