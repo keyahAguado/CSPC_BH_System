@@ -458,7 +458,7 @@ onMounted(() => {
 <h3 class="ni-day"><span>{{ group.label }}</span><small>{{ group.items.length }} {{ group.items.length===1 ? 'notification' : 'notifications' }}</small></h3>
 <article v-for="notif in group.items" :key="notif.id" :class="['ni-row','tone-'+notif.tone.tone,{'is-unread':!notif.is_read}]">
 <label class="ni-select"><input type="checkbox" v-model="selectedIds" :value="notif.id" :aria-label="'Select notification: '+notif.title"></label>
-<div class="ni-content"><span class="ni-icon" aria-hidden="true"><i :class="['fa-solid',notif.tone.icon]"></i></span><div class="ni-copy"><div class="ni-title"><span v-if="!notif.is_read" class="ni-dot" aria-label="Unread"></span><h2>{{ notif.title }}</h2><span v-if="notif.tone.action && !notif.is_read" class="ni-flag">Action requested</span><span class="ni-category">{{ CATEGORY_LABEL[notif.meta.category] }}</span></div><p class="ni-preview"><MessageText :text="cleanMessage(notif.message)" /></p></div></div>
+<div class="ni-content"><span class="ni-icon" aria-hidden="true"><i :class="['fa-solid',notif.tone.icon]"></i></span><div class="ni-copy"><div class="ni-title"><span v-if="!notif.is_read" class="ni-dot" aria-label="Unread"></span><h2>{{ notif.title }}</h2><span v-if="notif.tone.action && !notif.is_read" class="ni-flag">Action requested</span><span class="ni-category">{{ CATEGORY_LABEL[notif.meta.category] }}</span></div><p v-if="notif.context.property || notif.context.allProperties" class="ni-card-context"><span>{{ notif.context.property || 'All properties' }}</span><span v-if="notif.context.room" class="ni-card-room">{{ notif.context.room }}</span></p><p class="ni-preview"><MessageText :text="cleanMessage(notif.message)" /></p><time class="ni-card-time" :datetime="notif.created_at" :title="dateLabel(notif.created_at)">{{ timeLabel(notif.created_at) }}</time></div></div>
 <div class="ni-property"><template v-if="notif.context.property"><strong>{{ notif.context.property }}</strong><span v-if="notif.context.room">{{ notif.context.room }}</span></template><span v-else class="ni-muted">{{ notif.context.allProperties ? 'All properties' : 'General notice' }}</span></div>
 <time class="ni-time" :datetime="notif.created_at" :title="dateLabel(notif.created_at)"><span>{{ timeLabel(notif.created_at) }}</span></time>
 <div class="ni-actions"><router-link v-if="getNotifTargetRoute(notif)" :to="getNotifTargetRoute(notif)" class="ni-view" @click="!notif.is_read && markRead(notif.id).catch(()=>{})">{{ actionLabel(notif) }}</router-link><details class="ni-more"><summary :aria-label="'Options for '+notif.title"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></summary><div><button v-if="!notif.is_read" type="button" @click="markRead(notif.id).catch(()=>{})">Mark as read</button><span v-else>Already read</span></div></details></div>
@@ -534,6 +534,7 @@ onMounted(() => {
 @media(max-width:560px){.ni-summary{grid-template-columns:1fr}.ni-date>div{width:min(260px,calc(100vw - 48px))}}
 @media(pointer:coarse){.ni-select-field,.ni-date>summary,.ni-reset,.ni-stat{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.ni-stat{transition:none}}
+.ni-card-context,.ni-card-time{display:none}
 /* Owner/admin phone inbox: constrain controls and give notification cards the full width. */
 @media(max-width:639px){
   .notif-owner-theme .nf-main{min-width:0;padding:16px 12px 28px!important}
@@ -579,8 +580,11 @@ onMounted(() => {
   .ni-category,.ni-flag{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:1.5}
   .ni-copy>.ni-preview{font-size:13px;line-height:1.7;margin-top:8px}
   .ni-property,.ni-time,.ni-actions{grid-column:1/-1;margin-left:0!important;min-width:0}
-  .ni-property{padding-top:10px;border-top:1px solid #e8eef7;font-size:12px}
-  .ni-time{font-size:12px;overflow-wrap:anywhere}
+  .ni-row>.ni-property,.ni-row>.ni-time{display:none}
+  .ni-copy>.ni-card-context{display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 8px;margin:8px 0 0;font-size:12px;line-height:1.5;color:#466080;overflow-wrap:anywhere}
+  .ni-card-context>span{min-width:0;max-width:100%}
+  .ni-card-context .ni-card-room{padding-left:8px;border-left:1px solid #cbd5e1;color:#526985}
+  .ni-copy>.ni-card-time{display:block;margin-top:10px;font-size:11.5px;line-height:1.5;color:#617690;font-variant-numeric:tabular-nums}
   .ni-actions{justify-content:space-between;gap:8px;padding-top:4px}
   .ni-view{flex:1;min-width:0;min-height:44px;padding:10px 12px;box-sizing:border-box;font-size:12px;white-space:normal;text-align:center;overflow-wrap:anywhere}
   .ni-more{flex-shrink:0}.ni-more summary{min-width:44px;min-height:44px;border:1px solid #dfe8f4}
