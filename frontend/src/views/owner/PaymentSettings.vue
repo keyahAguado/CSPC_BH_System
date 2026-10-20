@@ -25,4 +25,12 @@ import OwnerNav from '../../components/partials/OwnerNav.vue';
 .payment-settings.management-content{padding-top:14px!important}.payment-settings .payments-hero{padding:0;margin-bottom:12px}.payments-hero p{margin:4px 0 0}
 @media(max-width:639px){.payment-settings h1{font-size:24px}.payments-hero p{font-size:13.5px}.payment-settings .eyebrow{margin-bottom:2px}}
 
+@media(max-width:639px){
+  .payment-settings.management-content{min-width:0;padding-right:12px!important;padding-left:12px!important;padding-bottom:calc(28px + env(safe-area-inset-bottom))!important}
+  .payment-settings .payments-hero{display:block;margin-bottom:16px}
+  .payments-hero>div{min-width:0}
+  .payment-settings h1{font-size:26px;line-height:1.2;margin:6px 0 8px}
+  .payments-hero p{font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+  .payment-settings .eyebrow{font-size:10px;line-height:1.5;margin:0}
+}
 </style>

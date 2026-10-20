@@ -117,7 +117,7 @@ onMounted(()=>request());onBeforeUnmount(()=>{secretKey.value='';});
 .direct-payments form>label{font-size:13.5px;color:#0f172a}.form-heading p{font-size:13px;color:#334155}.direct-payments form>.check,.check{font-size:13.5px;color:#1e293b}.small{font-size:12.5px!important;color:#475569}.key-permissions{font-size:13.5px!important;color:#1e293b}.key-permissions strong{color:#0f172a}.submit-note{font-size:12px!important;color:#475569}
 .direct-payments button{font-size:14px}.direct-payments a{font-size:13.5px}.direct-payments summary{font-size:14px;color:#0f172a}.direct-payments details p,.direct-payments details li{font-size:13.5px;color:#1e293b}
 @media(max-width:900px){.account-summary{grid-template-columns:1fr}}
-@media(max-width:639px){.status-row{grid-template-columns:auto 1fr}.status-row .mode-badge{grid-column:1 / -1;justify-self:start}.direct-payments h2{font-size:20px}}
+
 @media(max-width:900px){.setup-steps{grid-template-columns:1fr}.setup-steps li{padding:16px 16px 16px 53px}.setup-steps li::before{left:16px;top:18px}}
 /* Two-column layout: status on top, account and form in the main column, guide and help at the side */
 .pay-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}.pay-main>:first-child{margin-top:0}
@@ -126,42 +126,64 @@ onMounted(()=>request());onBeforeUnmount(()=>{secretKey.value='';});
 .pay-side .setup-steps{grid-template-columns:1fr;gap:12px;margin:0}.pay-side .setup-steps li{background:none;border:0;border-radius:0;padding:0 0 0 34px;font-size:13px}.pay-side .setup-steps li::before{content:counter(steps);top:1px;left:0;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#dbe7fb;font-size:11px}.pay-side .setup-steps strong{font-size:13.5px;margin-bottom:2px}
 .status-row .actions{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:flex-start;padding:4px 0 0 62px}.status-row .actions button{margin:0}
 @media(max-width:1000px){.pay-layout{grid-template-columns:1fr}}
-@media(max-width:639px){.status-row .actions{padding-left:0}}
-@media(max-width:639px){.direct-payments{padding:20px 16px;border-radius:16px}.connection-heading{gap:12px;align-items:flex-start}.connection-icon{width:42px;height:42px;border-radius:12px}.connection-icon svg{width:24px;height:24px}.direct-payments h2{font-size:19px}.section-kicker{font-size:9px}.status-row{padding:15px;align-items:flex-start;flex-direction:column;gap:12px}.connection-form{padding:18px 14px}.form-heading{align-items:flex-start}.direct-payments button{width:100%}.actions{align-items:stretch;flex-direction:column}.direct-payments p{font-size:12px}.submit-note{text-align:center}.direct-payments details{padding-left:14px;padding-right:14px}}
 
-/* Phone / PWA only (desktop unchanged): tighter spacing, account details as label/value rows */
+
+
+
+
+/* Phone layout: one column, readable copy, and comfortable touch targets. */
 @media(max-width:639px){
-.direct-payments{padding:16px 14px;margin-bottom:16px}
-.connection-heading{margin-bottom:6px;align-items:center}
-.connection-icon{width:36px;height:36px;border-radius:10px}.connection-icon svg{width:20px;height:20px}
-.direct-payments h2{font-size:17px}
-.direct-payments h3{font-size:15px}
-.direct-payments p,.direct-payments li{font-size:13px;line-height:1.55;margin:8px 0}
-.direct-payments>p:first-of-type{font-size:13px}
-.status-row{margin:12px 0;padding:12px;gap:8px 12px}
-.status-icon{width:36px;height:36px}.status-icon svg{width:19px;height:19px}
-.status-text strong{font-size:15px}.status-sub{font-size:12.5px}
-.status-row .actions{flex-direction:row;align-items:center;gap:12px;padding:2px 0 0}
-.status-row .actions button{width:auto;min-height:38px;padding:7px 14px}
-.pay-layout{gap:12px}
-.account-summary{grid-template-columns:1fr;gap:0;margin:0 0 12px;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
-.account-summary>div{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:baseline;padding:9px 12px;border:0;border-radius:0;border-bottom:1px solid #edf2f8;background:#fff}
-.account-summary>div:last-child{border-bottom:0}
-.account-summary dt{font-size:10.5px}
-.account-summary dd{margin:0;font-size:13.5px;text-align:right}
-.account-summary small{grid-column:1/-1;font-size:11.5px;margin-top:2px}
-.notice{padding:10px 12px;font-size:12.5px!important}
-.connection-form{padding:14px}
-.form-heading{margin-bottom:6px;gap:10px}.form-icon{width:34px;height:34px}.form-icon svg{width:18px;height:18px}
-.direct-payments form>label{margin-top:12px;font-size:13px}
-.direct-payments input:not([type=checkbox]){min-height:44px;margin-top:6px;padding:10px 12px}
-.key-permissions{margin:12px 0!important;font-size:12.5px!important}
-.direct-payments form>.check,.check{margin:10px 0;font-size:12.5px;gap:10px}
-.direct-payments .side-card{padding:12px 14px}
-.side-card h3{font-size:14px!important;margin-bottom:6px!important}
-.direct-payments .side-card p,.pay-side .setup-steps li{font-size:12.5px}
-.pay-side .setup-steps{gap:8px}
-.direct-payments details.side-card{padding:0 14px}
-.direct-payments summary{min-height:44px;padding:10px 0;font-size:13.5px}
+  .direct-payments{min-width:0;padding:18px 14px;margin:16px 0 20px;border-radius:16px}
+  .direct-payments *{box-sizing:border-box}
+  .connection-heading{gap:10px;align-items:flex-start;margin-bottom:12px}
+  .connection-heading>div,.form-heading>div,.status-text,.pay-main,.pay-side{min-width:0}
+  .connection-icon{width:36px;height:36px;border-radius:10px}
+  .connection-icon svg{width:21px;height:21px}
+  .section-kicker{font-size:10px;letter-spacing:.08em;margin-bottom:5px}
+  .direct-payments h2{font-size:20px;line-height:1.3;overflow-wrap:anywhere}
+  .direct-payments h3{font-size:16px;line-height:1.4}
+  .direct-payments p,.direct-payments li,.direct-payments>p:first-of-type{font-size:14px;line-height:1.65;margin:10px 0}
+  .status-row{grid-template-columns:36px minmax(0,1fr);align-items:start;gap:12px;margin:18px 0;padding:14px;border-radius:12px}
+  .status-icon{width:36px;height:36px}.status-icon svg{width:20px;height:20px}
+  .status-caption{font-size:10px;letter-spacing:.06em}
+  .status-text strong{font-size:16px;line-height:1.4}
+  .status-sub{font-size:13px;line-height:1.55;margin-top:5px}
+  .status-row .mode-badge{grid-column:1/-1;justify-self:start;max-width:100%;white-space:normal;font-size:11px;padding:6px 10px}
+  .status-row .actions{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:8px;padding:12px 0 0;border-top:1px solid #dce5ef;margin-top:2px}
+  .status-row .actions button,.status-row .actions a{display:flex;align-items:center;justify-content:center;width:100%;min-height:46px;margin:0;padding:10px 12px;text-align:center;font-size:13px;line-height:1.4;border-radius:9px;white-space:normal;overflow-wrap:anywhere}
+  .status-row .actions a{border:1px solid #cbd7e5;background:#fff}
+  .pay-layout{grid-template-columns:minmax(0,1fr);gap:18px}
+  .account-summary{grid-template-columns:minmax(0,1fr);gap:0;margin:0 0 16px;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
+  .account-summary>div{display:block;padding:12px 14px;border:0;border-bottom:1px solid #e2e8f0;border-radius:0;background:#f8fafc}
+  .account-summary>div:last-child{border-bottom:0}
+  .account-summary dt{font-size:10px;letter-spacing:.06em}
+  .account-summary dd{font-size:15px;text-align:left;line-height:1.5;margin:4px 0}
+  .account-summary small{font-size:12px;line-height:1.55}
+  .direct-payments .notice{padding:12px;font-size:13px!important;line-height:1.65;border-radius:10px}
+  .connection-form{padding:16px 12px;border-radius:12px}
+  .form-heading{align-items:flex-start;gap:10px;margin-bottom:16px}
+  .form-icon{width:34px;height:34px;border-radius:9px}.form-icon svg{width:19px;height:19px}
+  .form-heading p{font-size:13px;margin:5px 0 0}
+  .direct-payments form>label{margin-top:18px;font-size:14px;line-height:1.5}
+  .direct-payments input:not([type=checkbox]){width:100%;min-width:0;min-height:48px;margin-top:7px;padding:12px;font-size:16px}
+  .direct-payments .small{font-size:12px!important;line-height:1.6}
+  .key-permissions{margin:18px 0!important}
+  .direct-payments form>.check,.direct-payments .check{display:flex;align-items:flex-start;gap:10px;margin:14px 0;padding:6px 0;font-size:13px;line-height:1.65;font-weight:400}
+  .check input{width:22px;height:22px;flex:0 0 22px;margin-top:2px}
+  .check span{min-width:0;overflow-wrap:anywhere}
+  .direct-payments button{width:100%;min-height:48px;padding:12px;font-size:14px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+  .direct-payments .connect-button{gap:12px;margin-top:18px}
+  .direct-payments .submit-note{text-align:center;font-size:12px!important;line-height:1.6}
+  .pay-side{gap:12px}
+  .direct-payments .side-card{padding:16px 14px;border-radius:12px}
+  .side-card h3{font-size:15px!important;margin-bottom:12px!important}
+  .direct-payments .side-card p,.pay-side .setup-steps li{font-size:13px;line-height:1.65}
+  .pay-side .setup-steps{gap:16px}
+  .pay-side .setup-steps li{padding-left:34px;margin:0}
+  .pay-side .setup-steps strong{font-size:14px;line-height:1.5;margin-bottom:4px}
+  .direct-payments details.side-card{padding:0 14px}
+  .direct-payments details.side-card[open]{padding-bottom:14px}
+  .direct-payments summary{min-height:48px;padding:14px 0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+  .direct-payments details ul{padding-left:18px}
 }
 </style>
