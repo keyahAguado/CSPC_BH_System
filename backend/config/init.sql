@@ -190,7 +190,7 @@ CREATE TABLE `checklist_criteria` (
 
 LOCK TABLES `checklist_criteria` WRITE;
 /*!40000 ALTER TABLE `checklist_criteria` DISABLE KEYS */;
-INSERT INTO `checklist_criteria` VALUES (30,'Business Permit Application Form',1,'permit_business_form',NULL),(31,'Community Tax Certificate (Cedula)',1,'permit_cedula',NULL),(32,'DTI Registration Certificate',1,'permit_dti',NULL),(33,'Barangay Business Clearance',1,'permit_barangay',NULL),(34,'Certificate of Building Inspection',1,'permit_building',NULL),(35,'Zoning Certificate / Locational Clearance',1,'permit_zoning',NULL),(36,'Sanitary Permit / Health Clearance',1,'permit_sanitary',NULL),(37,'Valid Fire Safety Inspection Certificate',1,'permit_fire',NULL),(38,'Aff',0,NULL,25);
+INSERT INTO `checklist_criteria` VALUES (30,'Business Permit Application Form',1,'permit_business_form',NULL),(31,'Community Tax Certificate (Cedula)',1,'permit_cedula',NULL),(32,'DTI Registration Certificate',1,'permit_dti',NULL),(33,'Barangay Business Clearance',1,'permit_barangay',NULL),(34,'Certificate of Building Inspection',1,'permit_building',NULL),(35,'Zoning Certificate / Locational Clearance',1,'permit_zoning',NULL),(36,'Sanitary Permit / Health Clearance',1,'permit_sanitary',NULL),(37,'Valid Fire Safety Inspection Certificate',1,'permit_fire',NULL);
 /*!40000 ALTER TABLE `checklist_criteria` ENABLE KEYS */;
 UNLOCK TABLES;
 

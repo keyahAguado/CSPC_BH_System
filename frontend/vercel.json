@@ -1,16 +1,56 @@
 {
-    "rewrites": [
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
         {
-            "source": "/api/(.*)",
-            "destination": "https://cspc-bh-system.onrender.com/api/$1"
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://res.cloudinary.com https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com https://cdn-icons-png.flaticon.com https://placehold.co https://cspc-bh-system.onrender.com; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://psgc.gitlab.io https://res.cloudinary.com https://cspc-bh-system.onrender.com https://unpkg.com; frame-src 'self' blob: https://res.cloudinary.com https://*.google.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
         },
         {
-            "source": "/uploads/(.*)",
-            "destination": "https://cspc-bh-system.onrender.com/uploads/$1"
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
         },
         {
-            "source": "/(.*)",
-            "destination": "/index.html"
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), payment=(), usb=(), geolocation=(self)"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://cspc-bh-system.vercel.app"
         }
-    ]
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://cspc-bh-system.onrender.com/api/$1"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "https://cspc-bh-system.onrender.com/uploads/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }

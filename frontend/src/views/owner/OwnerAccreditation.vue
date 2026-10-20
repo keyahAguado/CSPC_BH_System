@@ -1,4 +1,5 @@
 <script setup>
+import { openFileInNewTab } from '../../utils/openFile.js';
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import DropdownSelect from '../../components/DropdownSelect.vue';
 import TablePager from '../../components/management/TablePager.vue';
@@ -1873,7 +1874,7 @@ const submitApplication = async () => {
                             <small>{{ formatFileSize(permitFiles[p.permit_key].reduce((t, f) => t + f.size, 0)) }}</small>
                           </span>
                           <span v-else-if="existingFiles[p.permit_key]" class="dt-file-text is-ok">
-                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener">View</a>
+                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener" @click.prevent="openFileInNewTab(getImageUrl(existingFiles[p.permit_key]))">View</a>
                           </span>
                           <span v-else-if="!permitFileErrors[p.permit_key]" class="dt-file-text">No file chosen</span>
                         </div>

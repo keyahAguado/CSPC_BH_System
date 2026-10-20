@@ -1,5 +1,8 @@
 <!-- Documents.vue (Updated Script Section) -->
 <script setup>
+import DocumentPdfPreview from '../../components/DocumentPdfPreview.vue';
+import { openFileInNewTab } from '../../utils/openFile.js';
+import DocumentZoomImage from '../../components/DocumentZoomImage.vue';
 import LoadError from '../../components/management/LoadError.vue';
 import TablePager from '../../components/management/TablePager.vue';
 
@@ -512,12 +515,12 @@ const docSections = computed(() => {
       <div class="owner-doc-toolbar">
         <h2>{{ previewTitle }}</h2>
         <span aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span>
-        <a :href="previewUrl" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+        <a :href="previewUrl" target="_blank" rel="noopener noreferrer" @click.prevent="openFileInNewTab(previewUrl)">Open in new tab</a>
         <button type="button" aria-label="Close document preview" @click="closeDocumentPreview">Close</button>
       </div>
-      <div class="owner-doc-stage">
-        <iframe v-if="previewIsPdf" :src="previewUrl" :title="previewTitle + ', file ' + (previewIndex + 1)"></iframe>
-        <img v-else-if="!previewFailed" :src="previewUrl" :alt="previewTitle + ', file ' + (previewIndex + 1)" @error="previewFailed = true" />
+      <div :class="['owner-doc-stage', { 'has-zoom': !previewIsPdf && !previewFailed }]">
+        <DocumentPdfPreview v-if="previewIsPdf" :src="previewUrl" :title="previewTitle + ', file ' + (previewIndex + 1)" />
+        <DocumentZoomImage v-else-if="!previewFailed" :src="previewUrl" :alt="previewTitle + ', file ' + (previewIndex + 1)" @error="previewFailed = true" @backdrop="closeDocumentPreview" />
         <p v-else>Preview unavailable. Use Open in new tab to view this file.</p>
       </div>
       <div v-if="previewFiles.length > 1" class="owner-doc-navigation">
@@ -667,7 +670,7 @@ const docSections = computed(() => {
 .dx-file-name.has-file { color: #047857; font-weight: 600; }
 /* Document viewer: a centred pop-up (modal) over a dimmed page, not full screen */
 .owner-doc-viewer { position: fixed; inset: 0; z-index: 250; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, .6); backdrop-filter: blur(3px); }
-.owner-doc-dialog { display: flex; flex-direction: column; width: min(760px, 100%); max-height: min(86vh, 900px); background: #fff; color: #0f172a; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 23, 42, .35); }
+.owner-doc-dialog { height: min(92vh, 1000px); display: flex; flex-direction: column; width: min(1100px, 100%); max-height: min(92vh, 1000px); background: #fff; color: #0f172a; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(15, 23, 42, .35); }
 .owner-doc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 16px; background: linear-gradient(120deg, #142b4a, #1e4a8d); color: #fff; }
 .owner-doc-toolbar h2 { flex: 1; min-width: 140px; margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .owner-doc-toolbar span { font-size: 12.5px; color: #dbeafe; }
@@ -676,7 +679,8 @@ const docSections = computed(() => {
 .owner-doc-viewer :is(a, button):focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
 .owner-doc-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px; background: #f1f5f9; }
 .owner-doc-stage img { max-width: 100%; max-height: calc(min(86vh, 900px) - 140px); object-fit: contain; border-radius: 8px; box-shadow: 0 4px 14px rgba(15, 23, 42, .15); }
-.owner-doc-stage iframe { width: 100%; height: calc(min(86vh, 900px) - 140px); border: 0; border-radius: 8px; background: #fff; }
+.owner-doc-stage.has-zoom { height: calc(min(92vh, 1000px) - 110px); padding: 0; background: #1e293b; }
+.owner-doc-stage iframe { width: 100%; height: calc(min(92vh, 1000px) - 140px); border: 0; border-radius: 8px; background: #fff; }
 .owner-doc-stage p { color: #475569; font-size: 14px; }
 .owner-doc-navigation { display: flex; justify-content: center; gap: 10px; padding: 10px; border-top: 1px solid #e2e8f0; background: #fff; }
 .owner-doc-navigation button { min-height: 36px !important; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; color: #1e4a8d; font-size: 13px; font-weight: 600; cursor: pointer; }

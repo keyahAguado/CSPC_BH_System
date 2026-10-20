@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { confirmTone } from '../../utils/confirmTone.js';
 import { simulatedBookingTime } from '../../utils/bookingClock.js';
 import { useRouter, useRoute } from 'vue-router';
-import axios from 'axios';
+import { useUnreadNotifications } from '../../utils/useUnreadNotifications.js';
 import FlashAlert from './FlashAlert.vue';
 import ManagementNavigation from '../management/ManagementNavigation.vue';
 import { vManagementDialog } from '../management/dialogAccessibility.js';
@@ -12,27 +12,15 @@ import { vManagementDialog } from '../management/dialogAccessibility.js';
 const showTestClock = computed(() => ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname) && !!simulatedBookingTime.value);
 const router = useRouter();
 const route = useRoute();
-const unreadNotifCount = ref(0);
+const unreadNotifCount = useUnreadNotifications();
 const alertRef = ref(null);
 const showConfirmModal = ref(false); // Controls the minimalist logout overlay modal
-const token = sessionStorage.getItem('cspc_token');
+
 
 // Mobile sidebar state
 const sidebarOpen = ref(false);
 
-const fetchUnreadCount = async () => {
-  if (!token) return;
-  try {
-    const response = await axios.get('/api/notifications/unread-count', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (response.data.success) {
-      unreadNotifCount.value = response.data.count || 0;
-    }
-  } catch (error) {
-    console.warn('Notifications unread count failed to load.');
-  }
-};
+
 
 const handleLogout = () => {
   sessionStorage.removeItem('cspc_token');
@@ -59,13 +47,6 @@ const navigateTo = (path) => {
   sidebarOpen.value = false;
 };
 
-// Real-time notification updates
-let pollInterval = null;
-
-const handleNotificationEvent = () => {
-  fetchUnreadCount();
-};
-
 // Close sidebar on outside click
 const handleOutsideClick = (e) => {
   if (sidebarOpen.value && !e.target.closest('.mobile-sidebar') && !e.target.closest('.hamburger-btn')) {
@@ -74,15 +55,10 @@ const handleOutsideClick = (e) => {
 };
 
 onMounted(() => {
-  fetchUnreadCount();
-  pollInterval = setInterval(fetchUnreadCount, 2000);
-  window.addEventListener('notification-updated', handleNotificationEvent);
   document.addEventListener('click', handleOutsideClick);
 });
 
 onUnmounted(() => {
-  if (pollInterval) clearInterval(pollInterval);
-  window.removeEventListener('notification-updated', handleNotificationEvent);
   document.removeEventListener('click', handleOutsideClick);
 });
 </script>

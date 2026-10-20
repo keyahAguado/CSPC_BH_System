@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { confirmTone } from '../../utils/confirmTone.js';
 import { useRouter, useRoute } from 'vue-router';
-import axios from 'axios';
+import { useUnreadNotifications } from '../../utils/useUnreadNotifications.js';
 import FlashAlert from './FlashAlert.vue';
 import Header from './Header.vue';
 
@@ -15,25 +15,10 @@ const tabs = [
   { label: 'My Bookings', to: '/student/bookings', icon: 'fa-calendar-check', iconStyle: 'fa-regular', active: () => route.path.startsWith('/student/bookings') },
   { label: 'Profile', to: '/student/profile', icon: 'fa-user', iconStyle: 'fa-regular', active: () => route.path === '/student/profile' }
 ];
-const unreadNotifCount = ref(0);
+const token = sessionStorage.getItem('cspc_token');
+const unreadNotifCount = useUnreadNotifications();
 const alertRef = ref(null);
 const showConfirmModal = ref(false); // Controls the minimalist logout overlay modal
-const token = sessionStorage.getItem('cspc_token');
-
-
-const fetchUnreadCount = async () => {
-  if (!token) return;
-  try {
-    const response = await axios.get('/api/notifications/unread-count', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (response.data.success) {
-      unreadNotifCount.value = response.data.count || 0;
-    }
-  } catch (error) {
-    console.warn('Notifications unread count failed to load.');
-  }
-};
 
 const handleLogout = () => {
   sessionStorage.removeItem('cspc_token');
@@ -49,25 +34,13 @@ const triggerLogoutConfirm = () => {
   showConfirmModal.value = true;
 };
 
-// Real-time notification updates
-let pollInterval = null;
-
-const handleNotificationEvent = () => {
-  fetchUnreadCount();
-};
-
 onMounted(() => {
-  // Leaves room at the bottom of the page for the mobile tab bar
+  // Leaves room at the bottom of the page for the mobile tab bar.
   if (token) document.body.classList.add('has-student-tabbar');
-  fetchUnreadCount();
-  pollInterval = setInterval(fetchUnreadCount, 2000);
-  window.addEventListener('notification-updated', handleNotificationEvent);
 });
 
 onUnmounted(() => {
   document.body.classList.remove('has-student-tabbar');
-  if (pollInterval) clearInterval(pollInterval);
-  window.removeEventListener('notification-updated', handleNotificationEvent);
 });
 </script>
 

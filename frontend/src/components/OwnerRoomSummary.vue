@@ -1,4 +1,5 @@
 <script setup>
+import { openFileInNewTab } from '../utils/openFile.js';
 import { computed, ref } from 'vue';
 import { roomList } from '../utils/roomDetails.js';
 import { getImageUrl } from '../config/api.js';
@@ -27,7 +28,7 @@ const stepPhoto = (direction) => { photoIndex.value=(photoIndex.value+direction+
     <p v-else class="room-future-explanation">Beds assigned include started stays awaiting arrival confirmation. Always check the requested dates before accepting another booking.</p>
   </aside></section>
   <Teleport to="body"><dialog ref="viewer" class="owner-room-photo-viewer" aria-label="Room photos" @keydown.left.prevent="stepPhoto(-1)" @keydown.right.prevent="stepPhoto(1)">
-    <header><span>Room {{ room.room_number }} / Photo {{ photoIndex+1 }} of {{ photos.length }}</span><div><button type="button" @click="zoomed = !zoomed">{{ zoomed ? 'Fit to screen' : 'Zoom in' }}</button><a v-if="photos.length" :href="getImageUrl(photos[photoIndex])" target="_blank" rel="noopener noreferrer">Open in new tab</a><button type="button" autofocus @click="viewer.close()">Close</button></div></header>
+    <header><span>Room {{ room.room_number }} / Photo {{ photoIndex+1 }} of {{ photos.length }}</span><div><button type="button" @click="zoomed = !zoomed">{{ zoomed ? 'Fit to screen' : 'Zoom in' }}</button><a v-if="photos.length" :href="getImageUrl(photos[photoIndex])" target="_blank" rel="noopener noreferrer" @click.prevent="openFileInNewTab(getImageUrl(photos[photoIndex]))">Open in new tab</a><button type="button" autofocus @click="viewer.close()">Close</button></div></header>
     <div :class="['owner-room-photo-stage',{zoomed}]"><img v-if="photos.length" :src="getImageUrl(photos[photoIndex])" :alt="'Room ' + room.room_number + ', photo ' + (photoIndex+1)" /></div><footer v-if="photos.length > 1"><button type="button" @click="stepPhoto(-1)">Previous photo</button><button type="button" @click="stepPhoto(1)">Next photo</button></footer>
   </dialog></Teleport>
 </template>
