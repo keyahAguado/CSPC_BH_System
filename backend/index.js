@@ -50,8 +50,9 @@ const PORT = process.env.PORT || 3000;
 // =========================================================================
 // Trust the platform's reverse proxy (Render) so req.secure and
 // x-forwarded-proto reflect the client's actual connection, not the
-// internal HTTP hop between the proxy and this process.
-app.set('trust proxy', 1);
+// internal HTTP hop between the proxy and this process. Docker adds its own nginx; set TRUST_PROXY_HOPS=2
+// when another proxy (e.g. the host's HTTPS proxy) sits in front, so rate limits see each visitor's real IP.
+app.set('trust proxy', Math.min(Math.max(Number.parseInt(process.env.TRUST_PROXY_HOPS, 10) || 1, 1), 5));
 
 // HTTPS enforcement: redirect any plain-HTTP request to HTTPS and tell
 // browsers to remember that via HSTS. Self-detecting rather than relying

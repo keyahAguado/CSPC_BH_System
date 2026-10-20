@@ -29,10 +29,11 @@ export const getApiBaseUrl = () => {
       return window.location.origin;
     }
 
-    // Served on the standard web port (80/443) means the Docker/nginx setup: stay same-origin so /api and
-    // /uploads go through nginx (also required by the Content Security Policy). Vite dev (:5173) is unaffected.
-    const onStandardPort = !window.location.port || window.location.port === '80' || window.location.port === '443';
-    if (onStandardPort && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+    // Anything other than the Vite dev/preview server is the Docker/nginx setup (port 80, 443 or a custom
+    // port such as 8081): stay same-origin so /api and /uploads go through nginx (also required by the
+    // Content Security Policy). Only Vite dev (:5173/:5174, preview :4173) talks to the backend on :3000.
+    const isViteServer = ['5173', '5174', '4173'].includes(window.location.port);
+    if (!isViteServer && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
       return '';
     }
 
