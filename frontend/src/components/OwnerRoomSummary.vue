@@ -82,3 +82,35 @@ const stepPhoto = (direction) => { photoIndex.value=(photoIndex.value+direction+
 @media(max-width:1050px){.room-summary{grid-template-columns:190px minmax(0,1fr)}.room-summary-facts{grid-row:auto;grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));border:0;border-top:1px solid #edf2f8;padding:20px 24px}.room-summary-rent{grid-column:1/-1}.room-summary-gallery{grid-row:1}.room-summary-description{grid-column:2;grid-row:1}.room-today-summary{grid-template-columns:1fr}.room-today-counts{justify-content:space-between}}
 @media(max-width:639px){.room-summary{grid-template-columns:1fr;border-radius:18px}.room-summary-gallery{grid-column:1;grid-row:auto;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px}.room-summary-cover img{height:135px}.room-summary-thumbnails{margin:0;flex-direction:column}.room-summary-thumbnails img{height:135px}.room-summary-thumbnails:has(button:nth-child(2)) img{height:63px}.room-summary-description{grid-column:1;grid-row:auto;padding:20px}.room-summary-description h2{font-size:17px}.room-summary-amenities{grid-template-columns:110px minmax(0,1fr);gap:10px}.room-summary-facts{grid-template-columns:1fr 1fr;padding:20px;gap:20px}.room-summary-rent{margin:0 18px 18px;gap:10px 18px}.room-summary-rent>strong{font-size:26px}.room-summary-rent>span{flex-basis:auto}.room-summary-no-photo{margin:18px;min-height:150px}.room-today-summary{padding:18px}.room-today-counts{grid-template-columns:1fr 1fr}.room-future-explanation{font-size:11.5px}}
 </style>
+
+<style scoped>
+/* Phone / PWA only (desktop unchanged): big cover photo with a thumbnail strip, compact facts and rent */
+@media(max-width:639px){
+.room-summary{margin-bottom:16px;border-radius:16px}
+.room-summary-gallery{display:block;padding:12px 12px 0;background:#fff}
+.room-summary-cover{border-radius:12px}
+.room-summary-cover img{height:180px}
+.room-summary-thumbnails{flex-direction:row;margin-top:6px;gap:6px}
+.room-summary-thumbnails img,.room-summary-thumbnails:has(button:nth-child(2)) img{height:56px}
+.room-summary-more{min-height:56px}
+.room-summary-no-photo{margin:12px 12px 0;min-height:110px}
+.room-summary-description{padding:14px 14px 4px}
+.room-summary-description>.room-summary-kicker{margin-bottom:4px}
+.room-summary-description h2{font-size:16px}
+.room-summary-description>p:not(.room-summary-kicker){margin:4px 0 8px}
+.room-summary-amenities{grid-template-columns:1fr;gap:6px;margin-top:10px}
+.room-summary-facts{margin:10px 14px 0;padding:0;gap:0;border:1px solid #e3ebf6;border-radius:12px;overflow:hidden}
+.room-summary-facts>div{padding:10px 10px 10px 36px!important;border-top:1px solid #edf2f8!important}
+.room-summary-facts>div:nth-child(-n+2){border-top:0!important}
+.room-summary-facts>div:nth-child(even){border-left:1px solid #edf2f8!important}
+.room-summary-facts>div>i,.room-summary-facts>div:nth-child(even)>i{left:11px;top:14px;font-size:15px}
+.room-summary-facts dt{margin-bottom:1px}
+.room-summary-rent{margin:10px 14px 14px;padding:10px 12px;flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 12px;border-radius:12px}
+.room-summary-rent>strong{font-size:19px;letter-spacing:-.01em}
+.room-summary-rent>span{flex-basis:100%;max-width:none;justify-content:flex-start}
+.room-today-summary{padding:14px}
+.room-today-counts{gap:8px}
+.room-today-counts>div{padding:6px 10px}
+.room-today-counts dd{font-size:17px}
+}
+</style>

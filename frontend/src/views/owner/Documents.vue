@@ -697,4 +697,31 @@ const docSections = computed(() => {
   .dx-panel { padding: 12px; }
   .dx-head-chips { margin-left: 0; }
 }
+
+/* Phone / PWA only (desktop unchanged): each document as a card - name and status on top, file and expiry below */
+@media (max-width: 640px) {
+  .docs-main { padding-top: 12px !important; }
+  .dx-panel { padding: 10px; }
+  .dx-head { gap: 8px 10px; padding-bottom: 10px; }
+  .dx-head-badge { width: 34px; height: 34px; font-size: 14px; border-radius: 10px; }
+  .dx-head-chips { width: 100%; }
+  .dx-chip-select { flex: 1; min-width: 0; }
+  .dt-card { border: 0; border-radius: 0; background: transparent; }
+  .dt-group + .dt-group { border-top: 0; margin-top: 8px; }
+  .dt-group-title { border-radius: 10px; border: 1px solid #e2e8f0; padding: 10px 12px; flex-wrap: wrap; }
+  .dt-group-title span { flex-basis: calc(100% - 30px); order: 3; margin-left: 20px; font-size: 11.5px; }
+  .dt-table tbody { display: grid !important; gap: 8px; padding-top: 8px; }
+  .dt-table .dt-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+  .dt-row.is-expired, .dt-row.is-missing { border-color: #f6caca; }
+  .dt-table .dt-row td { width: auto; padding: 0; }
+  .dt-table .dt-row td:nth-child(2) { grid-column: 1; grid-row: 1; align-self: center; }
+  .dt-table .dt-row td:nth-child(5) { grid-column: 2; grid-row: 1; align-self: start; }
+  .dt-table .dt-row td:nth-child(3), .dt-table .dt-row td:nth-child(4) { grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eef2f7; }
+  .dt-table .dt-row td:nth-child(3)::before { content: 'File'; }
+  .dt-table .dt-row td:nth-child(4)::before { content: 'Expiration date'; }
+  .dt-table .dt-row td:is(:nth-child(3), :nth-child(4))::before { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #64748b; }
+  .dt-file > .dt-view, .dt-file > .dt-upload { flex: 1 1 0; justify-content: center; height: 36px; }
+  .dt-date, .dt-save { height: 38px; }
+  .dt-status { width: auto; }
+}
 </style>

@@ -112,4 +112,10 @@ const selectPhotos = (event) => {
 .room-information-fields button,.room-photo-upload input[type=file]::file-selector-button{transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease,box-shadow 160ms ease;}
 @media(pointer:coarse){.room-information-fields .room-photo-remove,.room-amenity-group button,.room-photo-upload input[type=file]{min-height:44px;}}
 @media(prefers-reduced-motion:reduce){.room-information-fields button,.room-photo-upload input[type=file]::file-selector-button{transition:none;}}
+/* Phone / PWA only: amenity checkboxes in two columns */
+@media(max-width:639px){
+.room-amenity-group{padding:12px}
+.room-amenity-group>.space-y-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 10px}
+.room-amenity-group>.space-y-2>label{margin:0!important;min-height:34px;font-size:13px;overflow-wrap:anywhere}
+}
 </style>

@@ -171,4 +171,35 @@ const ACTORS={'Booking requested':'Student','Occupant record added':'Owner','Boo
 button:focus-visible,a:focus-visible{outline:3px solid #93c5fd;outline-offset:2px;}
 @media(max-width:480px){.ob-detail-header,.ob-person{padding-left:16px;padding-right:16px;}.ob-detail-tabs{margin:0 16px;}.ob-detail-body{padding:14px 16px 24px;}.ob-facts>div,.ob-facts.compact>div{grid-template-columns:104px minmax(0,1fr);}}
 @media(pointer:coarse){.ob-btn,.ob-close,.ob-detail-tabs button{min-height:44px;}.ob-close{width:44px;}}
+/* Phone / PWA only (desktop unchanged): tighter header, each section in its own card, short facts in two columns */
+@media(max-width:640px){
+.ob-detail{background:#f6f8fb;}
+.ob-detail-header{padding:12px 16px 6px;background:#fff;}
+.ob-detail-header h2{font-size:18px;}
+.ob-detail-header p{margin-top:2px;font-size:11.5px;}
+.ob-detail-tabs{margin:0;padding:0 16px;gap:24px;background:#fff;}
+.ob-detail-tabs button{padding:8px 4px;}
+.ob-person{gap:10px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--line);}
+.ob-avatar{width:38px;height:38px;}
+.ob-detail-body{padding:10px 12px 20px;}
+.ob-badges{margin:0 0 2px;}
+.ob-section,.ob-section.first{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+.ob-section h4{margin-bottom:8px;font-size:10.5px;}
+.ob-facts,.ob-facts.compact{grid-template-columns:repeat(2,minmax(0,1fr));gap:0;}
+.ob-facts>div,.ob-facts.compact>div{display:block;padding:8px 0;border-top:1px solid #edf1f6;}
+/* Stay record: Property full width, then Room | Check-in, Check-out | Duration */
+.ob-facts:not(.compact)>div:first-child{grid-column:1/-1;border-top:0;padding-top:0;}
+.ob-facts:not(.compact)>div:nth-child(odd):not(:first-child){padding-left:12px;border-left:1px solid #edf1f6;}
+/* Contact record: Student contact | Guardian, Emergency | Address */
+.ob-facts.compact>div:nth-child(-n+2){border-top:0;padding-top:0;}
+.ob-facts.compact>div:nth-child(even){padding-left:12px;border-left:1px solid #edf1f6;}
+.ob-facts dt,.ob-facts.compact dt{font-size:11px;font-weight:500;}
+.ob-facts dd,.ob-facts.compact dd{margin-top:1px;font-size:13px;}
+.ob-ledger>div{padding:8px 10px;}
+.ob-ledger dt,.ob-ledger dd.money{font-size:12.5px;}
+.ob-note{margin-top:10px;padding:8px 10px;font-size:12px;line-height:1.5;}
+.ob-next-step{gap:8px;justify-items:stretch;}
+.ob-action-pair>.ob-btn{flex:1 1 0;}
+.ob-timeline li{padding-bottom:14px;}
+}
 </style>

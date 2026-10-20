@@ -15,4 +15,5 @@ const emit = defineEmits(['edit','archive','restore']);
 .owner-room-pending {position:absolute;top:-8px;right:-7px;min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;border-radius:50%;border:2px solid white;background:#ef4444;color:white;font-size:10px;}
 @media(max-width:1023px){.owner-room-actions {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}.owner-room-actions .management-button{min-height:44px;padding:10px 6px;font-size:12px;}.owner-room-actions>button:only-child{grid-column:1/-1;}}
 @media(prefers-reduced-motion:reduce){.owner-room-actions .management-button{transition:none;}}
+@media(max-width:639px){.owner-room-actions{gap:6px}.owner-room-actions .management-button{min-height:36px;padding:7px 6px;font-size:12px}}
 </style>

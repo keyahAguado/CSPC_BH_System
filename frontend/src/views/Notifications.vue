@@ -533,4 +533,26 @@ onMounted(() => {
 @media(max-width:560px){.ni-summary{grid-template-columns:1fr}.ni-date>div{width:min(260px,calc(100vw - 48px))}}
 @media(pointer:coarse){.ni-select-field,.ni-date>summary,.ni-reset,.ni-stat{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.ni-stat{transition:none}}
+/* Phone / PWA only (desktop unchanged): three summary tiles in one row, scrollable category tabs, tighter list */
+@media(max-width:560px){
+.nf-main{padding-top:14px!important}
+.ni-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.ni-stat{flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 6px;text-align:center}
+.ni-stat-icon{width:30px;height:30px;font-size:13px;border-radius:9px}
+.ni-stat strong{font-size:18px}
+.ni-stat small{font-size:10.5px;line-height:1.3}
+.ni-toolbar{gap:8px;margin-bottom:12px}
+.ni-tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;width:100%}
+.ni-tabs button{grid-column:span 2;min-width:0;padding:7px 6px;gap:6px;font-size:11.5px}
+.ni-tabs button:nth-child(n+4){grid-column:span 3}
+.ni-tabs button:nth-child(n+4):last-child:nth-child(4){grid-column:span 6}
+.ni-mark-all{width:100%;justify-content:center}
+.ni-controls{padding:10px;gap:8px!important;margin-bottom:12px}
+.ni-search{flex-basis:100%;max-width:none;min-width:0}
+.ni-toggle{flex:1 1 40%;font-size:12px}
+.ni-row{padding:12px;gap:8px}
+.ni-icon{width:32px;height:32px;font-size:13px}
+.ni-property,.ni-time,.ni-actions{margin-left:0!important}
+.ni-day{padding:8px 12px}
+}
 </style>

@@ -901,4 +901,26 @@ const loadError = ref('');
 .od-btn-glass:hover { background: rgba(255, 255, 255, .2); }
 @media (max-width: 640px) { .od-welcome { padding: 20px; } .od-welcome-actions { width: 100%; } .od-btn-gold, .od-btn-glass { flex: 1; justify-content: center; } }
 @media (max-width: 400px) { .od-stats { grid-template-columns: minmax(0, 1fr); } }
+/* Phone / PWA: compact property card so it fits with less scrolling (desktop unchanged) */
+@media (max-width: 560px) {
+  .od-media { aspect-ratio: 16 / 8; }
+  .od-status-overlay { top: 10px; left: 10px; }
+  .od-media-pending { right: 10px; bottom: 10px; }
+  .od-body { padding: 14px 14px 12px; }
+  .od-name { font-size: 19px !important; }
+  .od-ref { font-size: 10.5px; padding: 1px 7px; }
+  .od-address { margin-top: 4px; padding-bottom: 10px; font-size: 12.5px; }
+  .od-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+  .od-stats > .is-permit { grid-column: auto; }
+  .od-stats > div, .od-stats > div + div { padding: 8px; gap: 0; border-radius: 10px; }
+  .od-stat-icon { display: none; }
+  .od-stats dt { font-size: 10.5px; line-height: 1.3; }
+  .od-stats dd { font-size: 13.5px; white-space: normal; }
+  .od-stats dd small { display: block; font-size: 10.5px; }
+  .od-stat-sub { font-size: 10.5px; }
+  .od-note { margin-top: 10px; padding: 8px 10px; }
+  .od-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; margin-top: 12px; padding-top: 12px; }
+  .od-act { min-height: 38px; padding: 0 6px; gap: 5px; font-size: 12px; }
+  .od-foot { padding-top: 8px; }
+}
 </style>

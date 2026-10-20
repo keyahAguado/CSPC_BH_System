@@ -63,4 +63,19 @@ const status = (room) => vacant(room) === 0 ? (Number(room.occupant_count || 0) 
   .owner-room-status {padding:5px 9px;}
 }
 @media(max-width:639px){.owner-room-mobile-list {grid-template-columns:minmax(0,1fr);}.room-group-heading {align-items:flex-start;flex-wrap:wrap;gap:8px;}.owner-room-mobile-card {padding:18px;}}
+/* Phone / PWA only: compact room cards with a single divided fact row */
+@media(max-width:639px){
+.owner-room-mobile-list{gap:10px;padding:0 12px 14px}
+.owner-room-mobile-card{padding:12px;background:#fff;border:1px solid #e3ebf6}
+.owner-room-identity{gap:12px}
+.owner-room-thumb,.owner-room-placeholder{width:48px;height:48px;font-size:19px}
+.owner-room-identity h3{font-size:14.5px}
+.owner-room-identity p{margin-top:2px}
+.owner-room-mobile-facts{grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:12px 0;border-top:1px solid #edf2f8;border-bottom:1px solid #edf2f8}
+.owner-room-mobile-facts>div{padding:8px 8px 8px 0}
+.owner-room-mobile-facts>div+div{padding-left:10px;border-left:1px solid #edf2f8}
+.owner-room-mobile-facts dt{font-size:10.5px;margin-bottom:3px}
+.owner-room-mobile-facts .owner-room-occupancy{font-size:12px}
+.owner-room-status{font-size:11px;padding:4px 8px}
+}
 </style>
