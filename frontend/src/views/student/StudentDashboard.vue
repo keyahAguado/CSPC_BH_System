@@ -1,12 +1,14 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import StudentPager from '../../components/partials/StudentPager.vue';
 
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 import { formatAddress } from '../../utils/formatAddress.js';
 import { formatPriceRange } from '../../utils/formatPrice.js';
+import { getRecentlyViewed } from '../../utils/recentlyViewed.js';
 import { getImageUrl } from '../../config/api';
 
 const router = useRouter();
@@ -21,10 +23,10 @@ const initialCachedHouses = (() => {
   }
 })();
 
-const PAGE_SIZE = 6;
+const PAGE_SIZES = [6, 12, 24, 48];
 const VISIBLE_AMENITY_OPTIONS = 4;
 const SORT_VALUES = ['default', 'price_asc', 'price_desc', 'rating'];
-const DIRECTORY_QUERY_KEYS = ['q', 'min', 'max', 'rating', 'amenity', 'loc', 'sort', 'page'];
+const DIRECTORY_QUERY_KEYS = ['q', 'min', 'max', 'rating', 'amenity', 'loc', 'sort', 'page', 'per'];
 const DIRECTORY_STATE_KEY = 'cspc_student_directory_state';
 
 // Search, filters, sort and page live in the URL (and this tab's session) so returning
@@ -51,6 +53,7 @@ const selectedAmenities = ref(queryList(initialQuery.amenity).filter(k => /^(fre
 const selectedLocation = ref(String(queryText(initialQuery.loc)).toLowerCase());
 const sortBy = ref(SORT_VALUES.includes(queryText(initialQuery.sort)) ? queryText(initialQuery.sort) : 'default');
 const currentPage = ref(Math.max(1, parseInt(queryText(initialQuery.page), 10) || 1));
+const perPage = ref(PAGE_SIZES.includes(parseInt(queryText(initialQuery.per), 10)) ? parseInt(queryText(initialQuery.per), 10) : PAGE_SIZES[0]);
 const showAllAmenities = ref(false);
 const showMobileFilters = ref(false);
 const resultsTop = ref(null);
@@ -302,27 +305,12 @@ const sortedHouses = computed(() => {
   return list.map(item => item.house);
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(sortedHouses.value.length / PAGE_SIZE)));
-const pageStart = computed(() => sortedHouses.value.length === 0 ? 0 : (currentPage.value - 1) * PAGE_SIZE + 1);
-const pageEnd = computed(() => Math.min(currentPage.value * PAGE_SIZE, sortedHouses.value.length));
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedHouses.value.length / perPage.value)));
+const pageStart = computed(() => sortedHouses.value.length === 0 ? 0 : (currentPage.value - 1) * perPage.value + 1);
+const pageEnd = computed(() => Math.min(currentPage.value * perPage.value, sortedHouses.value.length));
 const paginatedHouses = computed(() =>
-  sortedHouses.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE)
+  sortedHouses.value.slice((currentPage.value - 1) * perPage.value, currentPage.value * perPage.value)
 );
-
-// Page buttons: first, last, and one either side of the current page, with gaps as "…"
-const pageButtons = computed(() => {
-  const total = totalPages.value;
-  const keep = new Set([1, total, currentPage.value - 1, currentPage.value, currentPage.value + 1]
-    .filter(n => n >= 1 && n <= total));
-  const list = [];
-  let prev = 0;
-  [...keep].sort((a, b) => a - b).forEach(n => {
-    if (n - prev > 1) list.push('gap-' + n);
-    list.push(n);
-    prev = n;
-  });
-  return list;
-});
 
 const goToPage = (n) => {
   if (n < 1 || n > totalPages.value || n === currentPage.value) return;
@@ -331,7 +319,7 @@ const goToPage = (n) => {
 };
 
 // Any change to search, filters, or sort starts again from the first page
-watch([searchInput, minPrice, maxPrice, selectedRatings, selectedAmenities, selectedLocation, sortBy], () => {
+watch([searchInput, minPrice, maxPrice, selectedRatings, selectedAmenities, selectedLocation, sortBy, perPage], () => {
   currentPage.value = 1;
 }, { deep: true });
 
@@ -353,6 +341,7 @@ const directoryQuery = computed(() => {
   if (selectedLocation.value) query.loc = selectedLocation.value;
   if (sortBy.value !== 'default') query.sort = sortBy.value;
   if (currentPage.value > 1) query.page = String(currentPage.value);
+  if (perPage.value !== PAGE_SIZES[0]) query.per = String(perPage.value);
   return query;
 });
 
@@ -457,35 +446,191 @@ const handleDetails = (houseId) => {
   router.push(`/student/house/${houseId}`);
 };
 
+// ---------- Mobile layout helpers ----------
+const mobileSearchInput = ref(null);
+
+// Same coordinate rules as the House Details map
+const hasMapPin = (house) => {
+  const lat = Number(house.latitude);
+  const lng = Number(house.longitude);
+  return String(house.latitude ?? '').trim() !== '' && String(house.longitude ?? '').trim() !== '' &&
+    Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0 && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+};
+const viewOnMap = (houseId) => router.push({ path: '/student/map', query: { house: String(houseId) } });
+
+// Cover photo plus gallery photos, counted the same way as the House Details carousel
+const photoCount = (house) => {
+  const gallery = Number(house.photo_count) > 0
+    ? Number(house.photo_count)
+    : [house.img_1, house.img_2, house.img_3].filter(Boolean).length;
+  return (house.img ? 1 : 0) + gallery;
+};
+
+// Rating pill on the card photo, e.g. "5.0 (1)"; houses without reviews show "0"
+const ratingText = (house) => Number(house.review_count) > 0
+  ? `${ratingValue(house).toFixed(1)} (${house.review_count})`
+  : '0';
+const ratingLabel = (house) => Number(house.review_count) > 0
+  ? `Rated ${ratingValue(house).toFixed(1)} out of 5 from ${house.review_count} ${Number(house.review_count) === 1 ? 'review' : 'reviews'}`
+  : 'No reviews yet';
+
+// Mobile filter sheet. "Price Range" / "Rating" show only that section;
+// "More Filters" (sheetSection = null) shows sort and every filter.
+const isMobile = () => window.matchMedia('(max-width: 767px)').matches;
+const sheetSection = ref(null);
+const SHEET_TITLES = { price: 'Price Range', ratings: 'Rating' };
+const sheetTitle = computed(() => SHEET_TITLES[sheetSection.value] || 'Filters');
+// On phones, hides the sections that don't belong to the sheet that was opened
+const sectionHidden = (key) => !!sheetSection.value && sheetSection.value !== key;
+const openFilterSheet = (section = null) => {
+  sheetSection.value = section;
+  showMobileFilters.value = true;
+  if (section) openSections.value[section] = true;
+};
+const closeFilterSheet = () => {
+  if (isMobile()) showMobileFilters.value = false;
+};
+watch(showMobileFilters, (open) => {
+  document.body.style.overflow = open && isMobile() ? 'hidden' : '';
+  if (!open) sheetSection.value = null;
+});
+const moreFilterCount = computed(() => selectedAmenities.value.length + (selectedLocation.value ? 1 : 0));
+const hasPriceFilter = computed(() => hasValue(minPrice.value) || hasValue(maxPrice.value));
+
+// The Search page (same directory, shown with its filters on phones) opens with the box focused
+const isSearchPage = computed(() => route.name === 'StudentSearch');
+// The Search page lists houses only once the student has typed something or picked a filter
+const hasSearchCriteria = computed(() => searchInput.value.trim() !== '' || activeFilterCount.value > 0);
+const awaitingSearch = computed(() => isSearchPage.value && !hasSearchCriteria.value);
+// Houses this student opened recently (this device), shown on the Search page before searching
+const recentlyViewed = ref(getRecentlyViewed());
+const recentAddress = (house) => (house.barangay ? `Brgy. ${house.barangay}, Nabua` : formatAddress(house));
+watch(isSearchPage, (onSearch) => {
+  if (!onSearch) return;
+  nextTick(() => {
+    const input = mobileSearchInput.value;
+    if (!input) return;
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    input.focus({ preventScroll: true });
+  });
+}, { immediate: true });
+
 const preventBackNavigation = () => {
   window.history.pushState(null, null, window.location.href);
 };
 
 onMounted(() => {
-  window.history.pushState(null, null, window.location.href);
-  window.addEventListener('popstate', preventBackNavigation);
+  // Home is the student's landing page; the Search page keeps normal Back behaviour
+  if (!isSearchPage.value) {
+    window.history.pushState(null, null, window.location.href);
+    window.addEventListener('popstate', preventBackNavigation);
+  }
   fetchHouses();
 });
 
 onUnmounted(() => {
+  document.body.style.overflow = '';
   window.removeEventListener('popstate', preventBackNavigation);
 });
 </script>
 
 <template>
-  <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
+  <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-2 md:pb-6">
     <StudentNav />
 
     <!-- MAIN BODY CONTAINER -->
-    <main class="max-w-[1440px] mx-auto py-8 lg:py-10 px-4 sm:px-6">
+    <main class="max-w-[1440px] mx-auto pt-5 pb-2 md:py-8 lg:py-10 px-4 sm:px-6">
       <!-- Grid places the header, filter panel, and results; on small screens they stack in that order -->
       <div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] lg:grid-rows-[auto_1fr] gap-x-8 gap-y-5 text-left">
 
+        <!-- MOBILE HEADER. Home: greeting + search bar that opens the Search page.
+             Search page: search box, sort/filter pills. Both: result count. -->
+        <header class="md:hidden min-w-0">
+          <div v-if="!isSearchPage" class="welcome-card relative overflow-hidden rounded-2xl px-6 py-7 mb-5 text-[#0f1f45]">
+            <div class="relative">
+              <h1 class="text-[30px] font-black leading-[1.2] tracking-tight break-words">
+                Welcome,<br><span class="uppercase">{{ displayName }}!</span>
+              </h1>
+              <p class="text-[15px] text-slate-600 leading-relaxed mt-3 max-w-[16rem]">Find a safe and comfortable boarding house near CSPC.</p>
+            </div>
+          </div>
+
+          <router-link
+            v-if="!isSearchPage"
+            to="/student/search"
+            class="flex items-center gap-3 bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_18px_rgb(15_47_102/.07)] px-4 py-4"
+            aria-label="Search boarding house"
+          >
+            <i class="fa-solid fa-magnifying-glass text-slate-700 text-[17px]" aria-hidden="true"></i>
+            <span class="flex-1 min-w-0 truncate text-[15px]" :class="searchInput ? 'text-slate-800' : 'text-slate-400'">{{ searchInput || 'Search boarding house...' }}</span>
+          </router-link>
+
+          <div v-if="isSearchPage" class="flex items-center gap-2 bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_18px_rgb(15_47_102/.07)] px-4 py-1.5">
+            <i class="fa-solid fa-magnifying-glass text-slate-700 text-[17px]" aria-hidden="true"></i>
+            <input
+              ref="mobileSearchInput"
+              type="search"
+              v-model="searchInput"
+              aria-label="Search boarding house"
+              placeholder="Search boarding house..."
+              class="flex-1 min-w-0 bg-transparent border-0 outline-none text-[15px] text-slate-800 placeholder:text-slate-400 py-2.5"
+            >
+          </div>
+
+          <div v-if="isSearchPage" class="mobile-pills flex gap-2 overflow-x-auto -mx-4 px-4 pt-4 pb-1" aria-label="Sort and filter">
+            <button type="button" class="pill" :class="{ 'is-on': hasPriceFilter }" @click="openFilterSheet('price')">
+              Price Range <i class="fa-solid fa-chevron-down text-[11px]" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="pill" :class="{ 'is-on': selectedRatings.length }" @click="openFilterSheet('ratings')">
+              Rating <i class="fa-solid fa-chevron-down text-[11px]" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="pill" :class="{ 'is-on': moreFilterCount || sortBy !== 'default' }" @click="openFilterSheet()">
+              <i class="fa-solid fa-sliders text-[13px]" aria-hidden="true"></i> More Filters<span v-if="moreFilterCount"> ({{ moreFilterCount }})</span>
+            </button>
+          </div>
+
+          <div v-if="!awaitingSearch" class="flex items-center justify-between gap-3 mt-4">
+            <p class="text-[16px] text-slate-700">
+              <template v-if="isLoading">Loading boarding houses…</template>
+              <template v-else>{{ sortedHouses.length }} boarding {{ sortedHouses.length === 1 ? 'house' : 'houses' }} found</template>
+            </p>
+            <router-link v-if="isSearchPage" to="/student/map" class="shrink-0 inline-flex items-center gap-1.5 text-[14px] font-semibold text-blue-700 py-2">
+              <i class="fa-regular fa-map text-[16px]" aria-hidden="true"></i> Map View
+            </router-link>
+            <div v-else class="shrink-0 flex bg-white border border-slate-200 rounded-2xl shadow-sm p-1" role="group" aria-label="Layout">
+              <button
+                type="button"
+                @click="setViewMode('grid')"
+                :aria-pressed="viewMode === 'grid'"
+                aria-label="Grid view"
+                class="w-11 h-10 rounded-xl flex items-center justify-center transition"
+                :class="viewMode === 'grid' ? 'bg-blue-50 text-blue-700' : 'text-slate-400'"
+              ><i class="fa-solid fa-table-cells-large text-[17px]" aria-hidden="true"></i></button>
+              <button
+                type="button"
+                @click="setViewMode('list')"
+                :aria-pressed="viewMode === 'list'"
+                aria-label="List view"
+                class="w-11 h-10 rounded-xl flex items-center justify-center transition"
+                :class="viewMode === 'list' ? 'bg-blue-50 text-blue-700' : 'text-slate-400'"
+              ><i class="fa-solid fa-list text-[17px]" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        </header>
+
         <!-- HEADER: title, result count, search, sort -->
-        <header class="lg:col-start-2 lg:row-start-1 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+        <header class="lg:col-start-2 lg:row-start-1 hidden md:flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div v-if="!isSearchPage" class="welcome-card relative overflow-hidden rounded-2xl px-8 py-8 lg:px-10 w-full text-[#0f1f45]">
+            <div class="relative">
+              <h1 class="text-[34px] lg:text-[38px] font-black leading-[1.15] tracking-tight break-words">
+                Welcome, <span class="uppercase">{{ displayName }}!</span>
+              </h1>
+              <p class="text-[15px] text-slate-600 leading-relaxed mt-2.5">Find a safe and comfortable boarding house near CSPC.</p>
+            </div>
+          </div>
+
           <div class="flex-[1_0_auto] max-w-full">
-            <h1 class="text-[26px] sm:text-[34px] font-black text-slate-900 uppercase tracking-tight leading-[1.05] break-words">Welcome, {{ displayName }}</h1>
-            <p class="text-slate-500 text-sm font-medium mt-1.5">
+            <p class="text-slate-500 text-sm font-medium">
               <template v-if="isLoading">Loading boarding houses…</template>
               <template v-else>{{ sortedHouses.length }} boarding {{ sortedHouses.length === 1 ? 'house' : 'houses' }} found</template>
             </p>
@@ -544,9 +689,26 @@ onUnmounted(() => {
         </header>
 
         <!-- FILTER PANEL: sidebar on desktop, collapsible card on smaller screens -->
-        <aside class="lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-24">
-          <div class="bg-white rounded-2xl lg:rounded-3xl shadow-sm border border-slate-200/60">
-            <div class="flex items-center justify-between gap-3 p-4 lg:px-6 lg:pt-6 lg:pb-4">
+        <!-- On phones this is a bottom sheet opened from the filter pills -->
+        <aside
+          class="filter-panel lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-24"
+          :class="{ 'is-sheet-open': showMobileFilters }"
+          @click.self="closeFilterSheet"
+        >
+          <div class="filter-card bg-white rounded-2xl lg:rounded-3xl shadow-sm border border-slate-200/60" role="group" aria-label="Filters">
+            <div class="md:hidden flex items-center justify-between gap-3 px-5 pt-3 pb-1">
+              <span class="mx-auto w-10 h-1.5 rounded-full bg-slate-200" aria-hidden="true"></span>
+            </div>
+            <div class="md:hidden flex items-center justify-between gap-3 px-5 pt-2 pb-3">
+              <h2 class="text-[17px] font-bold text-slate-900">{{ sheetTitle }}</h2>
+              <div class="flex items-center gap-1">
+                <button type="button" @click="clearFilters" class="text-[13px] font-semibold text-blue-700 px-3 py-2">Clear all</button>
+                <button type="button" @click="showMobileFilters = false" class="w-10 h-10 rounded-full text-slate-500 hover:bg-slate-100 flex items-center justify-center" aria-label="Close filters">
+                  <i class="fa-solid fa-xmark text-lg" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div class="hidden md:flex items-center justify-between gap-3 p-4 lg:px-6 lg:pt-6 lg:pb-4">
               <button
                 type="button"
                 class="flex items-center gap-2 text-slate-800 lg:cursor-default min-w-0"
@@ -568,17 +730,40 @@ onUnmounted(() => {
               >Clear All</button>
             </div>
 
-            <div :class="showMobileFilters ? 'block' : 'hidden lg:block'" class="px-4 pb-5 lg:px-6 lg:pb-6">
+            <div :class="showMobileFilters ? 'block' : 'hidden lg:block'" class="px-5 md:px-4 pb-5 lg:px-6 lg:pb-6">
               <hr class="mb-5 border-slate-100">
 
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-x-8 gap-y-6">
+                <!-- Sort (phones only; desktop has the sort dropdown in the header) -->
+                <div v-if="!sheetSection" class="md:hidden">
+                  <p class="flt-label mb-3">Sort by</p>
+                  <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-blue-600 pointer-events-none">
+                      <i class="fa-solid fa-arrow-down-wide-short text-xs"></i>
+                    </span>
+                    <select
+                      v-model="sortBy"
+                      aria-label="Sort boarding houses"
+                      class="w-full appearance-none pl-8 pr-8 py-2.5 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-400 transition cursor-pointer"
+                    >
+                      <option value="default">{{ defaultSortLabel }}</option>
+                      <option value="price_asc">Price: Low to High</option>
+                      <option value="price_desc">Price: High to Low</option>
+                      <option value="rating">Highest Rated</option>
+                    </select>
+                    <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 pointer-events-none">
+                      <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                    </span>
+                  </div>
+                </div>
+
                 <!-- Star Rating Filter -->
-                <div>
+                <div :class="{ 'sheet-hide': sectionHidden('ratings') }">
                   <button type="button" @click="toggleSection('ratings')" :aria-expanded="openSections.ratings" aria-controls="flt-ratings" class="flt-head" :class="{ 'mb-3': openSections.ratings }">
                     <span class="flt-label">Ratings<span v-if="!openSections.ratings && selectedRatings.length" class="flt-count">{{ selectedRatings.length }}</span></span>
                     <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.ratings }"></i>
                   </button>
-                  <div v-show="openSections.ratings" id="flt-ratings" class="grid grid-cols-3 sm:grid-cols-1 gap-2.5">
+                  <div v-show="openSections.ratings" id="flt-ratings" class="grid grid-cols-2 md:grid-cols-1 gap-3">
                     <label
                       v-for="num in [5,4,3,2,1]"
                       :key="num"
@@ -602,7 +787,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Price Range Filter -->
-                <div class="flt-section">
+                <div class="flt-section" :class="{ 'sheet-hide': sectionHidden('price') }">
                   <button type="button" @click="toggleSection('price')" :aria-expanded="openSections.price" aria-controls="flt-price" class="flt-head" :class="{ 'mb-3': openSections.price }">
                     <span class="flt-label">Price Range (₱)<span v-if="!openSections.price && (hasValue(minPrice) || hasValue(maxPrice))" class="flt-count">{{ (hasValue(minPrice) ? 1 : 0) + (hasValue(maxPrice) ? 1 : 0) }}</span></span>
                     <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.price }"></i>
@@ -633,13 +818,13 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Amenities Filter -->
-                <div v-if="amenityOptions.length > 0" class="flt-section">
+                <div v-if="amenityOptions.length > 0" class="flt-section" :class="{ 'sheet-hide': sectionHidden('amenities') }">
                   <button type="button" @click="toggleSection('amenities')" :aria-expanded="openSections.amenities" aria-controls="flt-amenities" class="flt-head" :class="{ 'mb-3': openSections.amenities }">
                     <span class="flt-label">Amenities<span v-if="!openSections.amenities && selectedAmenities.length" class="flt-count">{{ selectedAmenities.length }}</span></span>
                     <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.amenities }"></i>
                   </button>
                   <div v-show="openSections.amenities" id="flt-amenities">
-                  <div class="grid grid-cols-2 sm:grid-cols-1 gap-2.5">
+                  <div class="grid grid-cols-1 gap-3">
                     <label
                       v-for="opt in visibleAmenityOptions"
                       :key="opt.key"
@@ -669,7 +854,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Location Filter -->
-                <div v-if="locationOptions.length > 0" class="flt-section">
+                <div v-if="locationOptions.length > 0" class="flt-section" :class="{ 'sheet-hide': sectionHidden('location') }">
                   <button type="button" @click="toggleSection('location')" :aria-expanded="openSections.location" aria-controls="flt-location" class="flt-head" :class="{ 'mb-3': openSections.location }">
                     <span class="flt-label">Location<span v-if="!openSections.location && selectedLocation" class="flt-count">1</span></span>
                     <i class="fa-solid fa-chevron-up flt-chevron" :class="{ 'rotate-180': !openSections.location }"></i>
@@ -696,10 +881,17 @@ onUnmounted(() => {
               <button
                 type="button"
                 @click="clearFilters"
-                class="mt-6 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition"
+                class="hidden md:flex mt-6 w-full items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition"
               >
                 <i class="fa-solid fa-rotate-right text-[11px]"></i> Clear Filters
               </button>
+            </div>
+            <div class="md:hidden sticky bottom-0 bg-white border-t border-slate-100 px-5 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+              <button
+                type="button"
+                @click="showMobileFilters = false"
+                class="w-full bg-blue-700 hover:bg-blue-800 text-white text-[15px] font-semibold py-3.5 rounded-xl transition"
+              >Show {{ sortedHouses.length }} {{ sortedHouses.length === 1 ? 'result' : 'results' }}</button>
             </div>
           </div>
         </aside>
@@ -769,7 +961,48 @@ onUnmounted(() => {
             <p class="text-slate-500 font-medium text-xs max-w-sm mx-auto">Please connect to an active internet connection to load and save available boarding houses.</p>
           </div>
 
-          <template v-if="!isLoading && houses.length > 0">
+          <!-- Search page before any search: recently viewed houses -->
+          <section v-if="awaitingSearch && recentlyViewed.length" class="mb-2" aria-labelledby="recent-title">
+            <h2 id="recent-title" class="flex items-center gap-2.5 text-[17px] font-bold text-[#0f1f45]">
+              <i class="fa-regular fa-clock text-blue-700 text-[19px]" aria-hidden="true"></i> Recently Viewed
+            </h2>
+            <div class="recent-scroll flex gap-3 overflow-x-auto -mx-4 px-4 pt-3 pb-2">
+              <router-link
+                v-for="house in recentlyViewed"
+                :key="house.id"
+                :to="`/student/house/${house.id}`"
+                class="shrink-0 w-[150px] bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"
+              >
+                <img
+                  :src="getImageUrl(house.img)"
+                  :alt="house.name"
+                  loading="lazy"
+                  class="w-full aspect-[4/3] object-cover bg-slate-100"
+                  @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
+                >
+                <div class="p-2.5">
+                  <p class="text-[13px] font-bold text-[#0f1f45] truncate">{{ house.name }}</p>
+                  <p v-if="recentAddress(house)" class="text-[11px] text-slate-500 truncate mt-0.5">
+                    <i class="fa-solid fa-location-dot text-[10px]" aria-hidden="true"></i> {{ recentAddress(house) }}
+                  </p>
+                  <p v-if="displayPrice(house)" class="text-[13px] font-black text-blue-700 truncate mt-1">{{ displayPrice(house) }}</p>
+                </div>
+              </router-link>
+            </div>
+          </section>
+
+          <!-- Search page before any search: a prompt instead of the full list -->
+          <div v-if="!isLoading && houses.length > 0 && awaitingSearch" class="py-14 px-6 text-center">
+            <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-4">
+              <i class="fa-solid fa-magnifying-glass text-2xl" aria-hidden="true"></i>
+            </div>
+            <h2 class="text-[17px] font-bold text-slate-900">No search yet</h2>
+            <p class="text-[14px] text-slate-500 leading-relaxed mt-1.5 max-w-xs mx-auto">
+              Type a boarding house name, barangay, or owner, or use the filters above to find a place.
+            </p>
+          </div>
+
+          <template v-if="!isLoading && houses.length > 0 && !awaitingSearch">
             <!-- Active filter chips -->
             <div v-if="activeChips.length > 0" class="mb-4 flex flex-wrap items-center gap-2" aria-label="Active filters">
               <button
@@ -801,8 +1034,121 @@ onUnmounted(() => {
               <button type="button" @click="clearFilters" class="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-5 py-2.5 hover:bg-blue-100 transition">Clear Filters</button>
             </div>
 
+            <!-- MOBILE HOUSE CARDS: grid = two compact columns, list = full cards -->
+            <div v-else class="md:hidden" :class="viewMode === 'grid' ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-4'">
+              <template v-if="viewMode === 'grid'">
+                <article
+                  v-for="house in paginatedHouses"
+                  :key="'g-' + house.id"
+                  class="bg-white rounded-2xl p-1.5 border border-slate-100 shadow-[0_4px_16px_rgb(15_47_102/.07)] flex flex-col min-w-0"
+                >
+                  <div class="relative rounded-xl overflow-hidden aspect-[4/3] bg-slate-100">
+                    <router-link :to="`/student/house/${house.id}`" :aria-label="house.name" class="block w-full h-full">
+                      <img
+                        :src="getImageUrl(house.img)"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        class="w-full h-full object-cover"
+                        @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
+                      >
+                    </router-link>
+                    <span class="rating-pill absolute top-2 right-2 text-[11px] px-2 py-1" :aria-label="ratingLabel(house)">
+                      <i class="fa-solid fa-star text-amber-400" aria-hidden="true"></i>{{ ratingText(house) }}
+                    </span>
+                  </div>
+                  <router-link :to="`/student/house/${house.id}`" class="flex flex-col flex-1 px-1.5 pt-2 pb-1.5 min-w-0">
+                    <h2 class="font-black text-[13px] text-slate-900 leading-tight uppercase tracking-tight line-clamp-2">{{ house.name }}</h2>
+                    <p v-if="formatAddress(house)" class="text-[11px] text-slate-500 truncate mt-1">
+                      <i class="fa-solid fa-location-dot text-blue-600 text-[10px]" aria-hidden="true"></i> {{ formatAddress(house) }}
+                    </p>
+                    <p class="mt-auto pt-2 leading-none truncate">
+                      <template v-if="displayPrice(house)">
+                        <span class="font-black text-[14px] text-blue-700">{{ displayPrice(house) }}</span><span class="text-[11px] text-slate-500"> /month</span>
+                      </template>
+                      <span v-else class="text-[11px] text-slate-400">Price not available</span>
+                    </p>
+                  </router-link>
+                </article>
+              </template>
+              <template v-else>
+              <article
+                v-for="house in paginatedHouses"
+                :key="'m-' + house.id"
+                class="bg-white rounded-[22px] p-2.5 border border-slate-100 shadow-[0_4px_20px_rgb(15_47_102/.07)]"
+              >
+                <div class="relative rounded-2xl overflow-hidden aspect-[16/10] bg-slate-100">
+                  <img
+                    :src="getImageUrl(house.img)"
+                    :alt="house.name"
+                    loading="lazy"
+                    decoding="async"
+                    class="w-full h-full object-cover"
+                    @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
+                  >
+                  <span class="rating-pill absolute top-3 right-3 text-[13px] px-3 py-1.5" :aria-label="ratingLabel(house)">
+                    <i class="fa-solid fa-star text-amber-400" aria-hidden="true"></i>{{ ratingText(house) }}
+                  </span>
+                  <span v-if="photoCount(house) > 0" class="absolute bottom-3 right-3 inline-flex items-center gap-1.5 bg-slate-900/70 text-white text-[12px] font-semibold rounded-lg px-2.5 py-1.5" :aria-label="`${photoCount(house)} photos`">
+                    <i class="fa-regular fa-image text-[13px]" aria-hidden="true"></i> 1 / {{ photoCount(house) }}
+                  </span>
+                </div>
+
+                <div class="px-2 pt-3 pb-1.5">
+                  <h2 class="font-black text-[17px] text-slate-900 leading-tight uppercase tracking-tight line-clamp-2">{{ house.name }}</h2>
+                  <p v-if="formatAddress(house)" class="text-[12px] text-slate-500 font-medium uppercase tracking-wide flex items-start gap-1.5 mt-1.5">
+                    <i class="fa-solid fa-location-dot text-[12px] text-blue-600 mt-[1px]" aria-hidden="true"></i>
+                    <span class="line-clamp-2">{{ formatAddress(house) }}</span>
+                  </p>
+
+                  <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mt-3">
+                    <p class="leading-none">
+                      <template v-if="displayPrice(house)">
+                        <span class="font-black text-[21px] text-blue-700">{{ displayPrice(house) }}</span>
+                        <span class="text-[13px] text-slate-500"> / month</span>
+                      </template>
+                      <span v-else class="text-[13px] font-semibold text-slate-400">Price not available</span>
+                    </p>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <span
+                      v-for="a in amenitiesOf(house).slice(0, 2)"
+                      :key="a.key"
+                      class="inline-flex items-center gap-1.5 text-[12px] font-medium rounded-xl px-3 py-2 max-w-[140px]"
+                      :class="a.paid ? 'text-amber-800 bg-amber-50' : 'text-slate-700 bg-slate-50'"
+                    >
+                      <i class="fa-solid text-[12px]" :class="[amenityIcon(a.label), a.paid ? 'text-amber-600' : 'text-slate-500']" aria-hidden="true"></i>
+                      <span class="truncate">{{ a.label }}</span>
+                      <span v-if="a.paid" class="sr-only">(paid)</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700 bg-slate-50 rounded-xl px-3 py-2">
+                      <i class="fa-solid fa-bed text-[12px] text-slate-500" aria-hidden="true"></i>
+                      {{ house.room_count || 0 }} {{ Number(house.room_count) === 1 ? 'Room' : 'Rooms' }}
+                    </span>
+                    <span
+                      v-if="amenitiesOf(house).length > 2"
+                      class="inline-flex items-center text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2"
+                      :aria-label="`${amenitiesOf(house).length - 2} more amenities`"
+                    >+{{ amenitiesOf(house).length - 2 }}</span>
+                  </div>
+
+                  <div class="grid grid-cols-1 mt-4">
+                    <button
+                      type="button"
+                      @click="handleDetails(house.id)"
+                      class="flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-[14px] font-semibold"
+                    >
+                      View Details <i class="fa-solid fa-arrow-right text-[12px]" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+              </article>
+              </template>
+            </div>
+
             <!-- DYNAMIC ACCREDITED HOUSES GRID -->
-            <div v-else :class="viewMode === 'list' ? 'flex flex-col gap-4' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'">
+            <div v-if="sortedHouses.length > 0" :class="viewMode === 'list' ? 'hidden md:flex flex-col gap-4' : 'hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'">
               <article
                 v-for="house in paginatedHouses"
                 :key="house.id"
@@ -810,7 +1156,7 @@ onUnmounted(() => {
                 :class="viewMode === 'list' ? 'md:flex-row md:gap-5' : ''"
               >
                 <!-- Aspect-Ratio Protected Photo Cover -->
-                <div class="rounded-xl overflow-hidden aspect-[17/10] bg-slate-50 border border-slate-100 shrink-0"
+                <div class="relative rounded-xl overflow-hidden aspect-[17/10] bg-slate-50 border border-slate-100 shrink-0"
                      :class="viewMode === 'list' ? 'md:w-[260px] lg:w-[300px] md:aspect-auto md:min-h-[190px]' : ''">
                   <img
                     :src="getImageUrl(house.img)"
@@ -820,6 +1166,9 @@ onUnmounted(() => {
                     class="w-full h-full object-cover"
                     @error="$event.target.src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png'"
                   >
+                  <span class="rating-pill absolute top-3 right-3 text-[13px] px-3 py-1.5" :aria-label="ratingLabel(house)">
+                    <i class="fa-solid fa-star text-amber-400" aria-hidden="true"></i>{{ ratingText(house) }}
+                  </span>
                 </div>
 
                 <div class="px-1.5 pt-3 flex flex-col flex-1 min-w-0" :class="viewMode === 'list' ? 'md:pt-1.5 md:pb-1 md:pr-2' : ''">
@@ -883,46 +1232,8 @@ onUnmounted(() => {
               </article>
             </div>
 
-            <!-- PAGINATION -->
-            <nav
-              v-if="sortedHouses.length > 0"
-              aria-label="Boarding house pages"
-              class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3"
-            >
-              <p class="text-xs font-medium text-slate-500">
-                Showing {{ pageStart }}–{{ pageEnd }} of {{ sortedHouses.length }} boarding {{ sortedHouses.length === 1 ? 'house' : 'houses' }}
-              </p>
-              <div v-if="totalPages > 1" class="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  aria-label="Previous page"
-                  :disabled="currentPage === 1"
-                  @click="goToPage(currentPage - 1)"
-                  class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:border-blue-400 hover:text-blue-700 transition disabled:opacity-40 disabled:pointer-events-none"
-                ><i class="fa-solid fa-chevron-left text-[11px]"></i></button>
-                <template v-for="p in pageButtons" :key="p">
-                  <span v-if="typeof p === 'string'" class="w-6 text-center text-slate-400 text-xs">…</span>
-                  <button
-                    v-else
-                    type="button"
-                    :aria-label="`Page ${p}`"
-                    :aria-current="p === currentPage ? 'page' : undefined"
-                    @click="goToPage(p)"
-                    class="w-9 h-9 rounded-lg border text-xs font-black transition"
-                    :class="p === currentPage
-                      ? 'bg-blue-700 border-blue-700 text-white'
-                      : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-700'"
-                  >{{ p }}</button>
-                </template>
-                <button
-                  type="button"
-                  aria-label="Next page"
-                  :disabled="currentPage === totalPages"
-                  @click="goToPage(currentPage + 1)"
-                  class="w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:border-blue-400 hover:text-blue-700 transition disabled:opacity-40 disabled:pointer-events-none"
-                ><i class="fa-solid fa-chevron-right text-[11px]"></i></button>
-              </div>
-            </nav>
+            <!-- Data table paging (bottom) -->
+            <StudentPager v-if="sortedHouses.length > 0" class="mt-6" noun="boarding houses" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="sortedHouses.length" @update:page="goToPage"  />
           </template>
         </section>
       </div>
@@ -951,4 +1262,32 @@ onUnmounted(() => {
 @media (min-width: 1024px) {
   .flt-section { border-top: 1px solid #f1f5f9; padding-top: 20px; }
 }
+
+/* ---------- Mobile layout ---------- */
+.rating-pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: #fff; color: #1e293b; font-weight: 700; line-height: 1; box-shadow: 0 2px 8px rgb(15 23 42 / .18); }
+.welcome-card { background: #f8fafc; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgb(15 47 102 / .06); }
+/* Faded CSPC campus photo on the right, fading out behind the text */
+.welcome-card::before {
+  content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 70%;
+  background: url('/img/cspc_bg.webp') center / cover no-repeat;
+  opacity: .22; filter: saturate(.5);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 55%);
+  mask-image: linear-gradient(to right, transparent, #000 55%);
+}
+.mobile-pills, .recent-scroll { scrollbar-width: none; }
+.recent-scroll::-webkit-scrollbar { display: none; }
+.mobile-pills::-webkit-scrollbar { display: none; }
+.pill { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; color: #0f172a; font-size: 14px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgb(15 23 42 / .04); }
+.pill.is-on { border-color: #1d4ed8; background: #eef4ff; color: #1d4ed8; }
+.pill-select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; outline: 0; color: inherit; font: inherit; padding-right: 2px; cursor: pointer; }
+.pill:has(.pill-select:focus-visible), .pill:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+@media (max-width: 767px) {
+  .sheet-hide { display: none !important; }
+  .filter-panel { display: none; }
+  .filter-panel.is-sheet-open { display: block; position: fixed; inset: 0; z-index: 80; background: rgb(15 23 42 / .45); }
+  .filter-panel.is-sheet-open .filter-card { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow-y: auto; border-radius: 24px 24px 0 0; border: 0; animation: sheetUp .22s ease-out; }
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .filter-card { animation: none !important; } }
 </style>

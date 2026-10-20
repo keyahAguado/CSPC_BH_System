@@ -9,8 +9,9 @@ services:
       MYSQL_DATABASE: cspc_boarding_db
       MYSQL_USER: cspc_user
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Reachable only from this machine (e.g. MySQL Workbench on the server); the backend uses the internal network.
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - db_data:/var/lib/mysql
       - ./backend/config/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -37,18 +38,14 @@ services:
       - DB_HOST=db
       - DB_USER=cspc_user
       - DB_PASSWORD=${DB_PASSWORD}
+      # Also set DB_PASS (read first by config/db.js) so a value in backend/.env cannot override it.
+      - DB_PASS=${DB_PASSWORD}
       - DB_NAME=cspc_boarding_db
       - DB_PORT=3306
       - PORT=3000
-      - FRONTEND_URL=${FRONTEND_URL}
-      - JWT_SECRET=${JWT_SECRET}
+      # Uploads go to the media_uploads volume, served by media_storage. All other backend
+      # settings (FRONTEND_URL, JWT_SECRET, keys) come from backend/.env only.
       - STORAGE_PROVIDER=local
-      - SMTP_SERVICE=${SMTP_SERVICE:-gmail}
-      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_SECURE=${SMTP_SECURE:-false}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASS=${SMTP_PASS:-}
     volumes:
       - media_uploads:/app/uploads
     depends_on:
@@ -60,10 +57,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=${VITE_API_URL:-}
-        - VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
-        - VITE_RECAPTCHA_SITE_KEY=${VITE_RECAPTCHA_SITE_KEY:-}
+      # Frontend settings are read at build time from frontend/.env.production.local
+      # (see frontend/.env.example), falling back to frontend/.env.production.
     container_name: cspc_frontend_app
     restart: always
     ports:
@@ -79,8 +74,9 @@ services:
     image: nginx:alpine
     container_name: cspc_media_storage
     restart: always
+    # Media is served to users through the frontend at /uploads/; direct access stays on this machine.
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     volumes:
       - media_uploads:/usr/share/nginx/html/uploads:ro
     healthcheck:

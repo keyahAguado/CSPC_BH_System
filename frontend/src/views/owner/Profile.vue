@@ -418,4 +418,18 @@ const loadError = ref('');
   .profile-grid button[type='submit'] { padding-top: 11px !important; padding-bottom: 11px !important; }
   .profile-grid .p-4 { padding: 10px 12px !important; }
 }
+/* Phone / PWA only (desktop unchanged): tighter cards and fields */
+@media (max-width: 640px) {
+  .profile-grid { gap: 12px !important; }
+  .profile-grid > div { border-radius: 18px !important; }
+  .profile-grid .p-6 { padding: 14px !important; }
+  .profile-grid .text-2xl { font-size: 18px !important; }
+  .profile-grid .mb-5 { margin-bottom: 12px !important; }
+  .profile-grid :is(.space-y-5, .space-y-4) > :not([hidden]) ~ :not([hidden]) { margin-top: 12px !important; }
+  .profile-grid label.mb-2 { margin-bottom: 5px !important; font-size: 11px !important; }
+  .profile-grid input.py-3 { padding-top: 10px !important; padding-bottom: 10px !important; }
+  .profile-grid .w-20.h-20 { width: 60px !important; height: 60px !important; }
+  .profile-grid .pt-5 { padding-top: 12px !important; }
+  .profile-grid .px-16 { padding-left: 16px !important; padding-right: 16px !important; }
+}
 </style>

@@ -153,6 +153,7 @@ async function buildUserPayload(user) {
         course: user.course || null,
         year_section: user.year_section || null,
         phone: user.phone || null,
+        profile_pic: user.profile_pic || null,
         houseStatus: 'none',
         houseId: null,
         houseName: '',

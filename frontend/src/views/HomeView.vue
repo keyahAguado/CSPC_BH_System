@@ -31,6 +31,12 @@ const initialCachedHouses = (() => {
 })();
 
 const houses = ref(initialCachedHouses);
+const onHousePhotoError = (event) => {
+  const image=event.target;
+  if(image.dataset.fallback)return;
+  image.dataset.fallback='true';
+  image.src='/img/house-placeholder.svg';
+};
 const isLoading = ref(initialCachedHouses.length === 0);
 const showModal = ref(false);
 const showPrivacyModal = ref(false);
@@ -82,7 +88,16 @@ const plotMarkers = (googleInstance) => {
   // One shared card: clicking a red pin shows that boarding house's name and address
   if (!houseInfoWindow) houseInfoWindow = new googleInstance.maps.InfoWindow({ maxWidth: 260 });
 
+  const groups = new Map();
   houses.value.forEach(house => {
+    const lat = parseFloat(house.latitude), lng = parseFloat(house.longitude);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180||(lat===0&&lng===0))return;
+    const key = lat.toFixed(7)+','+lng.toFixed(7);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(house);
+  });
+  groups.forEach(group => {
+    const house = group[0];
     const lat = parseFloat(house.latitude);
     const lng = parseFloat(house.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return;
@@ -90,19 +105,19 @@ const plotMarkers = (googleInstance) => {
     bounds.extend(position);
 
     // Red pin for each boarding house; clicking it opens the name and address card
-    const housePin = new PinElement({ background: '#DC2626', borderColor: '#991B1B', glyphColor: '#FFFFFF' });
+    const housePin = new PinElement({ background: '#DC2626', borderColor: '#991B1B', glyphColor: '#FFFFFF', ...(group.length>1 ? {glyphText:String(group.length)} : {}) });
     const pinEl = housePin.element ?? housePin;
     pinEl.style.cursor = 'pointer';
     const marker = new AdvancedMarkerElement({
       map: mapInstance,
       position,
-      title: house.name,
+      title: group.length>1 ? group.length+' boarding houses at this location' : house.name,
       content: pinEl,
       gmpClickable: true,
     });
 
     const openCard = () => {
-      houseInfoWindow.setContent(`
+      houseInfoWindow.setContent(group.map(house => `
         <div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; padding: 2px 2px 4px; max-width: 240px;">
           <strong style="display:block; margin-bottom:6px; font-size: 14px; color: #142B4A; line-height: 1.3;">${escapeHtml(house.name)}</strong>
           <span style="display:flex; gap:6px; font-size: 12px; color: #5B6E86; line-height: 1.45;">
@@ -110,7 +125,7 @@ const plotMarkers = (googleInstance) => {
           </span>
           <a href="/student/house/${escapeHtml(encodeURIComponent(String(house.id)))}" style="display:block; margin-top:10px; padding:8px 12px; border-radius:8px; background:#1E4A8D; color:#FFFFFF; font-size:12px; font-weight:700; text-align:center; text-decoration:none;">View details &rarr;</a>
         </div>
-      `);
+      `).join('<hr style="margin:10px 0;border:0;border-top:1px solid #e2e8f0">'));
       houseInfoWindow.open({ anchor: marker, map: mapInstance });
     };
     // gmp-click is the current marker event; the DOM click covers Maps versions without it
@@ -336,7 +351,7 @@ onMounted(() => {
           <div ref="mapContainer" class="w-full h-[420px] sm:h-[480px] rounded-3xl border border-slate-200/80 shadow-md bg-slate-50"></div>
           <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-[11px] font-semibold text-slate-500">
             <span class="inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-red-600 text-sm"></i> Boarding house</span>
-            <span class="inline-flex items-center gap-1.5 text-slate-400"><i class="fa-solid fa-circle-info"></i> Click a red pin to see the boarding house name and address.</span>
+            <span class="inline-flex items-center gap-1.5 text-slate-400"><i class="fa-solid fa-circle-info"></i> Click a red pin to see boarding house details. A numbered pin lists houses sharing the same location.</span>
           </div>
         </div>
 
@@ -367,7 +382,7 @@ onMounted(() => {
                class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group">
             
             <div class="aspect-video overflow-hidden bg-slate-100 relative">
-              <img :src="getImageUrl(house.img)" loading="lazy" decoding="async" class="w-full h-full object-cover grayscale-[10%] group-hover:grayscale-0 transition duration-500" @error="e => e.target.src = 'https://placehold.co/600x400?text=No+Photo'" alt="House photo" />
+              <img :src="getImageUrl(house.img)" loading="lazy" decoding="async" class="w-full h-full object-cover grayscale-[10%] group-hover:grayscale-0 transition duration-500" @error="onHousePhotoError" alt="House photo" />
               <div class="absolute top-3 right-3 bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-widest shadow-lg">
                 Accredited
               </div>

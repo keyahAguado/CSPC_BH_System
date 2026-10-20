@@ -1,4 +1,5 @@
 <script setup>
+import { openFileInNewTab } from '../../utils/openFile.js';
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router';
@@ -410,7 +411,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
                   <ul class="text-sm border border-slate-200 rounded-lg divide-y divide-slate-200">
                     <li v-for="(file, index) in details[app.reference_no].permitFiles" :key="index" class="flex items-start gap-3 px-3 py-2">
                       <i class="fa-regular fa-file-lines mt-0.5 text-slate-400" aria-hidden="true"></i>
-                      <a v-if="documentUrl(file.file_path)" :href="documentUrl(file.file_path)" target="_blank" rel="noopener noreferrer" class="track-focus min-w-0 rounded text-[#245b99] hover:text-[#142b4a] underline underline-offset-2 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }} - file {{ index + 1 }}<span class="sr-only"> (opens in a new tab)</span><i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[11px]" aria-hidden="true"></i></a>
+                      <a v-if="documentUrl(file.file_path)" :href="documentUrl(file.file_path)" target="_blank" rel="noopener noreferrer" @click.prevent="openFileInNewTab(documentUrl(file.file_path))" class="track-focus min-w-0 rounded text-[#245b99] hover:text-[#142b4a] underline underline-offset-2 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }} - file {{ index + 1 }}<span class="sr-only"> (opens in a new tab)</span><i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[11px]" aria-hidden="true"></i></a>
                       <span v-else class="min-w-0 text-slate-600 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }}: file unavailable</span>
                     </li>
                     <li v-if="!details[app.reference_no].permitFiles.length" class="px-3 py-2 text-slate-600">No document files available in this list.</li>

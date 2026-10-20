@@ -2,10 +2,12 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
+import { pdfAssets } from './build/pdfAssets.js';
 
 export default defineConfig({
   plugins: [
     vue(),
+    pdfAssets(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
@@ -15,15 +17,11 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/auth-success/, /^\/api\/auth/],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'], // Automatically caches static files for offline usability
+        // Opening an uploaded file (new tab or PDF frame) or an API URL must reach the server, never the app shell.
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,woff2}'], // Automatically caches static files for offline usability
         maximumFileSizeToCacheInBytes: 15000000,
         runtimeCaching: [
-          {
-            // Bypasses Service Worker cache for Google OAuth callback & token handoff
-            urlPattern: /\/(auth-success|api\/auth)/i,
-            handler: 'NetworkOnly'
-          },
           {
             // Public landing page listings (HomeView.vue): always try the network first so a
             // newly accredited house appears (list + map) right away; cache is the offline fallback.
@@ -72,20 +70,16 @@ export default defineConfig({
             }
           },
           {
-            // Caches boarding house images served through the Vercel proxy from /uploads/
-            // Uses CacheFirst since images rarely change — serve from cache instantly offline
-            urlPattern: /\/uploads\/.+/i,
+            // Preserve offline public listing photos. Document viewers fetch validated bytes,
+            // rather than image requests, so their private files bypass this image-only cache.
+            urlPattern: ({url,request}) => request.destination === 'image' && url.pathname.startsWith('/uploads/') && /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(url.pathname),
             handler: 'CacheFirst',
-            options: {
-              cacheName: 'house-images-cache',
-              expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 Days
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
+            options: {cacheName:'public-upload-images-v2',expiration:{maxEntries:200,maxAgeSeconds:60*60*24*30},cacheableResponse:{statuses:[200]}}
+          },
+          {
+            // Uploaded documents must never be answered from an old app-shell/image cache.
+            urlPattern: /\/uploads\/.+/i,
+            handler: 'NetworkOnly'
           }
         ]
       },

@@ -20,4 +20,9 @@ import OwnerNav from '../../components/partials/OwnerNav.vue';
 .hero-tag svg{width:17px;height:17px}
 @media(max-width:900px){.hero-tag{display:none}}
 @media(max-width:639px){.payment-settings{padding:22px 14px 36px}.payments-hero{padding:0}.payment-settings h1{font-size:28px}}
+
+/* Preserve the shared branch's compact payment-page spacing. */
+.payment-settings.management-content{padding-top:14px!important}.payment-settings .payments-hero{padding:0;margin-bottom:12px}.payments-hero p{margin:4px 0 0}
+@media(max-width:639px){.payment-settings h1{font-size:24px}.payments-hero p{font-size:13.5px}.payment-settings .eyebrow{margin-bottom:2px}}
+
 </style>

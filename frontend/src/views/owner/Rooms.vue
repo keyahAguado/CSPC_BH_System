@@ -423,4 +423,21 @@ const loadError = ref('');
 .owner-room-create-button,.owner-room-tabs button,.owner-room-utility a,.room-modal-panel button{transition:background-color 160ms ease,color 160ms ease,border-color 160ms ease,box-shadow 160ms ease;}
 @media(pointer:coarse){.owner-page .owner-room-create-button,.room-modal-footer .management-button{min-height:44px;}}
 @media(prefers-reduced-motion:reduce){.owner-room-create-button,.owner-room-tabs button,.owner-room-utility a,.room-modal-panel button{transition:none;}}
+/* Phone / PWA only: tighter toolbar and spacing */
+@media(max-width:639px){
+.owner-rooms-content{gap:12px}
+.owner-room-create-row{margin:0 0 12px}
+.owner-room-toolbar{gap:8px;padding:10px}
+.owner-room-tabs button{padding:8px 6px}
+.owner-room-filters{gap:8px}
+.owner-room-filters select{padding:8px 26px 8px 10px}
+.owner-room-search{padding:9px 12px}
+}
+@media(max-width:639px){
+.owner-room-utility a.management-button{min-height:38px!important;height:38px;padding:0 14px!important;font-size:13px!important;line-height:1!important;display:inline-flex;align-items:center;border-radius:9px!important}
+/* Add / Edit room: basics in two columns */
+.room-modal-basics{grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.room-modal-basics label{font-size:11px;margin-bottom:6px}
+.room-modal-basics :is(input,select){padding:11px 12px!important}
+}
 </style>

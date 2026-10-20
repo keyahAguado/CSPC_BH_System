@@ -1,4 +1,6 @@
 <script setup>
+import DocumentPdfPreview from '../../components/DocumentPdfPreview.vue';
+import { openFileInNewTab } from '../../utils/openFile.js';
 import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
 import TablePager from '../../components/management/TablePager.vue';
 import LoadError from '../../components/management/LoadError.vue';
@@ -1006,7 +1008,7 @@ const loadError = ref('');
       <div class="doc-viewer-bar">
         <span class="doc-viewer-title"><i :class="isPdfFile(previewImageUrl) ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image'" aria-hidden="true"></i> Document preview<span v-if="previewFiles.length > 1" class="doc-viewer-count" aria-live="polite">File {{ previewIndex + 1 }} of {{ previewFiles.length }}</span></span>
         <div class="doc-viewer-actions">
-          <a :href="previewImageUrl" target="_blank" rel="noopener" class="doc-viewer-btn"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open in new tab</a>
+          <a :href="previewImageUrl" target="_blank" rel="noopener" class="doc-viewer-btn" @click.prevent="openFileInNewTab(previewImageUrl)"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open in new tab</a>
           <button type="button" @click="downloadOriginal" :disabled="isDownloading" class="doc-viewer-btn is-primary">
             <i :class="isDownloading ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-download'" aria-hidden="true"></i>
             {{ isDownloading ? 'Downloading...' : 'Download' }}
@@ -1015,7 +1017,7 @@ const loadError = ref('');
         </div>
       </div>
       <div :class="['doc-viewer-stage', { 'is-zoomed': previewZoomed }]" @click.self="closePreview">
-        <iframe v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" class="doc-viewer-pdf" title="Document preview"></iframe>
+        <DocumentPdfPreview v-if="isPdfFile(previewImageUrl)" :src="previewImageUrl" title="Document preview" />
         <DocumentZoomImage v-else :src="previewImageUrl" @backdrop="closePreview" />
         <template v-if="previewFiles.length > 1">
           <button type="button" class="doc-viewer-nav is-prev" aria-label="Previous file" @click="stepPreview(-1)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>

@@ -76,7 +76,6 @@ const decision=(name,b)=>{closeDetails();emit(name,b);};
 const handlers={approve:b=>decision('approve',b),reject:b=>decision('reject',b),'approve-extension':b=>decision('approve-extension',b),'reject-extension':b=>decision('reject-extension',b),'mark-paid':b=>decision('mark-paid',b),changed:()=>emit('changed'),notice:value=>emit('notice',value),close:closeDetails};
 const hasExtension=b=>b.status==='confirmed' && Number(b.is_extension_requested)===1;
 const upfrontAmount=b=>!Number(b.renewal_waiting) && ownerUpfrontPayment(b).key!=='paid' && ['pending','confirmed'].includes(b.status) && Number(b.initial_payment) > 0 ? '₱'+ownerMoney(b.initial_payment) : '';
-const tabs=computed(()=>[{key:'all',label:'All bookings',count:propertyRows.value.length},{key:'pending',label:'Pending'},{key:'reserved',label:'Reserved'},{key:'occupying',label:'Occupying'},{key:'completed',label:'Completed'},{key:'not-arrived',label:'Did not arrive'},{key:'cancelled',label:'Cancelled'}]);
 // A second, smaller badge for what the row is waiting on; derived only from existing booking fields.
 const rowHint=b=>{
  if(hasExtension(b))return {label:'Extension +'+b.extension_months+' mo',tone:'purple',icon:'fa-calendar-plus'};
@@ -100,14 +99,13 @@ const rowHint=b=>{
 
   <div class="ob-filters">
    <label class="ob-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input v-model="search" type="search" aria-label="Search student or booking reference" placeholder="Search student or reference…"/></label>
-   <select v-model="status" aria-label="Filter booking status"><option value="all">Status</option><option value="pending">Pending requests</option><option value="reserved">Reserved</option><option value="occupying">Occupying</option><option value="confirmed">Approved</option><option value="review">Needs review</option><option value="completed">Completed</option><option value="cancelled">Cancelled / expired</option><option value="rejected">Rejected</option></select>
+   <select v-model="status" aria-label="Filter booking status"><option value="all">Status</option><option value="pending">Pending requests</option><option value="reserved">Reserved</option><option value="occupying">Occupying</option><option value="confirmed">Approved</option><option value="review">Needs review</option><option value="completed">Completed</option><option value="not-arrived">Did not arrive</option><option value="cancelled">Cancelled / expired</option><option value="rejected">Rejected</option></select>
    <select v-model="payment" aria-label="Filter payment"><option value="all">Payment</option><option value="paid">Upfront paid</option><option value="unpaid">Upfront unpaid</option><option value="cash">Cash bookings</option><option value="paymongo">Online bookings</option></select>
    <select v-model="room" aria-label="Filter room"><option value="all">Room</option><option v-for="number in rooms" :key="number" :value="number">Room {{ number }}</option></select>
    <details class="ob-date-filter"><summary><i class="fa-regular fa-calendar" aria-hidden="true"></i><span>{{ from || to ? 'Dates set' : 'Stay dates' }}</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary><div><strong>Stays overlapping these dates</strong><label>From<input v-model="from" type="date" aria-label="Stay date from"/></label><label>Through<input v-model="to" type="date" :min="from || undefined" aria-label="Stay date through"/></label><p v-if="invalidRange" role="alert">The end must be on or after the start.</p><button type="button" class="ob-link" @click="from='';to=''">Clear dates</button></div></details>
   </div>
 
   <div class="ob-tabs-row">
-   <nav class="ob-tabs" aria-label="Quick booking filters"><button v-for="tab in tabs" :key="tab.key" type="button" :aria-pressed="status===tab.key" @click="status=tab.key">{{ tab.label }}<span v-if="tab.count !== undefined" class="ob-tab-count">{{ tab.count }}</span></button></nav>
    <div class="ob-sort-tools"><button type="button" class="ob-link" :aria-pressed="sort==='booked' && order===-1" @click="sort='booked';order=-1;page=1"><i class="fa-solid fa-arrow-down-wide-short" aria-hidden="true"></i> Newest first</button><button type="button" class="ob-link" @click="reset">Reset filters</button></div>
   </div>
 

@@ -1,5 +1,5 @@
-# 1. Use the official lightweight Node.js 18 runtime as a base image
-FROM node:18-alpine
+# 1. Use the official lightweight Node.js 20 runtime (nodemailer and @peculiar/x509 require Node 20+)
+FROM node:20-alpine
 
 # 2. Set the working directory inside the container
 WORKDIR /app

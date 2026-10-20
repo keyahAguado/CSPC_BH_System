@@ -3,10 +3,12 @@ const cancellationPrompt = booking => { try { const review=JSON.parse(booking.ca
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
+import StudentPager from '../../components/partials/StudentPager.vue';
+import StudentBookingCard from '../../components/student/StudentBookingCard.vue';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 import {
   formatMoney, formatShortDate, formatCheckInShort, formatCheckOutShort, monthsLabel,
-  bookingAddress, bookingReference, checkInDateOf, isActiveBooking, isAwaitingPayment,
+  bookingAddress, bookingReference, isActiveBooking, isAwaitingPayment,
   bookingStatusBadge, paymentStatusBadge, BADGE_TONE_CLASSES, needsOnlinePayment
 } from '../../utils/studentBookings.js';
 
@@ -21,18 +23,13 @@ const alerts = ref([]);
 const { isOffline } = useOfflineStatus();
 const token = sessionStorage.getItem('cspc_token');
 
-// Search / filter / sort / page are kept for this tab so "Back to My Bookings" restores them
+// View and page are kept for this tab so "Back to My Bookings" restores them
 const savedState = (() => {
   try { return JSON.parse(sessionStorage.getItem(STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
 })();
 const VIEWS = ['all', 'active', 'history', 'awaiting'];
-const STATUSES = ['', 'pending', 'confirmed', 'completed', 'not_arrived', 'cancelled', 'rejected'];
-const SORTS = ['recent', 'oldest', 'move_in', 'amount'];
 
-const searchQuery = ref(typeof savedState.q === 'string' ? savedState.q : '');
 const viewFilter = ref(VIEWS.includes(savedState.view) ? savedState.view : 'all');
-const statusFilter = ref(STATUSES.includes(savedState.status) ? savedState.status : '');
-const sortBy = ref(SORTS.includes(savedState.sort) ? savedState.sort : 'recent');
 const currentPage = ref(Math.max(1, parseInt(savedState.page, 10) || 1));
 
 // Displays the slide-in toast notification banner in the upper right
@@ -122,39 +119,12 @@ const timeOf = (val) => {
   return isNaN(t) ? null : t;
 };
 
-const filteredBookings = computed(() => {
-  const terms = searchQuery.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const list = bookings.value
-    .map((b, index) => ({ b, index }))
-    .filter(({ b }) => {
-      if (!matchesView(b)) return false;
-      if (statusFilter.value && b.status !== statusFilter.value) return false;
-      if (!terms.length) return true;
-      const haystack = [b.house_name, `room ${b.room_number}`, b.room_number, bookingAddress(b), bookingReference(b)]
-        .filter(Boolean).join(' ').toLowerCase();
-      return terms.every(t => haystack.includes(t));
-    });
-
-  const byBooked = (dir) => (x, y) => ((timeOf(x.b.booking_date) ?? 0) - (timeOf(y.b.booking_date) ?? 0)) * dir || x.index - y.index;
-  if (sortBy.value === 'recent') {
-    // Booking creation order, independent of lifecycle status.
-    list.sort(byBooked(-1));
-  } else if (sortBy.value === 'oldest') {
-    list.sort(byBooked(1));
-  } else if (sortBy.value === 'move_in') {
-    list.sort((x, y) => {
-      const tx = timeOf(checkInDateOf(x.b));
-      const ty = timeOf(checkInDateOf(y.b));
-      if (tx === null && ty === null) return x.index - y.index;
-      if (tx === null) return 1;
-      if (ty === null) return -1;
-      return tx - ty || x.index - y.index;
-    });
-  } else if (sortBy.value === 'amount') {
-    list.sort((x, y) => (Number(y.b.amount) || 0) - (Number(x.b.amount) || 0) || x.index - y.index);
-  }
-  return list.map(item => item.b);
-});
+// Newest booking first
+const filteredBookings = computed(() => bookings.value
+  .filter(matchesView)
+  .map((b, index) => ({ b, index }))
+  .sort((x, y) => (timeOf(y.b.booking_date) ?? 0) - (timeOf(x.b.booking_date) ?? 0) || x.index - y.index)
+  .map(item => item.b));
 
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredBookings.value.length / PAGE_SIZE)));
 const pageStart = computed(() => filteredBookings.value.length === 0 ? 0 : (currentPage.value - 1) * PAGE_SIZE + 1);
@@ -163,45 +133,21 @@ const pagedBookings = computed(() =>
   filteredBookings.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE)
 );
 
-// Page buttons: first, last, and one either side of the current page, with gaps as "…"
-const pageButtons = computed(() => {
-  const total = totalPages.value;
-  const keep = new Set([1, total, currentPage.value - 1, currentPage.value, currentPage.value + 1]
-    .filter(n => n >= 1 && n <= total));
-  const list = [];
-  let prev = 0;
-  [...keep].sort((a, b) => a - b).forEach(n => {
-    if (n - prev > 1) list.push('gap-' + n);
-    list.push(n);
-    prev = n;
-  });
-  return list;
-});
-
 const goToPage = (n) => {
   if (n >= 1 && n <= totalPages.value) currentPage.value = n;
 };
 
-watch([searchQuery, viewFilter, statusFilter, sortBy], () => { currentPage.value = 1; });
+watch(viewFilter, () => { currentPage.value = 1; });
 
 watch([totalPages, isLoading], ([total, loading]) => {
   if (!loading && currentPage.value > total) currentPage.value = total;
 }, { immediate: true });
 
-watch([searchQuery, viewFilter, statusFilter, sortBy, currentPage], () => {
+watch([viewFilter, currentPage], () => {
   try {
-    sessionStorage.setItem(STATE_KEY, JSON.stringify({
-      q: searchQuery.value, view: viewFilter.value, status: statusFilter.value, sort: sortBy.value, page: currentPage.value
-    }));
+    sessionStorage.setItem(STATE_KEY, JSON.stringify({ view: viewFilter.value, page: currentPage.value }));
   } catch (e) {}
 });
-
-const resetFilters = () => {
-  searchQuery.value = '';
-  viewFilter.value = 'all';
-  statusFilter.value = '';
-  sortBy.value = 'recent';
-};
 
 const tableTitle = computed(() => ({
   all: 'Your booking history',
@@ -219,7 +165,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-[#f6f8fb] min-h-screen font-sans text-slate-800 pb-20">
+  <div class="bg-[#f6f8fb] min-h-screen font-sans text-slate-800 pb-4 md:pb-10">
     <StudentNav />
 
     <!-- Alert Panel (slide-in toasts) -->
@@ -240,27 +186,33 @@ onMounted(() => {
       </div>
     </div>
 
-    <main class="max-w-[1920px] mx-auto px-4 sm:px-8 xl:px-[62px] pt-10 lg:pt-14 text-left">
-      <header>
+    <main class="max-w-[1920px] mx-auto px-4 sm:px-8 xl:px-[62px] pt-6 md:pt-10 lg:pt-14 text-left">
+      <!-- Mobile header -->
+      <header class="md:hidden">
+        <h1 class="text-[30px] font-extrabold text-[#0f1f45] tracking-tight leading-tight">My Bookings</h1>
+        <p class="mt-1 text-[15px] text-slate-500">Manage your reservations</p>
+      </header>
+
+      <header class="hidden md:block">
         <h1 class="text-[28px] sm:text-[40px] font-extrabold text-slate-900 tracking-tight uppercase leading-none">My Bookings</h1>
         <p class="mt-3 sm:mt-4 text-[11px] sm:text-[13px] font-semibold text-slate-400 uppercase tracking-[0.18em]">View your active and past boarding house bookings</p>
       </header>
 
       <!-- Loading State -->
-      <div v-if="isLoading" class="mt-8 bg-white rounded-2xl p-20 text-center border border-slate-200 flex flex-col items-center justify-center">
+      <div v-if="isLoading" class="mt-5 md:mt-8 bg-white rounded-2xl p-12 md:p-20 text-center border border-slate-200 flex flex-col items-center justify-center">
         <div class="w-8 h-8 border-4 border-blue-700 border-t-transparent rounded-full animate-spin mb-3"></div>
         <p class="text-slate-400 font-semibold text-sm">Loading your bookings…</p>
       </div>
 
       <!-- Offline -->
-      <div v-else-if="isOffline" class="mt-8 bg-white rounded-2xl p-16 text-center border-2 border-dashed border-amber-200">
+      <div v-else-if="isOffline" class="mt-5 md:mt-8 bg-white rounded-2xl p-10 md:p-16 text-center border-2 border-dashed border-amber-200">
         <i class="fa-solid fa-wifi text-3xl text-amber-300 mb-4"></i>
         <p class="text-amber-600 font-bold uppercase tracking-widest text-xs mb-2">No Internet Connection</p>
         <p class="text-slate-400 font-medium text-sm">Please connect to the internet to view your bookings.</p>
       </div>
 
       <!-- Load error -->
-      <div v-else-if="loadError" class="mt-8 bg-white rounded-2xl p-16 text-center border border-rose-100">
+      <div v-else-if="loadError" class="mt-5 md:mt-8 bg-white rounded-2xl p-10 md:p-16 text-center border border-rose-100">
         <i class="fa-solid fa-circle-exclamation text-3xl text-rose-400 mb-4"></i>
         <p class="text-slate-900 font-bold mb-1">Unable to load your bookings</p>
         <p class="text-slate-400 text-sm mb-5">Something went wrong. Please try again.</p>
@@ -268,7 +220,7 @@ onMounted(() => {
       </div>
 
       <!-- Empty -->
-      <div v-else-if="bookings.length === 0" class="mt-8 p-16 border-2 border-dashed border-slate-200 rounded-2xl bg-white flex flex-col items-center justify-center gap-3 text-center">
+      <div v-else-if="bookings.length === 0" class="mt-5 md:mt-8 p-10 md:p-16 border-2 border-dashed border-slate-200 rounded-2xl bg-white flex flex-col items-center justify-center gap-3 text-center">
         <i class="fa-solid fa-calendar-xmark text-4xl text-slate-300"></i>
         <p class="text-slate-500 font-bold">You have no bookings yet.</p>
         <router-link to="/student/dashboard" class="text-[#1e4b8f] font-bold text-sm hover:underline">Browse boarding houses</router-link>
@@ -276,76 +228,38 @@ onMounted(() => {
 
       <template v-else>
         <!-- Summary cards (also act as quick view filters) -->
-        <div class="mt-7 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-3.5">
+        <div class="mt-5 md:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-3.5">
           <button
             v-for="card in statCards"
             :key="card.key"
             type="button"
             @click="viewFilter = card.key"
             :aria-pressed="viewFilter === card.key"
-            class="text-left bg-white rounded-xl px-5 py-[15px] sm:min-w-[146px] transition border"
+            class="text-left bg-white rounded-xl px-4 sm:px-5 py-3.5 sm:py-[15px] sm:min-w-[146px] transition border"
             :class="viewFilter === card.key ? 'border-[#1e4b8f] ring-1 ring-[#1e4b8f]' : 'border-slate-200 hover:border-slate-300'"
           >
-            <span class="block text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.12em] whitespace-nowrap"
+            <span class="block text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.1em] sm:tracking-[0.12em] sm:whitespace-nowrap leading-tight"
                   :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
             <span class="block mt-2 text-[26px] sm:text-[28px] font-bold leading-none"
                   :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
           </button>
         </div>
 
-        <!-- Search, filters, sort -->
-        <div class="mt-7 bg-white border border-slate-200 rounded-2xl p-3 sm:p-[18px] flex flex-col lg:flex-row lg:items-center gap-3">
-          <div class="relative flex-1 min-w-0">
-            <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-400 pointer-events-none">
-              <i class="fa-solid fa-magnifying-glass text-[12px]"></i>
-            </span>
-            <input
-              v-model="searchQuery"
-              type="text"
-              aria-label="Search bookings"
-              placeholder="Search your bookings by boarding house or room"
-              class="w-full h-12 pl-10 pr-4 bg-white border border-slate-300 rounded-lg text-[14px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-[#1e4b8f] transition"
-            >
+        <!-- MOBILE: booking cards -->
+        <div class="md:hidden">
+          <div v-if="filteredBookings.length === 0" class="mt-4 bg-white rounded-2xl border border-slate-200 px-6 py-12 text-center">
+            <i class="fa-regular fa-calendar-xmark text-3xl text-slate-300 mb-3"></i>
+            <p class="text-[14px] text-slate-500 font-medium mb-2">No bookings in this view.</p>
+            <button type="button" @click="viewFilter = 'all'" class="text-[#1e4b8f] font-bold text-sm">Show all bookings</button>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 lg:flex gap-3 lg:items-center">
-            <div class="relative">
-              <select v-model="viewFilter" aria-label="View" class="bk-select lg:w-[166px]">
-                <option value="all">View: All bookings</option>
-                <option value="active">View: Active</option>
-                <option value="history">View: History</option>
-                <option value="awaiting">View: Awaiting payment</option>
-              </select>
-              <i class="fa-solid fa-chevron-down bk-chevron"></i>
-            </div>
-            <div class="relative">
-              <select v-model="statusFilter" aria-label="Booking status" class="bk-select lg:w-[156px]">
-                <option value="">Booking status</option>
-                <option value="pending">Pending</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="completed">Checked out</option>
-                <option value="not_arrived">Did not arrive</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <i class="fa-solid fa-chevron-down bk-chevron"></i>
-            </div>
-            <div class="relative">
-              <select v-model="sortBy" aria-label="Sort bookings" class="bk-select lg:w-[156px]">
-                <option value="recent">Sort: Recent</option>
-                <option value="oldest">Sort: Oldest</option>
-                <option value="move_in">Sort: Move-in date</option>
-                <option value="amount">Sort: Total cost</option>
-              </select>
-              <i class="fa-solid fa-chevron-down bk-chevron"></i>
-            </div>
-          </div>
-          <button
-            type="button"
-            @click="resetFilters"
-            class="self-end lg:self-auto px-2 lg:px-3 text-[14px] font-bold text-[#1e4b8f] hover:underline whitespace-nowrap"
-          >Reset filters</button>
+
+          <StudentBookingCard v-for="booking in pagedBookings" :key="`mc-${booking.id}`" :booking="booking" class="mt-4" />
+
+          <StudentPager v-if="filteredBookings.length > 0" class="mt-2" noun="bookings" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" @update:page="goToPage" />
         </div>
 
+        <!-- DESKTOP -->
+        <div class="hidden md:block">
         <!-- Bookings list -->
         <section class="mt-6 bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div class="flex items-center justify-between gap-4 px-5 sm:px-[25px] py-5">
@@ -357,8 +271,8 @@ onMounted(() => {
 
           <!-- No matches -->
           <div v-if="filteredBookings.length === 0" class="border-t border-slate-200 px-6 py-16 text-center">
-            <p class="text-slate-500 font-semibold mb-3">No bookings match your search or filters.</p>
-            <button type="button" @click="resetFilters" class="text-[#1e4b8f] font-bold text-sm hover:underline">Reset filters</button>
+            <p class="text-slate-500 font-semibold mb-3">No bookings in this view.</p>
+            <button type="button" @click="viewFilter = 'all'" class="text-[#1e4b8f] font-bold text-sm hover:underline">Show all bookings</button>
           </div>
 
           <template v-else>
@@ -468,83 +382,17 @@ onMounted(() => {
             </div>
 
             <!-- Pagination -->
-            <div class="border-t border-slate-200 px-5 sm:px-[25px] py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <p class="text-[13px] text-slate-500">
-                Showing <b class="text-slate-700">{{ pageStart }}–{{ pageEnd }}</b> of <b class="text-slate-700">{{ filteredBookings.length }}</b> of your bookings
-              </p>
-              <nav v-if="totalPages > 1" aria-label="Booking pages" class="flex items-center gap-[7px]">
-                <button type="button" aria-label="Previous page" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" class="bk-page">
-                  <i class="fa-solid fa-chevron-left text-[9px]"></i>
-                </button>
-                <template v-for="p in pageButtons" :key="p">
-                  <span v-if="typeof p === 'string'" class="w-5 text-center text-slate-400 text-xs">…</span>
-                  <button
-                    v-else
-                    type="button"
-                    :aria-label="`Page ${p}`"
-                    :aria-current="p === currentPage ? 'page' : undefined"
-                    @click="goToPage(p)"
-                    class="bk-page"
-                    :class="{ 'is-current': p === currentPage }"
-                  >{{ p }}</button>
-                </template>
-                <button type="button" aria-label="Next page" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" class="bk-page">
-                  <i class="fa-solid fa-chevron-right text-[9px]"></i>
-                </button>
-              </nav>
-            </div>
+            <StudentPager class="px-5 sm:px-[25px] border-t border-slate-200" noun="bookings" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredBookings.length" @update:page="goToPage" />
           </template>
         </section>
 
-        <p v-if="sortBy === 'recent'" class="mt-4 text-[12px] text-slate-400">Newest bookings appear first. Use the status filters to find active stays.</p>
+        <p class="mt-4 text-[12px] text-slate-400">Newest bookings appear first. Use the cards above to find active stays.</p>
+        </div>
       </template>
     </main>
   </div>
 </template>
 
-<style scoped>
-.bk-select {
-  width: 100%;
-  height: 48px;
-  appearance: none;
-  padding: 0 36px 0 14px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #334155;
-  outline: none;
-  cursor: pointer;
-}
-.bk-select:focus { border-color: #1e4b8f; }
-.bk-chevron {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 10px;
-  color: #64748b;
-  pointer-events: none;
-}
-.bk-page {
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-  transition: border-color .15s, color .15s;
-}
-.bk-page:hover:not(:disabled):not(.is-current) { border-color: #1e4b8f; color: #1e4b8f; }
-.bk-page:disabled { opacity: .45; cursor: default; }
-.bk-page.is-current { background: #1e4b8f; border-color: #1e4b8f; color: #fff; }
-</style>
 
 <style scoped>.booking-cancel-prompt{display:block;max-width:250px;margin-top:8px;font-size:12px;font-weight:500;line-height:1.6;white-space:normal;color:#1d4ed8;text-decoration:none}.booking-cancel-prompt:hover{text-decoration:underline}.booking-cancel-prompt i{display:inline-block;margin-left:4px;font-size:10px;text-decoration:none}.booking-cancel-prompt:focus-visible{outline:2px solid #60a5fa;outline-offset:3px;border-radius:3px}.booking-cancel-prompt.mobile{flex-basis:100%;max-width:none}.bk-method{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px solid #dbe4ef;background:#f8fafc;color:#475569;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap}.bk-method i{font-size:10px}.bk-method.paymongo{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}.bk-method.cash{border-color:#bbf7d0;background:#f0fdf4;color:#15803d}
 </style>

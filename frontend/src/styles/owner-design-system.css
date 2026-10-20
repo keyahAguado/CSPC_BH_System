@@ -242,3 +242,16 @@ body[data-owner-theme] table th, body[data-owner-theme] table th * { color: #0f1
 body[data-owner-theme] .room-details-refined :is(.pending-requests,.boarder-table) th { background: #fff !important; }
 body[data-owner-theme] .boarder-expanded-panel { background: #fff; }
 body[data-owner-theme] .tp-bar { background: #fff; }
+
+/* Phone / PWA only (desktop unchanged): compact page controls bar, tighter notices */
+@media (max-width: 640px) {
+  /* One row, three parts: Showing… | Rows per page | Prev 1 Next */
+  body[data-owner-theme] .tp-bar { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; padding: 8px 10px !important; gap: 8px !important; font-size: 11px !important; }
+  body[data-owner-theme] .tp-info { display: contents; }
+  body[data-owner-theme] .tp-info > span { line-height: 1.35; overflow-wrap: anywhere; }
+  body[data-owner-theme] .tp-rows { flex-direction: column; align-items: center; gap: 2px; font-size: 10px; line-height: 1.2; white-space: nowrap; }
+  body[data-owner-theme] .tp-rows select { height: 30px !important; min-height: 30px !important; padding: 0 4px; font-size: 12px; }
+  body[data-owner-theme] .tp-pages { gap: 3px; }
+  body[data-owner-theme] .tp-pages button { height: 32px !important; min-height: 32px !important; min-width: 32px; padding: 0 7px; gap: 4px; font-size: 11.5px; }
+  body[data-owner-theme] :is(.booking-flow-notice, .reservation-deadline) { padding: 9px 10px !important; font-size: 12px !important; line-height: 1.5 !important; max-width: none !important; }
+}

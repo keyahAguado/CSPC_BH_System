@@ -29,6 +29,13 @@ export const getApiBaseUrl = () => {
       return window.location.origin;
     }
 
+    // Served on the standard web port (80/443) means the Docker/nginx setup: stay same-origin so /api and
+    // /uploads go through nginx (also required by the Content Security Policy). Vite dev (:5173) is unaffected.
+    const onStandardPort = !window.location.port || window.location.port === '80' || window.location.port === '443';
+    if (onStandardPort && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+      return '';
+    }
+
     // When accessing over LAN IP on mobile/other device (e.g. 192.168.x.x), target laptop's IP on port 3000
     if (isPrivateLanIp && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
       const protocol = window.location.protocol;
@@ -67,8 +74,9 @@ export const getImageUrl = (imagePath) => {
     try {
       const urlObj = new URL(imagePath);
       // Rewrite localhost/127.0.0.1 to current accessible host/port if accessed from mobile/LAN
-      if (urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1') {
-        const baseObj = new URL(baseUrl);
+      if (urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1' || urlObj.hostname === '[::1]') {
+        const baseObj = new URL(baseUrl || window.location.origin, window.location.origin);
+        if(urlObj.pathname.startsWith('/public/uploads/'))urlObj.pathname=urlObj.pathname.replace('/public/uploads/','/uploads/');
         urlObj.protocol = baseObj.protocol;
         urlObj.hostname = baseObj.hostname;
         urlObj.port = baseObj.port;

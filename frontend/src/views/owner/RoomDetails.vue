@@ -589,10 +589,10 @@ const loadError = ref('');
               </button>
 
               <!-- Expanded detail panel -->
-              <div v-if="expandedOccupants.has(occ.id)" class="px-5 pb-5 bg-slate-50/50 border-t border-slate-100">
+              <div v-if="expandedOccupants.has(occ.id)" class="boarder-mobile-detail px-5 pb-5 bg-slate-50/50 border-t border-slate-100">
                 <div class="divide-y divide-slate-100">
 
-                  <!-- Row helper -->
+                  <!-- Same information as the desktop table row -->
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Ref No.</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.reference_no || 'MANUAL' }}</span>
@@ -605,71 +605,22 @@ const loadError = ref('');
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Check-Out</span>
                     <span class="font-bold text-sm text-blue-600">{{ getCheckoutDateDisplay(occ) }}</span>
                   </div>
-                  <div class="flex items-start justify-between py-2.5 gap-4">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide shrink-0">Address</span>
-                    <span class="font-bold text-sm text-slate-700 text-right">{{ occ.address || '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Contact</span>
-                    <span class="font-bold text-sm text-slate-700">{{ occ.contact_number || '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Emergency</span>
-                    <span class="font-bold text-sm text-slate-700">{{ occ.emergency_contact || '—' }}</span>
-                  </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Duration</span>
                     <span class="font-bold text-sm text-slate-700">{{ occ.months }} Month{{ occ.months > 1 ? 's' : '' }}</span>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Total Rent</span>
-                    <div class="text-right">
-                      <span class="font-bold text-sm text-slate-700 block">₱{{ calculateTotalRent(occ) ? Number(calculateTotalRent(occ)).toLocaleString() : '0' }}</span>
-                      <span class="text-[12px] font-bold text-slate-400 uppercase block">(₱{{ Number(room.price || room.house_price || 0).toLocaleString() }}/month)</span>
-                    </div>
-                  </div>
-                  <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Monthly Rent Status</span>
-                    <div class="flex items-center gap-1.5">
-                      <span :class="['o-badge', occ.payment_status === 'Paid' ? 'green' : 'amber']">
-                        <i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'"></i>
-                        {{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}
-                      </span>
-                      <button type="button" @click="handleTogglePayment(occ)" :class="['bd-btn', occ.payment_status === 'Paid' ? 'is-undo' : 'is-pay']">
-                        <i :class="['fa-solid', occ.payment_status === 'Paid' ? 'fa-rotate-left' : 'fa-check']" aria-hidden="true"></i>{{ occ.payment_status === 'Paid' ? 'Mark rent unpaid' : 'Mark rent paid' }}
-                      </button>
-                    </div>
+                    <div><span :class="['o-badge',occ.payment_status === 'Paid' ? 'green' : 'amber']"><i class="fa-solid" :class="occ.payment_status === 'Paid' ? 'fa-circle-check' : 'fa-clock'" aria-hidden="true"></i>{{ occ.payment_status === 'Paid' ? 'Rent Paid' : 'Rent Due' }}</span><small class="boarder-monthly-rate">&#8369;{{ Number(room.price || room.house_price || 0).toLocaleString() }}/month</small></div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
-                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Move-in Upfront</span>
-                    <div class="flex flex-col items-end gap-0.5">
-                      <span class="font-bold text-xs text-emerald-700">₱{{ formatMoveInLedger(occ).total.toLocaleString('en-US', {minimumFractionDigits:2}) }}</span>
-                      <template v-if="occ.payment_method === 'paymongo'">
-                        <span class="o-badge payment green">
-                          <i class="fa-solid fa-mobile-screen-button"></i>
-                          Upfront Paid (Online)
-                        </span>
-                      </template>
-                      <template v-else>
-                        <span :class="['o-badge', 'payment', isUpfrontCollected(occ) ? 'green' : 'amber']">
-                          <i class="fa-solid" :class="isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock'"></i>
-                          {{ getUpfrontLabel(occ) }}
-                        </span>
-                        <button type="button" @click="handleToggleUpfront(occ)" :class="['bd-btn', isUpfrontCollected(occ) ? 'is-undo' : 'is-pay']">
-                          <i :class="['fa-solid', isUpfrontCollected(occ) ? 'fa-rotate-left' : 'fa-check']" aria-hidden="true"></i>{{ getUpfrontActionLabel(occ) }}
-                        </button>
-                      </template>
-                    </div>
+                    <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Move-in Upfront Fee</span>
+                    <div><template v-if="formatMoveInLedger(occ).total > 0"><strong class="boarder-upfront-amount">&#8369;{{ formatMoveInLedger(occ).total.toLocaleString('en-US',{minimumFractionDigits:2}) }}</strong><span :class="['o-badge', 'payment', occ.payment_method === 'paymongo' || isUpfrontCollected(occ) ? 'green' : 'amber']"><i :class="['fa-solid', occ.payment_method === 'paymongo' ? 'fa-mobile-screen-button' : isUpfrontCollected(occ) ? 'fa-money-bill-wave' : 'fa-clock']" aria-hidden="true"></i>{{ occ.payment_method === 'paymongo' ? 'Upfront Paid (Online)' : getUpfrontLabel(occ) }}</span></template><span v-else>No Deposit / Advance</span></div>
                   </div>
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Action</span>
-                    <button v-if="canConfirmArrival(occ)" type="button" @click="triggerConfirm('Confirm Arrival?', `Confirm that ${occ.name} has moved in? They will count as a resident in SASO figures. Payment is not changed.`, () => handleConfirmArrival(occ))" class="bd-btn is-arrival mr-2"><i class="fa-solid fa-door-open" aria-hidden="true"></i>Confirm Arrival</button>
-                    <button v-if="!occupantNotArrived(occ)" @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}?`, () => handleCheckoutOccupant(occ.id))"
-                            type="button" class="bd-btn is-checkout">
-                      <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>Checkout
-                    </button>
+                    <div class="boarder-mobile-actions"><button v-if="canConfirmArrival(occ)" type="button" @click="triggerConfirm('Confirm Arrival?', `Confirm that ${occ.name} has moved in? They will count as a resident in SASO figures. Payment is not changed.`, () => handleConfirmArrival(occ))" class="bd-btn is-arrival"><i class="fa-solid fa-door-open" aria-hidden="true"></i>Confirm Arrival</button><button type="button" @click="handleTogglePayment(occ)" :class="['bd-btn', occ.payment_status === 'Paid' ? 'is-undo' : 'is-pay']"><i :class="['fa-solid', occ.payment_status === 'Paid' ? 'fa-rotate-left' : 'fa-check']" aria-hidden="true"></i>{{ occ.payment_status === 'Paid' ? 'Mark rent unpaid' : 'Mark rent paid' }}</button><button v-if="!occupantNotArrived(occ)" type="button" @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}? This will free their slot in this room.`, () => handleCheckoutOccupant(occ.id))" class="bd-btn is-checkout"><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>Checkout</button><BookingArrivalActions v-if="occupantBooking(occ)" :booking="occupantBooking(occ)" compact @changed="fetchRoomDetails" @notice="showSystemAlert($event.message, $event.tone)" /></div>
                   </div>
-                  <BookingArrivalActions v-if="occupantBooking(occ)" :booking="occupantBooking(occ)" compact class="pb-2.5" @changed="fetchRoomDetails" @notice="showSystemAlert($event.message, $event.tone)" />
 
                 </div>
               </div>
@@ -903,4 +854,60 @@ const loadError = ref('');
 </style>
 
 <style scoped>.manual-occupant-dialog{padding:26px;border-radius:18px;max-height:calc(100dvh - 64px);overflow:auto;box-shadow:0 20px 70px #10274440}.manual-occupant-dialog h2{text-transform:none;font-size:21px}.manual-occupant-dialog p{font-size:13px;line-height:1.7;color:#27476d}.manual-occupant-form label{font-size:13px;color:#193c66;text-transform:none;font-weight:650}.manual-occupant-form input,.manual-occupant-form select{font-size:14px;font-weight:500;color:#102e50;background:white}.manual-occupant-footer{display:flex;gap:12px;align-items:center}.manual-occupant-footer button{width:auto;flex:1;text-transform:none;font-size:14px;letter-spacing:0;padding:12px;box-shadow:none}.manual-occupant-cancel{border:1px solid #cbd9ec;border-radius:12px;background:white;color:#193c66;font-weight:600}@media(max-width:640px){.manual-occupant-dialog{padding:20px;max-height:calc(100dvh - 32px)}.manual-occupant-overlay{padding:16px}}.bd-btn.is-hold,.bd-btn.is-hold:disabled{background:#f1f5f9;border-color:#e2e8f0;color:#475569;opacity:1;cursor:not-allowed}.pending-hold{display:grid;gap:4px;max-width:300px;margin:0 auto;text-align:left;font-size:12.5px;line-height:1.55;color:#334155}.pending-hold strong{display:flex;align-items:center;gap:7px;color:#0f172a;font-weight:650}.pending-hold strong i{color:#64748b;font-size:12px}.pending-hold b{color:#0f172a;font-weight:600}
+</style>
+
+<style scoped>
+/* Phone / PWA only (desktop unchanged): heading on its own line, boarder filter and Add button side by side */
+@media(max-width:639px){
+.room-details-refined .rd-boarder-heading{display:block!important}
+.rd-boarder-heading>div:first-child{width:100%}
+.rd-boarder-heading .boarder-toolbar-actions{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;width:100%;min-width:0;margin-top:12px}
+.rd-boarder-heading .boarder-type-filter{width:100%;min-width:0;max-width:none}
+.rd-boarder-heading .boarder-toolbar-actions>.management-button{width:100%;justify-content:center;white-space:normal;line-height:1.25;padding:6px 10px!important;gap:6px}
+}
+/* Phone / PWA only: expanded boarder card as a two-column table - labels left, values right, one center line */
+@media(max-width:639px){
+.boarder-mobile-detail{padding:10px 12px 12px!important}
+.boarder-mobile-detail>.divide-y{border:1px solid #dfe8f3;border-radius:12px;background:#fff;overflow:hidden}
+.boarder-mobile-detail>.divide-y>*{margin:0!important;border-top:0!important;border-bottom:1px solid #e8eef6!important}
+.boarder-mobile-detail>.divide-y>*:last-child{border-bottom:0!important}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11){display:grid!important;grid-template-columns:38% minmax(0,1fr);align-items:stretch!important;gap:0!important;padding:0!important}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>:first-child{grid-row:1 / span 3;display:flex;align-items:center;padding:9px 10px;border-right:1px solid #e8eef6;font-size:10.5px!important;letter-spacing:.04em;color:#64748b!important}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>:not(:first-child){grid-column:2;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:6px;padding:9px 10px;text-align:left!important;font-size:13px!important;overflow-wrap:anywhere;min-width:0}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>.text-right>span{display:inline}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>div{flex-direction:row!important;align-items:center!important}
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>.boarder-mobile-actions{flex-direction:column!important;align-items:stretch!important;flex-wrap:nowrap}
+.boarder-mobile-actions>.bd-btn{width:100%;justify-content:center}
+.boarder-mobile-detail .boarder-monthly-rate{margin:0;font-size:11.5px}
+.boarder-mobile-detail .boarder-upfront-amount{margin:0;font-size:13px}
+.boarder-mobile-detail .bd-btn{min-height:30px!important;padding:4px 10px!important;font-size:11.5px!important;border-radius:7px!important;margin:0!important}
+}
+@media(max-width:639px){
+/* Rent status and upfront fee: stacked and left-aligned */
+.boarder-mobile-detail>.divide-y>:is(:nth-child(5),:nth-child(6))>div{flex-direction:column!important;align-items:flex-start!important;justify-content:flex-start!important;gap:4px!important;text-align:left!important}
+.boarder-mobile-detail>.divide-y>div>:not(:first-child) :is(small,strong){text-align:left}
+}
+@media(max-width:639px){
+/* Values pushed to the right edge of the value column */
+.boarder-mobile-detail>.divide-y>div:nth-child(-n+11)>:not(:first-child){justify-content:flex-end!important;text-align:right!important}
+.boarder-mobile-detail>.divide-y>:is(:nth-child(5),:nth-child(6))>div{align-items:flex-end!important;text-align:right!important}
+.boarder-mobile-detail>.divide-y>div>:not(:first-child) :is(small,strong){text-align:right}
+}
+@media(max-width:639px){
+/* Add Non-CSPC Occupant pop-up: fields two per row, smaller inputs */
+.manual-occupant-overlay{padding:10px!important}
+.manual-occupant-dialog{padding:16px!important}
+.manual-occupant-dialog>div:first-child{margin-bottom:12px!important}
+.manual-occupant-dialog h2{font-size:18px}
+.manual-occupant-dialog>p{margin-bottom:12px!important;font-size:12.5px!important;line-height:1.55!important}
+.manual-occupant-form{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+.manual-occupant-form>div:first-child,.manual-occupant-form>div:nth-last-child(2),.manual-occupant-form>.manual-occupant-footer{grid-column:1/-1}
+.manual-occupant-form label{margin-bottom:4px!important;font-size:11px!important}
+.manual-occupant-form :is(input,select){padding:10px 11px!important}
+/* Long notices */
+.checkout-attention{padding:12px;gap:10px;margin:12px 0}
+.checkout-attention h2{font-size:14px}
+.checkout-attention p{font-size:12px;line-height:1.55;margin:4px 0}
+.pending-hold span{font-size:12px;line-height:1.5}
+}
 </style>

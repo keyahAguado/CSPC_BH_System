@@ -1122,4 +1122,23 @@ const loadError = ref('');
   .eh-main :deep(.management-header-actions) { width: 100%; }
   .eh-main :deep(.management-header-actions) .eh-btn { flex: 1; }
 }
+/* Phone / PWA only (desktop unchanged): tighter cards, fields two per row, amenities two per row */
+@media (max-width: 560px) {
+  .eh-grid { gap: 12px; }
+  .eh-card { padding: 14px; border-radius: 14px; }
+  .eh-title { margin-bottom: 10px; font-size: 15px !important; }
+  .eh-fields-details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .eh-fields-details > .eh-name { grid-column: 1 / -1; }
+  .eh-fields-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .eh-fields-3 > div:nth-child(3) { grid-column: 1 / -1; }
+  .eh-input { height: 40px; min-height: 40px !important; }
+  .eh-preview { font-size: 12.5px; padding: 8px 10px; }
+  .eh-amenities { gap: 14px; }
+  .eh-amen-group + .eh-amen-group { border-top: 1px solid var(--a-border); padding-top: 14px; }
+  .eh-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .eh-chip { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border-radius: 10px; }
+  .eh-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eh-textarea { min-height: 100px !important; }
+  .eh-map { min-height: 240px; }
+}
 </style>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" role="img" aria-label="Property photo unavailable">
+  <rect width="600" height="400" fill="#edf2f8"/>
+  <path d="m185 195 115-90 115 90v112H185Z" fill="#d1deed"/>
+  <path d="m165 200 135-108 135 108" fill="none" stroke="#8fa6bf" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+  <rect x="278" y="230" width="44" height="77" rx="4" fill="#8fa6bf"/>
+  <path d="M219 220h30v30h-30Zm132 0h30v30h-30Z" fill="#fff"/>
+  <text x="300" y="350" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" fill="#58708c">Photo unavailable</text>
+</svg>

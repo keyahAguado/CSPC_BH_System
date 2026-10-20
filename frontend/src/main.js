@@ -1,7 +1,20 @@
+import '@fortawesome/fontawesome-free/css/all.min.css';
 import { simulatedBookingTime } from './utils/bookingClock.js';
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
+// Fonts bundled with the app (no request to Google Fonts; also works offline).
+import '@fontsource/plus-jakarta-sans/400.css';
+import '@fontsource/plus-jakarta-sans/500.css';
+import '@fontsource/plus-jakarta-sans/600.css';
+import '@fontsource/plus-jakarta-sans/700.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
 import './style.css'; // Tailwind CSS
 import './styles/owner-design-system.css';
 import './styles/print-actions.css';

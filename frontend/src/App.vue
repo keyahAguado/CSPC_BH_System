@@ -97,16 +97,6 @@ onMounted(() => {
   ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, resetIdleTimer, { passive: true }));
   router.afterEach(() => resetIdleTimer());
 
-  // Dynamically inject the FontAwesome stylesheet on runtime
-  if (!document.getElementById('font-awesome-cdn')) {
-    const link = document.createElement('link');
-    link.id = 'font-awesome-cdn';
-    link.rel = 'stylesheet';
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
-    link.crossOrigin = 'anonymous';
-    link.referrerPolicy = 'no-referrer';
-    document.head.appendChild(link);
-  }
 });
 
 onUnmounted(() => {

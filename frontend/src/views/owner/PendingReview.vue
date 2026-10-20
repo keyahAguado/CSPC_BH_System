@@ -181,3 +181,17 @@ const loadError = ref('');
     </main>
 </div>
 </template>
+<style scoped>
+/* Phone / PWA only (desktop unchanged) */
+@media (max-width: 640px) {
+  .management-content > .w-full > p.mb-8 { margin-bottom: 14px; padding: 0; font-size: 13px; }
+  .space-y-4.mb-8 { margin-bottom: 16px; }
+  .space-y-4.mb-8 > div { padding: 14px; gap: 12px; border-radius: 16px; }
+  .space-y-4.mb-8 > div h3 { font-size: 16px; }
+  .space-y-4.mb-8 > div > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .space-y-4.mb-8 > div > div:last-child > a { justify-content: center; padding: 10px 8px; font-size: 11.5px; }
+  .flex.flex-col.gap-4.justify-center { gap: 8px; }
+  .flex.flex-col.gap-4.justify-center > * { padding-top: 12px; padding-bottom: 12px; border-radius: 12px; }
+  p.mt-10 { margin-top: 20px; text-align: center; }
+}
+</style>

@@ -1,4 +1,5 @@
 <script setup>
+import { openFileInNewTab } from '../../utils/openFile.js';
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import DropdownSelect from '../../components/DropdownSelect.vue';
 import TablePager from '../../components/management/TablePager.vue';
@@ -1873,7 +1874,7 @@ const submitApplication = async () => {
                             <small>{{ formatFileSize(permitFiles[p.permit_key].reduce((t, f) => t + f.size, 0)) }}</small>
                           </span>
                           <span v-else-if="existingFiles[p.permit_key]" class="dt-file-text is-ok">
-                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener">View</a>
+                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener" @click.prevent="openFileInNewTab(getImageUrl(existingFiles[p.permit_key]))">View</a>
                           </span>
                           <span v-else-if="!permitFileErrors[p.permit_key]" class="dt-file-text">No file chosen</span>
                         </div>
@@ -2584,4 +2585,50 @@ const submitApplication = async () => {
 .registration-compact .gmail-field input { height: 46px; min-height: 46px; font-size: 15px !important; }
 .gmail-domain { display: flex; align-items: center; padding: 0 14px; background: #eef2f7; border-left: 1px solid #e2e8f0; color: #475569; font-size: 14px; font-weight: 600; white-space: nowrap; user-select: none; }
 
+</style>
+
+<style scoped>
+/* Phone / PWA only (desktop unchanged) */
+@media (max-width: 640px) {
+  /* Step cards: less padding so nothing is cut off at the right edge */
+  .animate-fade-in.text-left.bg-white { padding: 14px !important; border-radius: 18px !important; overflow: hidden; }
+  .animate-fade-in.text-left.bg-white > div:first-child { margin-bottom: 14px !important; padding-bottom: 10px !important; gap: 10px !important; }
+  .animate-fade-in.text-left.bg-white :is(.gap-6, .gap-y-6) { row-gap: 12px !important; }
+  .animate-fade-in.text-left.bg-white .gap-6 { column-gap: 12px !important; }
+  .animate-fade-in.text-left.bg-white .gap-12 { gap: 16px !important; }
+  .animate-fade-in.text-left.bg-white :is(input, select, textarea).p-4, .animate-fade-in.text-left.bg-white :deep(.p-4.rounded-xl) { padding: 11px 12px !important; }
+  .animate-fade-in.text-left.bg-white label.mb-2 { margin-bottom: 5px !important; font-size: 11px !important; }
+  .rounded-\[2\.5rem\].p-10 { padding: 16px !important; border-radius: 18px !important; margin-bottom: 16px !important; }
+
+  /* Legal documents: one card per document - name and status on top, file and expiry below */
+  .dt-card { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+  .dt-group + .dt-group { border-top: 0; margin-top: 10px; }
+  .dt-group-title { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
+  .dt-group-title span { display: block; margin: 2px 0 0 20px; font-size: 11.5px; }
+  .dt-table tbody { display: grid !important; gap: 8px; padding-top: 8px; }
+  .dt-table .dt-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+  .dt-row.is-error { border-color: #f6caca; }
+  .dt-table .dt-row td { width: auto; padding: 0; background: transparent !important; }
+  .dt-table .dt-row td:nth-child(2) { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .dt-table .dt-row td:nth-child(2) .dt-pill { margin-top: 0; }
+  .dt-table .dt-row td:nth-child(5) { grid-column: 2; grid-row: 1; align-self: start; }
+  .dt-table .dt-row td:is(:nth-child(3), :nth-child(4)) { grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eef2f7; }
+  .dt-table .dt-row td:is(:nth-child(3), :nth-child(4))::before { content: attr(data-label); display: block; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #64748b; }
+  .dt-file { flex-wrap: wrap; gap: 6px 10px; }
+  .dt-upload { height: 36px; padding: 0 14px; }
+  .dt-file-text { flex: 1 1 0; }
+  .dt-date { width: 100%; height: 40px; }
+  .dt-status { width: auto; }
+
+  /* Photos: featured photo on top, gallery categories two per row */
+  .registration-photos { gap: 16px !important; }
+  .registration-photo-frame { aspect-ratio: 16 / 10; }
+  .registration-photos > section:first-child .registration-upload-button { flex: 1; justify-content: center; }
+  .registration-photos > section:last-child > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+  .registration-category { display: flex; flex-direction: column; padding: 8px; }
+  .registration-category > div:first-child { flex-direction: column; align-items: stretch; gap: 6px; }
+  .registration-category .registration-upload-button.small { justify-content: center; }
+  .registration-category > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-top: 6px !important; }
+  .registration-category > .grid > .sample { grid-column: 1 / -1; height: 60px; }
+}
 </style>

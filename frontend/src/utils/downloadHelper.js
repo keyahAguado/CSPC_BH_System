@@ -1,7 +1,7 @@
-import axios from 'axios';
+import { loadDocumentFile, fileTarget } from './openFile.js';
 
 /**
- * Downloads a file securely by fetching it with the Authorization token,
+ * Downloads a validated file; credentials are sent only to this app origin,
  * converting it to a same-origin blob URL, and triggering a programmatic download click.
  * 
  * @param {string} url - The URL of the file to download
@@ -13,18 +13,11 @@ import axios from 'axios';
 export async function downloadOriginalFile(url, token, onStart, onEnd, onError) {
   if (onStart) onStart();
   try {
-    const response = await axios.get(url, {
-      responseType: 'blob',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    const blob = response.data;
+    const blob = await loadDocumentFile(url, {token});
     const blobUrl = window.URL.createObjectURL(blob);
 
     // Extract filename from URL
-    const filename = url.substring(url.lastIndexOf('/') + 1) || 'download';
+    const filename = decodeURIComponent(fileTarget(url).pathname.split('/').pop() || 'document').replace(/[\\/:*?"<>|]/g,'_');
 
     const link = document.createElement('a');
     link.href = blobUrl;
@@ -33,7 +26,7 @@ export async function downloadOriginalFile(url, token, onStart, onEnd, onError) 
     link.click();
     document.body.removeChild(link);
 
-    window.URL.revokeObjectURL(blobUrl);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
   } catch (error) {
     if (onError) onError(error);
   } finally {
