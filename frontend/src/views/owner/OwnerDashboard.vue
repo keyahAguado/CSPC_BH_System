@@ -923,4 +923,15 @@ const loadError = ref('');
   .od-act { min-height: 38px; padding: 0 6px; gap: 5px; font-size: 12px; }
   .od-foot { padding-top: 8px; }
 }
+/* Phone / PWA only (desktop unchanged): smaller welcome banner and alert */
+@media (max-width: 560px) {
+  .od-welcome { padding: 16px; gap: 12px; margin-bottom: 14px; border-radius: 14px; }
+  .od-welcome::after { display: none; }
+  .od-welcome-eyebrow { margin-bottom: 4px; font-size: 12px; }
+  .od-welcome h1 { font-size: 20px !important; }
+  .od-welcome-summary { font-size: 13px; }
+  .od-btn-gold, .od-btn-glass { min-height: 38px; padding: 0 12px; font-size: 12.5px; }
+  .od-alert { gap: 10px; padding: 8px 8px 8px 10px; margin-bottom: 14px; }
+  .od-alert p { font-size: 13px; }
+}
 </style>

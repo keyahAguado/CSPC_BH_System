@@ -2590,7 +2590,14 @@ const submitApplication = async () => {
 /* Phone / PWA only (desktop unchanged) */
 @media (max-width: 640px) {
   /* Step cards: less padding so nothing is cut off at the right edge */
-  main > div:has(> .registration-photos), main > div:has(> .legal-fit), .registration-legal { padding: 14px !important; border-radius: 18px !important; overflow: hidden; }
+  .animate-fade-in.text-left.bg-white { padding: 14px !important; border-radius: 18px !important; overflow: hidden; }
+  .animate-fade-in.text-left.bg-white > div:first-child { margin-bottom: 14px !important; padding-bottom: 10px !important; gap: 10px !important; }
+  .animate-fade-in.text-left.bg-white :is(.gap-6, .gap-y-6) { row-gap: 12px !important; }
+  .animate-fade-in.text-left.bg-white .gap-6 { column-gap: 12px !important; }
+  .animate-fade-in.text-left.bg-white .gap-12 { gap: 16px !important; }
+  .animate-fade-in.text-left.bg-white :is(input, select, textarea).p-4, .animate-fade-in.text-left.bg-white :deep(.p-4.rounded-xl) { padding: 11px 12px !important; }
+  .animate-fade-in.text-left.bg-white label.mb-2 { margin-bottom: 5px !important; font-size: 11px !important; }
+  .rounded-\[2\.5rem\].p-10 { padding: 16px !important; border-radius: 18px !important; margin-bottom: 16px !important; }
 
   /* Legal documents: one card per document - name and status on top, file and expiry below */
   .dt-card { border: 0; border-radius: 0; background: transparent; overflow: visible; }

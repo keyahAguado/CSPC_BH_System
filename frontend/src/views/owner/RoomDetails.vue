@@ -893,4 +893,21 @@ const loadError = ref('');
 .boarder-mobile-detail>.divide-y>:is(:nth-child(5),:nth-child(6))>div{align-items:flex-end!important;text-align:right!important}
 .boarder-mobile-detail>.divide-y>div>:not(:first-child) :is(small,strong){text-align:right}
 }
+@media(max-width:639px){
+/* Add Non-CSPC Occupant pop-up: fields two per row, smaller inputs */
+.manual-occupant-overlay{padding:10px!important}
+.manual-occupant-dialog{padding:16px!important}
+.manual-occupant-dialog>div:first-child{margin-bottom:12px!important}
+.manual-occupant-dialog h2{font-size:18px}
+.manual-occupant-dialog>p{margin-bottom:12px!important;font-size:12.5px!important;line-height:1.55!important}
+.manual-occupant-form{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+.manual-occupant-form>div:first-child,.manual-occupant-form>div:nth-last-child(2),.manual-occupant-form>.manual-occupant-footer{grid-column:1/-1}
+.manual-occupant-form label{margin-bottom:4px!important;font-size:11px!important}
+.manual-occupant-form :is(input,select){padding:10px 11px!important}
+/* Long notices */
+.checkout-attention{padding:12px;gap:10px;margin:12px 0}
+.checkout-attention h2{font-size:14px}
+.checkout-attention p{font-size:12px;line-height:1.55;margin:4px 0}
+.pending-hold span{font-size:12px;line-height:1.5}
+}
 </style>
