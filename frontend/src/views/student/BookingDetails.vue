@@ -383,7 +383,7 @@ onMounted(fetchBooking);
 </script>
 
 <template>
-  <div class="bg-[#f6f8fb] min-h-screen font-sans text-slate-800 pb-20">
+  <div class="bg-[#f6f8fb] min-h-screen font-sans text-slate-800 pb-4 md:pb-10">
     <StudentNav />
 
     <!-- Alert Panel (slide-in toasts) -->
@@ -404,7 +404,7 @@ onMounted(fetchBooking);
       </div>
     </div>
 
-    <main class="max-w-[1240px] mx-auto px-4 sm:px-8 pt-8 lg:pt-10 pb-12 text-left">
+    <main class="max-w-[1240px] mx-auto px-4 sm:px-8 pt-6 md:pt-8 lg:pt-10 pb-4 md:pb-12 text-left">
       <nav aria-label="Breadcrumb" class="text-[13px] text-slate-500">
         <ol class="flex flex-wrap items-center gap-2">
           <li><router-link to="/student/dashboard" class="hover:text-[#1e4b8f] hover:underline">Home</router-link></li>

@@ -28,6 +28,7 @@ const isGuest = !token;
 import { getApiBaseUrl, getImageUrl } from '../../config/api';
 import { formatAddress } from '../../utils/formatAddress.js';
 import { formatPriceRange } from '../../utils/formatPrice.js';
+import { recordRecentlyViewed } from '../../utils/recentlyViewed.js';
 
 const API = getApiBaseUrl();
 
@@ -368,6 +369,8 @@ const fetchData = async () => {
       try {
         localStorage.setItem(`cspc_cached_house_${houseId}`, JSON.stringify(res.data));
       } catch {}
+      // Shown under "Recently Viewed" on the student's profile (logged-in students only)
+      if (!isGuest) recordRecentlyViewed(house.value, rooms.value);
     }
   } catch (e) {
     console.error('Failed to load house data from network', e);
@@ -479,6 +482,25 @@ const formatDate = (dateStr) => {
   }
 };
 
+// ---------- Phone layout helpers ----------
+let touchStartX = null;
+const onHeroTouchStart = (e) => { touchStartX = e.changedTouches[0].clientX; };
+const onHeroTouchEnd = (e) => {
+  if (touchStartX === null) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  touchStartX = null;
+  if (Math.abs(dx) < 40) return;
+  if (dx < 0) nextPhoto(); else prevPhoto();
+};
+const goBack = () => {
+  if (window.history.state?.back) router.back();
+  else router.push(isGuest ? '/' : '/student/dashboard');
+};
+// Phone reviews: a short preview list
+const REVIEW_PREVIEW_COUNT = 3;
+const showAllReviews = ref(false);
+const visibleReviews = computed(() => (showAllReviews.value ? reviews.value : reviews.value.slice(0, REVIEW_PREVIEW_COUNT)));
+
 const handleBook = () => {
   if (isGuest) { showLoginModal.value = true; return; }
   router.push(`/student/book/${houseId}`);
@@ -488,7 +510,7 @@ onMounted(fetchData);
 </script>
 
 <template>
-  <div class="bg-[#f8fafc] min-h-screen text-slate-800 pb-20 font-sans">
+  <div class="bg-[#f8fafc] min-h-screen text-slate-800 md:pb-20 font-sans">
     <StudentNav />
 
     <!-- Login Modal -->
@@ -525,14 +547,116 @@ onMounted(fetchData);
       </div>
     </section>
 
-    <main v-else class="max-w-5xl mx-auto py-12 px-6">
+    <main v-else class="max-w-5xl mx-auto pb-[92px] md:py-12 px-4 md:px-6">
       <div v-if="loadNotice" role="status" class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-slate-700">
         <p>{{ loadNotice }}</p>
         <button @click="fetchData" :disabled="isFetchingHouse" class="mt-2 text-blue-700 font-bold underline disabled:opacity-50">{{ isFetchingHouse ? 'Refreshing...' : 'Try Again' }}</button>
       </div>
 
-      <!-- TOP HEADER & ACTIONS -->
-      <div class="flex flex-col md:flex-row justify-between items-start gap-8 mb-10">
+      <!-- ===================== PHONE: photo header + summary ===================== -->
+      <section class="md:hidden -mx-4 text-left">
+        <!-- Photo carousel (swipe, or tap for fullscreen) -->
+        <div
+          class="relative h-[300px] bg-slate-900 overflow-hidden"
+          @touchstart.passive="onHeroTouchStart"
+          @touchend.passive="onHeroTouchEnd"
+        >
+          <img
+            v-if="currentPhoto"
+            :src="currentPhoto"
+            decoding="async"
+            class="w-full h-full object-cover"
+            :alt="`${house.name} photo ${currentPhotoIndex + 1} of ${photos.length}`"
+            @click="openLightbox(currentPhoto)"
+          />
+          <div v-else class="w-full h-full flex items-center justify-center text-slate-400 text-[12px] font-semibold">No property photos available</div>
+
+          <button type="button" @click="goBack" class="hero-btn absolute top-3 left-3" aria-label="Back">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+          </button>
+
+          <button v-if="photos.length > 1" type="button" @click="prevPhoto" class="hero-arrow left-2" aria-label="Previous photo"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+          <button v-if="photos.length > 1" type="button" @click="nextPhoto" class="hero-arrow right-2" aria-label="Next photo"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+
+          <span v-if="photos.length" class="absolute bottom-9 right-3 bg-slate-900/75 text-white text-[13px] font-semibold rounded-md px-2.5 py-1">
+            {{ currentPhotoIndex + 1 }} / {{ photos.length }}
+          </span>
+        </div>
+
+        <!-- White sheet overlapping the photo -->
+        <div class="relative -mt-6 bg-white rounded-t-[28px] px-5 pt-7 pb-2">
+          <h1 class="text-[24px] font-black text-slate-900 leading-tight text-center break-words">{{ house.name }}</h1>
+          <p class="text-[14px] text-slate-500 text-center mt-2">
+            <i class="fa-solid fa-location-dot text-blue-500 mr-1" aria-hidden="true"></i>{{ formatAddress(house) || 'Location pending' }}
+          </p>
+          <p class="text-[14px] text-slate-500 text-center mt-0.5">
+            <i class="fa-solid fa-door-open text-blue-500 mr-1" aria-hidden="true"></i>{{ rooms.length }} {{ rooms.length === 1 ? 'room' : 'rooms' }}
+            <template v-if="paidAmenities.length || freeAmenities.length"> · {{ freeAmenities.length + paidAmenities.length }} amenities</template>
+          </p>
+
+          <!-- Rating | Accredited | Reviews -->
+          <div class="grid grid-cols-[1fr_auto_1.3fr_auto_1fr] items-center mt-6 mb-5">
+            <div class="text-center">
+              <p class="text-[20px] font-bold text-slate-900 leading-none">{{ Number(avgRating) > 0 ? Number(avgRating).toFixed(1) : '0' }}</p>
+              <p class="text-[10px] text-slate-900 mt-1.5 tracking-[2px]" aria-hidden="true">
+                <i v-for="i in 5" :key="i" class="fa-solid fa-star" :class="i <= Math.round(Number(avgRating) || 0) ? '' : 'text-slate-300'"></i>
+              </p>
+            </div>
+            <span class="w-px h-10 bg-slate-200" aria-hidden="true"></span>
+            <div class="flex flex-col items-center justify-center gap-1">
+              <img src="/img/seal%20of%20approval.png" alt="CSPC Accredited seal of approval" class="w-14 h-14 object-contain" @error="e => e.target.src = '/img/CSPC_logo.png'" />
+              <span class="bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full whitespace-nowrap">CSPC Certified</span>
+            </div>
+            <span class="w-px h-10 bg-slate-200" aria-hidden="true"></span>
+            <div class="text-center">
+              <p class="text-[20px] font-bold text-slate-900 leading-none">{{ reviews.length }}</p>
+              <p class="text-[12px] text-slate-700 mt-1">{{ reviews.length === 1 ? 'Review' : 'Reviews' }}</p>
+            </div>
+          </div>
+
+          <div class="divide-y divide-slate-200 border-t border-slate-200">
+            <!-- Campus proximity -->
+            <div v-if="showCampusBadge" class="flex items-start gap-4 py-4">
+              <i class="fa-solid fa-graduation-cap text-[20px] text-slate-800 w-12 text-center pt-0.5" aria-hidden="true"></i>
+              <div>
+                <p class="text-[15px] font-semibold text-slate-900">Near CSPC Campus</p>
+                <p class="text-[13px] text-slate-500">{{ campusDistText }}</p>
+              </div>
+            </div>
+
+            <!-- Move-in conditions -->
+            <div class="flex items-start gap-4 py-4">
+              <i class="fa-solid fa-receipt text-[20px] text-slate-800 w-12 text-center pt-0.5" aria-hidden="true"></i>
+              <div>
+                <p class="text-[15px] font-semibold text-slate-900">Advance Rent</p>
+                <p class="text-[13px] text-slate-500">{{ house.advance_months > 0 ? house.advance_months + ' Month' + (house.advance_months > 1 ? 's' : '') + ' Advance' : 'No Advance Required' }}</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4 py-4">
+              <i class="fa-solid fa-lock text-[20px] text-slate-800 w-12 text-center pt-0.5" aria-hidden="true"></i>
+              <div>
+                <p class="text-[15px] font-semibold text-slate-900">Security Deposit</p>
+                <p class="text-[13px] text-slate-500">
+                  <template v-if="house.deposit_months > 0">{{ house.deposit_months }} Month{{ house.deposit_months > 1 ? 's' : '' }} ({{ house.deposit_type === 'consumable' ? 'Consumable' : 'Refundable' }})</template>
+                  <template v-else>No Deposit Required</template>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PHONE: price + Book Now bar (sits above the tab bar) -->
+      <div class="book-bar md:hidden" :class="{ 'is-guest': isGuest }">
+        <div class="min-w-0">
+          <p class="text-[18px] font-bold text-slate-900 underline underline-offset-2 truncate">{{ formatPriceRange(house) === '₱0' ? 'Price on request' : formatPriceRange(house).replace(' - ', ' – ') }}</p>
+          <p class="text-[13px] text-slate-500">Monthly rate</p>
+        </div>
+        <button type="button" @click="handleBook" class="shrink-0 bg-blue-700 hover:bg-blue-800 text-white text-[16px] font-semibold px-8 py-3.5 rounded-full">Book Now</button>
+      </div>
+
+      <!-- TOP HEADER & ACTIONS (desktop) -->
+      <div class="hidden md:flex flex-col md:flex-row justify-between items-start gap-8 mb-10">
         <div class="flex-1 text-left">
           <h1 class="text-4xl md:text-5xl font-black text-slate-900 tracking-tight uppercase mb-4 leading-tight">
             {{ house.name }}
@@ -607,11 +731,11 @@ onMounted(fetchData);
       </div>
 
       <!-- INTERACTIVE LOCATION MATRIX -->
-      <div class="bg-white rounded-t-[2.5rem] p-4 sm:p-8 md:p-12 shadow-sm border border-slate-200/50">
+      <div class="bg-white rounded-2xl md:rounded-b-none md:rounded-t-[2.5rem] p-4 sm:p-8 md:p-12 mt-3 md:mt-0 shadow-sm border border-slate-200/50">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 text-left">
           <div class="flex items-center gap-3">
             <div class="bg-blue-500 w-1.5 h-6 rounded-full"></div>
-            <h2 class="text-base font-black uppercase tracking-widest text-slate-900">Interactive Location Guide</h2>
+            <h2 class="text-[17px] md:text-base font-bold md:font-black md:uppercase md:tracking-widest text-slate-900">Interactive Location Guide</h2>
           </div>
           
           <!-- Minimalist Map Toggle Selector -->
@@ -667,8 +791,8 @@ onMounted(fetchData);
         </div>
       </div>
 
-      <!-- GALLERY SECTION -->
-      <div class="bg-white p-8 md:p-12 border-x border-slate-200/50">
+      <!-- GALLERY SECTION (desktop; phones use the photo header) -->
+      <div class="hidden md:block bg-white p-8 md:p-12 border-x border-slate-200/50">
         <div class="flex items-center justify-between mb-6 text-left">
           <div class="flex items-center gap-3">
             <div class="bg-blue-500 w-1.5 h-6 rounded-full"></div>
@@ -746,15 +870,15 @@ onMounted(fetchData);
       </div>
 
       <!-- INTERIOR DETAILS -->
-      <div class="bg-white rounded-b-[2.5rem] p-8 md:p-12 shadow-sm border-x border-b border-slate-200/50 space-y-12">
+      <div class="bg-white rounded-2xl md:rounded-t-none md:rounded-b-[2.5rem] p-5 md:p-12 mt-3 md:mt-0 shadow-sm border md:border-t-0 border-slate-200/50 space-y-8 md:space-y-12">
         <!-- Amenities Grid -->
         <section class="text-left">
           <div class="flex items-center gap-3 mb-6">
             <div class="bg-blue-500 w-1.5 h-6 rounded-full"></div>
-            <h2 class="text-base font-black uppercase tracking-widest text-slate-900">Details &amp; Facilities</h2>
+            <h2 class="text-[17px] md:text-base font-bold md:font-black md:uppercase md:tracking-widest text-slate-900">Details &amp; Facilities</h2>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+            <div class="bg-slate-50 p-5 md:p-6 rounded-2xl border border-slate-100">
               <h3 class="text-[10px] font-black text-emerald-600 uppercase mb-4 tracking-widest flex items-center gap-2">
                 <i class="fa-solid fa-gift text-sm"></i> Free Amenities
               </h3>
@@ -765,7 +889,7 @@ onMounted(fetchData);
               </ul>
             </div>
             
-            <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+            <div class="bg-slate-50 p-5 md:p-6 rounded-2xl border border-slate-100">
               <h3 class="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest flex items-center gap-2">
                 <i class="fa-solid fa-coins text-sm"></i> Paid Add-ons
               </h3>
@@ -780,8 +904,8 @@ onMounted(fetchData);
         </section>
 
         <!-- Owner Bio Profile Details -->
-        <section class="border-t border-slate-100 pt-10 text-left">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <section class="border-t border-slate-100 pt-8 md:pt-10 text-left">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div>
               <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Owner Details</h3>
               <p class="text-lg font-black text-slate-800 uppercase">{{ house.owner_name }}</p>
@@ -795,7 +919,7 @@ onMounted(fetchData);
         </section>
 
         <!-- Long description -->
-        <section class="border-t border-slate-100 pt-10 text-left">
+        <section class="border-t border-slate-100 pt-8 md:pt-10 text-left">
           <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Description</h3>
           <p class="text-[14px] font-medium text-slate-600 leading-relaxed text-justify whitespace-pre-wrap">
             {{ house.description || 'No description provided by the landlord.' }}
@@ -803,8 +927,8 @@ onMounted(fetchData);
         </section>
 
         <!-- Approved Seal Section -->
-        <section class="border-t border-slate-100 pt-10">
-          <div class="bg-gradient-to-br from-amber-50 to-yellow-50/50 border border-amber-200/60 rounded-3xl p-8 flex flex-col sm:flex-row items-center gap-8 text-left shadow-sm">
+        <section class="border-t border-slate-100 pt-8 md:pt-10">
+          <div class="bg-gradient-to-br from-amber-50 to-yellow-50/50 border border-amber-200/60 rounded-3xl p-6 md:p-8 flex flex-col sm:flex-row items-center gap-8 text-center md:text-left shadow-sm">
             <div class="relative shrink-0">
               <div class="absolute inset-0 bg-amber-400/10 rounded-full blur-lg scale-110"></div>
               <div class="relative bg-white rounded-3xl p-4 shadow-md border border-amber-100">
@@ -814,15 +938,98 @@ onMounted(fetchData);
             <div>
               <span class="inline-block bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full mb-3">CSPC Certified</span>
               <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight mb-2">Seal of Approval</h3>
-              <p class="text-[13px] font-semibold text-slate-500 leading-relaxed">This boarding house has been officially reviewed and accredited by CSPC. It meets all required safety, fire protection, and spatial living standards for student accommodation.</p>
+              <p class="text-[13px] font-semibold text-slate-500 leading-relaxed text-justify">This boarding house has been officially reviewed and accredited by CSPC. It meets all required safety, fire protection, and spatial living standards for student accommodation.</p>
             </div>
           </div>
         </section>
       </div>
 
-      <!-- REVIEWS & COMMENTS SECTION -->
-      <div class="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-sm border border-slate-200/50 mt-10 text-left">
-        <div class="flex justify-between items-center mb-10 border-b border-slate-100 pb-6">
+      <!-- ===================== PHONE: reviews ===================== -->
+      <section class="md:hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200/50 mt-3 text-left" aria-labelledby="m-reviews-title">
+        <h2 id="m-reviews-title" class="flex items-center gap-2.5 text-[17px] font-bold text-slate-900">
+          <i class="fa-regular fa-comments text-blue-600" aria-hidden="true"></i> Reviews
+        </h2>
+
+        <!-- Review list -->
+        <div v-if="reviews.length === 0" class="py-6 text-center">
+          <p class="text-[14px] font-semibold text-slate-700">No reviews yet</p>
+          <p class="text-[13px] text-slate-500 mt-0.5">Stayed here? Be the first to share your experience.</p>
+        </div>
+        <ul v-else class="divide-y divide-slate-100">
+          <li v-for="review in visibleReviews" :key="review.id" class="py-4">
+            <div class="flex items-center gap-3">
+              <UserAvatar :src="review.profile_pic" :name="review.student_name" class="w-10 h-10 rounded-full text-[13px] shrink-0" />
+              <div class="min-w-0 flex-1">
+                <p class="text-[14px] font-semibold text-slate-900 truncate">{{ review.student_name }}</p>
+                <p class="flex items-center gap-2 text-[11px] text-slate-500">
+                  <span class="text-amber-400 text-[10px]" :aria-label="`${review.rating} out of 5 stars`">
+                    <i v-for="i in 5" :key="i" class="fa-solid fa-star" :class="i <= review.rating ? '' : 'text-slate-200'" aria-hidden="true"></i>
+                  </span>
+                  {{ formatDate(review.created_at) }}
+                </p>
+              </div>
+            </div>
+            <p v-if="review.comment" class="text-[14px] text-slate-700 leading-relaxed mt-2.5 whitespace-pre-wrap break-words">{{ review.comment }}</p>
+          </li>
+        </ul>
+        <button
+          v-if="reviews.length > REVIEW_PREVIEW_COUNT"
+          type="button"
+          @click="showAllReviews = !showAllReviews"
+          class="w-full mt-1 py-3 rounded-xl border border-slate-200 text-[14px] font-semibold text-slate-700"
+        >{{ showAllReviews ? 'Show fewer reviews' : `Show all ${reviews.length} reviews` }}</button>
+
+        <!-- Write a review -->
+        <div class="mt-4 bg-[#f4f7fc] rounded-2xl p-4">
+          <h3 class="text-[15px] font-bold text-slate-900">POST YOUR REVIEW</h3>
+
+          <div v-if="reviewSuccess" role="status" class="mt-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold p-3 rounded-xl flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-emerald-500" aria-hidden="true"></i> {{ reviewSuccess }}
+          </div>
+          <div v-if="reviewError" role="alert" class="mt-3 bg-rose-50 border border-rose-200 text-rose-800 text-[13px] font-semibold p-3 rounded-xl flex items-start gap-2">
+            <i class="fa-solid fa-circle-info text-rose-500 mt-0.5" aria-hidden="true"></i> <span>{{ reviewError }}</span>
+          </div>
+
+          <div class="flex items-center gap-1 mt-3" role="radiogroup" aria-label="Your rating">
+            <button
+              v-for="i in 5"
+              :key="i"
+              type="button"
+              role="radio"
+              :aria-checked="selectedRating === i"
+              :aria-label="`${i} star${i === 1 ? '' : 's'}`"
+              @click="selectedRating = i"
+              class="w-11 h-11 flex items-center justify-center"
+            >
+              <i class="fa-solid fa-star text-[26px] transition-colors" :class="i <= selectedRating ? 'text-amber-400' : 'text-slate-300'" aria-hidden="true"></i>
+            </button>
+            <span v-if="selectedRating" class="ml-1 text-[13px] font-semibold text-slate-600">{{ ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][selectedRating] }}</span>
+          </div>
+
+          <label for="m-review-comment" class="sr-only">Your review</label>
+          <textarea
+            id="m-review-comment"
+            v-model="reviewComment"
+            rows="3"
+            class="w-full mt-2 bg-white border border-slate-200 rounded-xl p-3 text-[14px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none placeholder:text-slate-400"
+            placeholder="Share your stay experience..."
+          ></textarea>
+
+          <button
+            type="button"
+            @click="submitReview"
+            :disabled="isSubmittingReview"
+            class="w-full mt-3 bg-slate-900 hover:bg-blue-700 text-white text-[13px] font-black uppercase tracking-[0.15em] py-3 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            <span v-if="isSubmittingReview" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden="true"></span>
+            {{ isSubmittingReview ? 'Submitting…' : 'SUBMIT FEEDBACK' }}
+          </button>
+        </div>
+      </section>
+
+      <!-- REVIEWS & COMMENTS SECTION (desktop) -->
+      <div class="hidden md:block bg-white rounded-2xl md:rounded-[2.5rem] p-5 md:p-12 shadow-sm border border-slate-200/50 mt-3 md:mt-10 text-left">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-6 md:mb-10 border-b border-slate-100 pb-5 md:pb-6">
           <h2 class="text-base font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
             <i class="fa-regular fa-comments text-blue-600 text-lg"></i>
             Reviews &amp; Comments
@@ -860,7 +1067,7 @@ onMounted(fetchData);
         </div>
 
         <!-- Review Submission Card -->
-        <div class="bg-blue-50/50 p-8 rounded-[2rem] border border-blue-100/60 shadow-inner">
+        <div class="bg-blue-50/50 p-5 md:p-8 rounded-[2rem] border border-blue-100/60 shadow-inner">
           <h3 class="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-6">Post your review</h3>
 
           <div class="mb-6 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px] font-semibold p-4 rounded-xl flex items-center gap-3 animate-fade-in" v-if="reviewSuccess">
@@ -913,6 +1120,11 @@ onMounted(fetchData);
 .animate-fade-in {
   animation: fadeIn 0.35s ease-out forwards;
 }
+/* Phone details page */
+.hero-btn { width: 44px; height: 44px; border-radius: 999px; background: #fff; color: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 17px; box-shadow: 0 2px 10px rgb(0 0 0 / .18); }
+.hero-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 999px; background: rgb(255 255 255 / .8); color: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.book-bar { position: fixed; left: 0; right: 0; bottom: calc(var(--student-tabbar-h, 64px) + env(safe-area-inset-bottom) - 1px); z-index: 54; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-shadow: 0 -4px 16px rgb(15 23 42 / .06); }
+.book-bar.is-guest { bottom: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 #bhMap {
   height: 380px;
   min-height: 280px;

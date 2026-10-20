@@ -272,6 +272,18 @@ const items = computed(() => notifications.value.map(n => {
   const meta=TYPE_META[type] || TYPE_META.general;
   return { ...n,is_read:readFlag(n)?1:0, type, meta, title:notificationTitle(n.message,meta.title),context:notificationContext(n),tone:notificationTone(n.message,type),day:manilaDayOf(n.created_at) };
 }));
+const studentGroups = computed(() => {
+  const groups = [];
+  for (const notification of newestNotifications(items.value)) {
+    let group = groups[groups.length - 1];
+    if (!group || group.day !== notification.day) {
+      group = { day: notification.day, label: dayHeading(notification.day, todayDay()), items: [] };
+      groups.push(group);
+    }
+    group.items.push(notification);
+  }
+  return groups;
+});
 const filterCounts = computed(() => {
   const counts = { all: items.value.length, unread: 0, attention: 0, week: 0, booking: 0, documents: 0, accreditation: 0, system: 0 };
   const week=dateRange('7d',todayDay());
@@ -350,26 +362,24 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen flex flex-col font-sans text-left" 
-       :class="[user.role === 'student' ? 'bg-[#bae1ff] text-slate-900 pb-20' : 'bg-[#eef6ff] text-slate-900 pb-12', { 'management-page': user.role === 'admin' || user.role === 'owner', 'notif-owner-theme': user.role === 'owner' || user.role === 'admin' }]">
+       :class="[user.role === 'student' ? 'bg-slate-50 text-slate-900 pb-6' : 'bg-[#eef6ff] text-slate-900 pb-12', { 'management-page': user.role === 'admin' || user.role === 'owner', 'notif-owner-theme': user.role === 'owner' || user.role === 'admin' }]">
     
     <component :is="user.role === 'admin' ? AdminNav : (user.role === 'owner' ? OwnerNav : StudentNav)" />
 
-    <main :id="user.role !== 'student' ? 'management-content' : undefined" :class="['flex-1 mx-auto w-full', user.role==='student' ? 'max-w-5xl' : 'nf-main', user.role === 'student' ? 'py-12 px-6 lg:px-12' : 'py-6 px-4 sm:px-6']">
+    <main :id="user.role !== 'student' ? 'management-content' : undefined" :class="['flex-1 mx-auto w-full', user.role==='student' ? 'max-w-5xl' : 'nf-main', user.role === 'student' ? 'py-5 px-4 md:py-10 md:px-8' : 'py-6 px-4 sm:px-6']">
 
       <!-- Header Section -->
       <LoadError v-if="user.role !== 'student'" :message="loadError" />
       <PageHeader v-if="user.role !== 'student'" title="Notifications" />
-      <div v-else class="mb-14 text-center">
-        <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight mb-2">
-          {{ user.role === 'admin' ? 'Admin Inbox' : (user.role === 'owner' ? 'Owner Inbox' : 'Student Inbox') }}
-        </h1>
-        <p class="font-bold uppercase text-[11px] tracking-[0.2em] mb-4"
-           :class="user.role === 'student' ? 'text-[#2a528a]' : 'text-blue-600'">
-          {{ user.role === 'admin' ? 'Tracking system alerts and updates' : (user.role === 'owner' ? 'Tracking your account activity' : 'Your Recent Alerts and Updates') }}
-        </p>
-        <div class="w-16 h-1.5 mx-auto rounded-full" :class="user.role === 'student' ? 'bg-[#2a528a]' : 'bg-blue-600'"></div>
-      </div>
-
+      <header v-else class="mb-5">
+        <h1 class="text-[28px] font-black text-slate-900 tracking-tight">Notifications</h1>
+        <div class="flex items-center justify-between gap-3 mt-2">
+          <p class="text-sm text-slate-500" role="status">{{ filterCounts.unread ? `${filterCounts.unread} unread updates` : 'You’re all caught up' }}</p>
+          <button type="button" class="min-h-[44px] text-[13px] font-semibold text-blue-700 disabled:opacity-50" :disabled="isMarkingAll || !filterCounts.unread || isLoading" @click="markAllRead">{{ isMarkingAll ? 'Marking…' : 'Mark all read' }}</button>
+        </div>
+      </header>
+      <LoadError v-if="user.role === 'student'" :message="loadError" />
+      <p v-if="user.role === 'student' && actionError" role="alert" class="ni-error mb-4">{{ actionError }}</p>
       <!-- Loading State Indicator -->
       <div v-if="isLoading" class="py-20 flex flex-col items-center justify-center gap-3 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-10 max-w-xl mx-auto text-center">
         <svg class="animate-spin h-10 w-10 text-blue-600 mb-4 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -394,41 +404,32 @@ onMounted(() => {
         <!-- 1. STUDENT NOTIFICATIONS TEMPLATE  -->
         <!-- =================================================================== -->
         <template v-if="user.role === 'student'">
-          <div v-for="notif in notifications" :key="notif.id" 
-               @click="handleContainerClick(notif, $event)"
-               class="bg-white rounded-3xl p-6 shadow-xl border border-white flex gap-6 items-start transition-all duration-300 hover:shadow-2xl hover:border-blue-300 group cursor-pointer"
-               :class="notif.is_read ? 'opacity-70' : ''">
-            
-            <div class="w-14 h-14 rounded-2xl flex-shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform"
-                 :class="notif.is_read ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600'">
-              <i class="fa-solid text-xl" :class="notif.is_read ? 'fa-envelope-open' : 'fa-envelope'"></i>
+          <section v-for="group in studentGroups" :key="group.day" class="mb-5" :aria-label="group.label">
+            <h2 class="text-xs font-bold text-slate-500 mb-2 px-1">{{ group.label }}</h2>
+            <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+              <article v-for="notif in group.items" :key="notif.id" class="flex gap-3 p-4" :class="!readFlag(notif) ? 'bg-blue-50/60' : ''">
+                <span class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center" :style="{ backgroundColor: notif.meta.soft, color: notif.meta.ink }" aria-hidden="true"><i :class="['fa-solid', notif.tone.icon]"></i></span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-start gap-2">
+                    <h3 class="flex-1 text-sm font-bold text-slate-900 leading-snug">{{ notif.title }}</h3>
+                    <span v-if="!readFlag(notif)" class="mt-1.5 w-2 h-2 rounded-full bg-blue-600 shrink-0"><span class="sr-only">Unread</span></span>
+                  </div>
+                  <p class="mt-1.5 text-[13px] text-slate-600 leading-relaxed break-words"><MessageText :text="cleanMessage(notif.message)" /></p>
+                  <p class="text-[11px] text-slate-400 mt-2">{{ timeLabel(notif.created_at) }}</p>
+                  <div class="flex items-center justify-between gap-3 mt-1">
+                    <router-link :to="getNotifTargetRoute(notif)" @click="!readFlag(notif) && markRead(notif.id).catch(() => {})" class="inline-flex items-center gap-2 min-h-[44px] text-xs font-semibold text-blue-700">View details <i class="fa-solid fa-arrow-right text-[10px]" aria-hidden="true"></i></router-link>
+                    <button v-if="!readFlag(notif)" type="button" @click="markRead(notif.id).catch(() => {})" class="min-h-[44px] text-xs font-medium text-slate-500">Mark as read</button>
+                  </div>
+                </div>
+              </article>
             </div>
-            
-            <div class="flex-1 min-w-0">
-              <div class="flex justify-between items-start mb-2">
-             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-  {{ notif.created_at ? new Date(notif.created_at).toLocaleString() : 'N/A' }}
-</span>
-                <span v-if="!notif.is_read" class="bg-blue-600 w-2 h-2 rounded-full shadow-lg shadow-blue-200"></span>
-              </div>
-              <p class="text-slate-800 font-semibold leading-relaxed"><MessageText :text="cleanMessage(notif.message)" /></p>
-              
-              <button v-if="!notif.is_read" @click.stop="markRead(notif.id)" 
-                      class="mt-4 text-[10px] font-black text-blue-600 uppercase tracking-widest hover:text-black transition flex items-center gap-2 cursor-pointer">
-                <i class="fa-solid fa-check"></i> Mark as Read
-              </button>
-            </div>
-          </div>
-
-          <!-- Student Empty State -->
-          <div v-if="notifications.length === 0" class="bg-white/50 backdrop-blur-sm border-2 border-dashed border-white/60 rounded-[3rem] p-24 text-center">
-            <div class="flex flex-col items-center gap-6 opacity-30">
-              <i class="fa-solid fa-bell-slash text-6xl text-[#2a528a]"></i>
-              <p class="text-[#2a528a] font-black uppercase text-xs tracking-[0.3em]">No notifications yet.</p>
-            </div>
+          </section>
+          <div v-if="!notifications.length && !loadError" class="bg-white border border-slate-200 rounded-2xl px-6 py-14 text-center">
+            <span class="mx-auto flex items-center justify-center w-14 h-14 bg-blue-50 text-blue-600 rounded-full"><i class="fa-regular fa-bell text-xl" aria-hidden="true"></i></span>
+            <h2 class="mt-4 text-base font-bold text-slate-900">No notifications yet</h2>
+            <p class="mt-2 text-sm text-slate-500 leading-relaxed">Your booking updates and account notices will appear here.</p>
           </div>
         </template>
-
         <!-- =================================================================== -->
         <!-- 2. OWNER & ADMIN NOTIFICATIONS TEMPLATE  -->
         <!-- =================================================================== -->

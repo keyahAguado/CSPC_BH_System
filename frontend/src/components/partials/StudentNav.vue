@@ -8,13 +8,18 @@ import Header from './Header.vue';
 
 const router = useRouter();
 const route = useRoute();
+
+// Mobile bottom tab bar
+const tabs = [
+  { label: 'Home', to: '/student/dashboard', icon: 'fa-house', iconStyle: 'fa-solid', active: () => route.path === '/student/dashboard' || route.path.startsWith('/student/house/') || route.path.startsWith('/student/book/') },
+  { label: 'My Bookings', to: '/student/bookings', icon: 'fa-calendar-check', iconStyle: 'fa-regular', active: () => route.path.startsWith('/student/bookings') },
+  { label: 'Profile', to: '/student/profile', icon: 'fa-user', iconStyle: 'fa-regular', active: () => route.path === '/student/profile' }
+];
 const unreadNotifCount = ref(0);
 const alertRef = ref(null);
 const showConfirmModal = ref(false); // Controls the minimalist logout overlay modal
 const token = sessionStorage.getItem('cspc_token');
 
-// Mobile sidebar state
-const sidebarOpen = ref(false);
 
 const fetchUnreadCount = async () => {
   if (!token) return;
@@ -37,22 +42,11 @@ const handleLogout = () => {
   localStorage.clear();
   sessionStorage.clear();
   showConfirmModal.value = false;
-  sidebarOpen.value = false;
   router.replace('/login');
 };
 
 const triggerLogoutConfirm = () => {
   showConfirmModal.value = true;
-  sidebarOpen.value = false;
-};
-
-const closeSidebar = () => {
-  sidebarOpen.value = false;
-};
-
-const navigateTo = (path) => {
-  router.push(path);
-  sidebarOpen.value = false;
 };
 
 // Real-time notification updates
@@ -62,24 +56,18 @@ const handleNotificationEvent = () => {
   fetchUnreadCount();
 };
 
-// Close sidebar on outside click
-const handleOutsideClick = (e) => {
-  if (sidebarOpen.value && !e.target.closest('.mobile-sidebar') && !e.target.closest('.hamburger-btn')) {
-    sidebarOpen.value = false;
-  }
-};
-
 onMounted(() => {
+  // Leaves room at the bottom of the page for the mobile tab bar
+  if (token) document.body.classList.add('has-student-tabbar');
   fetchUnreadCount();
   pollInterval = setInterval(fetchUnreadCount, 2000);
   window.addEventListener('notification-updated', handleNotificationEvent);
-  document.addEventListener('click', handleOutsideClick);
 });
 
 onUnmounted(() => {
+  document.body.classList.remove('has-student-tabbar');
   if (pollInterval) clearInterval(pollInterval);
   window.removeEventListener('notification-updated', handleNotificationEvent);
-  document.removeEventListener('click', handleOutsideClick);
 });
 </script>
 
@@ -92,29 +80,23 @@ onUnmounted(() => {
     <FlashAlert ref="alertRef" />
 
     <!-- ===================== DESKTOP NAV (hidden on mobile) ===================== -->
-  <nav class="hidden md:flex bg-[#1e4a8d] px-4 sm:px-6 md:px-10 py-4 flex-wrap sm:flex-nowrap justify-between items-center text-white shadow-md sticky top-0 z-50 gap-3 border-b border-blue-900/40">
-    <router-link to="/" class="flex items-center gap-3 group focus:outline-none">
-      <!-- CSPC Logo Image -->
-      <img 
-        src="/img/CSPC_logo.png" 
-        alt="CSPC Logo" 
-        class="w-10 h-10 object-contain transition-transform group-hover:scale-105"
-      />
-      <!-- Vertical Divider Line -->
-      <div class="h-8 w-[1px] bg-slate-200/40"></div>
-      <!-- Brand Identity Text -->
-      <div class="text-left">
-        <span class="block text-xs font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
-        <span class="block text-[8px] text-blue-200/80 font-bold uppercase tracking-wider mt-1">College of Computer Studies</span>
-      </div>
+  <nav class="student-topbar hidden md:flex px-6 md:px-10 h-[72px] justify-between items-center text-white shadow-md sticky top-0 z-50 gap-6">
+    <router-link to="/student/dashboard" class="flex items-center gap-3 group focus:outline-none" aria-label="CSPC BH Finder, Student home">
+      <span class="w-11 h-11 rounded-xl bg-white flex items-center justify-center shadow-sm flex-shrink-0 transition-transform group-hover:scale-105">
+        <img src="/img/cspc_bh_finder_icon.png" alt="" class="w-9 h-9 object-contain" />
+      </span>
+      <span class="text-left">
+        <span class="block text-[18px] font-extrabold text-white tracking-tight leading-tight">CSPC BH Finder</span>
+        <span class="block text-[12.5px] text-blue-100/90 font-medium leading-tight">Student</span>
+      </span>
     </router-link>
-    <div class="flex gap-4 sm:gap-6 md:gap-10 text-xs sm:text-[13px] font-semibold items-center w-full sm:w-auto py-1 sm:py-0">
+    <div class="flex gap-6 lg:gap-10 text-[13px] font-semibold items-center">
       <router-link to="/student/dashboard" class="hover:text-blue-200 transition whitespace-nowrap">Home</router-link>
       <router-link to="/student/profile" class="hover:text-blue-200 transition whitespace-nowrap">Profile</router-link>
       <router-link to="/student/bookings" class="hover:text-blue-200 transition whitespace-nowrap">My Bookings</router-link>
       <router-link to="/student/notifications" class="hover:text-blue-200 transition relative whitespace-nowrap">
         Notifications
-        <span v-if="unreadNotifCount > 0" class="absolute -top-1 -right-3 bg-red-500 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border border-white shadow-sm">
+        <span v-if="unreadNotifCount > 0" class="absolute -top-2.5 -right-5 min-w-[20px] h-[20px] px-1.5 rounded-full bg-[#f5b82e] text-[#1b2a4a] text-[11px] font-extrabold flex items-center justify-center shadow-sm">
           {{ unreadNotifCount }}
         </span>
       </router-link>
@@ -123,133 +105,51 @@ onUnmounted(() => {
   </nav>
 
   <!-- ===================== MOBILE HEADER (visible only on mobile) ===================== -->
-  <header class="mobile-header md:hidden fixed top-0 left-0 right-0 z-50 bg-[#1e4a8d] shadow-lg">
-    <div class="flex items-center gap-3 px-4 py-3">
-      <!-- Hamburger Button -->
-      <button
-        class="hamburger-btn flex items-center justify-center w-9 h-9 rounded-lg text-white hover:bg-white/10 transition-colors flex-shrink-0 focus:outline-none"
-        @click.stop="sidebarOpen = !sidebarOpen"
-        aria-label="Toggle menu"
-      >
-        <svg v-if="!sidebarOpen" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-
-      <!-- Logo & Title -->
-      <router-link to="/" class="flex items-center gap-2.5 group focus:outline-none">
-        <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-8 h-8 object-contain transition-transform group-hover:scale-105 flex-shrink-0" />
-        <div class="h-6 w-[1px] bg-slate-200/40"></div>
-        <div class="text-left">
-          <span class="block text-[11px] font-black text-white uppercase tracking-tight leading-none">CSPC-BH Finder</span>
-          <span class="block text-[7.5px] text-blue-200/80 font-bold uppercase tracking-wider mt-0.5">College of Computer Studies</span>
-        </div>
+  <header class="mobile-header student-topbar md:hidden fixed top-0 left-0 right-0 z-50 shadow-lg">
+    <div class="relative flex items-center gap-2 pl-4 pr-3 h-[64px]">
+      <router-link to="/student/dashboard" class="flex items-center gap-3 min-w-0 flex-1 focus:outline-none" aria-label="CSPC BH Finder, Student home">
+        <span class="w-11 h-11 rounded-xl bg-white flex items-center justify-center shadow-sm flex-shrink-0">
+          <img src="/img/cspc_bh_finder_icon.png" alt="" class="w-9 h-9 object-contain" />
+        </span>
+        <span class="text-left min-w-0">
+          <span class="block text-[18px] font-extrabold text-white tracking-tight leading-tight truncate">CSPC BH Finder</span>
+          <span class="block text-[12.5px] text-blue-100/90 font-medium leading-tight truncate">Student</span>
+        </span>
       </router-link>
+
+      <router-link
+        to="/student/notifications"
+        class="relative flex items-center justify-center w-11 h-11 rounded-full text-white hover:bg-white/10 transition-colors flex-shrink-0"
+        :aria-label="unreadNotifCount > 0 ? `Notifications, ${unreadNotifCount} unread` : 'Notifications'"
+      >
+        <i class="fa-regular fa-bell text-[21px]" aria-hidden="true"></i>
+        <span v-if="unreadNotifCount > 0" class="absolute top-1 right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#f5b82e] text-[#1b2a4a] text-[10.5px] font-extrabold flex items-center justify-center" aria-hidden="true">{{ unreadNotifCount > 9 ? '9+' : unreadNotifCount }}</span>
+      </router-link>
+
     </div>
   </header>
 
   <!-- Spacer so content doesn't go under fixed mobile header -->
-  <div class="md:hidden h-[56px]"></div>
+  <div class="md:hidden h-[64px]"></div>
 
-  <!-- ===================== MOBILE SIDEBAR OVERLAY ===================== -->
-  <transition name="fade-overlay">
-    <div
-      v-if="sidebarOpen"
-      class="md:hidden fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm"
-      @click="closeSidebar"
-    ></div>
-  </transition>
-
-  <!-- ===================== MOBILE SIDEBAR PANEL ===================== -->
-  <transition name="slide-sidebar">
-    <nav
-      v-if="sidebarOpen"
-      class="mobile-sidebar md:hidden fixed top-0 left-0 h-full w-72 bg-[#1a3f7a] z-[70] shadow-2xl flex flex-col overflow-y-auto"
+  <!-- ===================== MOBILE BOTTOM TAB BAR ===================== -->
+  <nav class="student-tabbar md:hidden" aria-label="Student">
+    <router-link
+      v-for="tab in tabs"
+      :key="tab.label"
+      :to="tab.to"
+      class="student-tab"
+      :class="{ 'is-active': tab.active() }"
+      :aria-current="tab.active() ? 'page' : undefined"
     >
-      <!-- Sidebar Header -->
-      <div class="flex items-center gap-3 px-5 py-4 bg-[#1e4a8d] border-b border-white/10">
-        <img src="/img/CSPC_logo.png" alt="CSPC Logo" class="w-9 h-9 object-contain bg-white/10 rounded-full p-0.5 flex-shrink-0" />
-        <div class="min-w-0">
-          <p class="text-white font-black text-xs uppercase tracking-tight leading-tight">CSPC'S BOARDING HOUSE SELECTION</p>
-          <p class="text-blue-200 text-[10px] mt-0.5">Student Portal</p>
-        </div>
-      </div>
-
-      <!-- Nav Items -->
-      <div class="flex flex-col flex-1 px-3 py-4 gap-1">
-
-        <button
-          @click="navigateTo('/student/dashboard')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/student/dashboard'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-house w-5 text-center text-base"></i>
-          <span>Home</span>
-        </button>
-
-        <button
-          @click="navigateTo('/student/profile')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/student/profile'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-user w-5 text-center text-base"></i>
-          <span>Profile</span>
-        </button>
-
-        <button
-          @click="navigateTo('/student/bookings')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200',
-            route.path === '/student/bookings'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-calendar-check w-5 text-center text-base"></i>
-          <span>My Bookings</span>
-        </button>
-
-        <button
-          @click="navigateTo('/student/notifications')"
-          :class="[
-            'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 relative',
-            route.path === '/student/notifications'
-              ? 'bg-white/20 text-white shadow-sm'
-              : 'text-blue-100 hover:bg-white/10 hover:text-white'
-          ]"
-        >
-          <i class="fa-solid fa-bell w-5 text-center text-base"></i>
-          <span>Notifications</span>
-          <span v-if="unreadNotifCount > 0" class="ml-auto bg-red-500 text-white text-[9px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border border-white/30 shadow-sm">
-            {{ unreadNotifCount }}
-          </span>
-        </button>
-
-      </div>
-
-      <!-- Divider + Logout -->
-      <div class="px-3 pb-6 border-t border-white/10 pt-3">
-        <button
-          @click="triggerLogoutConfirm"
-          class="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-left text-sm font-semibold text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all duration-200"
-        >
-          <i class="fa-solid fa-right-from-bracket w-5 text-center text-base"></i>
-          <span>Logout</span>
-        </button>
-      </div>
-    </nav>
-  </transition>
+      <i :class="[tab.active() ? 'fa-solid' : tab.iconStyle, tab.icon]" aria-hidden="true"></i>
+      <span>{{ tab.label }}</span>
+    </router-link>
+    <button type="button" class="student-tab" @click="triggerLogoutConfirm">
+      <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+      <span>Logout</span>
+    </button>
+  </nav>
 
   <!-- Secure Logout Confirm Modal Overlay -->
   <div v-if="showConfirmModal" class="cm-backdrop">
@@ -276,19 +176,25 @@ onUnmounted(() => {
   animation: fadeIn 0.25s ease-out forwards;
 }
 
-/* Sidebar slide-in/out animation */
-.slide-sidebar-enter-active,
-.slide-sidebar-leave-active {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+/* Mobile top bar: navy gradient with a soft decorative circle */
+.student-topbar { background: radial-gradient(circle at 88% -60%, rgb(255 255 255 / .07) 0 60%, transparent 60.5%), linear-gradient(135deg, #142b4a 0%, #1b3a6b 55%, #1e4a8d 100%); }
+
+
+/* Mobile bottom tab bar. Its height is shared (via --student-tabbar-h) with anything
+   that sits on top of it, e.g. the Book Now bar and the map page, so they line up exactly. */
+:root { --student-tabbar-h: 64px; }
+.student-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; box-sizing: border-box; height: calc(var(--student-tabbar-h) + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: #fff; border-top: 1px solid #e2e8f0; box-shadow: 0 -4px 18px rgb(15 47 102 / .06); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+/* White fill below the bar so page content never shows under it (e.g. while the browser toolbar resizes) */
+.student-tabbar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 120px; background: #fff; }
+.student-tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 0; padding: 4px 2px; color: #475569; font-size: 11px; font-weight: 500; text-decoration: none; text-align: center; line-height: 1.15; border-radius: 12px; }
+.student-tab i { font-size: 20px; }
+.student-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-tab.is-active { color: #1d4ed8; font-weight: 700; }
+.student-tab, .student-tab:hover, .student-tab:focus, .student-tab:focus-visible, .student-tab:active { outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent; }
+@media (max-width: 767px) {
+  body.has-student-tabbar { padding-bottom: calc(var(--student-tabbar-h) + env(safe-area-inset-bottom)); }
 }
-.slide-sidebar-enter-from,
-.slide-sidebar-leave-to {
-  transform: translateX(-100%);
-}
-.slide-sidebar-enter-to,
-.slide-sidebar-leave-from {
-  transform: translateX(0);
-}
+
 
 /* Overlay fade animation */
 .fade-overlay-enter-active,

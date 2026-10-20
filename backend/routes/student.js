@@ -136,7 +136,8 @@ router.get('/houses', async (req, res) => {
                        (SELECT COUNT(*) FROM reviews WHERE house_id = bh.id) AS review_count,
                        (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
                        (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
-                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price
+                       (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price,
+                       (SELECT COUNT(*) FROM house_photos WHERE house_id = bh.id) AS photo_count
                 FROM boarding_houses bh
                 WHERE bh.house_status = 'accredited'
                 ORDER BY bh.created_at DESC
@@ -161,6 +162,7 @@ router.get('/houses', async (req, res) => {
                        (SELECT COUNT(*) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS room_count,
                        (SELECT MIN(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS min_price,
                        (SELECT MAX(price) FROM rooms WHERE house_id = bh.id AND deleted_at IS NULL) AS max_price,
+                       (SELECT COUNT(*) FROM house_photos WHERE house_id = bh.id) AS photo_count,
                        (${scoreClauses.join(' + ')}) AS relevance
                 FROM boarding_houses bh
                 WHERE bh.house_status = 'accredited' AND (${whereClauses.join(' OR ')})
@@ -189,7 +191,7 @@ router.get('/houses', async (req, res) => {
             return { ...h, min_price: min, max_price: max, price_range };
         });
 
-        res.json({ success: true, houses: formatted });
+        res.json({ success: true, houses: formatted, googleMapsApiKey: process.env.VITE_GOOGLE_MAPS_API_KEY || '' });
     } catch (err) {
         console.error('Fetch student houses failed:', err.message);
         res.status(500).json({ success: false, message: 'Failed to retrieve boarding house directory.' });

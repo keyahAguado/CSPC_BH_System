@@ -336,10 +336,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-20">
+  <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-4 md:pb-20">
     <StudentNav />
 
-    <main class="max-w-6xl mx-auto py-10 px-4 sm:px-6">
+    <main class="max-w-6xl mx-auto py-4 md:py-10 px-4 sm:px-6">
 
       <!-- LOADING -->
       <div v-if="isLoading" class="text-center py-32">
@@ -358,7 +358,7 @@ onUnmounted(() => {
 
       <template v-else>
         <!-- HEADER -->
-        <div class="text-center mb-10 mt-6">
+        <div class="text-center mb-5 mt-1 md:mb-10 md:mt-6">
           <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight">{{ house.name }}</h1>
           <p class="text-slate-500 font-bold text-xs uppercase tracking-[0.2em] mt-2">Secure your reservation</p>
         </div>

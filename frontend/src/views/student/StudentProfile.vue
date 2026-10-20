@@ -198,11 +198,21 @@ const saveProfile = async () => {
       }
     });
     
+    // Lets the top bar show the new photo/name right away
+    window.dispatchEvent(new Event('profile-updated'));
     successMsg.value = 'Profile updated successfully! Redirecting to Student Dashboard...';
     if (alertRef.value) {
       alertRef.value.showSystemAlert('Profile updated successfully! Redirecting to Student Dashboard...', 'success');
     }
 
+    // Phones stay on the profile (edited in place); desktop returns to the dashboard
+    if (isPhone()) {
+      successMsg.value = 'Profile updated successfully!';
+      showAddressPicker.value = false;
+      profilePicFile.value = null;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setTimeout(() => {
       router.push('/student/dashboard');
     }, 1200);
@@ -216,6 +226,38 @@ const saveProfile = async () => {
 };
 
 const userInitial = () => (user.value.name || 'S').charAt(0).toUpperCase();
+
+// ---------- Phone layout: every detail row is editable in place, saved with "Save Changes" ----------
+const showAddressPicker = ref(false);
+const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+
+const dobLabel = computed(() => {
+  if (!form.value.dob) return '';
+  const [y, m, d] = form.value.dob.split('-');
+  return `${m}/${d}/${y}`;
+});
+
+// [icon, label, form field, input type, hint]
+const infoSections = [
+  { title: 'Academic Information', numeral: 'I', subtitle: 'Institution Records & Identity', rows: [
+    ['fa-user', 'Full Name', 'name', 'readonly', 'Verified by CSPC Google Account.'],
+    ['fa-id-card', 'Student ID', 'student_id', 'text'],
+    ['fa-venus-mars', 'Gender', 'sex', 'sex'],
+    ['fa-book-open', 'Course', 'course', 'course'],
+    ['fa-users', 'Year & Section', 'year_section', 'text']
+  ] },
+  { title: 'Personal Details', numeral: 'II', subtitle: 'Private Information', rows: [
+    ['fa-calendar-days', 'Date of Birth', 'dob', 'date'],
+    ['fa-cake-candles', 'Age', 'age', 'number', 'Calculated automatically from Date of Birth.'],
+    ['fa-envelope', 'Email Address', 'email', 'readonly', 'Tied to your CSPC Google Account.'],
+    ['fa-house', 'Permanent Home Address', 'address', 'address']
+  ] },
+  { title: 'Contact & Emergency Information', numeral: 'III', subtitle: 'Communication records', rows: [
+    ['fa-phone', 'Your Contact Number', 'phone', 'phone', 'PH mobile format, e.g. 0912 345 6789.'],
+    ['fa-phone-volume', 'Emergency Contact #', 'emergency_contact', 'phone', 'PH mobile format, e.g. 0912 345 6789.'],
+    ['fa-user-group', 'Guardian Full Name', 'guardian_name', 'text']
+  ] }
+];
 
 onMounted(() => {
   fetchProfile();
@@ -232,7 +274,119 @@ onMounted(() => {
       <div class="w-8 h-8 border-4 border-[#2a528a] border-t-transparent rounded-full animate-spin"></div>
     </div>
 
-    <main v-else class="bg-slate-100 py-16 px-4">
+    <template v-else>
+    <!-- ===================== PHONE: profile with details edited in place ===================== -->
+    <form class="md:hidden bg-[#f4f7fc] min-h-screen px-4 pt-5 pb-8 text-left" @submit.prevent="saveProfile" novalidate>
+      <h1 class="text-[28px] font-black text-[#0f1f45] tracking-tight mb-4">Profile</h1>
+
+      <div v-if="successMsg" role="status" class="mb-4 bg-green-50 border border-green-200 text-green-700 text-[13px] font-semibold px-4 py-3 rounded-xl flex items-center gap-2.5">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ successMsg }}
+      </div>
+      <div v-if="errorMsg" role="alert" class="mb-4 bg-red-50 border border-red-200 text-red-700 text-[13px] font-semibold px-4 py-3 rounded-xl flex items-center gap-2.5">
+        <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ errorMsg }}
+      </div>
+
+      <!-- Identity card -->
+      <section class="bg-white rounded-2xl border border-slate-100 shadow-[0_4px_18px_rgb(15_47_102/.06)] p-4 flex items-center gap-4">
+        <!-- Tap the photo to change it (same as desktop) -->
+        <div class="relative shrink-0 rounded-full overflow-hidden">
+          <UserAvatar :src="profilePicPreview" :name="user.name" class="pv-avatar" />
+          <input type="file" accept="image/*" @change="handleFileChange" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Change profile picture" title="Change profile picture">
+        </div>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-[19px] font-black text-[#0f1f45] uppercase leading-tight tracking-tight break-words">{{ user.name || 'New Student' }}</h2>
+          <p class="text-[15px] text-slate-500 tracking-[0.15em] mt-0.5">{{ form.student_id || 'ID not set' }}</p>
+          <span class="inline-flex items-center gap-1.5 mt-2.5 bg-green-50 border border-green-100 text-green-700 text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full">
+            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> Enrolled &amp; Verified
+          </span>
+          <p v-if="profilePicFile" class="text-[11px] text-blue-700 mt-2">New photo selected. Tap Save Changes to keep it.</p>
+        </div>
+      </section>
+
+      <!-- Student information (tap a value to edit it) -->
+      <section aria-label="Student information" class="mt-4 bg-white rounded-2xl border border-slate-100 shadow-[0_4px_18px_rgb(15_47_102/.06)] p-3">
+
+        <div class="space-y-3">
+          <div v-for="section in infoSections" :key="section.title" class="rounded-xl border border-slate-100 overflow-hidden">
+            <div class="bg-[#eef3fb] px-3 py-2.5">
+            <h3 class="flex items-center gap-2.5 text-[15px] font-bold text-black">
+              <span class="shrink-0">{{ section.numeral }}.</span> {{ section.title }}
+            </h3>
+            <p class="mt-1 text-[11px] text-black">{{ section.subtitle }}</p>
+            </div>
+            <div class="px-3">
+              <div v-for="row in section.rows" :key="row[2]" class="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1.5fr)] items-start gap-x-2 py-1 border-b border-slate-100 last:border-b-0">
+                <label :for="'pv-' + row[2]" class="text-[12.5px] text-slate-500 leading-snug pt-[7px]">{{ row[1] }}</label>
+                <div class="min-w-0">
+                  <!-- Read-only (tied to the Google account) -->
+                  <p v-if="row[3] === 'readonly'" :id="'pv-' + row[2]" class="pv-static">{{ form[row[2]] || 'Not set' }}</p>
+
+                  <select v-else-if="row[3] === 'sex'" :id="'pv-' + row[2]" v-model="form.sex" class="pv-input pv-select">
+                    <option value="" disabled>Select gender</option>
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                  </select>
+
+                  <select v-else-if="row[3] === 'course'" :id="'pv-' + row[2]" v-model="form.course" class="pv-input pv-select">
+                    <option value="" disabled>Select course</option>
+                    <option v-if="legacyCourseValue" :value="legacyCourseValue">{{ legacyCourseValue }} (previously saved)</option>
+                    <option v-for="c in courseOptions" :key="c.course_code" :value="c.course_code">{{ c.course_code }} — {{ c.course_name }}</option>
+                  </select>
+
+                  <input v-else-if="row[3] === 'date'" :id="'pv-' + row[2]" type="date" v-model="form.dob" @change="onDobChange" :min="minDobDate" :max="maxDobDate" class="pv-input">
+
+                  <input v-else-if="row[3] === 'number'" :id="'pv-' + row[2]" type="number" inputmode="numeric" v-model="form.age" class="pv-input">
+
+                  <input
+                    v-else-if="row[3] === 'phone'"
+                    :id="'pv-' + row[2]"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="11"
+                    placeholder="09XXXXXXXXX"
+                    v-model="form[row[2]]"
+                    @input="sanitizePhoneInput(row[2])"
+                    class="pv-input"
+                  >
+
+                  <template v-else-if="row[3] === 'address'">
+                    <button
+                      v-if="!showAddressPicker"
+                      :id="'pv-' + row[2]"
+                      type="button"
+                      @click="showAddressPicker = true"
+                      class="pv-input pv-wrap text-left h-auto"
+                    >{{ form.address || 'Tap to set your address' }}</button>
+                    <div v-else class="pt-1">
+                      <AddressPicker v-model="form.address" id-prefix="student-address-m"
+                        field-class="w-full bg-slate-50 border border-slate-300 rounded-lg text-sm text-black font-medium focus:bg-white focus:border-blue-500 outline-none transition"
+                        label-class="block text-[11px] font-semibold text-slate-500 mb-1" />
+                      <button type="button" @click="showAddressPicker = false" class="mt-2 text-[12px] font-semibold text-blue-700">Done</button>
+                    </div>
+                  </template>
+
+                  <input v-else :id="'pv-' + row[2]" type="text" v-model="form[row[2]]" class="pv-input">
+
+                  <span v-if="row[4]" class="block text-[11px] text-slate-400 italic leading-tight pb-1 px-1.5">{{ row[4] }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          :disabled="isSaving"
+          class="mt-5 w-full bg-blue-700 hover:bg-blue-800 text-white text-[15px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
+        >
+          <span v-if="isSaving" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden="true"></span>
+          {{ isSaving ? 'Saving…' : 'Save Changes' }}
+        </button>
+      </section>
+    </form>
+
+    <!-- ===================== DESKTOP FORM ===================== -->
+    <main class="hidden md:block bg-slate-100 py-16 px-4">
       <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
 
         <!-- Header Bar -->
@@ -409,5 +563,17 @@ onMounted(() => {
         </div>
       </div>
     </main>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.pv-avatar { width: 92px; height: 92px; border-radius: 999px; border: 3px solid #eef3fb; box-shadow: 0 4px 14px rgb(15 47 102 / .12); font-size: 28px; }
+/* Detail values look like plain text but are editable fields */
+.pv-input { width: 100%; min-height: 34px; padding: 6px; margin: 0; border: 1px solid transparent; border-radius: 10px; background-color: transparent; color: #000; font-size: 14px; font-weight: 500; line-height: 1.35; outline: none; appearance: none; -webkit-appearance: none; }
+.pv-input:hover { background-color: #f4f7fc; }
+.pv-input:focus { border-color: #3b82f6; background-color: #fff; box-shadow: 0 0 0 3px rgb(59 130 246 / .12); }
+.pv-select { padding-right: 22px; text-overflow: ellipsis; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+.pv-static { padding: 6px; font-size: 14px; font-weight: 500; color: #000; line-height: 1.35; }
+.pv-static, .pv-wrap { overflow-wrap: anywhere; white-space: normal; }
+</style>

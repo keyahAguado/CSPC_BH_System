@@ -156,6 +156,16 @@ async function ensureSchemaColumns() {
             console.log("✅ Auto-migrated: Expanded last_updated_document in boarding_houses table to VARCHAR(255).");
         }
 
+        // Owners may list up to three mobile numbers ("09xxxxxxxxx / 09xxxxxxxxx / 09xxxxxxxxx"), which overflows VARCHAR(20).
+        for (const table of ['boarding_houses', 'zz_snap_boarding_houses']) {
+            const [phoneCols] = await pool.query('SHOW COLUMNS FROM ' + table + " LIKE 'phone_contact'").catch(() => [[]]);
+            const width = Number((String(phoneCols[0]?.Type || '').match(/varchar\((\d+)\)/i) || [])[1]);
+            if (width && width < 255) {
+                await pool.query('ALTER TABLE ' + table + ' MODIFY COLUMN phone_contact VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL');
+                console.log('✅ Auto-migrated: Widened phone_contact in ' + table + ' to VARCHAR(255).');
+            }
+        }
+
         const [archByCols] = await pool.query("SHOW COLUMNS FROM boarding_houses LIKE 'archived_by'");
         if (archByCols.length === 0) {
             await pool.query("ALTER TABLE boarding_houses ADD COLUMN archived_by VARCHAR(50) DEFAULT NULL, ADD COLUMN archive_reason TEXT DEFAULT NULL, ADD COLUMN archived_at DATETIME DEFAULT NULL");
