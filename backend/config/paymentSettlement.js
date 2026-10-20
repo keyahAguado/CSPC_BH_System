@@ -38,7 +38,13 @@ export function verifyWebhook(req, secret = process.env.PAYMONGO_WEBHOOK_SECRET,
     if (!crypto.timingSafeEqual(expected, Buffer.from(signature, 'hex'))) throw paymentError(401, 'Invalid webhook signature.');
     let event;
     try { event = JSON.parse(req.rawBody); } catch { throw paymentError(400, 'Invalid webhook payload.'); }
-    if (!event?.data?.attributes?.type) throw paymentError(400, 'Invalid webhook event.');
+    // PayMongo documents both JSON:API events and the Hosted Checkout envelope.
+    // Normalize only after verifying the signature against the unchanged raw bytes.
+    if (!event?.data?.attributes?.type && event?.event_type === 'send.webhook' &&
+        typeof event.data?.type === 'string' && event.data?.data) {
+        event = { ...event, data: { attributes: { type: event.data.type, data: event.data.data } } };
+    }
+    if (typeof event?.data?.attributes?.type !== 'string') throw paymentError(400, 'Invalid webhook event.');
     return event;
 }
 export function assertCheckoutContext(session, booking) {

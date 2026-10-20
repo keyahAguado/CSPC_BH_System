@@ -36,7 +36,6 @@ import ownerRouter from './routes/owner.js';                    // Owner Profile
 import adminRouter from './routes/admin.js';                    // SASO Admin dashboard & accreditation checklist actions
 import notificationRouter from './routes/notifications.js';    // Real-time unread alerts & inbox manager
 import paymentRoutes from './routes/payment.js';
-import ownerPaymentRoutes from './routes/ownerPayments.js';
 import ownerDirectPaymentRoutes from './routes/ownerDirectPayments.js';
 import { createDirectHealthWorker } from './config/ownerDirectPayments.js';
 import siteContentRouter from './routes/siteContent.js';        // Public landing page content (managed by admin)
@@ -153,7 +152,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/notifications', notificationRouter);
 
 app.use('/api/payment', paymentRoutes);
-app.use('/api/owner/payment-setup', ownerPaymentRoutes);
+
 app.use('/api/owner/direct-payments', ownerDirectPaymentRoutes);
 
 // B. Public landing page content (Core Features + footer), edited under /api/admin/site-content

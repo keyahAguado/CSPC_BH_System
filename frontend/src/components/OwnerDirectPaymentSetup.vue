@@ -7,14 +7,26 @@ const labels={not_started:'Not connected',pending:'Setup in progress',ready:'QR 
 const actions={connect_requested:'Setup requested',reconnect_requested:'Reconnection requested',connection_verified:'Connection verified',connection_checked:'Connection checked',disconnected_for_new_payments:'New payments disconnected'};
 const headers=()=>({Authorization:'Bearer '+sessionStorage.getItem('cspc_token')});
 async function request(action='',body) {
+  if(busy.value)return;
   busy.value=true;error.value='';message.value='';
   try {
-    const response=body===undefined?await axios.get('/api/owner/direct-payments',{headers:headers()}):await axios.post('/api/owner/direct-payments/'+action,body,{headers:headers()});
+    const response=body===undefined?await axios.get('/api/owner/direct-payments',{headers:headers(),timeout:30000}):await axios.post('/api/owner/direct-payments/'+action,body,{headers:headers()});
     connection.value=response.data.direct;
     if(response.data.history)history.value=response.data.history;
     label.value=connection.value.label;
     if(action)message.value=action==='disconnect'?'New online payments are now stopped. Existing payment verification is retained.':'Connection checked. Review the status below.';
-  }catch(e){error.value=e.response?.data?.message||'Payment settings could not be updated. Please try again.';}
+  }catch(e){
+    error.value=e.response?.data?.message||'Payment settings could not be updated. Please try again.';
+    // A failed provider check may have paused the server-side connection.
+    // Reload its status so a previous ready badge cannot conceal that change.
+    if(action){
+      try{
+        const response=await axios.get('/api/owner/direct-payments',{headers:headers(),timeout:10000});
+        connection.value=response.data.direct;
+        if(response.data.history)history.value=response.data.history;
+      }catch{connection.value=null;}
+    }
+  }
   finally{secretKey.value='';busy.value=false;}
 }
 function connect(){const value=secretKey.value;secretKey.value='';return request('connect',{secretKey:value,label:label.value,authorized:authorized.value,allowWebhook:allowWebhook.value});}
