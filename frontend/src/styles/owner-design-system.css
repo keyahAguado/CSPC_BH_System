@@ -245,13 +245,13 @@ body[data-owner-theme] .tp-bar { background: #fff; }
 
 /* Phone / PWA only (desktop unchanged): compact page controls bar, tighter notices */
 @media (max-width: 640px) {
-  /* One row, three parts: Showing… | Rows per page | Prev 1 Next */
-  body[data-owner-theme] .tp-bar { display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; padding: 8px 10px !important; gap: 8px !important; font-size: 11px !important; }
-  body[data-owner-theme] .tp-info { display: contents; }
-  body[data-owner-theme] .tp-info > span { line-height: 1.35; overflow-wrap: anywhere; }
-  body[data-owner-theme] .tp-rows { flex-direction: column; align-items: center; gap: 2px; font-size: 10px; line-height: 1.2; white-space: nowrap; }
-  body[data-owner-theme] .tp-rows select { height: 30px !important; min-height: 30px !important; padding: 0 4px; font-size: 12px; }
-  body[data-owner-theme] .tp-pages { gap: 3px; }
-  body[data-owner-theme] .tp-pages button { height: 32px !important; min-height: 32px !important; min-width: 32px; padding: 0 7px; gap: 4px; font-size: 11.5px; }
+  /* Keep the summary and row selector together, with page buttons on their own line. */
+  body[data-owner-theme] .tp-bar { display: flex !important; flex-direction: column; align-items: stretch; padding: 12px !important; gap: 12px !important; font-size: 12px !important; min-width: 0; }
+  body[data-owner-theme] .tp-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; width: 100%; min-width: 0; gap: 10px 12px; }
+  body[data-owner-theme] .tp-info > span { flex: 1 1 150px; min-width: 0; line-height: 1.5; overflow-wrap: normal; word-break: normal; }
+  body[data-owner-theme] .tp-rows { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 8px; font-size: 11px; line-height: 1.5; white-space: nowrap; }
+  body[data-owner-theme] .tp-rows select { height: 44px !important; min-height: 44px !important; padding: 0 8px; font-size: 16px; }
+  body[data-owner-theme] .tp-pages { display: flex; flex-wrap: wrap; justify-content: flex-start; width: 100%; min-width: 0; gap: 6px; }
+  body[data-owner-theme] .tp-pages button { flex: 0 0 auto; height: 44px !important; min-height: 44px !important; min-width: 36px; padding: 0 8px; gap: 4px; font-size: 12px; white-space: nowrap; }
   body[data-owner-theme] :is(.booking-flow-notice, .reservation-deadline) { padding: 9px 10px !important; font-size: 12px !important; line-height: 1.5 !important; max-width: none !important; }
 }
