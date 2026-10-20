@@ -534,26 +534,62 @@ onMounted(() => {
 @media(max-width:560px){.ni-summary{grid-template-columns:1fr}.ni-date>div{width:min(260px,calc(100vw - 48px))}}
 @media(pointer:coarse){.ni-select-field,.ni-date>summary,.ni-reset,.ni-stat{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.ni-stat{transition:none}}
-/* Phone / PWA only (desktop unchanged): three summary tiles in one row, scrollable category tabs, tighter list */
-@media(max-width:560px){
-.nf-main{padding-top:14px!important}
-.ni-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
-.ni-stat{flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 6px;text-align:center}
-.ni-stat-icon{width:30px;height:30px;font-size:13px;border-radius:9px}
-.ni-stat strong{font-size:18px}
-.ni-stat small{font-size:10.5px;line-height:1.3}
-.ni-toolbar{gap:8px;margin-bottom:12px}
-.ni-tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;width:100%}
-.ni-tabs button{grid-column:span 2;min-width:0;padding:7px 6px;gap:6px;font-size:11.5px}
-.ni-tabs button:nth-child(n+4){grid-column:span 3}
-.ni-tabs button:nth-child(n+4):last-child:nth-child(4){grid-column:span 6}
-.ni-mark-all{width:100%;justify-content:center}
-.ni-controls{padding:10px;gap:8px!important;margin-bottom:12px}
-.ni-search{flex-basis:100%;max-width:none;min-width:0}
-.ni-toggle{flex:1 1 40%;font-size:12px}
-.ni-row{padding:12px;gap:8px}
-.ni-icon{width:32px;height:32px;font-size:13px}
-.ni-property,.ni-time,.ni-actions{margin-left:0!important}
-.ni-day{padding:8px 12px}
+/* Owner/admin phone inbox: constrain controls and give notification cards the full width. */
+@media(max-width:639px){
+  .notif-owner-theme .nf-main{min-width:0;padding:16px 12px 28px!important}
+  .ni-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:16px}
+  .ni-stat{min-width:0;flex-direction:column;align-items:center;justify-content:flex-start;gap:7px;padding:12px 5px;text-align:center}
+  .ni-stat>span:last-child{min-width:0;max-width:100%}
+  .ni-stat-icon{width:30px;height:30px;font-size:13px;border-radius:9px}
+  .ni-stat strong{font-size:20px;line-height:1.3}
+  .ni-stat small{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+  .ni-toolbar{display:block;min-width:0;margin-bottom:12px}
+  .notif-owner-theme .ni-tabs{display:flex;flex-wrap:nowrap;width:100%;min-width:0;max-width:100%;gap:8px;overflow-x:auto;padding:3px 3px 9px;overscroll-behavior-x:contain;scroll-padding-inline:3px}
+  .notif-owner-theme .ni-tabs button{flex:0 0 auto;min-width:max-content;min-height:44px;padding:8px 12px;gap:7px;font-size:12px;white-space:nowrap}
+  .ni-tabs button>span{min-width:24px;height:24px;padding:0 6px}
+  .ni-mark-all{width:100%;min-height:44px;justify-content:center;margin-top:4px}
+  .ni-controls{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;padding:12px;gap:10px!important;margin-bottom:14px}
+  .ni-search{width:100%;max-width:none;min-width:0;height:46px;box-sizing:border-box}
+  .ni-search input{font-size:16px;min-width:0}
+  .ni-select-field,.ni-date{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+  .ni-select-field,.ni-date>summary{min-height:44px;height:auto;font-size:14px}
+  .ni-select-field{padding:11px 32px 11px 12px}
+  .ni-date>summary{white-space:normal;gap:10px;padding:11px 12px;line-height:1.5}
+  .ni-date>summary span{min-width:0;overflow-wrap:anywhere}
+  .ni-date>div{position:static;width:100%;max-width:100%;box-sizing:border-box;margin-top:8px;padding:12px;box-shadow:none}
+  .ni-presets label{min-height:44px;box-sizing:border-box}
+  .ni-custom{grid-template-columns:minmax(0,1fr);gap:12px}
+  .ni-custom input{width:100%;max-width:100%;min-height:44px;box-sizing:border-box;font-size:16px}
+  .ni-toggle{min-width:0;min-height:44px;font-size:13px;gap:12px}
+  .ni-switch{flex-shrink:0}
+  .ni-reset{min-height:44px;height:auto;justify-content:center}
+  .ni-selection{align-items:stretch;gap:8px;padding:12px}
+  .ni-selection>span{flex-basis:100%}
+  .ni-selection button{flex:1;min-height:44px;white-space:normal}
+  .ni-list{min-width:0}
+  .ni-columns{padding:8px 12px;gap:8px}
+  .ni-columns>span:first-of-type{padding-left:0!important}
+  .ni-row{grid-template-columns:24px minmax(0,1fr);padding:14px 12px;gap:10px 8px}
+  .ni-select{grid-column:1;grid-row:1;min-height:32px}
+  .ni-select input,.ni-columns input{width:20px;height:20px}
+  .ni-content{grid-column:2;grid-row:1;display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;min-width:0}
+  .ni-icon{width:30px;height:30px;font-size:13px;border-radius:9px}
+  .ni-title{gap:6px;align-items:center;min-width:0}
+  .ni-title h2{font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+  .ni-category,.ni-flag{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:1.5}
+  .ni-copy>.ni-preview{font-size:13px;line-height:1.7;margin-top:8px}
+  .ni-property,.ni-time,.ni-actions{grid-column:1/-1;margin-left:0!important;min-width:0}
+  .ni-property{padding-top:10px;border-top:1px solid #e8eef7;font-size:12px}
+  .ni-time{font-size:12px;overflow-wrap:anywhere}
+  .ni-actions{justify-content:space-between;gap:8px;padding-top:4px}
+  .ni-view{flex:1;min-width:0;min-height:44px;padding:10px 12px;box-sizing:border-box;font-size:12px;white-space:normal;text-align:center;overflow-wrap:anywhere}
+  .ni-more{flex-shrink:0}.ni-more summary{min-width:44px;min-height:44px;border:1px solid #dfe8f4}
+  .ni-more>div{top:48px;max-width:calc(100vw - 56px);box-sizing:border-box}
+  .ni-more button{min-height:44px;white-space:normal}
+  .ni-day{padding:10px 12px;flex-wrap:wrap;gap:4px 10px}
+  .ni-list :deep(.tp-bar){min-width:0;padding:12px;flex-wrap:wrap;gap:12px}
+  .ni-list :deep(.tp-info){flex-wrap:wrap;min-width:0;gap:8px}
+  .ni-list :deep(.tp-pages){max-width:100%;flex-wrap:wrap;gap:4px}
+  .ni-list :deep(.tp-pages button){min-width:36px;min-height:44px!important;height:44px;padding:0 8px}
 }
 </style>
