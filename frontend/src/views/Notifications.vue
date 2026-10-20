@@ -545,8 +545,11 @@ onMounted(() => {
   .ni-stat strong{font-size:20px;line-height:1.3}
   .ni-stat small{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
   .ni-toolbar{display:block;min-width:0;margin-bottom:12px}
-  .notif-owner-theme .ni-tabs{display:flex;flex-wrap:nowrap;width:100%;min-width:0;max-width:100%;gap:8px;overflow-x:auto;padding:3px 3px 9px;overscroll-behavior-x:contain;scroll-padding-inline:3px}
-  .notif-owner-theme .ni-tabs button{flex:0 0 auto;min-width:max-content;min-height:44px;padding:8px 12px;gap:7px;font-size:12px;white-space:nowrap}
+  .notif-owner-theme .ni-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;min-width:0;max-width:100%;gap:8px;padding:3px 3px 9px;box-sizing:border-box}
+  .notif-owner-theme .ni-tabs button{min-width:0;max-width:100%;min-height:44px;padding:8px;gap:6px;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+  .notif-owner-theme .ni-tabs button:last-child:nth-child(odd){grid-column:1/-1}
+  .notif-owner-theme .ni-tabs button>i{display:none}
+  .notif-owner-theme .ni-tabs button>span{flex-shrink:0}
   .ni-tabs button>span{min-width:24px;height:24px;padding:0 6px}
   .ni-mark-all{width:100%;min-height:44px;justify-content:center;margin-top:4px}
   .ni-controls{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;padding:12px;gap:10px!important;margin-bottom:14px}
