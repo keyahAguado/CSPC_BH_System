@@ -18,7 +18,7 @@ onMounted(() => {
 
 // Preserve any error messages passed back from the OAuth callback
 const errorMap = {
-  unauthorized_domain: 'That Google account is not authorised. Use your CSPC or personal Gmail account.',
+  unauthorized_domain: 'That Google account is not authorized. Use your CSPC or personal Gmail account.',
   suspended: 'Your account has been suspended. Please contact SASO.',
   server_error: 'Something went wrong on our end. Please try again.',
   invalid_payload: 'Authentication payload was invalid. Please try again.',
