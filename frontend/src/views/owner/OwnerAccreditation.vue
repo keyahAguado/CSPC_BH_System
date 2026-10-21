@@ -1,4 +1,6 @@
 <script setup>
+import DocumentAttachmentViewer from '../../components/DocumentAttachmentViewer.vue';
+import { attachmentPaths } from '../../utils/documentAttachments.js';
 import { openFileInNewTab } from '../../utils/openFile.js';
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import DropdownSelect from '../../components/DropdownSelect.vue';
@@ -203,6 +205,9 @@ const pinNeedsConfirmation = ref(false);
 const permitFiles = ref({});
 const permitExpiries = ref({});
 const existingFiles = ref({});
+const existingFileLists = ref({});
+const documentPreview = ref(null);
+const openPermitPreview = (key, label) => { documentPreview.value = { label, files: permitFiles.value[key]?.length ? permitFiles.value[key] : (existingFileLists.value[key] || attachmentPaths([], existingFiles.value[key])) }; };
 
 // Dynamic Multiple Photo Uploads
 const mainHouseImg = ref(null);
@@ -228,7 +233,8 @@ const applyCustomCriteria = (items, docs = []) => {
   criteria.value = [...standardCriteria, ...items.map(c => ({ ...c, permit_key: `custom_document_${c.id}`, required: c.requirement_type === 'required' }))];
   for (const d of docs) {
     const key = `custom_document_${d.criteria_id}`;
-    if (d.file_path) existingFiles.value[key] = d.file_path;
+    existingFileLists.value[key] = attachmentPaths(d.file_paths, d.file_path);
+    if (existingFileLists.value[key].length) existingFiles.value[key] = existingFileLists.value[key][0];
     if (d.expiry_date) permitExpiries.value[key] = String(d.expiry_date).slice(0, 10);
   }
 };
@@ -321,6 +327,7 @@ const resetFormToCleanSlate = () => {
   permitFileErrors.value = {};
   permitExpiryErrors.value = {};
   existingFiles.value = {};
+  existingFileLists.value = {};
   mainHouseImg.value = null;
   mainHouseImgPreview.value = '';
   selectedPhotos.value = [];
@@ -413,7 +420,8 @@ async function fetchApplicantApplication() {
     selectedPhotos.value = (data.photos || []).map(ph => ({ file: null, previewUrl: getImageUrl(ph.photo_url), dbValue: ph.photo_url, category: ph.category || null }));
     criteria.value.forEach(p => {
       if (app[p.permit_key]) {
-        existingFiles.value[p.permit_key] = app[p.permit_key];
+        existingFileLists.value[p.permit_key] = attachmentPaths((data.permitFiles || []).filter(file => file.permit_key === p.permit_key).map(file => file.file_path), app[p.permit_key]);
+        existingFiles.value[p.permit_key] = existingFileLists.value[p.permit_key][0];
         const expiry = app['expiry_' + p.permit_key];
         permitExpiries.value[p.permit_key] = expiry ? new Date(expiry).toISOString().split('T')[0] : '';
       }
@@ -483,12 +491,14 @@ async function fetchHouseDetails() {
       }
 
       const { data: documents } = await axios.get(`/api/boarding-houses/documents/${houseId.value}`, { headers: { Authorization: `Bearer ${token}` } });
-      applyCustomCriteria((documents.criteria || []).filter(c => !c.permit_key), (documents.criteria || []).filter(c => !c.permit_key).map(c => ({ criteria_id: c.id, file_path: c.current_file, expiry_date: c.current_expiry })));
+      applyCustomCriteria((documents.criteria || []).filter(c => !c.permit_key), (documents.criteria || []).filter(c => !c.permit_key).map(c => ({ criteria_id: c.id, file_path: c.current_file, file_paths: c.current_files, expiry_date: c.current_expiry })));
 
       // Store current file names for permits preview
       criteria.value.forEach(p => {
         if (house[p.permit_key]) {
-          existingFiles.value[p.permit_key] = house[p.permit_key];
+          const document = (documents.criteria || []).find(item => item.permit_key === p.permit_key);
+          existingFileLists.value[p.permit_key] = attachmentPaths(document?.current_files, house[p.permit_key]);
+          existingFiles.value[p.permit_key] = existingFileLists.value[p.permit_key][0];
           permitExpiries.value[p.permit_key] = house['expiry_' + p.permit_key] ? new Date(house['expiry_' + p.permit_key]).toISOString().split('T')[0] : '';
         }
       });
@@ -856,7 +866,6 @@ const permitStatus = (key) => {
   if (existingFiles.value[key]) return { tone: permitExpiries.value[key] ? 'done' : 'partial', text: 'On file' };
   return { tone: 'empty', text: 'Not uploaded' };
 };
-const formatFileSize = (bytes) => (bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB');
 // When "Next: Photos" flags a document, show the page that holds it
 watch(() => Object.keys(permitFileErrors.value).join() + '|' + Object.keys(permitExpiryErrors.value).join(), () => {
   const i = allPermits.value.findIndex(p => permitFileErrors.value[p.permit_key] || permitExpiryErrors.value[p.permit_key]);
@@ -1870,11 +1879,10 @@ const submitApplication = async () => {
                           </span>
                           <span v-if="permitFiles[p.permit_key]?.length" class="dt-file-text is-ok" :title="permitFiles[p.permit_key].map(f => f.name).join(', ')">
                             <i :class="['fa-solid', isPdfUpload(permitFiles[p.permit_key][0]) ? 'fa-file-pdf' : 'fa-file-image']" aria-hidden="true"></i>
-                            {{ permitFiles[p.permit_key].length > 1 ? permitFiles[p.permit_key].length + ' files' : permitFiles[p.permit_key][0].name }}
-                            <small>{{ formatFileSize(permitFiles[p.permit_key].reduce((t, f) => t + f.size, 0)) }}</small>
+                            {{ permitFiles[p.permit_key].length > 1 ? permitFiles[p.permit_key].length + ' files' : permitFiles[p.permit_key][0].name }}                            <button type="button" class="underline" @click="openPermitPreview(p.permit_key, p.label)">View {{ permitFiles[p.permit_key].length }} file(s)</button>
                           </span>
                           <span v-else-if="existingFiles[p.permit_key]" class="dt-file-text is-ok">
-                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <a :href="getImageUrl(existingFiles[p.permit_key])" target="_blank" rel="noopener" @click.prevent="openFileInNewTab(getImageUrl(existingFiles[p.permit_key]))">View</a>
+                            <i class="fa-solid fa-circle-check" aria-hidden="true"></i> On file · <button type="button" class="underline" @click="openPermitPreview(p.permit_key, p.label)">View {{ existingFileLists[p.permit_key]?.length || 1 }} file(s)</button>
                           </span>
                           <span v-else-if="!permitFileErrors[p.permit_key]" class="dt-file-text">No file chosen</span>
                         </div>
@@ -2337,6 +2345,7 @@ const submitApplication = async () => {
       @accepted="handleDpaAccepted" 
     />
   </div>
+<DocumentAttachmentViewer v-if="documentPreview" :files="documentPreview.files" :title="documentPreview.label" @close="documentPreview = null" />
 </template>
 
 <style>

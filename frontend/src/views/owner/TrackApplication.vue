@@ -1,4 +1,7 @@
 <script setup>
+import DocumentAttachmentViewer from '../../components/DocumentAttachmentViewer.vue';
+import { applicationDocumentGroups } from '../../utils/documentAttachments.js';
+const documentPreview = ref(null);
 import { openFileInNewTab } from '../../utils/openFile.js';
 import ApplicantEmailGate from '../../components/ApplicantEmailGate.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
@@ -130,7 +133,8 @@ const toggleDetails = async (app) => {
       const path = data.application?.[permitKey];
       if (path && !permitFiles.some(file => file.permit_key === permitKey)) permitFiles.push({ permit_key: permitKey, file_path: path });
     }
-    details.value[ref] = { ...data, photos: Array.isArray(data.photos) ? data.photos : [], permitFiles, history: Array.isArray(data.history) ? data.history : [] };
+    const documentGroups = applicationDocumentGroups(data, documentNames);
+    details.value[ref] = { ...data, documentGroups, photos: Array.isArray(data.photos) ? data.photos : [], permitFiles, history: Array.isArray(data.history) ? data.history : [] };
   } catch (err) {
     if (!sessionExpired(err)) details.value[ref] = { error: err.response?.data?.message || 'Could not load the details.' };
   }
@@ -153,10 +157,6 @@ const startActivation = async () => {
 };
 
 const documentNames = { business_form: 'Business application', cedula: 'Community tax certificate', dti: 'DTI registration', barangay: 'Barangay clearance', building: 'Building permit', zoning: 'Zoning clearance', sanitary: 'Sanitary permit', fire: 'Fire safety certificate' };
-const documentUrl = (path) => {
-  if (!path) return null;
-  try { const url = new URL(getImageUrl(path), window.location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : null; } catch { return null; }
-};
 const editLabel = (status) => (status === 'REVISION_REQUIRED' ? 'Respond to revision request' : 'Edit application');
 // Badge colours for this page only; STATUS_INFO.badge is also used by the admin screens.
 const STATUS_TONES = { SUBMITTED: 'tone-submitted', UNDER_REVIEW: 'tone-review', REVISION_REQUIRED: 'tone-revision', RESUBMITTED: 'tone-resubmitted', APPROVED: 'tone-approved', ACCOUNT_PENDING: 'tone-approved', ACTIVE: 'tone-active', REJECTED: 'tone-rejected' };
@@ -401,7 +401,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
                       <div><dt>Monthly rent</dt><dd class="tabular-nums">₱{{ Number(details[app.reference_no].application.price || 0).toLocaleString() }}</dd></div>
                       <div><dt>Contact</dt><dd>{{ details[app.reference_no].application.phone_contact || 'Not provided' }}</dd></div>
                       <div><dt>Photos</dt><dd class="tabular-nums">{{ details[app.reference_no].photos.length }}</dd></div>
-                      <div><dt>Document files</dt><dd class="tabular-nums">{{ details[app.reference_no].permitFiles.length }}</dd></div>
+                      <div><dt>Document files</dt><dd class="tabular-nums">{{ details[app.reference_no].documentGroups.reduce((total, group) => total + group.files.length, 0) }}</dd></div>
                     </dl>
                   </div>
                 </section>
@@ -409,12 +409,11 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
                 <div class="min-w-0">
                   <h3 class="track-subhead">Submitted documents</h3>
                   <ul class="text-sm border border-slate-200 rounded-lg divide-y divide-slate-200">
-                    <li v-for="(file, index) in details[app.reference_no].permitFiles" :key="index" class="flex items-start gap-3 px-3 py-2">
+                    <li v-for="group in details[app.reference_no].documentGroups" :key="group.permit_key" class="flex items-start gap-3 px-3 py-2">
                       <i class="fa-regular fa-file-lines mt-0.5 text-slate-400" aria-hidden="true"></i>
-                      <a v-if="documentUrl(file.file_path)" :href="documentUrl(file.file_path)" target="_blank" rel="noopener noreferrer" @click.prevent="openFileInNewTab(documentUrl(file.file_path))" class="track-focus min-w-0 rounded text-[#245b99] hover:text-[#142b4a] underline underline-offset-2 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }} - file {{ index + 1 }}<span class="sr-only"> (opens in a new tab)</span><i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[11px]" aria-hidden="true"></i></a>
-                      <span v-else class="min-w-0 text-slate-600 track-wrap">{{ documentNames[String(file.permit_key || '').replace(/^permit_/, '')] || file.permit_key }}: file unavailable</span>
+                      <button type="button" @click="documentPreview = group" class="track-focus min-w-0 rounded text-[#245b99] hover:text-[#142b4a] underline underline-offset-2 track-wrap text-left">{{ group.label }} - {{ group.files.length }} file(s)</button>
                     </li>
-                    <li v-if="!details[app.reference_no].permitFiles.length" class="px-3 py-2 text-slate-600">No document files available in this list.</li>
+                    <li v-if="!details[app.reference_no].documentGroups.length" class="px-3 py-2 text-slate-600">No document files available in this list.</li>
                   </ul>
                 </div>
                 <div class="min-w-0">
@@ -440,6 +439,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
       </div>
     </main>
   </div>
+<DocumentAttachmentViewer v-if="documentPreview" :files="documentPreview.files" :title="documentPreview.label" @close="documentPreview = null" />
 </template>
 
 <style scoped>

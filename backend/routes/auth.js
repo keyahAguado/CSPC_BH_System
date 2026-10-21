@@ -1,3 +1,4 @@
+import { verifyLoginRecaptcha } from '../config/recaptcha.js';
 import { validateBody } from '../config/inputValidation.js';
 import { getTrustedOAuthOrigin } from '../config/oauthRedirect.js';
 import express from 'express';
@@ -189,7 +190,7 @@ async function buildUserPayload(user) {
 //    Still needed for owners who registered before Google OAuth,
 //    and as fallback for any user with a local password.
 // =========================================================================
-router.post('/login', validateBody('login'), async (req, res) => {
+router.post('/login', validateBody('login'), verifyLoginRecaptcha, async (req, res) => {
     let { email, password } = req.body;
 
     if (!email || !password) {

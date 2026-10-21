@@ -228,7 +228,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, valid
         await connection.beginTransaction();
 
         const [ownedHouse] = await connection.query(
-            'SELECT id FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE',
+            'SELECT id, img FROM boarding_houses WHERE id = ? AND owner_id = ? FOR UPDATE',
             [req.params.id, req.user.id]
         );
         if (ownedHouse.length === 0) {
@@ -239,7 +239,7 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, valid
         const {
             house_name, location, price, contact_number, map_link, description,
             latitude, longitude, advance_months, deposit_months, deposit_type,
-            existing_img, amenities_free, amenities_paid
+            amenities_free, amenities_paid
         } = req.body;
 
         // Existing photos array sent from frontend as JSON
@@ -260,7 +260,8 @@ router.post('/edit/:id', authenticateToken, verifyOwner, uploadOwnerMedia, valid
         const allPhotos = [...existingPhotos, ...newPhotoUrls].slice(0, 10);
 
         // Upload featured image if replaced
-        let featuredImg = existing_img || null;
+        // The saved photo comes from the locked owned record, not a hidden browser field.
+        let featuredImg = ownedHouse[0].img || null;
         if (req.files && Array.isArray(req.files)) {
             const imgFile = req.files.find(f => f.fieldname === 'img');
             if (imgFile) {

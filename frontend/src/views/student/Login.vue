@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import { getApiBaseUrl } from '../../config/api';
+import LoginCaptcha from '../../components/LoginCaptcha.vue';
 import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
 
 const router = useRouter();
@@ -20,19 +21,12 @@ const errorMsg        = ref('');
 const successMsg      = ref('');
 const errorShakeKey   = ref(0);
 
-// reCAPTCHA v2 state (email/password login only). Required only when a site key is configured,
-// so a missing VITE_RECAPTCHA_SITE_KEY never locks everyone out of email login.
-const recaptchaSiteKey  = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
-const recaptchaEnabled  = Boolean(recaptchaSiteKey);
-const recaptchaToken    = ref('');
-const recaptchaWidgetId = ref(null);
-
-const resetRecaptcha = () => {
-  if (window.grecaptcha && recaptchaWidgetId.value !== null) {
-    window.grecaptcha.reset(recaptchaWidgetId.value);
-  }
-  recaptchaToken.value = '';
-};
+// Password login sends the challenge to the backend for verification.
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+const recaptchaEnabled = Boolean(recaptchaSiteKey);
+const recaptchaToken = ref('');
+const captchaWidget = ref(null);
+const resetRecaptcha = () => { recaptchaToken.value = ''; captchaWidget.value?.reset(); };
 
 // Detect if user typed a CSPC institutional email (@my.cspc.edu.ph or @cspc.edu.ph)
 const isInstitutionalEmail = computed(() => {
@@ -63,32 +57,7 @@ onMounted(() => {
     showPrivacyModal.value = true;
   }
 
-  // Load reCAPTCHA v2 script and render widget inside #recaptcha-container
-  if (recaptchaEnabled) {
-    window.onRecaptchaLoad = () => {
-      const container = document.getElementById('recaptcha-container');
-      if (container && window.grecaptcha && !container.hasChildNodes()) {
-        recaptchaWidgetId.value = window.grecaptcha.render(container, {
-          sitekey: recaptchaSiteKey,
-          callback: (token) => { recaptchaToken.value = token; },
-          'expired-callback': () => { recaptchaToken.value = ''; },
-        });
-      }
-    };
 
-    const scriptId = 'recaptcha-script';
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-    } else if (window.grecaptcha && window.grecaptcha.render) {
-      // Script already loaded (returning to this page): render directly
-      window.onRecaptchaLoad();
-    }
-  }
 });
 
 // ── Redirect helper (shared with AuthSuccess logic) ──
@@ -186,6 +155,7 @@ const handleLogin = async () => {
     const { data } = await axios.post('/api/auth/login', {
       email:    email.value.trim(),
       password: password.value,
+      recaptchaToken: recaptchaToken.value,
     });
 
     if (data.success) {
@@ -473,7 +443,7 @@ const handleOwnerRegister = () => handleGoogleLogin();
 
           <!-- reCAPTCHA v2 widget — only for email/password login -->
           <div v-if="recaptchaEnabled" class="flex justify-center">
-            <div id="recaptcha-container"></div>
+            <LoginCaptcha ref="captchaWidget" v-model:token="recaptchaToken" :site-key="recaptchaSiteKey" />
           </div>
 
           <!-- Submit Button -->

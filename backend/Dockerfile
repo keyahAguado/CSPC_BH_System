@@ -1,5 +1,5 @@
-# 1. Use the official lightweight Node.js 20 runtime (nodemailer and @peculiar/x509 require Node 20+)
-FROM node:20-alpine
+# 1. Use the supported Node.js 24 LTS runtime.
+FROM node:24-alpine
 
 # 2. Set the working directory inside the container
 WORKDIR /app
@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 4. Install production dependencies
-RUN npm install
+RUN npm ci
 
 # 5. Copy the rest of the backend source code
 COPY . .

@@ -740,6 +740,11 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
             return res.status(400).json({ success: false, message: 'Please refresh the application and select your photos again.' });
         }
 
+        // New properties need their own featured image; saved images remain valid on edits.
+        if (!house_id && !req.files?.house_img?.length) {
+            return res.status(400).json({ success: false, message: 'Upload a featured exterior photo for this new property.', errorCode: 'invalid_input' });
+        }
+
         startAllUploads();
 
         // Upload all house photos via unified storage provider concurrently in parallel
