@@ -20,6 +20,20 @@ const errorMsg        = ref('');
 const successMsg      = ref('');
 const errorShakeKey   = ref(0);
 
+// reCAPTCHA v2 state (email/password login only). Required only when a site key is configured,
+// so a missing VITE_RECAPTCHA_SITE_KEY never locks everyone out of email login.
+const recaptchaSiteKey  = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
+const recaptchaEnabled  = Boolean(recaptchaSiteKey);
+const recaptchaToken    = ref('');
+const recaptchaWidgetId = ref(null);
+
+const resetRecaptcha = () => {
+  if (window.grecaptcha && recaptchaWidgetId.value !== null) {
+    window.grecaptcha.reset(recaptchaWidgetId.value);
+  }
+  recaptchaToken.value = '';
+};
+
 // Detect if user typed a CSPC institutional email (@my.cspc.edu.ph or @cspc.edu.ph)
 const isInstitutionalEmail = computed(() => {
   const clean = email.value.trim().toLowerCase();
@@ -47,6 +61,33 @@ onMounted(() => {
   }
   if (!localStorage.getItem('cspc_privacy_accepted')) {
     showPrivacyModal.value = true;
+  }
+
+  // Load reCAPTCHA v2 script and render widget inside #recaptcha-container
+  if (recaptchaEnabled) {
+    window.onRecaptchaLoad = () => {
+      const container = document.getElementById('recaptcha-container');
+      if (container && window.grecaptcha && !container.hasChildNodes()) {
+        recaptchaWidgetId.value = window.grecaptcha.render(container, {
+          sitekey: recaptchaSiteKey,
+          callback: (token) => { recaptchaToken.value = token; },
+          'expired-callback': () => { recaptchaToken.value = ''; },
+        });
+      }
+    };
+
+    const scriptId = 'recaptcha-script';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    } else if (window.grecaptcha && window.grecaptcha.render) {
+      // Script already loaded (returning to this page): render directly
+      window.onRecaptchaLoad();
+    }
   }
 });
 
@@ -121,6 +162,13 @@ const handleLogin = async () => {
   errorMsg.value   = '';
   successMsg.value = '';
 
+  // Require reCAPTCHA verification before attempting login
+  if (recaptchaEnabled && !recaptchaToken.value) {
+    errorMsg.value = 'Please complete the CAPTCHA verification below.';
+    errorShakeKey.value++;
+    return;
+  }
+
   isLoading.value  = true;
 
   try {
@@ -138,6 +186,7 @@ const handleLogin = async () => {
   } catch (err) {
     errorMsg.value = err.response?.data?.message || 'Incorrect credentials. Please try again.';
     errorShakeKey.value++;
+    resetRecaptcha();
   } finally {
     isLoading.value = false;
   }
@@ -411,10 +460,15 @@ const handleOwnerRegister = () => handleGoogleLogin();
             </div>
           </div>
 
+          <!-- reCAPTCHA v2 widget — only for email/password login -->
+          <div v-if="recaptchaEnabled" class="flex justify-center">
+            <div id="recaptcha-container"></div>
+          </div>
+
           <!-- Submit Button -->
           <button
             type="submit"
-            :disabled="isLoading"
+            :disabled="isLoading || (recaptchaEnabled && !recaptchaToken)"
             class="w-full bg-gradient-to-r from-[#1e4a8d] to-[#163870] hover:from-[#163870] hover:to-[#0f2a56] active:scale-[0.98] text-white font-extrabold py-3.5 px-4 rounded-2xl transition-all duration-200 shadow-md shadow-[#1e4a8d]/20 uppercase text-xs tracking-widest disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center gap-2 cursor-pointer"
           >
             <svg v-if="isLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
