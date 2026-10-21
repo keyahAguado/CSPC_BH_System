@@ -997,8 +997,24 @@ router.post('/criteria/add', authenticateToken, verifyAdmin, validateBody('crite
     try {
         await connection.beginTransaction();
         const label = req.body.label.trim();
-        const [result] = await connection.query('INSERT INTO checklist_criteria (label, house_id, requirement_type) VALUES (?, NULL, ?)', [label, req.body.requirement_type || 'supplementary']);
-        await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", ['SASO added a ' + (req.body.requirement_type === 'required' ? 'required' : 'supplementary (optional)') + ' document for all properties: "' + label + '". Please review Documents for each property.']);
+        const category = req.body.requirement_type === 'required' ? 'required' : 'supplementary (optional)';
+        // Optional house_id: a requirement for one property only; otherwise it applies to all properties.
+        const houseId = req.body.house_id == null || req.body.house_id === '' ? null : Number(req.body.house_id);
+        let house = null;
+        if (houseId !== null) {
+            const [houses] = await connection.query('SELECT id, name, owner_id FROM boarding_houses WHERE id = ? FOR UPDATE', [houseId]);
+            if (!houses.length) {
+                await connection.rollback();
+                return res.status(404).json({ success: false, message: 'Property not found.' });
+            }
+            house = houses[0];
+        }
+        const [result] = await connection.query('INSERT INTO checklist_criteria (label, house_id, requirement_type) VALUES (?, ?, ?)', [label, houseId, req.body.requirement_type || 'supplementary']);
+        if (house) {
+            if (house.owner_id) await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)', [house.owner_id, 'SASO added a ' + category + ' document for your property "' + house.name + '": "' + label + '". Please review Documents for this property.']);
+        } else {
+            await connection.query("INSERT INTO notifications (user_id, message) SELECT id, ? FROM users WHERE role = 'owner'", ['SASO added a ' + category + ' document for all properties: "' + label + '". Please review Documents for each property.']);
+        }
         await connection.commit();
         res.json({ success: true, criteriaId: result.insertId });
     } catch (err) {

@@ -74,6 +74,17 @@ const downloadOriginal = () => {
 const newCriteriaLabel = ref('');
 // No preset: SASO chooses the category explicitly so a requirement is never classified by default.
 const newCriteriaType = ref('');
+// Requirement management scope: 'all' = shared checklist (page section); 'house' = the application under review only.
+const criteriaScope = ref('all');
+const managedCriteria = computed(() => criteria.value.filter(c => !c.permit_key && (criteriaScope.value === 'house'
+  ? activeApp.value && Number(c.house_id) === Number(activeApp.value.id)
+  : c.house_id == null)));
+const openCriteriaManager = (scope, modal) => {
+  criteriaScope.value = scope === 'house' && activeApp.value ? 'house' : 'all';
+  if (modal === 'add') showAddCriteriaModal.value = true;
+  else if (modal === 'edit') showUpdateCriteriaModal.value = true;
+  else showDeleteCriteriaModal.value = true;
+};
 const requirementTypeOptions = [
   { value: 'required', label: 'Required', note: 'Owners must upload it before submitting.' },
   { value: 'supplementary', label: 'Optional', note: 'Optional. Owners may upload it.' }
@@ -394,9 +405,11 @@ const submitAddCriteria = async () => {
   if (!newCriteriaLabel.value.trim()) return;
   if (!newCriteriaType.value) { showSystemAlert('Choose whether this document is Required or Optional.', 'error'); return; }
   try {
+    const forHouse = criteriaScope.value === 'house' && activeApp.value ? activeApp.value : null;
     const res = await axios.post(`/api/admin/criteria/add`, {
       label: newCriteriaLabel.value,
-      requirement_type: newCriteriaType.value
+      requirement_type: newCriteriaType.value,
+      ...(forHouse ? { house_id: forHouse.id } : {})
     }, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -405,7 +418,7 @@ const submitAddCriteria = async () => {
       newCriteriaLabel.value = '';
       newCriteriaType.value = '';
       showAddCriteriaModal.value = false;
-      showSystemAlert('Requirement added for all boarding houses.', 'success');
+      showSystemAlert(forHouse ? `Requirement added for ${forHouse.name || 'this property'} only.` : 'Requirement added for all boarding houses.', 'success');
       await fetchPendingApplications();
     }
   } catch (err) { 
@@ -594,9 +607,9 @@ const loadError = ref('');
         <div class="flex flex-wrap items-center justify-between gap-3 mb-5 p-4 bg-white border border-slate-200 rounded-xl">
           <div><p class="font-semibold text-sm text-slate-800">Document requirements</p><p class="text-sm text-slate-500">Manage the shared checklist for all boarding houses.</p></div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" @click="showAddCriteriaModal = true" class="px-4 py-2 rounded-lg bg-[#245b99] text-white text-sm font-semibold management-button">Add requirement</button>
-            <button type="button" @click="showUpdateCriteriaModal = true" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Edit</button>
-            <button type="button" @click="showDeleteCriteriaModal = true" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Remove</button>
+            <button type="button" @click="openCriteriaManager('all', 'add')" class="px-4 py-2 rounded-lg bg-[#245b99] text-white text-sm font-semibold management-button">Add requirement</button>
+            <button type="button" @click="openCriteriaManager('all', 'edit')" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Edit</button>
+            <button type="button" @click="openCriteriaManager('all', 'remove')" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold management-button">Remove</button>
           </div>
         </div>
 
@@ -997,6 +1010,16 @@ const loadError = ref('');
               </button>
             </div>
 
+            <!-- Requirements for this property only (shared ones are managed from the main page) -->
+            <div class="w-full sm:w-auto">
+              <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 text-center sm:text-right">Requirements for this property</p>
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" @click="openCriteriaManager('house', 'add')" class="bg-green-700 hover:bg-green-800 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button>
+                <button type="button" @click="openCriteriaManager('house', 'edit')" class="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Edit</button>
+                <button type="button" @click="openCriteriaManager('house', 'remove')" class="bg-red-600 hover:bg-red-700 text-white rounded-xl px-3 py-2.5 font-bold text-[12px] uppercase tracking-wide transition shadow-sm flex items-center justify-center gap-1.5"><i class="fa-solid fa-trash-can" aria-hidden="true"></i> Remove</button>
+              </div>
+            </div>
+
 
           </div>
         </form>
@@ -1030,10 +1053,14 @@ const loadError = ref('');
     <div v-management-dialog="{ close: () => showAddCriteriaModal = false }" v-if="showAddCriteriaModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex justify-center items-center p-4">
       <div class="popup-panel bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
         <div class="bg-[#10b981] text-white px-8 py-5 flex justify-between items-center">
-          <h3 class="font-semibold text-lg uppercase tracking-tight">Add New Criteria</h3>
+          <h3 class="font-semibold text-lg uppercase tracking-tight">{{ criteriaScope === 'house' ? 'Add Requirement for This Property' : 'Add New Criteria' }}</h3>
           <button aria-label="Close dialog" @click="showAddCriteriaModal = false" class="text-white hover:text-emerald-100 transition"><i class="fa-solid fa-xmark text-2xl"></i></button>
         </div>
         <div class="p-10">
+          <p class="mb-6 rounded-xl border px-4 py-3 text-[13px] font-semibold" :class="criteriaScope === 'house' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'">
+            <i class="fa-solid mr-1.5" :class="criteriaScope === 'house' ? 'fa-house' : 'fa-layer-group'" aria-hidden="true"></i>
+            {{ criteriaScope === 'house' ? `Applies to ${activeApp?.name || 'this property'} only. Only its owner is notified.` : 'Applies to all boarding houses. All owners are notified.' }}
+          </p>
           <div class="mb-8">
             <label class="block text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-3">Criteria Label</label>
             <input aria-label="Criteria Label" type="text" v-model="newCriteriaLabel" required placeholder="e.g. Health Certificate" class="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-0 focus:border-emerald-500 outline-none transition font-bold text-slate-700">
@@ -1065,14 +1092,14 @@ const loadError = ref('');
         <div class="p-10 max-h-[60vh] overflow-y-auto custom-scrollbar">
           <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 flex gap-3">
             <i class="fa-solid fa-circle-info mt-1"></i>
-            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Shared requirements apply to every boarding house. Standard permits are protected. Existing property-specific items keep their original scope.</p>
+            <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">{{ criteriaScope === 'house' ? `Requirements for ${activeApp?.name || 'this property'} only. Shared requirements are managed from Document requirements on the main page.` : 'Shared requirements apply to every boarding house. Standard permits are protected. Property-only requirements are managed inside each application review.' }}</p>
           </div>
           <div class="space-y-4">
-            <div v-for="item in criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id))" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
+            <div v-for="item in managedCriteria" :key="item.id" class="management-item flex items-center justify-between p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:border-amber-400 transition group">
               <span class="text-sm font-semibold text-slate-700">{{ item.label }}<small class="block text-xs text-slate-500 mt-1">{{ item.house_id ? 'This property only' : 'All boarding houses' }} / {{ isRequiredCriterion(item) ? 'Required' : 'Optional' }}</small></span>
               <button @click="startEditCriteria(item.id, item.label)" class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Edit</button>
             </div>
-            <div v-if="criteria.filter(c => !c.permit_key && (!c.house_id || c.house_id === activeApp?.id)).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
+            <div v-if="managedCriteria.length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
               <p class="text-[12px] font-semibold uppercase tracking-wide">No custom criteria to manage</p>
             </div>
@@ -1122,11 +1149,11 @@ const loadError = ref('');
             <p class="text-[12px] font-bold uppercase tracking-wide leading-relaxed">Note: You can only delete custom criteria that you have added. The 8 required institutional documents are permanent and cannot be deleted.</p>
           </div>
           <div class="space-y-4">
-            <div v-for="item in criteria.filter(c => c.house_id === activeApp?.id)" :key="item.id" class="management-item flex items-center justify-between p-5 bg-red-50 border-2 border-red-100 rounded-2xl hover:border-red-400 transition group">
+            <div v-for="item in managedCriteria" :key="item.id" class="management-item flex items-center justify-between p-5 bg-red-50 border-2 border-red-100 rounded-2xl hover:border-red-400 transition group">
               <span class="text-sm font-semibold text-slate-700 uppercase tracking-tight">{{ item.label }}</span>
               <button @click="submitDeleteCriteria(item.id)" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg text-[12px] font-semibold uppercase tracking-wide transition shadow-sm management-button">Delete</button>
             </div>
-            <div v-if="criteria.filter(c => c.house_id === activeApp?.id).length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
+            <div v-if="managedCriteria.length === 0" class="py-10 flex flex-col items-center justify-center text-center opacity-40">
               <i class="fa-solid fa-folder-open text-4xl mb-4"></i>
               <p class="text-[12px] font-semibold uppercase tracking-wide">No custom criteria to manage</p>
             </div>
