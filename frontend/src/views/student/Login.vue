@@ -123,13 +123,15 @@ const handleLogin = async () => {
   // Strict domain regexes enforcing exact domain spelling and structure
   const strictGmailPattern = /^[a-zA-Z0-9._%+-]{3,64}@gmail\.com$/;
   const strictYahooPattern = /^[a-zA-Z0-9._%+-]{3,64}@yahoo\.com(\.ph)?$/;
+  const strictOutlookPattern = /^[a-zA-Z0-9._%+-]{3,64}@(outlook|hotmail)\.com$/;
   const strictCspcPattern  = /^[a-zA-Z0-9._%+-]{3,64}@(my\.)?cspc\.edu\.ph$/;
 
   const isValidGmail = strictGmailPattern.test(cleanEmail);
   const isValidYahoo = strictYahooPattern.test(cleanEmail);
+  const isValidOutlook = strictOutlookPattern.test(cleanEmail);
   const isValidCspc  = strictCspcPattern.test(cleanEmail);
 
-  if (!isValidGmail && !isValidYahoo && !isValidCspc) {
+  if (!isValidGmail && !isValidYahoo && !isValidOutlook && !isValidCspc) {
     if (!cleanEmail.includes('@')) {
       errorMsg.value = 'Missing "@" in email address. Example: username@gmail.com';
       return;
@@ -144,12 +146,21 @@ const handleLogin = async () => {
       return;
     }
 
-    if (domain !== 'gmail.com') {
+    // Point to the domain the user most likely meant
+    if (/edu\.ph$|cspc|cpsc|cscp|scpc/.test(domain)) {
+      errorMsg.value = 'Check the school domain: it is spelled @cspc.edu.ph (students: @my.cspc.edu.ph).';
+      return;
+    }
+    if (domain.includes('gmail')) {
       errorMsg.value = 'Email domain must be typed strictly as @gmail.com (correct spelling and placement).';
       return;
     }
+    if (domain.includes('yahoo')) {
+      errorMsg.value = 'Did you mean @yahoo.com? Please check domain spelling.';
+      return;
+    }
 
-    errorMsg.value = 'Please enter a valid email ending strictly with @gmail.com (e.g. username@gmail.com).';
+    errorMsg.value = 'Use your @cspc.edu.ph, @my.cspc.edu.ph, @gmail.com, @yahoo.com, @outlook.com or @hotmail.com email.';
     return;
   }
 

@@ -221,3 +221,8 @@
 .pac-item:hover, .pac-item-selected {
   background-color: #eff6ff !important;
 }
+
+/* "CSPC BH Finder" brand and its portal line: one font style for students, owners and admins
+   (colours stay with each navigation bar) */
+.brand-name { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif !important; font-size: 15px !important; font-weight: 700 !important; letter-spacing: -.01em !important; line-height: 1.25 !important; }
+.brand-portal { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif !important; font-size: 11px !important; font-weight: 500 !important; letter-spacing: 0 !important; line-height: 1.3 !important; margin-top: 2px; }

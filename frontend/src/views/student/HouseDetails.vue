@@ -626,14 +626,14 @@ onMounted(fetchData);
 
             <!-- Move-in conditions -->
             <div class="flex items-start gap-4 py-4">
-              <i class="fa-solid fa-receipt text-[20px] text-slate-800 w-12 text-center pt-0.5" aria-hidden="true"></i>
+              <i class="fa-solid fa-receipt text-[20px] text-blue-600 w-12 text-center pt-0.5" aria-hidden="true"></i>
               <div>
                 <p class="text-[15px] font-semibold text-slate-900">Advance Rent</p>
                 <p class="text-[13px] text-slate-500">{{ house.advance_months > 0 ? house.advance_months + ' Month' + (house.advance_months > 1 ? 's' : '') + ' Advance' : 'No Advance Required' }}</p>
               </div>
             </div>
             <div class="flex items-start gap-4 py-4">
-              <i class="fa-solid fa-lock text-[20px] text-slate-800 w-12 text-center pt-0.5" aria-hidden="true"></i>
+              <i class="fa-solid fa-lock text-[20px] text-blue-600 w-12 text-center pt-0.5" aria-hidden="true"></i>
               <div>
                 <p class="text-[15px] font-semibold text-slate-900">Security Deposit</p>
                 <p class="text-[13px] text-slate-500">
@@ -649,10 +649,15 @@ onMounted(fetchData);
       <!-- PHONE: price + Book Now bar (sits above the tab bar) -->
       <div class="book-bar md:hidden" :class="{ 'is-guest': isGuest }">
         <div class="min-w-0">
-          <p class="text-[18px] font-bold text-slate-900 underline underline-offset-2 truncate">{{ formatPriceRange(house) === '₱0' ? 'Price on request' : formatPriceRange(house).replace(' - ', ' – ') }}</p>
-          <p class="text-[13px] text-slate-500">Monthly rate</p>
+          <!-- Monthly rate: plain price with the green tag icon from the desktop header -->
+          <div class="inline-flex max-w-full items-center gap-2 text-slate-900">
+            <i class="fa-solid fa-tag text-[14px] text-emerald-600" aria-hidden="true"></i>
+            <span class="font-black text-[16px] tracking-tight leading-none truncate">{{ formatPriceRange(house) === '₱0' ? 'Price on request' : formatPriceRange(house) }}</span>
+          </div>
+          <p class="text-[13px] text-slate-500 mt-1">Monthly Rate</p>
         </div>
-        <button type="button" @click="handleBook" class="shrink-0 bg-blue-700 hover:bg-blue-800 text-white text-[16px] font-semibold px-8 py-3.5 rounded-full">Book Now</button>
+        <!-- Same style as the desktop Book Now button, sized for phones -->
+        <button type="button" @click="handleBook" class="shrink-0 bg-blue-600 text-white font-black text-[11px] py-3.5 px-6 rounded-2xl shadow-xl shadow-blue-100 hover:bg-slate-900 transition-all uppercase tracking-widest whitespace-nowrap active:scale-95">Book Now <i class="fa-solid fa-calendar-check ml-1.5" aria-hidden="true"></i></button>
       </div>
 
       <!-- TOP HEADER & ACTIONS (desktop) -->

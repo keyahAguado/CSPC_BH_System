@@ -19,8 +19,11 @@ const methodIcon = (b) => b.payment_method === 'paymongo' ? 'fa-credit-card' : b
     <!-- House -->
     <div>
       <div class="min-w-0 flex-1">
-        <span class="inline-block px-2.5 py-1 rounded-lg text-[11px] font-bold leading-tight" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
-        <h2 class="mt-1.5 text-[16.5px] font-extrabold text-slate-900 leading-snug break-words">{{ booking.house_name }}</h2>
+        <!-- House name with the status on the right of the same row -->
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="min-w-0 text-[16.5px] font-extrabold text-slate-900 leading-snug break-words">{{ booking.house_name }}</h2>
+          <span class="shrink-0 mt-0.5 px-2.5 py-1 rounded-lg text-[11px] font-bold leading-tight text-right" :class="badgeClass(bookingStatusBadge(booking))">{{ bookingStatusBadge(booking).label }}</span>
+        </div>
         <p class="mt-1 text-[12.5px] text-slate-500 flex items-start gap-1.5 leading-snug">
           <i class="fa-solid fa-location-dot text-[#1e4b8f] text-[11px] mt-[3px]" aria-hidden="true"></i>
           <span class="break-words">{{ bookingAddress(booking) }}</span>
@@ -38,9 +41,9 @@ const methodIcon = (b) => b.payment_method === 'paymongo' ? 'fa-credit-card' : b
             <p class="text-[14px] font-bold text-slate-900">{{ formatCheckInShort(booking) }}</p>
           </div>
         </div>
-        <div class="flex items-start justify-end gap-2.5 pl-3">
+        <div class="flex items-start gap-2.5 pl-4">
           <i class="fa-regular fa-calendar text-[17px] text-slate-700 mt-0.5" aria-hidden="true"></i>
-          <div class="min-w-0 text-right">
+          <div class="min-w-0">
             <p class="text-[12px] text-slate-500">Check-out</p>
             <p class="text-[14px] font-bold text-slate-900">{{ formatCheckOutShort(booking) }}</p>
           </div>

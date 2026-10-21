@@ -7,6 +7,8 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 import StudentNav from '../../components/partials/StudentNav.vue';
 import StudentPager from '../../components/partials/StudentPager.vue';
+import TablePager from '../../components/management/TablePager.vue';
+import { manilaDayOf, dayHeading } from '../../utils/notificationInbox.js';
 import { useOfflineStatus } from '../../utils/offlineHelper.js';
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -140,20 +142,6 @@ const openNotification = (n) => {
   if (target) router.push(target.to);
 };
 
-const onRowClick = (n, event) => {
-  if (event.target.closest('a, button')) return;
-  openNotification(n);
-};
-
-const formatWhen = (value) => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '—';
-  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return `${date} · ${time}`;
-};
-
 // ── Counts, filters, sort, pagination ────────────────────────────────────────
 const counts = computed(() => ({
   all: items.value.length,
@@ -162,9 +150,9 @@ const counts = computed(() => ({
 }));
 
 const statCards = computed(() => [
-  { key: 'all', label: 'All', value: counts.value.all },
-  { key: 'unread', label: 'Unread', value: counts.value.unread },
-  { key: 'booking', label: 'Booking Updates', value: counts.value.bookingUpdates }
+  { key: 'all', label: 'All', value: counts.value.all, icon: 'fa-inbox', tone: 'bg-[#dbeafe] text-[#1d4ed8]' },
+  { key: 'unread', label: 'Unread', value: counts.value.unread, icon: 'fa-envelope', tone: 'bg-[#fef3c7] text-[#b45309]' },
+  { key: 'booking', label: 'Booking Updates', value: counts.value.bookingUpdates, icon: 'fa-calendar-check', tone: 'bg-[#dcfce7] text-[#15803d]' }
 ]);
 
 const timeOf = (n) => {
@@ -208,6 +196,42 @@ watch([viewFilter, currentPage, perPage], () => {
 
 const setView = (key) => { viewFilter.value = key; };
 
+// ── Desktop: data table like the owner inbox (day groups, selection, View + menu) ──
+const dayGroups = computed(() => {
+  const today = manilaDayOf(Date.now());
+  const groups = [];
+  for (const n of pagedItems.value) {
+    const day = manilaDayOf(n.created_at);
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.items.push(n);
+    else groups.push({ day, label: dayHeading(day, today), items: [n] });
+  }
+  return groups;
+});
+const timeLabel = (value) => value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+const dateLabel = (value) => value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable';
+const refLabel = (n) => n.bookingId ? 'REF-' + String(n.bookingId).padStart(4, '0') : '';
+
+const selectedIds = ref([]);
+const markingSelected = ref(false);
+const pageSelected = computed(() => pagedItems.value.length > 0 && pagedItems.value.every(n => selectedIds.value.includes(n.id)));
+const somePageSelected = computed(() => pagedItems.value.some(n => selectedIds.value.includes(n.id)));
+const togglePage = () => {
+  const ids = pagedItems.value.map(n => n.id);
+  selectedIds.value = pageSelected.value ? selectedIds.value.filter(id => !ids.includes(id)) : [...new Set([...selectedIds.value, ...ids])];
+};
+const markSelectedRead = async () => {
+  if (markingSelected.value) return;
+  markingSelected.value = true;
+  try {
+    const unread = items.value.filter(n => selectedIds.value.includes(n.id) && !n.is_read);
+    await Promise.allSettled(unread.map(n => markRead(n.id)));
+    selectedIds.value = [];
+  } finally {
+    markingSelected.value = false;
+  }
+};
+
 // ── Mobile: All / Unread cards over a newest-first paged list, no search ────
 const mobileView = ref('all');
 const mobilePage = ref(1);
@@ -244,19 +268,15 @@ onMounted(fetchNotifications);
 
     <main class="max-w-[1920px] mx-auto px-4 sm:px-8 xl:px-[65px] pt-5 md:pt-10 lg:pt-[52px] text-left">
       <!-- Mobile header -->
-      <header class="md:hidden flex items-center justify-between gap-3">
-        <h1 class="text-[22px] font-extrabold text-slate-900 tracking-tight">Notifications</h1>
-        <button
-          v-if="!isLoading && counts.unread > 0"
-          type="button"
-          @click="markAllRead"
-          :disabled="isMarkingAll"
-          class="text-[13px] font-semibold text-[#1e4b8f] py-2 disabled:text-slate-300"
-        >{{ isMarkingAll ? 'Marking…' : 'Mark all read' }}</button>
+      <header class="md:hidden">
+        <div class="min-w-0">
+          <h1 class="text-[28px] font-extrabold text-slate-900 tracking-tight leading-tight">Notifications</h1>
+          <p class="mt-1 text-[11px] font-semibold text-slate-400 uppercase tracking-[0.18em]">Your recent alerts and updates</p>
+        </div>
       </header>
 
       <header class="hidden md:block">
-        <h1 class="text-[28px] sm:text-[40px] font-extrabold text-slate-900 tracking-tight uppercase leading-none">Student Inbox</h1>
+        <h1 class="text-[28px] sm:text-[40px] font-extrabold text-slate-900 tracking-tight uppercase leading-none">Notifications</h1>
         <p class="mt-3 sm:mt-4 text-[11px] sm:text-[13px] font-semibold text-slate-400 uppercase tracking-[0.18em]">Your recent alerts and updates</p>
       </header>
 
@@ -289,20 +309,31 @@ onMounted(fetchNotifications);
       </div>
 
       <template v-else>
-        <!-- MOBILE: All / Unread cards, then the paged list -->
+        <!-- MOBILE: All / Unread cards (label on top, then icon and number; same layout as My Bookings), Mark all read, then the paged list -->
         <div class="md:hidden mt-4 grid grid-cols-2 gap-3">
           <button
-            v-for="card in [{ key: 'all', label: 'All', value: counts.all }, { key: 'unread', label: 'Unread', value: counts.unread }]"
+            v-for="card in [{ key: 'all', label: 'All', value: counts.all, icon: 'fa-inbox', tone: 'bg-[#dbeafe] text-[#1d4ed8]' }, { key: 'unread', label: 'Unread', value: counts.unread, icon: 'fa-envelope', tone: 'bg-[#fef3c7] text-[#b45309]' }]"
             :key="card.key"
             type="button"
             @click="mobileView = card.key"
             :aria-pressed="mobileView === card.key"
-            class="text-left bg-white rounded-2xl px-5 py-4 border-2 transition"
-            :class="mobileView === card.key ? 'border-[#1e4b8f]' : 'border-slate-200'"
+            class="min-w-0 min-h-[76px] px-4 py-3.5 text-left bg-white border rounded-xl shadow-[0_3px_12px_#1f487008] transition-[border-color,box-shadow] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[#93c5fd] focus-visible:outline-offset-2"
+            :class="mobileView === card.key ? 'border-[#3b7bff] shadow-[inset_0_0_0_1px_#3b7bff]' : 'border-[#e1eaf5]'"
           >
-            <span class="block text-[12px] font-bold uppercase tracking-[0.12em]" :class="mobileView === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
-            <span class="block mt-1 text-[26px] font-bold leading-none" :class="mobileView === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
+            <span class="block text-[11px] font-bold uppercase tracking-[0.1em] leading-tight" :class="mobileView === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
+            <span class="mt-2 flex items-center gap-2.5">
+              <span class="shrink-0 grid place-items-center w-9 h-9 rounded-[10px] text-[15px]" :class="card.tone" aria-hidden="true"><i class="fa-solid" :class="card.icon"></i></span>
+              <strong class="text-[26px] font-bold leading-none tabular-nums" :class="mobileView === card.key ? 'text-[#1e4b8f]' : 'text-[#163454]'">{{ card.value }}</strong>
+            </span>
           </button>
+        </div>
+        <div v-if="counts.unread > 0" class="md:hidden mt-2 flex justify-end">
+          <button
+            type="button"
+            @click="markAllRead"
+            :disabled="isMarkingAll"
+            class="text-[13px] font-semibold text-[#1e4b8f] py-2 disabled:text-slate-300"
+          >{{ isMarkingAll ? 'Marking…' : 'Mark all read' }}</button>
         </div>
 
         <section class="md:hidden mt-4 bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -339,90 +370,56 @@ onMounted(fetchNotifications);
         </section>
 
         <div class="hidden md:block">
-        <!-- Summary cards (also quick view filters) -->
-        <div class="mt-7 sm:mt-8 grid grid-cols-3 sm:flex sm:flex-wrap gap-2.5 sm:gap-3">
+        <!-- Summary cards (also quick view filters): same card design as the phone view -->
+        <div class="mt-7 sm:mt-8 flex flex-wrap gap-3">
           <button
             v-for="card in statCards"
             :key="card.key"
             type="button"
             @click="setView(card.key)"
             :aria-pressed="viewFilter === card.key"
-            class="text-left bg-white rounded-xl px-4 sm:px-[18px] py-3 sm:py-[13px] sm:min-w-[118px] transition border"
-            :class="viewFilter === card.key ? 'border-[#1e4b8f] ring-1 ring-[#1e4b8f]' : 'border-slate-200 hover:border-slate-300'"
+            class="min-w-[170px] min-h-[76px] px-4 py-3.5 text-left bg-white border rounded-xl shadow-[0_3px_12px_#1f487008] transition-[border-color,box-shadow] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[#93c5fd] focus-visible:outline-offset-2"
+            :class="viewFilter === card.key ? 'border-[#3b7bff] shadow-[inset_0_0_0_1px_#3b7bff]' : 'border-[#e1eaf5] hover:border-[#bdd1ee]'"
           >
-            <span class="block text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.12em] leading-tight"
-                  :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
-            <span class="block mt-1.5 text-[20px] sm:text-[21px] font-bold leading-none"
-                  :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
+            <span class="block text-[11px] font-bold uppercase tracking-[0.1em] leading-tight whitespace-nowrap" :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
+            <span class="mt-2 flex items-center gap-2.5">
+              <span class="shrink-0 grid place-items-center w-9 h-9 rounded-[10px] text-[15px]" :class="card.tone" aria-hidden="true"><i class="fa-solid" :class="card.icon"></i></span>
+              <strong class="text-[26px] font-bold leading-none tabular-nums" :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-[#163454]'">{{ card.value }}</strong>
+            </span>
           </button>
         </div>
 
-        <!-- Notifications list -->
-        <section class="mt-6 bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <div class="flex items-center justify-between gap-4 px-5 sm:px-[25px] py-5 border-b border-slate-200">
-            <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900">Recent notifications</h2>
-            <button
-              type="button"
-              @click="markAllRead"
-              :disabled="counts.unread === 0 || isMarkingAll"
-              class="text-[14px] font-bold text-[#1e4b8f] hover:underline disabled:text-slate-300 disabled:no-underline whitespace-nowrap"
-            >{{ isMarkingAll ? 'Marking…' : 'Mark all as read' }}</button>
-          </div>
-
-          <!-- No matches -->
-          <div v-if="filteredItems.length === 0" class="px-6 py-16 text-center">
-            <p class="text-slate-500 font-semibold mb-3">
-              {{ viewFilter === 'unread' ? "You're all caught up — no unread notifications." : 'No notifications in this view.' }}
-            </p>
-            <button type="button" @click="setView('all')" class="text-[#1e4b8f] font-bold text-sm hover:underline">Show all notifications</button>
-          </div>
-
-          <ul v-else class="divide-y divide-slate-200">
-            <li
-              v-for="n in pagedItems"
-              :key="n.id"
-              @click="onRowClick(n, $event)"
-              class="relative flex gap-4 sm:gap-[18px] px-5 sm:px-[25px] py-[22px] transition-colors"
-              :class="[n.is_read ? 'bg-white hover:bg-slate-50/60' : 'bg-blue-50/30 hover:bg-blue-50/60', targetFor(n) ? 'cursor-pointer' : '']"
-            >
-              <span v-if="!n.is_read" class="absolute left-0 top-0 bottom-0 w-[3px] bg-[#1e4b8f]" aria-hidden="true"></span>
-
-              <div class="w-[52px] h-[52px] shrink-0 rounded-xl flex items-center justify-center"
-                   :class="n.is_read ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-[#1e4b8f]'">
-                <i class="fa-solid text-[18px]" :class="n.icon" aria-hidden="true"></i>
-              </div>
-
-              <div class="flex-1 min-w-0 pr-5">
-                <p class="text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-500">
-                  <time :datetime="n.created_at">{{ formatWhen(n.created_at) }}</time>
-                </p>
-                <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h3 class="text-[16px] font-bold text-slate-900">{{ n.title }}</h3>
-                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.06em] leading-none" :class="CATEGORY_TAG[n.category].classes">{{ CATEGORY_TAG[n.category].label }}</span>
-                  <span v-if="!n.is_read" class="sr-only">Unread</span>
-                </div>
-                <p class="mt-1.5 text-[13px] leading-relaxed text-slate-500 break-words">
-                  <MessageText :text="n.body" />
-                </p>
-                <p v-if="n.guidance" class="mt-2 text-[12px] leading-relaxed text-slate-600">{{ n.guidance }}</p>
-                <div v-if="!n.is_read || targetFor(n)" class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-                  <button v-if="!n.is_read" type="button" @click="markRead(n.id)" class="inline-flex items-center gap-1.5 text-[12px] font-bold tracking-[0.03em] text-[#1e4b8f] hover:underline">
-                    <i class="fa-solid fa-check text-[10px]"></i> Mark as read
-                  </button>
-                  <router-link
-                    v-if="targetFor(n)"
-                    :to="targetFor(n).to"
-                    @click="!n.is_read && markRead(n.id)"
-                    class="text-[12px] font-bold tracking-[0.03em] text-[#1e4b8f] hover:underline"
-                  >{{ targetFor(n).label }}</router-link>
+        <!-- Notifications table (same design as the owner inbox) -->
+        <div class="ni-toolbar">
+          <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900">Recent notifications</h2>
+          <button class="ni-mark-all" type="button" :disabled="isMarkingAll || counts.unread === 0" @click="markAllRead"><i :class="['fa-solid', isMarkingAll ? 'fa-spinner fa-spin' : 'fa-check-double']" aria-hidden="true"></i>Mark all read</button>
+        </div>
+        <div v-if="selectedIds.length" class="ni-selection" role="status"><span>{{ selectedIds.length }} selected</span><button type="button" :disabled="markingSelected" @click="markSelectedRead">Mark selected read</button><button type="button" @click="selectedIds = []">Clear selection</button></div>
+        <section class="ni-list" aria-label="Notifications">
+          <TablePager position="top" noun="notifications" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredItems.length" :per-page="perPage" @update:page="goToPage" @update:per-page="perPage = $event" />
+          <div class="ni-columns"><label><input type="checkbox" :checked="pageSelected" :indeterminate.prop="somePageSelected && !pageSelected" :disabled="!pagedItems.length" @change="togglePage" aria-label="Select notifications on this page"></label><span>Notification</span><span>Booking</span><span>Time</span><span></span></div>
+          <template v-for="group in dayGroups" :key="group.day || 'unknown'">
+            <h3 class="ni-day"><span>{{ group.label }}</span><small>{{ group.items.length }} {{ group.items.length === 1 ? 'notification' : 'notifications' }}</small></h3>
+            <article v-for="n in group.items" :key="n.id" :class="['ni-row', { 'is-unread': !n.is_read }]">
+              <label class="ni-select"><input type="checkbox" v-model="selectedIds" :value="n.id" :aria-label="'Select notification: ' + n.title"></label>
+              <div class="ni-content">
+                <span class="ni-icon" aria-hidden="true"><i :class="['fa-solid', n.icon]"></i></span>
+                <div class="ni-copy">
+                  <div class="ni-title"><span v-if="!n.is_read" class="ni-dot" aria-label="Unread"></span><h2>{{ n.title }}</h2><span class="ni-category">{{ CATEGORY_TAG[n.category].label }}</span></div>
+                  <p class="ni-preview"><MessageText :text="n.body" /></p>
+                  <p v-if="n.guidance" class="ni-guidance">{{ n.guidance }}</p>
                 </div>
               </div>
-
-              <span v-if="!n.is_read" class="absolute right-5 sm:right-[25px] top-[30px] w-2 h-2 rounded-full bg-blue-600" aria-hidden="true"></span>
-            </li>
-          </ul>
-
-          <StudentPager class="px-5 sm:px-[25px] border-t border-slate-200" v-if="filteredItems.length > 0" noun="notifications" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredItems.length" @update:page="goToPage"  />
+              <div class="ni-property"><strong v-if="refLabel(n)">{{ refLabel(n) }}</strong><span v-else class="ni-muted">General notice</span></div>
+              <time class="ni-time" :datetime="n.created_at" :title="dateLabel(n.created_at)"><span>{{ timeLabel(n.created_at) }}</span></time>
+              <div class="ni-actions">
+                <router-link v-if="targetFor(n)" :to="targetFor(n).to" class="ni-view" @click="!n.is_read && markRead(n.id)">{{ targetFor(n).label }}</router-link>
+                <details class="ni-more"><summary :aria-label="'Options for ' + n.title"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></summary><div><button v-if="!n.is_read" type="button" @click="markRead(n.id)">Mark as read</button><span v-else>Already read</span></div></details>
+              </div>
+            </article>
+          </template>
+          <div v-if="!pagedItems.length" class="ni-empty"><i class="fa-solid fa-inbox" aria-hidden="true"></i><h2>{{ viewFilter === 'unread' ? 'You are all caught up' : 'No notifications in this view' }}</h2><p>{{ viewFilter === 'unread' ? 'No unread notifications.' : 'Try another filter.' }}</p><button v-if="viewFilter !== 'all'" type="button" @click="setView('all')">Show all notifications</button></div>
+          <TablePager position="bottom" noun="notifications" :page="currentPage" :total-pages="totalPages" :start="pageStart" :end="pageEnd" :total="filteredItems.length" :per-page="perPage" @update:page="goToPage" @update:per-page="perPage = $event" />
         </section>
 
         <p class="mt-4 text-[12px] text-slate-400">Updates about your reservations, payments and stay extensions appear here. Select a notification to open the related booking.</p>
@@ -431,3 +428,86 @@ onMounted(fetchNotifications);
     </main>
   </div>
 </template>
+
+<style scoped>
+/* Desktop notifications table: same design as the owner inbox (views/Notifications.vue) */
+.ni-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:24px 0 14px}
+.ni-mark-all{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;min-height:38px;border:1px solid #5684ff;border-radius:9px;background:white;color:#1d5bd6;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.ni-mark-all:disabled{opacity:.5;cursor:default}
+.ni-selection{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;border:1px solid #bfd6f7;border-radius:9px;background:#eff6ff;font-size:12px;color:#234a7e}
+.ni-selection button,.ni-empty button{padding:5px 9px;border:1px solid #bdd2ee;border-radius:6px;background:white;color:#1d4ed8;font:inherit;font-size:12px;cursor:pointer}
+.ni-list{background:white;border:1px solid #e1eaf5;border-radius:13px;overflow:visible;box-shadow:0 5px 20px #1b426208}
+.ni-list :deep(.tp-bar){font-size:12px;font-weight:500;padding:12px 16px;background:#fcfdff;gap:10px 16px}
+.ni-list :deep(.tp-bar.is-top){border-radius:13px 13px 0 0}
+.ni-list :deep(.tp-bar.is-bottom){border-radius:0 0 13px 13px}
+.ni-list :deep(.tp-pages button){font-size:12px;font-weight:650;height:32px;min-height:32px!important;min-width:32px;padding:0 9px}
+.ni-list :deep(.tp-rows select){font-size:12px;font-weight:600}
+.ni-columns,.ni-row{display:grid;grid-template-columns:24px minmax(280px,1fr) minmax(125px,.26fr) 130px minmax(120px,.22fr);align-items:center;gap:18px;padding:17px 20px}
+.ni-columns{background:#f3f7fc;border-bottom:1px solid #e5edf7;font-size:12px;color:#5a708c;font-weight:650}
+.ni-columns>span:first-of-type{padding-left:52px}
+.ni-columns input,.ni-select input{width:17px;height:17px;accent-color:#2563eb;border-radius:4px;cursor:pointer;margin:0}
+.ni-columns label,.ni-select{display:inline-flex;align-items:center;justify-content:center;min-height:32px}
+.ni-day{display:flex;align-items:baseline;gap:10px;margin:0;padding:9px 16px;background:#f8fbff;border-bottom:1px solid #e8eef7;font-size:12px;font-weight:700;color:#294a70;letter-spacing:.01em}
+.ni-day small{font-size:11px;font-weight:500;color:#7c8fa9}
+.ni-row{position:relative;border-bottom:1px solid #e8eef7;padding-top:20px;padding-bottom:20px;min-width:0}
+.ni-row:last-of-type{border-bottom:0}
+.ni-row:hover{background:#f8fbff}
+.ni-row.is-unread{background:#fbfdff}
+.ni-row.is-unread:before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:#2563eb}
+.ni-content{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.ni-icon{display:grid;place-items:center;width:40px;height:40px;flex-shrink:0;border-radius:11px;background:#f1f5f9;color:#64748b;font-size:17px}
+.ni-row:not(.is-unread) .ni-icon{opacity:.75}
+.ni-copy{flex:1;min-width:0}
+.ni-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ni-title h2{font-size:13.5px;font-weight:700;color:#183453;line-height:1.5;margin:0}
+.ni-row:not(.is-unread) .ni-title h2{color:#3d5677;font-weight:650}
+.ni-title .ni-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2563eb;flex-shrink:0}
+.ni-category{display:inline-block;background:#f1f5f9;color:#526985;border-radius:999px;padding:3px 8px;font-size:10.5px;font-weight:600;line-height:1.3;white-space:nowrap}
+.ni-copy>p{margin:5px 0 0;font-size:12.5px;line-height:1.65;color:#526985;overflow-wrap:anywhere}
+.ni-copy>.ni-preview{display:block;white-space:pre-line}
+.ni-copy>.ni-guidance{color:#334c68}
+.ni-property,.ni-time{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.5;color:#617690;min-width:0}
+.ni-property strong{font-weight:600;color:#3d5677;font-variant-numeric:tabular-nums}
+.ni-muted{color:#8a9bb2;font-style:italic}
+.ni-time span{font-variant-numeric:tabular-nums;font-weight:600;color:#3d5677}
+.ni-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.ni-view{display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:7px;background:#2563eb;color:white;font-size:11px;font-weight:650;line-height:1.3;text-decoration:none;white-space:nowrap}
+.ni-view:hover{background:#1d4ed8}
+.ni-more{position:relative}
+.ni-more summary{display:grid;place-items:center;min-width:28px;min-height:32px;cursor:pointer;list-style:none;color:#58708e;border-radius:6px}
+.ni-more summary::-webkit-details-marker{display:none}
+.ni-more summary:hover{background:#eaf2ff}
+.ni-more>div{position:absolute;right:0;top:34px;z-index:25;min-width:145px;padding:6px;background:white;border:1px solid #d9e4f3;border-radius:8px;box-shadow:0 8px 22px #1434591a}
+.ni-more button,.ni-more>div>span{display:block;padding:8px 10px;font:inherit;font-size:12px;white-space:nowrap;color:#35557d;background:white;border:0;border-radius:5px}
+.ni-more button{cursor:pointer;width:100%;text-align:left}
+.ni-more button:hover{background:#eff6ff}
+.ni-empty{padding:40px 20px;text-align:center;color:#60738c}
+.ni-empty>i{font-size:25px;color:#91a5c2}
+.ni-empty h2{font-size:15px;font-weight:650;color:#294767;margin:12px 0 6px}
+.ni-empty p{font-size:13px;margin:0 0 14px}
+.ni-mark-all:focus-visible,.ni-view:focus-visible,.ni-more summary:focus-visible,.ni-selection button:focus-visible{outline:3px solid #93c5fd;outline-offset:3px}
+@media(max-width:1150px){
+  .ni-columns,.ni-row{grid-template-columns:22px minmax(220px,1fr) 110px 100px 110px;gap:12px;padding-left:14px;padding-right:14px}
+  .ni-content{gap:9px}
+  .ni-icon{width:34px;height:34px;font-size:15px}
+  .ni-columns>span:first-of-type{padding-left:43px}
+  .ni-actions{gap:4px}
+  .ni-view{font-size:10.5px;padding:8px}
+  .ni-title h2{font-size:13px}
+}
+@media(max-width:900px){
+  .ni-columns{display:flex;gap:8px}
+  .ni-columns>span{display:none}
+  .ni-columns>span:first-of-type{display:block;padding-left:0}
+  .ni-columns>span:first-of-type:after{content:' - select page'}
+  .ni-row{grid-template-columns:24px minmax(0,1fr);align-items:start;gap:10px 8px;padding:16px}
+  .ni-select{grid-column:1;grid-row:1}
+  .ni-content{grid-column:2;grid-row:1}
+  .ni-property,.ni-time,.ni-actions{grid-column:2;margin-left:43px}
+  .ni-property:before{content:'Booking';font-size:10px;font-weight:600;color:#7c8fa9}
+  .ni-property{gap:2px}
+  .ni-time{flex-direction:row;flex-wrap:wrap;gap:7px;font-size:11px}
+  .ni-actions{justify-content:space-between}
+}
+@media(pointer:coarse){.ni-view,.ni-more summary,.ni-mark-all{min-height:44px;box-sizing:border-box}.ni-select,.ni-columns label{min-height:40px}.ni-more>div{top:44px}}
+</style>

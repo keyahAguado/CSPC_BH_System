@@ -12,7 +12,11 @@ const props = defineProps({
   invalid: { type: Boolean, default: false },
   // Matches each page's input styling.
   fieldClass: { type: String, default: 'w-full bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:bg-white focus:border-blue-500 outline-none transition' },
-  labelClass: { type: String, default: 'block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 ml-0.5' }
+  labelClass: { type: String, default: 'block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 ml-0.5' },
+  // Clicking anywhere on the saved address opens the selections (no separate Change button).
+  clickToEdit: { type: Boolean, default: false },
+  // "Select down to the barangay…" helper line under the fields
+  showHint: { type: Boolean, default: true }
 });
 const emit = defineEmits(['update:modelValue']);
 
@@ -106,7 +110,10 @@ const opts = (list, useLabel) => list.map(o => ({ value: o.code, label: useLabel
 
 <template>
   <div class="min-w-0">
-    <div v-if="!editing" class="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <button v-if="!editing && clickToEdit" :id="idPrefix" type="button" @click="startChange" :aria-label="'Change address: ' + saved" :class="[fieldClass, 'block text-left cursor-pointer']">
+      <p class="min-w-0 break-words"><i class="fa-solid fa-location-dot text-blue-500 mr-2" aria-hidden="true"></i>{{ saved }}</p>
+    </button>
+    <div v-else-if="!editing" class="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
       <p class="text-sm font-semibold text-slate-800 min-w-0 break-words"><i class="fa-solid fa-location-dot text-blue-500 mr-2" aria-hidden="true"></i>{{ saved }}</p>
       <button type="button" @click="startChange" class="shrink-0 text-xs font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline">Change</button>
     </div>
@@ -148,7 +155,7 @@ const opts = (list, useLabel) => list.map(o => ({ value: o.code, label: useLabel
       </div>
       <p v-if="loadError" class="text-amber-600 text-xs font-semibold">{{ loadError }}</p>
       <p v-else-if="complete" class="text-slate-600 text-xs font-medium"><i class="fa-solid fa-location-dot mr-1 text-blue-500" aria-hidden="true"></i>{{ composed }}</p>
-      <p v-else class="text-slate-500 text-xs">Select down to the barangay to complete the address.</p>
+      <p v-else-if="showHint" class="text-slate-500 text-xs">Select down to the barangay to complete the address.</p>
       <button v-if="saved" type="button" @click="keepSaved" class="text-xs font-semibold text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline">Keep current address: {{ saved }}</button>
     </div>
   </div>

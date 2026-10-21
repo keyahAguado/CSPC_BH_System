@@ -94,6 +94,9 @@ function validateStrictEmail(emailStr) {
     const parts = clean.split('@');
     const domain = parts[1] || '';
 
+    if (/edu\.ph$|cspc|cpsc|cscp|scpc/.test(domain)) {
+        return { valid: false, message: 'Check the school domain: it is spelled @cspc.edu.ph (students: @my.cspc.edu.ph).' };
+    }
     if (domain.includes('gmail') && domain !== 'gmail.com') {
         return { valid: false, message: 'Email domain must be typed strictly as @gmail.com (correct spelling and placement).' };
     }

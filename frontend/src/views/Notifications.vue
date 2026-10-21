@@ -362,7 +362,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen flex flex-col font-sans text-left" 
-       :class="[user.role === 'student' ? 'bg-slate-50 text-slate-900 pb-6' : 'bg-[#eef6ff] text-slate-900 pb-12', { 'management-page': user.role === 'admin' || user.role === 'owner', 'notif-owner-theme': user.role === 'owner' || user.role === 'admin' }]">
+       :class="[user.role === 'student' ? 'bg-slate-50 text-slate-900 pb-6' : 'bg-[#eef6ff] text-slate-900 pb-12', { 'management-page': user.role === 'admin' || user.role === 'owner', 'is-owner-inbox': user.role === 'owner', 'notif-owner-theme': user.role === 'owner' || user.role === 'admin' }]">
     
     <component :is="user.role === 'admin' ? AdminNav : (user.role === 'owner' ? OwnerNav : StudentNav)" />
 
@@ -439,17 +439,18 @@ onMounted(() => {
 <button type="button" class="ni-stat" :class="{active:unreadOnly && actionOnly}" @click="unreadOnly && actionOnly ? (unreadOnly=false,actionOnly=false) : showAttention()"><span class="ni-stat-icon amber" aria-hidden="true"><i class="fa-solid fa-hand-pointer"></i></span><span><strong>{{ filterCounts.attention }}</strong><small>Unread action requests</small></span></button>
 <button type="button" class="ni-stat" :class="{active:datePreset==='7d'}" @click="datePreset=datePreset==='7d'?'all':'7d'"><span class="ni-stat-icon green" aria-hidden="true"><i class="fa-solid fa-calendar-week"></i></span><span><strong>{{ filterCounts.week }}</strong><small>In the last 7 days</small></span></button>
 </section>
-<div class="ni-toolbar"><nav class="ni-tabs" aria-label="Notification categories"><button type="button" :class="{active:activeFilter==='all'}" :aria-pressed="activeFilter==='all'" @click="setFilter('all')"><i class="fa-solid fa-bell" aria-hidden="true"></i>All <span>{{ filterCounts.all }}</span></button><button v-for="f in FILTERS" :key="f.key" type="button" :class="{active:activeFilter===f.key}" :aria-pressed="activeFilter===f.key" @click="setFilter(f.key)"><i :class="['fa-solid',f.icon]" aria-hidden="true"></i>{{ f.label }}<span>{{ filterCounts[f.key] }}</span></button></nav><button class="ni-mark-all" type="button" :disabled="isMarkingAll || !filterCounts.unread" @click="markAllRead"><i :class="['fa-solid',isMarkingAll?'fa-spinner fa-spin':'fa-check-double']" aria-hidden="true"></i>Mark all read</button></div>
+<div class="ni-toolbar"><nav class="ni-tabs" aria-label="Notification categories"><button type="button" :class="{active:activeFilter==='all'}" :aria-pressed="activeFilter==='all'" @click="setFilter('all')"><i class="fa-solid fa-bell" aria-hidden="true"></i>All <span>{{ filterCounts.all }}</span></button><button v-for="f in FILTERS" :key="f.key" type="button" :class="{active:activeFilter===f.key}" :aria-pressed="activeFilter===f.key" @click="setFilter(f.key)"><i :class="['fa-solid',f.icon]" aria-hidden="true"></i>{{ f.label }}<span>{{ filterCounts[f.key] }}</span></button></nav><button class="ni-mark-all ni-mark-all-top" type="button" :disabled="isMarkingAll || !filterCounts.unread" @click="markAllRead"><i :class="['fa-solid',isMarkingAll?'fa-spinner fa-spin':'fa-check-double']" aria-hidden="true"></i>Mark all read</button></div>
 <p v-if="actionError" role="alert" class="ni-error">{{ actionError }}</p>
 <div class="ni-controls">
  <label class="ni-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input v-model="search" type="search" placeholder="Search by message, reference, property or room" aria-label="Search notifications"></label>
  <select v-if="propertyOptions.length" v-model="property" class="ni-select-field" aria-label="Filter by property"><option value="all">All properties</option><option v-for="p in propertyOptions" :key="p" :value="p">{{ p }}</option><option v-if="hasUnlinked" :value="NO_PROPERTY">General notices (not one property)</option></select>
  <details class="ni-date"><summary :class="{set:datePreset!=='all'}"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span>{{ dateSummary }}</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary><div><strong>Notification date</strong><div class="ni-presets" role="radiogroup" aria-label="Notification date"><label v-for="p in DATE_PRESETS" :key="p.key"><input v-model="datePreset" type="radio" name="ni-date-preset" :value="p.key">{{ p.label }}</label></div><div v-if="datePreset==='custom'" class="ni-custom"><label>From<input v-model="customFrom" type="date" aria-label="Notifications from"></label><label>To<input v-model="customTo" type="date" aria-label="Notifications to"></label></div><p v-if="invalidRange" role="alert">The start date must be on or before the end date.</p></div></details>
  <select v-model="sortOrder" class="ni-select-field" aria-label="Sort notifications"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select>
- <label class="ni-toggle"><input v-model="unreadOnly" type="checkbox" role="switch"><span class="ni-switch" aria-hidden="true"></span>Unread only</label>
- <label class="ni-toggle"><input v-model="actionOnly" type="checkbox" role="switch"><span class="ni-switch" aria-hidden="true"></span>Action requests</label>
+ <div class="ni-toggle-row"><label class="ni-toggle"><input v-model="unreadOnly" type="checkbox" role="switch"><span class="ni-switch" aria-hidden="true"></span>Unread only</label>
+ <label class="ni-toggle"><input v-model="actionOnly" type="checkbox" role="switch"><span class="ni-switch" aria-hidden="true"></span>Action requests</label></div>
  <button v-if="activeFilterCount" type="button" class="ni-reset" @click="resetInbox"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Reset filters</button>
 </div>
+<button class="ni-mark-all ni-mark-all-bottom" type="button" :disabled="isMarkingAll || !filterCounts.unread" @click="markAllRead"><i :class="['fa-solid',isMarkingAll?'fa-spinner fa-spin':'fa-check-double']" aria-hidden="true"></i>Mark all read</button>
 <div v-if="selectedIds.length" class="ni-selection" role="status"><span>{{ selectedIds.length }} selected</span><button type="button" :disabled="markingSelected" @click="markSelectedRead">Mark selected read</button><button type="button" @click="selectedIds=[]">Clear selection</button></div>
 <section class="ni-list" aria-label="Notifications">
 <TablePager position="top" noun="notifications" :page="nfPage" :total-pages="nfTotalPages" :start="nfStart" :end="nfEnd" :total="visibleItems.length" :per-page="nfPerPage" @update:page="nfPage=$event" @update:per-page="nfPerPage=$event" />
@@ -545,9 +546,9 @@ onMounted(() => {
   .ni-stat strong{font-size:20px;line-height:1.3}
   .ni-stat small{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
   .ni-toolbar{display:block;min-width:0;margin-bottom:12px}
-  .notif-owner-theme .ni-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;min-width:0;max-width:100%;gap:8px;padding:3px 3px 9px;box-sizing:border-box}
-  .notif-owner-theme .ni-tabs button{min-width:0;max-width:100%;min-height:44px;padding:8px;gap:6px;font-size:12px;white-space:normal;overflow-wrap:anywhere}
-  .notif-owner-theme .ni-tabs button:last-child:nth-child(odd){grid-column:1/-1}
+  /* Category filters: compact pills sized to their label, wrapping as needed */
+  .notif-owner-theme .ni-tabs{display:flex;flex-wrap:wrap;width:100%;min-width:0;max-width:100%;gap:8px;padding:3px 3px 9px;box-sizing:border-box}
+  .notif-owner-theme .ni-tabs button{flex:0 0 auto;min-width:0;max-width:100%;min-height:40px;padding:6px 12px;gap:6px;font-size:12px;white-space:nowrap}
   .notif-owner-theme .ni-tabs button>i{display:none}
   .notif-owner-theme .ni-tabs button>span{flex-shrink:0}
   .ni-tabs button>span{min-width:24px;height:24px;padding:0 6px}
@@ -598,5 +599,17 @@ onMounted(() => {
   .ni-list :deep(.tp-info){flex-wrap:wrap;min-width:0;gap:8px}
   .ni-list :deep(.tp-pages){max-width:100%;flex-wrap:wrap;gap:4px}
   .ni-list :deep(.tp-pages button){min-width:36px;min-height:44px!important;height:44px;padding:0 8px}
+}
+</style>
+
+<style scoped>
+/* Toggle pair: inline with the other controls on larger screens */
+.ni-toggle-row{display:contents}
+.ni-mark-all-bottom{display:none}
+/* Owner phone inbox: Mark all read below the search & filters; toggles share one row */
+@media(max-width:639px){
+  .is-owner-inbox .ni-mark-all-top{display:none}
+  .is-owner-inbox .ni-mark-all-bottom{display:inline-flex;margin:0 0 14px}
+  .is-owner-inbox .ni-toggle-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 }
 </style>

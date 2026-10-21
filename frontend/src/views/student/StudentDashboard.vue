@@ -579,7 +579,7 @@ onUnmounted(() => {
 
           <div v-if="isSearchPage" class="mobile-pills flex gap-2 overflow-x-auto -mx-4 px-4 pt-4 pb-1" aria-label="Sort and filter">
             <button type="button" class="pill" :class="{ 'is-on': hasPriceFilter }" @click="openFilterSheet('price')">
-              Price Range <i class="fa-solid fa-chevron-down text-[11px]" aria-hidden="true"></i>
+              Price <i class="fa-solid fa-chevron-down text-[11px]" aria-hidden="true"></i>
             </button>
             <button type="button" class="pill" :class="{ 'is-on': selectedRatings.length }" @click="openFilterSheet('ratings')">
               Rating <i class="fa-solid fa-chevron-down text-[11px]" aria-hidden="true"></i>

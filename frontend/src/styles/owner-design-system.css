@@ -255,3 +255,6 @@ body[data-owner-theme] .tp-bar { background: #fff; }
   body[data-owner-theme] .tp-pages button { flex: 0 0 auto; height: 44px !important; min-height: 44px !important; min-width: 36px; padding: 0 8px; gap: 4px; font-size: 12px; white-space: nowrap; }
   body[data-owner-theme] :is(.booking-flow-notice, .reservation-deadline) { padding: 9px 10px !important; font-size: 12px !important; line-height: 1.5 !important; max-width: none !important; }
 }
+
+/* Owner phone top bar: larger menu (hamburger) icon */
+@media (max-width: 767px) { .management-topbar.is-owner .management-menu-toggle i { font-size: 22px; } }

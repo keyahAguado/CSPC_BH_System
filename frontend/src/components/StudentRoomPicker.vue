@@ -48,6 +48,11 @@ watch(() => props.rooms, (rooms) => {
   else { detailDialog.value?.close(); detail.value=null; }
 });
 const detailPhotos = computed(() => roomList(detail.value?.photos));
+// Main photo shown in the room details; side arrows and thumbnails switch it
+const heroIndex = ref(0);
+watch(() => detail.value?.id, () => { heroIndex.value = 0; });
+watch(detailPhotos, (photos) => { if (heroIndex.value >= photos.length) heroIndex.value = 0; });
+const stepHero = (direction) => { const count = detailPhotos.value.length; heroIndex.value = (heroIndex.value + direction + count) % count; };
 const amenityGroups = computed(() => [{ title: 'Free amenities', kind: 'free', icon: 'fa-gift', items: roomList(detail.value?.amenities_free ?? detail.value?.amenities) }, { title: 'Paid amenities', kind: 'paid', icon: 'fa-coins', items: roomList(detail.value?.amenities_paid) }]);
 const amenityCount = computed(() => amenityGroups.value.reduce((sum, group) => sum + group.items.length, 0));
 const amenitiesOpen = ref(false);
@@ -64,12 +69,6 @@ const selectDetail = () => { selectRoom(detail.value); detailDialog.value.close(
     <p class="picker-gender-notice" role="status"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>{{ genderKnown ? 'Showing rooms that match your gender, including mixed/unisex rooms when offered.' : 'Choose your gender in Personal Details below to see rooms you can book.' }}<button v-if="!genderKnown" type="button" @click="emit('continue')">Set gender</button></p>
     <div v-if="genderKnown" class="picker-wings" aria-label="Room wings">
       <button v-for="tab in wings" :key="tab.key" type="button" :class="['wing-tab', tab.key, { active: wing === tab.key }]" :aria-pressed="wing === tab.key" @click="changeWing(tab.key)"><i :class="['fa-solid',tab.icon]" aria-hidden="true"></i><span>{{ tab.label }} <small>({{ tab.count }} rooms)</small></span></button>
-    </div>
-    <div class="picker-filters">
-      <label class="picker-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input v-model="search" type="search" aria-label="Search by room number" placeholder="Search room number" /></label>
-      <label class="picker-filter"><span>Floor:</span><select v-model="floor" aria-label="Filter rooms by floor"><option value="all">All</option><option v-for="value in floors" :key="value" :value="value">{{ value }}</option><option value="unspecified">Not specified</option></select></label>
-      <label class="picker-filter"><span>Availability:</span><select v-model="availability" aria-label="Filter rooms by availability"><option value="all">All</option><option value="available">Available</option><option value="full">Full</option></select></label>
-      <label class="picker-sort"><span>Sort by</span><select v-model="sort" aria-label="Sort rooms"><option value="number">Room number</option><option value="price-low">Rent: low to high</option><option value="price-high">Rent: high to low</option></select></label>
     </div>
     <div class="picker-results-bar"><p ref="listHeading" tabindex="-1" aria-live="polite">Showing {{ results.from }}&ndash;{{ results.to }} of {{ results.total }} rooms</p></div>
     <input v-if="selectedOffPage" type="radio" name="roomId" :value="selected.id" checked hidden tabindex="-1" aria-hidden="true" />
@@ -88,7 +87,7 @@ const selectDetail = () => { selectRoom(detail.value); detailDialog.value.close(
           </tr>
         </tbody>
       </table>
-      <div v-if="!visible.length" class="picker-empty"><i class="fa-solid fa-door-open" aria-hidden="true"></i><p>{{ !genderKnown ? 'Complete your gender in Personal Details to view eligible rooms.' : wings.find(tab => tab.key === wing)?.count ? 'No rooms match your filters.' : 'No eligible rooms listed in this wing.' }}</p><button v-if="wings.find(tab => tab.key === wing)?.count" type="button" @click="search = ''; floor = 'all'; availability = 'all'">Clear filters</button></div>
+      <div v-if="!visible.length" class="picker-empty"><i class="fa-solid fa-door-open" aria-hidden="true"></i><p>{{ !genderKnown ? 'Complete your gender in Personal Details to view eligible rooms.' : 'No eligible rooms listed in this wing.' }}</p></div>
     </div>
     <nav class="picker-pagination" aria-label="Room list pages">
       <label class="picker-page-size">Rows per page<select v-model.number="pageSize" aria-label="Rooms per page"><option :value="8">8</option><option :value="16">16</option><option :value="24">24</option></select></label>
@@ -104,7 +103,7 @@ const selectDetail = () => { selectRoom(detail.value); detailDialog.value.close(
       <template v-if="detail">
         <header class="room-detail-heading"><div><p class="room-detail-eyebrow">Room details</p><h2 :id="uid + '-detail-title'">{{ roomTitle(detail) }}</h2></div><button type="button" @click="detailDialog.close()" aria-label="Close room details" autofocus><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
         <div class="room-detail-body">
-          <div v-if="detailPhotos.length" :class="['room-detail-photos', { single: detailPhotos.length === 1 }]"><button v-for="(photo,index) in detailPhotos" :key="photo" type="button" @click="openPhoto(index)" :aria-label="'Open room photo ' + (index + 1)"><img :src="getImageUrl(photo)" :alt="roomTitle(detail) + ', photo ' + (index + 1)" /><span v-if="index === 0"><i class="fa-regular fa-image" aria-hidden="true"></i>{{ detailPhotos.length }} photos</span></button></div><p v-else class="room-detail-no-photos">Room photos not provided yet.</p>
+          <div v-if="detailPhotos.length" :class="['room-detail-photos', { single: detailPhotos.length === 1 }]"><div class="room-detail-hero"><button type="button" @click="openPhoto(heroIndex)" :aria-label="'Open room photo ' + (heroIndex + 1)"><img :src="getImageUrl(detailPhotos[heroIndex])" :alt="roomTitle(detail) + ', photo ' + (heroIndex + 1)" /><span><i class="fa-regular fa-image" aria-hidden="true"></i>{{ detailPhotos.length > 1 ? (heroIndex + 1) + ' / ' + detailPhotos.length : '1 photo' }}</span></button><template v-if="detailPhotos.length > 1"><button type="button" class="room-detail-arrow prev" @click="stepHero(-1)" aria-label="Previous photo"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button><button type="button" class="room-detail-arrow next" @click="stepHero(1)" aria-label="Next photo"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button></template></div><template v-if="detailPhotos.length > 1"><button v-for="(photo,index) in detailPhotos" :key="photo" type="button" :class="{ active: index === heroIndex }" @click="heroIndex = index" :aria-label="'Show room photo ' + (index + 1)" :aria-current="index === heroIndex ? 'true' : undefined"><img :src="getImageUrl(photo)" :alt="''" /></button></template></div><p v-else class="room-detail-no-photos">Room photos not provided yet.</p>
           <div class="room-detail-facts"><span><i class="fa-regular fa-building" aria-hidden="true"></i>{{ detail.floor_label || 'Floor not specified' }}</span><span :class="['occupancy-pill',{full:roomIsFull(detail)}]">{{ occupancy(detail) }}</span></div>
           <div class="room-detail-rent-card"><div><span>Monthly rent</span><p class="room-detail-price">&#8369;{{ money(detail) }}<small> / month</small></p></div><span class="room-detail-capacity"><i class="fa-solid fa-bed" aria-hidden="true"></i>{{ detail.capacity }} {{ Number(detail.capacity) === 1 ? 'bed' : 'beds' }}</span></div>
           <section class="roommate-section" aria-label="Current roommates"><h3><i class="fa-solid fa-user-group" aria-hidden="true"></i>Current roommates</h3><p>Owner-confirmed residents and manually recorded occupants, grouped by category.</p><div v-if="roommateBreakdown(detail)" class="roommate-counts"><div><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i><strong>{{ roommateBreakdown(detail).cspc }}</strong><span>CSPC occupants</span></div><div><i class="fa-solid fa-user" aria-hidden="true"></i><strong>{{ roommateBreakdown(detail).nonCspc }}</strong><span>Non-CSPC occupants</span></div></div><p v-else>Roommate details are not available yet.</p><p v-if="Number(detail.resident_count ?? detail.occupant_count ?? 0) === 0" class="roommate-empty-note">No confirmed residents are currently recorded.</p><p v-if="Number(detail.arrival_pending_count || 0)">{{ detail.arrival_pending_count }} started stay(s) awaiting arrival confirmation. Their beds remain held.</p><small>Future reservations reduce availability for overlapping dates but are not counted as current roommates. Availability is rechecked when the owner approves.</small></section>
@@ -178,6 +177,14 @@ const selectDetail = () => { selectRoom(detail.value); detailDialog.value.close(
 .room-detail-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:20px 24px 0;}
 .room-detail-photos{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;}
 .room-detail-photos button:first-child{grid-column:1/-1;}
+.room-detail-hero{grid-column:1/-1;position:relative;min-width:0;}
+.room-detail-hero>button:first-child{display:block;width:100%;}
+.room-detail-hero .room-detail-arrow{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;background:rgb(255 255 255 / .8);color:#0f172a;font-size:12px;}
+.room-detail-hero .room-detail-arrow:hover{background:white;}
+.room-detail-hero .room-detail-arrow:focus-visible{outline:2px solid #1256f5;outline-offset:2px;}
+.room-detail-hero .room-detail-arrow.prev{left:8px;}
+.room-detail-hero .room-detail-arrow.next{right:8px;}
+.room-detail-photos>button.active img{outline:2px solid #1256f5;outline-offset:2px;}
 .room-detail-photos img{height:76px;border-radius:10px;}
 .room-detail-photos button:first-child img{height:275px;}
 .room-detail-photos button:hover img{filter:brightness(.96);}
@@ -337,4 +344,6 @@ button{cursor:pointer;transition:background-color 160ms ease,color 160ms ease,bo
 @media(min-width:761px) and (max-width:980px){.room-picker .picker-filters{grid-template-columns:1fr 1fr;}}
 @media(max-width:760px){.room-picker .picker-filters{grid-template-columns:1fr 1fr;gap:10px;}.room-picker .picker-search,.room-picker .picker-sort{grid-column:1/-1;}.room-picker .wing-tab{font-size:15px;gap:8px;}.room-picker .wing-tab i{font-size:21px;}.room-picker .wing-tab small{font-size:12px;}}
 @media(pointer:coarse){.room-picker :is(.picker-search,.picker-filter,.picker-sort),.room-picker .picker-page-controls button,.room-picker .picker-page-size select,.room-picker .picker-footer :is(.picker-primary,.picker-secondary){min-height:44px;}.room-picker .picker-page-controls button{width:40px;}}
+/* Search and filters removed: keep space between the wing tabs and the results count */
+.room-picker .picker-results-bar{margin-top:20px;}
 </style>

@@ -76,6 +76,9 @@ const isSavingNonCspc = ref(false);
 const showAddModal = ref(false);
 const showRemoveModal = ref(false);
 const showConfirmModal = ref(false);
+// Mobile-only occupant information pop-up (tracks the live occupant so updates show)
+const infoOccupantId = ref(null);
+const infoOccupant = computed(() => occupants.value.find(o => o.id === infoOccupantId.value) || null);
 
 // Confirm Modal States
 const confirmTitle = ref('');
@@ -581,7 +584,7 @@ const loadError = ref('');
                     <p class="font-semibold text-slate-900 uppercase text-sm truncate">{{ occ.name }}</p>
                     <span v-if="occupantAwaitingArrival(occ)" class="o-badge amber small"><i class="fa-solid fa-door-open" aria-hidden="true"></i>{{ arrivalLabel(occ) }}</span>
                   </div>
-                  <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{{ occ.contact_number || 'No contact' }}</p>
+                  <p class="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{{ occ.reference_no || 'MANUAL' }}</p>
                 </div>
                 <!-- Status badge -->
                 <span v-if="occ.payment_status === 'Paid'" class="o-badge green flex-shrink-0"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Rent Paid</span>
@@ -620,6 +623,9 @@ const loadError = ref('');
                   <div class="flex items-center justify-between py-2.5">
                     <span class="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Action</span>
                     <div class="boarder-mobile-actions"><button v-if="canConfirmArrival(occ)" type="button" @click="triggerConfirm('Confirm Arrival?', `Confirm that ${occ.name} has moved in? They will count as a resident in SASO figures. Payment is not changed.`, () => handleConfirmArrival(occ))" class="bd-btn is-arrival"><i class="fa-solid fa-door-open" aria-hidden="true"></i>Confirm Arrival</button><button type="button" @click="handleTogglePayment(occ)" :class="['bd-btn', occ.payment_status === 'Paid' ? 'is-undo' : 'is-pay']"><i :class="['fa-solid', occ.payment_status === 'Paid' ? 'fa-rotate-left' : 'fa-check']" aria-hidden="true"></i>{{ occ.payment_status === 'Paid' ? 'Mark rent unpaid' : 'Mark rent paid' }}</button><button v-if="!occupantNotArrived(occ)" type="button" @click="triggerConfirm('Confirm Checkout?', `Are you sure you want to checkout ${occ.name}? This will free their slot in this room.`, () => handleCheckoutOccupant(occ.id))" class="bd-btn is-checkout"><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>Checkout</button><BookingArrivalActions v-if="occupantBooking(occ)" :booking="occupantBooking(occ)" compact @changed="fetchRoomDetails" @notice="showSystemAlert($event.message, $event.tone)" /></div>
+                  </div>
+                  <div class="boarder-mobile-info-row py-2.5">
+                    <div class="boarder-mobile-actions"><button type="button" @click="infoOccupantId = occ.id" class="bd-btn is-info"><i class="fa-solid fa-user" aria-hidden="true"></i>Occupant Information</button></div>
                   </div>
 
                 </div>
@@ -755,6 +761,25 @@ const loadError = ref('');
           </template>
         </div>
         <button @click="closeRemoveModal" class="mt-6 w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-3 rounded-xl text-[12px] uppercase tracking-wide transition cursor-pointer management-button">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ===== Occupant Information Modal (mobile) ===== -->
+    <div v-management-dialog="{ close: () => infoOccupantId = null }" v-if="infoOccupant" class="occupant-info-overlay fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] overflow-y-auto flex items-start justify-center p-4 py-8 animate-fade-in">
+      <div class="occupant-info-dialog popup-panel bg-white w-full max-w-md text-left" role="dialog" aria-modal="true">
+        <div class="flex justify-between items-start gap-3 mb-4">
+          <div>
+            <h2 class="occupant-info-title">{{ infoOccupant.name }}</h2>
+            <p class="occupant-info-ref">{{ infoOccupant.reference_no || 'MANUAL' }}</p>
+          </div>
+          <button aria-label="Close dialog" @click="infoOccupantId = null" class="text-slate-400 hover:text-slate-900 transition text-3xl leading-none cursor-pointer">&times;</button>
+        </div>
+        <div class="boarder-expanded-panel occupant-info-panel"><section class="boarder-personal-group"><h3><i class="fa-solid fa-user" aria-hidden="true"></i>Occupant Information</h3><dl class="boarder-expanded-grid boarder-personal-grid">
+          <div><dt>Address</dt><dd>{{ infoOccupant.address || '-' }}</dd></div><div><dt>Contact</dt><dd>{{ infoOccupant.contact_number || '-' }}</dd></div><div><dt>Emergency</dt><dd>{{ infoOccupant.emergency_contact || '-' }}</dd></div>
+        </dl></section><section class="boarder-financial-group"><h3><i class="fa-solid fa-file-invoice" aria-hidden="true"></i>Payment Information</h3><dl class="boarder-expanded-grid boarder-financial-grid"><div><dt>Total Rent</dt><dd class="boarder-total-rent">&#8369;{{ calculateTotalRent(infoOccupant) ? Number(calculateTotalRent(infoOccupant)).toLocaleString() : '0' }}</dd><dd>&#8369;{{ Number(room.price || room.house_price || 0).toLocaleString() }}/month</dd></div>
+          <div><dt>Move-in Upfront Fee</dt><dd><template v-if="formatMoveInLedger(infoOccupant).total > 0"><strong>&#8369;{{ formatMoveInLedger(infoOccupant).total.toLocaleString('en-US',{minimumFractionDigits:2}) }}</strong><span v-if="formatMoveInLedger(infoOccupant).advM > 0" class="block">Advance Rent: &#8369;{{ formatMoveInLedger(infoOccupant).advAmt.toLocaleString('en-US',{minimumFractionDigits:2}) }}</span><span v-if="formatMoveInLedger(infoOccupant).depM > 0" class="block">{{ formatMoveInLedger(infoOccupant).friendlyType }} Deposit: &#8369;{{ formatMoveInLedger(infoOccupant).depAmt.toLocaleString('en-US',{minimumFractionDigits:2}) }}</span><em v-if="formatMoveInLedger(infoOccupant).depM > 0" :class="formatMoveInLedger(infoOccupant).depositType === 'consumable' ? 'text-amber-500' : 'text-blue-400'">{{ formatMoveInLedger(infoOccupant).depositType === 'consumable' ? "Usable as last month's rent" : 'Return on move-out' }}</em><span v-if="infoOccupant.payment_method === 'paymongo'" class="block boarder-online-note">Upfront Paid (Online)</span><button v-else type="button" @click="handleToggleUpfront(infoOccupant)" :class="['bd-btn', isUpfrontCollected(infoOccupant) ? 'is-undo' : 'is-pay']"><i :class="['fa-solid', isUpfrontCollected(infoOccupant) ? 'fa-rotate-left' : 'fa-check']" aria-hidden="true"></i>{{ getUpfrontActionLabel(infoOccupant) }}</button></template><span v-else>No Deposit / Advance</span></dd></div>
+        </dl></section></div>
+        <button type="button" @click="infoOccupantId = null" class="occupant-info-close management-button">Close</button>
       </div>
     </div>
 
@@ -910,4 +935,28 @@ const loadError = ref('');
 .checkout-attention p{font-size:12px;line-height:1.55;margin:4px 0}
 .pending-hold span{font-size:12px;line-height:1.5}
 }
+</style>
+
+<style scoped>
+/* Occupant Information pop-up (opened from the mobile boarder card): single column */
+.occupant-info-dialog{padding:20px;border-radius:18px;max-height:calc(100dvh - 32px);overflow:auto;box-shadow:0 20px 70px #10274440}
+.occupant-info-title{font-size:17px;font-weight:700;color:#0d2d53;overflow-wrap:anywhere}
+.occupant-info-ref{font-size:11px;font-family:monospace;color:#526b89;margin-top:2px}
+.occupant-info-panel{grid-template-columns:1fr;gap:18px;padding:16px}
+.occupant-info-panel .boarder-financial-group{border-left:0;padding-left:0;border-top:1px solid #dfe8f4;padding-top:16px}
+.occupant-info-panel .boarder-personal-grid,.occupant-info-panel .boarder-financial-grid{grid-template-columns:1fr;gap:12px}
+.occupant-info-panel .boarder-expanded-grid>div+div{border-left:0;padding-left:0;border-top:1px solid #e5edf8;padding-top:12px}
+/* Address on its own row; Contact and Emergency side by side */
+.occupant-info-panel .boarder-personal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.occupant-info-panel .boarder-personal-grid>div:first-child{grid-column:1/-1}
+.occupant-info-panel .boarder-personal-grid>div:nth-child(3){border-left:1px solid #e5edf8;padding-left:12px}
+.occupant-info-panel .boarder-expanded-grid dt{font-size:12px;font-weight:650;color:#193b65}
+.occupant-info-panel .boarder-expanded-grid dd{font-size:13.5px}
+.occupant-info-panel .bd-btn{margin-top:8px;min-height:40px}
+.occupant-info-close{margin-top:16px;width:100%;min-height:44px;border:1px solid #cbd9ec;border-radius:12px;background:white;color:#193c66;font-weight:600;font-size:14px}
+.bd-btn.is-info{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+/* Button-only row in the mobile boarder card: full width, no label column */
+.boarder-mobile-detail>.divide-y>div.boarder-mobile-info-row:nth-child(n){display:block!important;padding:9px 10px!important}
+.boarder-mobile-detail>.divide-y>div.boarder-mobile-info-row:nth-child(n)>.boarder-mobile-actions{display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:0!important;border-right:0!important}
+.boarder-mobile-info-row .bd-btn{width:100%;justify-content:center}
 </style>

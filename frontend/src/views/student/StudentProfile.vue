@@ -208,7 +208,6 @@ const saveProfile = async () => {
     // Phones stay on the profile (edited in place); desktop returns to the dashboard
     if (isPhone()) {
       successMsg.value = 'Profile updated successfully!';
-      showAddressPicker.value = false;
       profilePicFile.value = null;
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -228,7 +227,6 @@ const saveProfile = async () => {
 const userInitial = () => (user.value.name || 'S').charAt(0).toUpperCase();
 
 // ---------- Phone layout: every detail row is editable in place, saved with "Save Changes" ----------
-const showAddressPicker = ref(false);
 const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
 
 const dobLabel = computed(() => {
@@ -277,7 +275,7 @@ onMounted(() => {
     <template v-else>
     <!-- ===================== PHONE: profile with details edited in place ===================== -->
     <form class="md:hidden bg-[#f4f7fc] min-h-screen px-4 pt-5 pb-8 text-left" @submit.prevent="saveProfile" novalidate>
-      <h1 class="text-[28px] font-black text-[#0f1f45] tracking-tight mb-4">Profile</h1>
+      <h1 class="text-[28px] font-black text-[#0f1f45] tracking-tight leading-tight mb-4">Profile</h1>
 
       <div v-if="successMsg" role="status" class="mb-4 bg-green-50 border border-green-200 text-green-700 text-[13px] font-semibold px-4 py-3 rounded-xl flex items-center gap-2.5">
         <i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ successMsg }}
@@ -314,9 +312,10 @@ onMounted(() => {
             </h3>
             <p class="mt-1 text-[11px] text-black">{{ section.subtitle }}</p>
             </div>
-            <div class="px-3">
-              <div v-for="row in section.rows" :key="row[2]" class="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1.5fr)] items-start gap-x-2 py-1 border-b border-slate-100 last:border-b-0">
-                <label :for="'pv-' + row[2]" class="text-[12.5px] text-slate-500 leading-snug pt-[7px]">{{ row[1] }}</label>
+            <!-- Same field design as the desktop form: label above a boxed input -->
+            <div class="px-3 pt-2 pb-3 space-y-4">
+              <div v-for="row in section.rows" :key="row[2]">
+                <label :for="'pv-' + row[2]" class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">{{ row[1] }}</label>
                 <div class="min-w-0">
                   <!-- Read-only (tied to the Google account) -->
                   <p v-if="row[3] === 'readonly'" :id="'pv-' + row[2]" class="pv-static">{{ form[row[2]] || 'Not set' }}</p>
@@ -350,24 +349,14 @@ onMounted(() => {
                   >
 
                   <template v-else-if="row[3] === 'address'">
-                    <button
-                      v-if="!showAddressPicker"
-                      :id="'pv-' + row[2]"
-                      type="button"
-                      @click="showAddressPicker = true"
-                      class="pv-input pv-wrap text-left h-auto"
-                    >{{ form.address || 'Tap to set your address' }}</button>
-                    <div v-else class="pt-1">
-                      <AddressPicker v-model="form.address" id-prefix="student-address-m"
-                        field-class="w-full bg-slate-50 border border-slate-300 rounded-lg text-sm text-black font-medium focus:bg-white focus:border-blue-500 outline-none transition"
-                        label-class="block text-[11px] font-semibold text-slate-500 mb-1" />
-                      <button type="button" @click="showAddressPicker = false" class="mt-2 text-[12px] font-semibold text-blue-700">Done</button>
-                    </div>
+                    <AddressPicker v-model="form.address" :id-prefix="'pv-' + row[2]" click-to-edit :show-hint="false"
+                      field-class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm"
+                      label-class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5" />
                   </template>
 
                   <input v-else :id="'pv-' + row[2]" type="text" v-model="form[row[2]]" class="pv-input">
 
-                  <span v-if="row[4]" class="block text-[11px] text-slate-400 italic leading-tight pb-1 px-1.5">{{ row[4] }}</span>
+                  <span v-if="row[4]" class="block text-[10px] text-slate-400 italic leading-tight mt-1.5 ml-1">{{ row[4] }}</span>
                 </div>
               </div>
             </div>
@@ -511,9 +500,9 @@ onMounted(() => {
                 </div>
                 <div class="col-span-1 md:col-span-3">
                   <p class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5">Permanent Home Address</p>
-                  <AddressPicker v-model="form.address" id-prefix="student-address"
-                    field-class="w-full bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 outline-none transition shadow-sm"
-                    label-class="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-0.5" />
+                  <AddressPicker v-model="form.address" id-prefix="student-address" click-to-edit :show-hint="false"
+                    field-class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded text-sm text-black font-semibold focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition shadow-sm"
+                    label-class="block text-[10px] font-bold text-black uppercase mb-2 ml-0.5" />
                   <p class="text-[9px] text-slate-400 mt-1.5 ml-1 italic">Your permanent or family residence, distinct from your current boarding house accommodation.</p>
                 </div>
               </div>
@@ -570,10 +559,9 @@ onMounted(() => {
 <style scoped>
 .pv-avatar { width: 92px; height: 92px; border-radius: 999px; border: 3px solid #eef3fb; box-shadow: 0 4px 14px rgb(15 47 102 / .12); font-size: 28px; }
 /* Detail values look like plain text but are editable fields */
-.pv-input { width: 100%; min-height: 34px; padding: 6px; margin: 0; border: 1px solid transparent; border-radius: 10px; background-color: transparent; color: #000; font-size: 14px; font-weight: 500; line-height: 1.35; outline: none; appearance: none; -webkit-appearance: none; }
-.pv-input:hover { background-color: #f4f7fc; }
-.pv-input:focus { border-color: #3b82f6; background-color: #fff; box-shadow: 0 0 0 3px rgb(59 130 246 / .12); }
-.pv-select { padding-right: 22px; text-overflow: ellipsis; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
-.pv-static { padding: 6px; font-size: 14px; font-weight: 500; color: #000; line-height: 1.35; }
+.pv-input { display: block; width: 100%; min-height: 46px; padding: 12px 16px; margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; background-color: #f8fafc; color: #000; font-size: 14px; font-weight: 600; line-height: 1.35; outline: none; appearance: none; -webkit-appearance: none; box-shadow: 0 1px 2px rgb(0 0 0 / .05); transition: background-color .15s, border-color .15s, box-shadow .15s; }
+.pv-input:focus { border-color: #3b82f6; background-color: #fff; box-shadow: 0 0 0 2px #dbeafe; }
+.pv-select { padding-right: 22px; text-overflow: ellipsis; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+.pv-static { padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 4px; background-color: #f1f5f9; font-size: 14px; font-weight: 600; color: #64748b; line-height: 1.35; cursor: not-allowed; }
 .pv-static, .pv-wrap { overflow-wrap: anywhere; white-space: normal; }
 </style>

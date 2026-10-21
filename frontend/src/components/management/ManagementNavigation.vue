@@ -53,7 +53,7 @@ onUnmounted(() => desktopQuery?.removeEventListener('change', closeOnDesktop));
   <aside v-management-dialog="{ enabled: open, label: 'Navigation', close: () => emit('close') }" id="management-navigation" class="management-sidebar mobile-sidebar no-print" :class="{ 'is-open': open, 'is-admin': true, 'is-owner': !isAdmin }">
     <router-link to="/" class="management-brand" @click="emit('close')">
       <img src="/img/cspc_bh_finder_icon.png" alt="CSPC BH Finder" />
-      <span><strong>CSPC BH Finder</strong><small>{{ role === 'admin' ? 'Administration portal' : 'Owner portal' }}</small></span>
+      <span><strong class="brand-name">CSPC BH Finder</strong><small class="brand-portal">{{ role === 'admin' ? 'Administration Portal' : 'Owner Portal' }}</small></span>
     </router-link>
     <button class="management-nav-close" aria-label="Close navigation" @click="emit('close')"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     <nav :aria-label="role === 'admin' ? 'Administration' : 'Owner management'" class="management-nav-groups">
@@ -79,7 +79,7 @@ onUnmounted(() => desktopQuery?.removeEventListener('change', closeOnDesktop));
     </div>
   </aside>
   <header class="management-topbar no-print is-admin" :class="{ 'is-owner': !isAdmin }">
-    <div class="management-topbar-title"><button class="management-menu-toggle hamburger-btn" aria-label="Toggle navigation" :aria-expanded="open" aria-controls="management-navigation" @click="emit('toggle')"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><nav aria-label="Breadcrumb" class="management-breadcrumb"><router-link :to="homePath" class="management-crumb">{{ role === 'admin' ? 'Administration' : 'Property management' }}</router-link><span class="management-topbar-separator" aria-hidden="true">/</span><router-link :to="route.path" class="management-crumb is-current" aria-current="page"><strong>{{ pageTitle }}</strong></router-link></nav></div>
+    <div class="management-topbar-title"><button class="management-menu-toggle hamburger-btn" aria-label="Toggle navigation" :aria-expanded="open" aria-controls="management-navigation" @click="emit('toggle')"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><nav aria-label="Breadcrumb" class="management-breadcrumb"><router-link :to="homePath" class="management-crumb">{{ role === 'admin' ? 'Administration' : 'Owner Portal' }}</router-link><span class="management-topbar-separator" aria-hidden="true">/</span><router-link :to="route.path" class="management-crumb is-current" aria-current="page"><strong>{{ pageTitle }}</strong></router-link></nav></div>
     <div class="admin-topbar-tools">
       <span v-if="isAdmin" class="admin-topbar-date"><i class="fa-regular fa-calendar" aria-hidden="true"></i>{{ today }}</span>
       <router-link :to="'/' + role + '/notifications'" class="management-topbar-notifications" aria-label="View notifications"><i class="fa-regular fa-bell" aria-hidden="true"></i><span v-if="unreadCount > 0" class="management-nav-count">{{ unreadCount }}</span></router-link>
