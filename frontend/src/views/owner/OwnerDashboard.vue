@@ -346,7 +346,7 @@ const loadError = ref('');
 
       <section class="od-welcome" aria-label="Welcome">
         <div class="od-welcome-text">
-          <p class="od-welcome-eyebrow"><span class="od-portal"><i class="fa-solid fa-house-user" aria-hidden="true"></i> Owner portal</span></p>
+          <p class="od-welcome-eyebrow"><span class="od-portal"><i class="fa-solid fa-house-user" aria-hidden="true"></i> Owner Portal</span></p>
           <h1>Welcome back, {{ firstName }}</h1>
           <p class="od-welcome-summary">{{ isLoading ? 'Loading your properties…' : summaryLine }}</p>
         </div>

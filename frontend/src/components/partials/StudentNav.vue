@@ -59,8 +59,8 @@ onUnmounted(() => {
         <img src="/img/cspc_bh_finder_icon.png" alt="" class="w-9 h-9 object-contain" />
       </span>
       <span class="text-left">
-        <span class="block text-[18px] font-extrabold text-white tracking-tight leading-tight">CSPC BH Finder</span>
-        <span class="block text-[12.5px] text-blue-100/90 font-medium leading-tight">Student</span>
+        <span class="brand-name block text-white">CSPC BH Finder</span>
+        <span class="brand-portal block text-blue-100/90">Student</span>
       </span>
     </router-link>
     <div class="flex gap-6 lg:gap-10 text-[13px] font-semibold items-center">
@@ -85,8 +85,8 @@ onUnmounted(() => {
           <img src="/img/cspc_bh_finder_icon.png" alt="" class="w-9 h-9 object-contain" />
         </span>
         <span class="text-left min-w-0">
-          <span class="block text-[18px] font-extrabold text-white tracking-tight leading-tight truncate">CSPC BH Finder</span>
-          <span class="block text-[12.5px] text-blue-100/90 font-medium leading-tight truncate">Student</span>
+          <span class="brand-name block text-white truncate">CSPC BH Finder</span>
+          <span class="brand-portal block text-blue-100/90 truncate">Student Portal</span>
         </span>
       </router-link>
 

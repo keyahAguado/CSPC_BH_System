@@ -339,7 +339,7 @@ onUnmounted(() => {
   <div class="bg-[#f8fafc] min-h-screen font-sans text-slate-800 pb-4 md:pb-20">
     <StudentNav />
 
-    <main class="max-w-6xl mx-auto py-4 md:py-10 px-4 sm:px-6">
+    <main class="max-w-6xl mx-auto pt-8 pb-4 md:py-10 px-4 sm:px-6">
 
       <!-- LOADING -->
       <div v-if="isLoading" class="text-center py-32">
@@ -359,7 +359,7 @@ onUnmounted(() => {
       <template v-else>
         <!-- HEADER -->
         <div class="text-center mb-5 mt-1 md:mb-10 md:mt-6">
-          <h1 class="text-3xl font-black text-slate-900 uppercase tracking-tight">{{ house.name }}</h1>
+          <h1 class="text-3xl md:text-[40px] md:leading-none font-black text-slate-900 uppercase tracking-tight">{{ house.name }}</h1>
           <p class="text-slate-500 font-bold text-xs uppercase tracking-[0.2em] mt-2">Secure your reservation</p>
         </div>
 
@@ -632,7 +632,7 @@ onUnmounted(() => {
 
         <!-- Body: Summary of what's about to be submitted -->
         <div class="p-5 sm:p-8 space-y-4 min-h-0 overflow-y-auto flex-1">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm break-words">
+          <div class="grid grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-4 text-sm break-words">
             <div>
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">House</p>
               <p class="font-bold text-slate-800">{{ house.name }}</p>
@@ -677,7 +677,7 @@ onUnmounted(() => {
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p>
               <p class="font-bold text-slate-800 uppercase">{{ form.payment_method === 'paymongo' ? 'QR Ph via PayMongo' : 'Cash (Over-the-Counter)' }}</p>
             </div>
-            <div class="sm:col-span-2">
+            <div class="col-span-2">
               <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Address</p>
               <p class="font-bold text-slate-800">{{ form.address || '—' }}</p>
             </div>

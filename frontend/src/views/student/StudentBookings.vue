@@ -101,10 +101,10 @@ const counts = computed(() => ({
 }));
 
 const statCards = computed(() => [
-  { key: 'all', label: 'All Bookings', value: counts.value.all },
-  { key: 'active', label: 'Active', value: counts.value.active },
-  { key: 'history', label: 'Booking History', value: counts.value.history },
-  { key: 'awaiting', label: 'Awaiting Payment', value: counts.value.awaiting }
+  { key: 'all', label: 'All Bookings', value: counts.value.all, icon: 'fa-calendar-check', tone: 'bg-[#dbeafe] text-[#1d4ed8]' },
+  { key: 'active', label: 'Active', value: counts.value.active, icon: 'fa-house-circle-check', tone: 'bg-[#dcfce7] text-[#15803d]' },
+  { key: 'history', label: 'Booking History', value: counts.value.history, icon: 'fa-clock-rotate-left', tone: 'bg-[#e2e8f0] text-[#475569]' },
+  { key: 'awaiting', label: 'Awaiting Payment', value: counts.value.awaiting, icon: 'fa-wallet', tone: 'bg-[#fef3c7] text-[#b45309]' }
 ]);
 
 const matchesView = (b) => {
@@ -189,7 +189,7 @@ onMounted(() => {
     <main class="max-w-[1920px] mx-auto px-4 sm:px-8 xl:px-[62px] pt-6 md:pt-10 lg:pt-14 text-left">
       <!-- Mobile header -->
       <header class="md:hidden">
-        <h1 class="text-[30px] font-extrabold text-[#0f1f45] tracking-tight leading-tight">My Bookings</h1>
+        <h1 class="text-[28px] font-extrabold text-[#0f1f45] tracking-tight leading-tight">My Bookings</h1>
         <p class="mt-1 text-[15px] text-slate-500">Manage your reservations</p>
       </header>
 
@@ -240,13 +240,24 @@ onMounted(() => {
           >
             <span class="block text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.1em] sm:tracking-[0.12em] sm:whitespace-nowrap leading-tight"
                   :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-600'">{{ card.label }}</span>
-            <span class="block mt-2 text-[26px] sm:text-[28px] font-bold leading-none"
-                  :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
+            <!-- Icon beside the number (phone and desktop) -->
+            <span class="mt-2 flex items-center gap-2.5">
+              <span class="shrink-0 grid place-items-center w-9 h-9 rounded-[10px] text-[15px]" :class="card.tone" aria-hidden="true"><i class="fa-solid" :class="card.icon"></i></span>
+              <span class="block text-[26px] sm:text-[28px] font-bold leading-none"
+                    :class="viewFilter === card.key ? 'text-[#1e4b8f]' : 'text-slate-900'">{{ card.value }}</span>
+            </span>
           </button>
         </div>
 
         <!-- MOBILE: booking cards -->
         <div class="md:hidden">
+          <!-- List heading between the count cards and the cards (same as desktop) -->
+          <div class="mt-6 flex items-baseline justify-between gap-3">
+            <h2 class="text-[17px] font-bold text-slate-900">{{ tableTitle }}</h2>
+            <p class="text-[12px] font-semibold text-slate-500 whitespace-nowrap">
+              {{ filteredBookings.length }} booking{{ filteredBookings.length === 1 ? '' : 's' }}{{ filteredBookings.length === bookings.length ? ' total' : ' found' }}
+            </p>
+          </div>
           <div v-if="filteredBookings.length === 0" class="mt-4 bg-white rounded-2xl border border-slate-200 px-6 py-12 text-center">
             <i class="fa-regular fa-calendar-xmark text-3xl text-slate-300 mb-3"></i>
             <p class="text-[14px] text-slate-500 font-medium mb-2">No bookings in this view.</p>
