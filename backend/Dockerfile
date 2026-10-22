@@ -8,15 +8,15 @@ WORKDIR /app
 COPY package*.json ./
 
 # 4. Install production dependencies
-RUN npm ci
+RUN npm ci --omit=dev
 
 # 5. Copy the rest of the backend source code
-COPY . .
+COPY --chown=node:node . .
 
-# 6. Change ownership of application directories to the unprivileged node user.
+# 6. Give the unprivileged process write access only to its upload directory.
 #    /app/uploads is created here so a fresh media_uploads volume inherits node ownership
 #    (otherwise Docker creates the mount point as root and every upload fails with EACCES).
-RUN mkdir -p /app/uploads && chown -R node:node /app
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
 
 # 7. Expose the port your Express app listens on
 EXPOSE 3000

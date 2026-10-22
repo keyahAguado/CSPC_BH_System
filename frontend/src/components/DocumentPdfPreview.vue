@@ -29,15 +29,16 @@ async function load(){
   controller=new AbortController();loading.value=true;error.value='';page.value=1;pages.value=0;zoom.value=1;
   try{
     // Load the PDF engine only when a permit PDF is opened, not on the public homepage.
-    const [engine,worker,file]=await Promise.all([import('pdfjs-dist'),import('pdfjs-dist/build/pdf.worker.min.mjs?url'),loadDocumentFile(props.src,{signal:controller.signal,expected:'pdf'})]);
+    const [engine,worker,file]=await Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'),import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),loadDocumentFile(props.src,{signal:controller.signal,expected:'pdf'})]);
     if(current!==version)return;
     // Bypass older service-worker/browser entries stored with an octet-stream MIME type.
     engine.GlobalWorkerOptions.workerSrc=worker.default+'?module=1';
     const assets=new URL(import.meta.env.BASE_URL+'assets/pdfjs-'+engine.version+'/',window.location.origin).href;
     task=engine.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false,useSystemFonts:true,
       cMapUrl:assets+'cmaps/',cMapPacked:true,standardFontDataUrl:assets+'standard_fonts/',wasmUrl:assets+'wasm/'});
-    const result=await task.promise;
-    if(current!==version){await result.destroy();return;}
+    const pendingTask=task;
+    const result=await pendingTask.promise;
+    if(current!==version){await pendingTask.destroy();return;}
     pdf=result;pages.value=result.numPages;loading.value=false;await nextTick();await renderPage();
   }catch(e){if(current===version)error.value=e.name==='PasswordException'?'This PDF is password protected. Open the original file in your PDF reader.':e.message||'The PDF could not be loaded.';}
   finally{if(current===version)loading.value=false;}

@@ -42,7 +42,9 @@ import siteContentRouter from './routes/siteContent.js';        // Public landin
 import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
 import locationsRouter from './routes/locations.js';           // Philippine address lists (local PSGC copy)
 
-import { serveS3Media, validateStorageConfig } from './config/s3Storage.js';
+import { createS3MediaHandler, validateStorageConfig } from './config/s3Storage.js';
+import { createDocumentAccess } from './config/mediaAccess.js';
+const serveS3Media = createS3MediaHandler({ canReadDocument: createDocumentAccess({ pool }) });
 
 validateStorageConfig();
 const app = express();

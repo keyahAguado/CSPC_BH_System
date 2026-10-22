@@ -19,10 +19,11 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         // Opening an uploaded file (new tab or PDF frame) or an API URL must reach the server, never the app shell.
-        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /^\/storage\//],
         globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,woff2}'], // Automatically caches static files for offline usability
         maximumFileSizeToCacheInBytes: 15000000,
         runtimeCaching: [
+          { urlPattern: /\/storage\//i, handler: 'NetworkOnly' },
           {
             // Public landing page listings (HomeView.vue): always try the network first so a
             // newly accredited house appears (list + map) right away; cache is the offline fallback.
@@ -132,6 +133,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true
+      },
+      '/storage': {
+        target: 'http://127.0.0.1:9000',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/storage/, '')
       },
       '/uploads': {
         target: 'http://localhost:3000',

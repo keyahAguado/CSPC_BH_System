@@ -1,4 +1,5 @@
 <script setup>
+import DocumentThumbnail from '../../components/DocumentThumbnail.vue';
 import DocumentPdfPreview from '../../components/DocumentPdfPreview.vue';
 import { openFileInNewTab } from '../../utils/openFile.js';
 import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
@@ -745,7 +746,7 @@ const loadError = ref('');
                           class="relative rounded-xl overflow-hidden bg-white border border-slate-100 hover:border-blue-400 flex items-center justify-center min-h-0 transition"
                           :aria-label="(isPdfFile(file) ? 'Open PDF ' : 'Preview image ') + (i + 1)">
                     <span v-if="isPdfFile(file)" class="flex flex-col items-center gap-1 text-rose-600"><i class="fa-solid fa-file-pdf text-3xl"></i><span class="text-[11px] font-bold uppercase">PDF</span></span>
-                    <img v-else :src="getImageUrl(file)" class="w-full h-full object-contain" alt="" />
+                    <DocumentThumbnail v-else :file="file" class="w-full h-full" alt="" />
                   </button>
                 </div>
                 <span v-if="getCriterionFiles(p).length > 1" class="absolute top-2 right-2 bg-slate-900/80 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">{{ getCriterionFiles(p).length }} files</span>

@@ -5,3 +5,7 @@ npm-debug.log
 .gitignore
 tests/
 scripts/
+.env*
+public/uploads/
+uploads/
+*.log

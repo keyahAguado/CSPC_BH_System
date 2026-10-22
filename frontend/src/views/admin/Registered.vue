@@ -1,4 +1,5 @@
 <script setup>
+import DocumentThumbnail from '../../components/DocumentThumbnail.vue';
 import DocumentPdfPreview from '../../components/DocumentPdfPreview.vue';
 import { openFileInNewTab } from '../../utils/openFile.js';
 import UserAvatar from "../../components/UserAvatar.vue";
@@ -945,7 +946,7 @@ const loadError = ref('');
               <li v-for="doc in group.items" :key="doc.label" :class="['dc-doc', { 'is-missing': !doc.file }]">
                 <button v-if="doc.file" type="button" class="dc-thumb" :aria-label="'View ' + doc.label" @click="openPreviewSet(doc.files)">
                   <span v-if="isPdfFile(doc.file)" class="dc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i>PDF</span>
-                  <img v-else :src="getImageUrl(doc.file)" :alt="''" loading="lazy" />
+                  <DocumentThumbnail v-else :file="doc.file" alt="" />
                   <span v-if="doc.files.length > 1" class="dc-thumb-count">{{ doc.files.length }} files</span>
                 </button>
                 <span v-else class="dc-thumb is-empty" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>

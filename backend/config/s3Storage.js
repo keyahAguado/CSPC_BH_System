@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createDocumentAccess } from './mediaAccess.js';
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 
 const types = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.gif':'image/gif', '.pdf':'application/pdf', '.bmp':'image/bmp', '.tif':'image/tiff', '.tiff':'image/tiff', '.heic':'image/heic', '.heif':'image/heif', '.avif':'image/avif' };
 let client;
@@ -21,7 +22,13 @@ export function getS3Config(env = process.env) {
 export function validateStorageConfig() {
     const provider = (process.env.STORAGE_PROVIDER || 'local').trim().toLowerCase();
     if (!['local', 'cloudinary', 's3'].includes(provider)) throw new Error('Unsupported STORAGE_PROVIDER');
-    if (provider === 's3') getS3Config();
+    if (provider === 's3') {
+        getS3Config();
+        if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(process.env.S3_BUCKET)) throw new Error('Invalid S3_BUCKET');
+        const website = new URL(process.env.FRONTEND_URL);
+        if (!['http:', 'https:'].includes(website.protocol) || website.username || website.password || website.pathname !== '/' || website.search || website.hash) throw new Error('FRONTEND_URL must be the website origin');
+        if (!process.env.JWT_SECRET?.trim()) throw new Error('JWT_SECRET is required for document access');
+    }
 }
 function storageClient() {
     return client ||= new S3Client(getS3Config());
@@ -33,37 +40,27 @@ export async function saveS3File(buffer, originalname, folder) {
     const key = `media/${folder}/${randomUUID()}${extension}`;
     await storageClient().send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET, Key: key, Body: buffer, ContentType: contentType,
+        CacheControl: folder === 'permits' ? 'private, no-store' : 'public, max-age=3600',
     }));
     return `/uploads/s3/${key}`;
 }
-// The bucket remains private. This application route preserves existing URL-based
-// media access; it does not introduce owner/admin authorization for documents.
-export async function serveS3Media(req, res) {
-    const key = Array.isArray(req.params.key) ? req.params.key.join('/') : req.params.key;
-    if (!/^media\/[a-z_]+\/[a-f0-9-]{36}\.[a-z]+$/.test(key || '')) return res.sendStatus(404);
-    try {
-        const object = await storageClient().send(new GetObjectCommand({
-            Bucket: process.env.S3_BUCKET, Key: key,
-            ...(req.headers.range ? { Range: req.headers.range } : {}),
-        }));
-        res.status(object.ContentRange ? 206 : 200);
-        res.setHeader('Content-Type', object.ContentType || 'application/octet-stream');
-        res.setHeader('X-Content-Type-Options', 'nosniff');
+// Store stable references; generate short-lived delivery URLs only when requested.
+export function createS3MediaHandler({ client = storageClient, sign = getSignedUrl, canReadDocument = async () => false, env = process.env } = {}) {
+    return async function serveMedia(req, res) {
+        const key = Array.isArray(req.params.key) ? req.params.key.join('/') : req.params.key;
+        if (!/^media\/[a-z_]+\/[a-f0-9-]{36}\.[a-z]+$/.test(key || '')) return res.sendStatus(404);
         res.setHeader('Cache-Control', 'private, no-store');
-        res.setHeader('Accept-Ranges', 'bytes');
-        if (object.ContentLength != null) res.setHeader('Content-Length', object.ContentLength);
-        if (object.ContentRange) res.setHeader('Content-Range', object.ContentRange);
-        if (req.method === 'HEAD') {
-            object.Body?.destroy();
-            return res.end();
+        try {
+            if (key.startsWith('media/permits/') && !(await canReadDocument(req.headers.authorization, '/uploads/s3/' + key))) return res.sendStatus(403);
+            const Command = req.method === 'HEAD' ? HeadObjectCommand : GetObjectCommand;
+            const signed = new URL(await sign(client(), new Command({ Bucket: env.S3_BUCKET, Key: key }), { expiresIn: 300 }));
+            // Nginx strips /storage and preserves the signed internal Host header.
+            const delivery = new URL('/storage' + signed.pathname + signed.search, env.FRONTEND_URL);
+            return res.redirect(307, delivery.href);
+        } catch (error) {
+            console.error('[S3 LINK ERROR]', error.name);
+            return res.status(503).json({ message: 'Media storage is temporarily unavailable.' });
         }
-        await pipeline(object.Body, res);
-    } catch (error) {
-        if (res.headersSent) return res.destroy();
-        const status = error.$metadata?.httpStatusCode;
-        if (status === 404 || error.name === 'NoSuchKey') return res.sendStatus(404);
-        if (status === 416) return res.sendStatus(416);
-        console.error('[S3 READ ERROR]', error.name);
-        return res.status(502).json({ message: 'Media storage is temporarily unavailable.' });
-    }
+    };
 }
+export const serveS3Media = createS3MediaHandler();

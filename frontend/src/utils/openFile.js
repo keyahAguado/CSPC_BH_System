@@ -18,12 +18,17 @@ export function detectedFileType(bytes) {
   throw new Error('The server did not return a supported image or PDF. The file may be unavailable or an older offline copy may contain the app page. Refresh and retry.');
 }
 export async function loadDocumentFile(url,{signal,expected,token}={}) {
-  const target=fileTarget(url),controller=new AbortController(),abort=()=>controller.abort();
+  const target=fileTarget(url);
+  const applicationMedia = target.pathname.startsWith('/uploads/s3/media/permits/') && (target.origin === window.location.origin || (target.hostname === window.location.hostname && target.port === '3000' && ['5173', '5174', '4173'].includes(window.location.port)));
+  if (!token && applicationMedia) {
+    try { token = sessionStorage.getItem('cspc_token') || sessionStorage.getItem('cspc_applicant_token') || ''; } catch {}
+  }
+  const controller=new AbortController(),abort=()=>controller.abort();
   if(signal?.aborted)controller.abort();
   signal?.addEventListener('abort',abort,{once:true});
   const timeout=setTimeout(abort,30000);
   try {
-    const response=await fetch(target.href,{credentials:target.origin===window.location.origin?'same-origin':'omit',cache:'no-store',signal:controller.signal,...(token&&target.origin===window.location.origin?{headers:{Authorization:'Bearer '+token}}:{})});
+    const response=await fetch(target.href,{credentials:target.origin===window.location.origin?'same-origin':'omit',cache:'no-store',signal:controller.signal,...(token&&(target.origin===window.location.origin||applicationMedia)?{headers:{Authorization:'Bearer '+token}}:{})});
     if(!response.ok)throw new Error('The file could not be loaded ('+response.status+'). Please retry or contact the property owner.');
     if(Number(response.headers.get('content-length'))>25*1024*1024)throw new Error('This file is too large to preview.');
     const blob=await response.blob();

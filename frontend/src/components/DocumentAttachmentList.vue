@@ -1,5 +1,5 @@
 <script setup>
-import { getImageUrl } from '../config/api.js';
+import DocumentThumbnail from './DocumentThumbnail.vue';
 defineProps({ files: { type: Array, default: () => [] }, label: { type: String, required: true } });
 defineEmits(['preview']);
 const isPdf = file => /\.pdf($|[?#])/i.test(String(file));
@@ -9,7 +9,7 @@ const isPdf = file => /\.pdf($|[?#])/i.test(String(file));
     <button v-for="(file, index) in files" :key="file" type="button" class="attachment-file"
       :aria-label="`View ${label}, file ${index + 1} of ${files.length}`" @click="$emit('preview', index)">
       <span v-if="isPdf(file)" class="attachment-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF</span>
-      <img v-else :src="getImageUrl(file)" :alt="`${label}, file ${index + 1}`" loading="lazy" />
+      <DocumentThumbnail v-else :file="file" :alt="`${label}, file ${index + 1}`" />
       <span>File {{ index + 1 }} of {{ files.length }}</span>
     </button>
   </div>

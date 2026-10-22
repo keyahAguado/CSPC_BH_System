@@ -15,7 +15,7 @@ const groups = computed(() => props.role === 'admin' ? [
   { label: 'Property administration', items: [['New applications', '/admin/pending-applications', 'fa-clipboard-check'], ['Registered properties', '/admin/registered', 'fa-building'], ['Archived properties', '/admin/archived', 'fa-box-archive']] },
   { label: 'Reports', items: [['Accredited masterlist', '/admin/reports/masterlist', 'fa-list-check'], ['Compliance & expiry', '/admin/reports/compliance', 'fa-file-circle-check'], ['Emergency registry residence', '/admin/emergency-monitoring', 'fa-shield-halved']] },
   { label: 'People', items: [['User registry', '/admin/users', 'fa-users']] },
-  { label: 'System', items: [['Landing page', '/admin/site-content', 'fa-globe'], ['Notifications', '/admin/notifications', 'fa-bell']] }
+  { label: 'System', items: [['Account settings', '/admin/account', 'fa-user-gear'], ['Landing page', '/admin/site-content', 'fa-globe'], ['Notifications', '/admin/notifications', 'fa-bell']] }
 ] : [
   { label: 'Workspace', items: [['Overview & properties', '/owner/dashboard', 'fa-house'], ['Booking', '/owner/bookings', 'fa-calendar-check']] },
   { label: 'Compliance', items: [['Legal documents', '/owner/documents', 'fa-folder-open']] },

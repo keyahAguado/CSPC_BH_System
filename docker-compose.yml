@@ -31,7 +31,7 @@ services:
     init: true
     restart: always
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - DB_HOST=db
       - DB_USER=cspc_user

@@ -3,6 +3,8 @@ import express from 'express';
 import pool from '../config/db.js';
 import { authenticateToken } from './auth.js';
 import bcrypt from 'bcryptjs';
+import { rateLimit } from 'express-rate-limit';
+import { createAdminAccountHandlers } from '../config/adminAccount.js';
 import { getComplianceStatus } from '../config/complianceHelper.js';
 import { bookingIdFromReference } from '../config/stayAvailability.js';
 
@@ -16,6 +18,10 @@ import {
 } from '../config/applicationWorkflow.js';
 
 const router = express.Router();
+const accountHandlers = createAdminAccountHandlers(pool);
+const accountLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: req => String(req.user.id), message: { success: false, message: 'Too many account update attempts. Please try again in 15 minutes.' } });
+router.get('/account', authenticateToken, accountHandlers.get);
+router.put('/account', authenticateToken, accountLimit, accountHandlers.update);
 
 // Helper middleware to strictly lock down routes to system administrators
 const verifyAdmin = (req, res, next) => {

@@ -44,6 +44,7 @@ import AdminRegistered from '../views/admin/Registered.vue';
 import AdminArchived from '../views/admin/Archived.vue';
 import AdminUsers from '../views/admin/Users.vue';
 import AdminSiteContent from '../views/admin/SiteContent.vue';
+import AdminAccountSettings from '../views/admin/AccountSettings.vue';
 
 // 5. Shared Views
 import Notifications from '../views/Notifications.vue';
@@ -312,6 +313,12 @@ const routes = [
         name: 'AdminUsers',
         component: AdminUsers,
         meta: { role: 'admin', title: 'User Account Management' }
+    },
+    {
+        path: '/admin/account',
+        name: 'AdminAccountSettings',
+        component: AdminAccountSettings,
+        meta: { role: 'admin', title: 'Account settings' }
     },
     {
         path: '/admin/site-content',
