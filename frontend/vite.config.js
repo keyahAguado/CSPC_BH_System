@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { pdfAssets } from './build/pdfAssets.js';
 
 export default defineConfig({
+  envDir: fileURLToPath(new URL('..', import.meta.url)),
   plugins: [
     vue(),
     pdfAssets(),

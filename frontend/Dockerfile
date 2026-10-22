@@ -5,7 +5,15 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-# Vite reads frontend/.env.production.local (server-specific, not in git), then .env.production.
+# Only public build arguments enter the image; root .env is never copied.
+ARG VITE_API_URL
+ARG VITE_GOOGLE_MAPS_API_KEY
+ARG VITE_GOOGLE_MAPS_MAP_ID
+ARG VITE_RECAPTCHA_SITE_KEY
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY \
+    VITE_GOOGLE_MAPS_MAP_ID=$VITE_GOOGLE_MAPS_MAP_ID \
+    VITE_RECAPTCHA_SITE_KEY=$VITE_RECAPTCHA_SITE_KEY
 RUN npm run build
 
 # Stage 2: Serve using Nginx

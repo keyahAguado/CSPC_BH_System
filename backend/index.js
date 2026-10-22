@@ -1,3 +1,4 @@
+import './config/env.js';
 import { resetStudentTests } from './config/resetStudentTests.js';
 import { listManualTestRecords, resetManualTests } from './config/resetManualTests.js';
 import { createCheckoutReminderWorker } from './config/checkoutReminders.js';
@@ -13,7 +14,6 @@ import { uploadErrorHandler } from './config/uploadValidation.js';
 // =========================================================================
 // SECTION 1: GLOBAL IMPORTS & CONFIGURATION
 // =========================================================================
-import 'dotenv/config'; // Loads environment variables as the very first step
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -42,6 +42,9 @@ import siteContentRouter from './routes/siteContent.js';        // Public landin
 import applicationsRouter from './routes/applications.js';     // Track My Application (accountless applicants)
 import locationsRouter from './routes/locations.js';           // Philippine address lists (local PSGC copy)
 
+import { serveS3Media, validateStorageConfig } from './config/s3Storage.js';
+
+validateStorageConfig();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -115,6 +118,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // Serve physical uploads folder statically so browsers load images safely
+app.route('/uploads/s3/*key').get(serveS3Media).head(serveS3Media);
 app.use('/uploads', express.static(getUploadsDir()));
 app.use('/uploads', express.static(path.resolve('public/uploads')));
 

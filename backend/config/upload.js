@@ -1,4 +1,5 @@
 import multer from 'multer';
+import { saveS3File } from './s3Storage.js';
 import path from 'path';
 import fs from 'fs';
 import { v2 as cloudinary } from 'cloudinary';
@@ -46,6 +47,9 @@ export const getUploadsDir = () => {
  */
 export async function saveUploadedFile(buffer, originalname = 'file.jpg', folder = 'general') {
     const provider = (process.env.STORAGE_PROVIDER || 'local').toLowerCase().trim();
+
+    if (provider === 's3') return saveS3File(buffer, originalname, folder);
+    if (!['local', 'cloudinary'].includes(provider)) throw new Error('Unsupported STORAGE_PROVIDER');
 
     if (provider === 'cloudinary') {
         return new Promise((resolve, reject) => {

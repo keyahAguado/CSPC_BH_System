@@ -30,26 +30,55 @@ services:
     # Forward signals and reap orphaned child processes. Applied on container recreation.
     init: true
     restart: always
-    env_file:
-      - ./backend/.env
     ports:
       - "3000:3000"
     environment:
       - DB_HOST=db
       - DB_USER=cspc_user
       - DB_PASSWORD=${DB_PASSWORD}
-      # Also set DB_PASS (read first by config/db.js) so a value in backend/.env cannot override it.
+      # Also set DB_PASS (read first by config/db.js) so a value in root .env cannot override it.
       - DB_PASS=${DB_PASSWORD}
       - DB_NAME=cspc_boarding_db
       - DB_PORT=3306
       - PORT=3000
-      # Uploads go to the media_uploads volume, served by media_storage. All other backend
-      # settings (FRONTEND_URL, JWT_SECRET, keys) come from backend/.env only.
-      - STORAGE_PROVIDER=local
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - NODE_ENV=${NODE_ENV:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY:-}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME:-}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY:-}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-}
+      - APPLICANT_EMAIL_ENABLED=${APPLICANT_EMAIL_ENABLED:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - EMAIL_FROM_ADDRESS=${EMAIL_FROM_ADDRESS:-}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-}
+      - NOTIFICATION_EMAIL_ENABLED=${NOTIFICATION_EMAIL_ENABLED:-}
+      - PAYMONGO_PAYMENT_MODE=${PAYMONGO_PAYMENT_MODE:-}
+      - PAYMONGO_DIRECT_ACCOUNTS_ENABLED=${PAYMONGO_DIRECT_ACCOUNTS_ENABLED:-}
+      - PAYMONGO_WEBHOOK_BASE_URL=${PAYMONGO_WEBHOOK_BASE_URL:-}
+      - PAYMENT_CONNECTION_ENCRYPTION_KEY=${PAYMENT_CONNECTION_ENCRYPTION_KEY:-}
+      - PAYMONGO_SECRET_KEY=${PAYMONGO_SECRET_KEY:-}
+      - PAYMONGO_WEBHOOK_SECRET=${PAYMONGO_WEBHOOK_SECRET:-}
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-}
+      - ENABLE_BOOKING_TEST_CLOCK=${ENABLE_BOOKING_TEST_CLOCK:-}
+      - VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
+      # Docker uses the bundled Pigsty Silo instance. Other settings use root .env.
+      - STORAGE_PROVIDER=s3
+      - S3_ENDPOINT=http://media-storage:9000
+      - S3_REGION=us-east-1
+      - S3_BUCKET=${S3_BUCKET:-cspc-bh-media}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in root .env}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in root .env}
+      - S3_FORCE_PATH_STYLE=true
     volumes:
       - media_uploads:/app/uploads
     depends_on:
       db:
+        condition: service_healthy
+      media_storage:
         condition: service_healthy
 
   # --- 3. Vue 3 Frontend Service ---
@@ -57,8 +86,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # Frontend settings are read at build time from frontend/.env.production.local
-      # (see frontend/.env.example), falling back to frontend/.env.production.
+      # Only public browser settings enter the frontend build.
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-}
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:-}
     container_name: cspc_frontend_app
     restart: always
     ports:
@@ -69,23 +102,37 @@ services:
       media_storage:
         condition: service_healthy
 
-  # --- 4. Dedicated Nginx Media Storage Service ---
+  # --- 4. Pigsty Silo S3-compatible Media Storage ---
   media_storage:
-    image: nginx:alpine
+    image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
     container_name: cspc_media_storage
-    restart: always
-    # Media is served to users through the frontend at /uploads/; direct access stays on this machine.
+    init: true
+    restart: unless-stopped
+    networks:
+      default:
+        aliases: [media-storage]
+    entrypoint: ["/bin/sh", "/opt/cspc/start.sh"]
+    environment:
+      MINIO_ROOT_USER: ${SILO_ROOT_USER:?Set SILO_ROOT_USER in root .env}
+      MINIO_ROOT_PASSWORD: ${SILO_ROOT_PASSWORD:?Set SILO_ROOT_PASSWORD in root .env}
+      S3_BUCKET: ${S3_BUCKET:-cspc-bh-media}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in root .env}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in root .env}
+      TZ: Asia/Manila
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
-      - media_uploads:/usr/share/nginx/html/uploads:ro
+      - silo_data:/data
+      - ./storage/start.sh:/opt/cspc/start.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/uploads/ >/dev/null 2>&1 || exit 0"]
+      test: ["CMD-SHELL", "test -f /tmp/storage-ready && curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null"]
       interval: 5s
       timeout: 3s
-      retries: 5
-      start_period: 5s
+      retries: 30
+      start_period: 15s
 
 volumes:
   db_data:
   media_uploads:
+  silo_data:
