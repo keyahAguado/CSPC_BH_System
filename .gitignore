@@ -27,3 +27,6 @@ docs/*.log
 backend/tests/
 backend/scripts/
 docs/
+
+# Local assistant settings and working files
+.claude/
