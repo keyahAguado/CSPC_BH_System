@@ -21,7 +21,12 @@ watch(() => props.files, files => {
 onUnmounted(release);
 const previewTitle = computed(() => props.title);
 const previewUrl = computed(() => previewFiles.value[previewIndex.value] || '');
-const previewIsPdf = computed(() => props.files[previewIndex.value] instanceof File ? props.files[previewIndex.value].type === 'application/pdf' : /\.pdf(?:$|[?#])/i.test(previewUrl.value));
+const previewIsPdf = computed(() => {
+  const file = props.files[previewIndex.value];
+  return file instanceof File
+    ? file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+    : /\.pdf(?:$|[?#])/i.test(previewUrl.value);
+});
 const closePreview = () => emit('close');
 const stepDocumentPreview = direction => { previewIndex.value = (previewIndex.value + direction + previewFiles.value.length) % previewFiles.value.length; previewFailed.value = false; };
 </script>
@@ -37,7 +42,7 @@ const stepDocumentPreview = direction => { previewIndex.value = (previewIndex.va
       <div :class="['owner-doc-stage', { 'has-zoom': !previewIsPdf && !previewFailed }]">
         <DocumentPdfPreview v-if="previewIsPdf" :src="previewUrl" :title="previewTitle + ', file ' + (previewIndex + 1)" />
         <DocumentZoomImage v-else-if="!previewFailed" :src="previewUrl" :alt="previewTitle + ', file ' + (previewIndex + 1)" @error="previewFailed = true" @backdrop="closePreview" />
-        <p v-else>Preview unavailable. Use Open in new tab to view this file.</p>
+        <div v-else class="owner-doc-error" role="alert"><p>Preview unavailable. Retry, or open this file in a new tab.</p><button type="button" @click="previewFailed = false">Retry preview</button></div>
       </div>
       <div v-if="previewFiles.length > 1" class="owner-doc-navigation">
         <button type="button" @click="stepDocumentPreview(-1)">Previous file</button>
@@ -60,6 +65,8 @@ const stepDocumentPreview = direction => { previewIndex.value = (previewIndex.va
 .owner-doc-stage.has-zoom { height: calc(min(92vh, 1000px) - 110px); padding: 0; background: #1e293b; }
 .owner-doc-stage iframe { width: 100%; height: calc(min(92vh, 1000px) - 140px); border: 0; border-radius: 8px; background: #fff; }
 .owner-doc-stage p { color: #475569; font-size: 14px; }
+.owner-doc-error { text-align: center; padding: 20px; }
+.owner-doc-error button { margin-top: 14px; min-height: 40px; padding: 8px 16px; border: 1px solid #cbd5e1; border-radius: 9px; color: #1e4a8d; background: white; cursor: pointer; font-weight: 600; }
 .owner-doc-navigation { display: flex; justify-content: center; gap: 10px; padding: 10px; border-top: 1px solid #e2e8f0; background: #fff; }
 .owner-doc-navigation button { min-height: 36px !important; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; color: #1e4a8d; font-size: 13px; font-weight: 600; cursor: pointer; }
 .owner-doc-navigation button:hover { background: #eff6ff; }
