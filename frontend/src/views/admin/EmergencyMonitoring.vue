@@ -284,7 +284,7 @@ const sexTone = (sex) => {
         <label class="reg-select"><i class="fa-solid fa-house" aria-hidden="true"></i>
           <select aria-label="Filter by boarding house" v-model="selectedHouse" @change="onHouseChange">
             <option value="">All boarding houses</option>
-            <option v-for="h in boardingHouses" :key="h.id" :value="h.id">{{ h.name }}</option>
+            <option v-for="h in boardingHouses" :key="h.id" :value="h.id">{{ h.name }}{{ h.house_status === 'archived' ? ' (Archived)' : '' }}</option>
           </select>
         </label>
         <label class="reg-select"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>

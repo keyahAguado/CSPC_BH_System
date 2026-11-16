@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue';
 import Header from '../../components/partials/Header.vue';
 import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
+import LoginBrowserNotice from '../../components/LoginBrowserNotice.vue';
+import { isEmbeddedLoginBrowser, GOOGLE_LOGIN_FAILURE } from '../../utils/loginBrowser.js';
 import { getApiBaseUrl } from '../../config/api';
 import { useRoute } from 'vue-router';
 
@@ -9,6 +11,7 @@ const API = getApiBaseUrl();
 const route = useRoute();
 const showPrivacyModal = ref(false);
 const pendingLogin = ref(false);
+const embeddedBrowser = ref(isEmbeddedLoginBrowser(navigator.userAgent));
 
 onMounted(() => {
   if (!localStorage.getItem('cspc_privacy_accepted')) {
@@ -18,6 +21,7 @@ onMounted(() => {
 
 // Preserve any error messages passed back from the OAuth callback
 const errorMap = {
+  oauth_failed: GOOGLE_LOGIN_FAILURE,
   unauthorized_domain: 'That Google account is not authorized. Use your CSPC or personal Gmail account.',
   suspended: 'Your account has been suspended. Please contact SASO.',
   server_error: 'Something went wrong on our end. Please try again.',
@@ -28,6 +32,7 @@ const errorMap = {
 const errorMessage = errorMap[route.query.error] || null;
 
 const proceedGoogleLogin = () => {
+  if (embeddedBrowser.value) return;
   const currentOrigin = window.location.origin;
   window.location.href = `${API}/api/auth/google?origin=${encodeURIComponent(currentOrigin)}`;
 };
@@ -62,6 +67,8 @@ const handlePrivacyAccepted = () => {
           <p class="text-blue-600 font-bold uppercase text-[10px] tracking-[0.3em]">CSPC Boarding House Selection</p>
           <div class="w-12 h-1 bg-blue-600 mx-auto rounded-full mt-4"></div>
         </div>
+
+        <LoginBrowserNotice :visible="embeddedBrowser" />
 
         <!-- Error alert from OAuth redirect -->
         <div

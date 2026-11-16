@@ -268,7 +268,7 @@ const loadError = ref('');
     <main id="management-content" tabindex="-1" class="flex-1 max-w-6xl mx-auto w-full py-12 px-6 lg:px-12 text-left">
       <LoadError :message="loadError" />
 
-      <PageHeader title="Rooms & occupants" :eyebrow="house.name" description="Scan all rooms quickly, then open a room to see its full details." />
+      <PageHeader class="owner-rooms-header" title="Rooms & occupants" :eyebrow="house.name" description="Scan all rooms quickly, then open a room to see its full details." />
       <div class="owner-room-create-row no-print">
         <button type="button" @click="toggleAddModal" class="owner-room-create-button bg-blue-600 text-white px-5 py-3 rounded-xl font-semibold text-[12px] hover:bg-blue-700 transition inline-flex items-center gap-2 management-button management-button-primary"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add room</button>
       </div>
@@ -382,6 +382,7 @@ const loadError = ref('');
   </div>
 </template>
 <style scoped>
+.owner-rooms-header :deep(p.management-eyebrow) { font-size: clamp(18px, 2vw, 24px); font-weight: 700; line-height: 1.3; letter-spacing: .01em !important; overflow-wrap: anywhere; }
 .owner-rooms-content {display:grid;gap:18px;}.owner-rooms-loading {display:flex;flex-direction:column;align-items:center;gap:14px;padding:70px 20px;border:1px solid #e2e8f0;border-radius:16px;background:white;color:#71839c;font-size:13px;}
 .owner-room-toolbar {container-type:inline-size;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:15px;background:white;border:1px solid #e1e9f4;border-radius:14px;box-shadow:0 4px 14px rgb(22 54 94 / .025);}.owner-room-tabs {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}.owner-room-tabs button {font-size:12px;font-weight:650;border-radius:8px;padding:10px 13px;white-space:nowrap;}.owner-room-filters {display:flex;gap:10px;padding-left:15px;border-left:1px solid #e2e8f0;}.owner-room-filters select {font-size:12px;color:#72839d;border:1px solid #e1e9f4;border-radius:7px;padding:9px 28px 9px 11px;background-color:#fff;max-width:180px;}.owner-room-search {display:flex;align-items:center;gap:10px;flex:1 1 260px;max-width:360px;min-width:240px;margin-left:auto;border:1px solid #e1e9f4;border-radius:7px;background:#fbfcff;padding:12px 15px;color:#71839c;}.owner-room-search i {font-size:11px;}.owner-room-search input {border:0;background:transparent;padding:0;outline:none;font-size:13px;min-width:0;width:100%;color:#29415e;}.owner-room-search:focus-within {outline:2px solid #93c5fd;outline-offset:2px;}
 .owner-room-utility {display:flex;align-items:center;justify-content:space-between;gap:12px;color:#8191aa;font-size:11px;}.owner-room-empty {padding:55px 20px;background:white;border:1px solid #e1e9f4;border-radius:15px;text-align:center;color:#71839c;}.owner-room-empty>i {font-size:28px;margin-bottom:15px;}.owner-room-empty h2 {font-size:17px;font-weight:650;color:#314b6e;margin-bottom:8px;}.owner-room-empty p {font-size:13px;}.owner-room-empty button {margin-top:15px;font-size:13px;}

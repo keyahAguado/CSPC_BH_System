@@ -48,7 +48,8 @@ const filteredHouses = computed(() => {
     matchesSearch(searchQuery.value, [
       h.name,
       h.owner_name,
-      h.compliance_status
+      h.compliance_status,
+      statusLabel(h.compliance_status)
     ])
   );
 });

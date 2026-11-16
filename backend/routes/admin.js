@@ -438,6 +438,8 @@ router.get('/reports/courses', authenticateToken, verifyAdmin, async (req, res) 
             LEFT JOIN users u ON u.course = c.course_code
             LEFT JOIN occupants o ON o.student_id = u.id AND o.is_non_cspc = 0
                 AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
+                AND EXISTS (SELECT 1 FROM rooms r JOIN boarding_houses bh ON bh.id = r.house_id
+                            WHERE r.id = o.room_id AND bh.house_status = 'accredited')
             GROUP BY c.id, c.course_code, c.course_name, c.department
             ORDER BY resident_count DESC, c.course_name ASC
         `);
@@ -581,7 +583,8 @@ router.get('/applications/archived', authenticateToken, verifyAdmin, async (req,
         const [permitFiles] = await pool.query('SELECT house_id, permit_key, file_path FROM house_permit_files ORDER BY house_id, permit_key, sort_order, id');
 
         const [dynamicDocs] = await pool.query('SELECT hd.*, cc.label AS criteria_label, cc.requirement_type FROM house_documents hd JOIN checklist_criteria cc ON hd.criteria_id = cc.id');
-        res.json({ success: true, houses, housePhotos, permitFiles, dynamicDocs });
+        const [criteria] = await pool.query('SELECT id, label, house_id, requirement_type FROM checklist_criteria WHERE is_active = 1 AND permit_key IS NULL AND id NOT BETWEEN 30 AND 37');
+        res.json({ success: true, houses, housePhotos, permitFiles, dynamicDocs, criteria });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -736,15 +739,15 @@ router.get('/rooms/:houseId', authenticateToken, verifyAdmin, async (req, res) =
     }
 });
 
-// 7. GET - Fetch the current occupants of a room: CSPC students first, then non-CSPC occupants (flagged by is_non_cspc)
+// 7. GET - Admin may view CSPC resident details; room totals still include all occupants.
 router.get('/rooms/occupants/:roomId', authenticateToken, verifyAdmin, async (req, res) => {
     try {
         const [occupants] = await pool.query(
             `SELECT o.*
              FROM occupants o
-             WHERE o.room_id = ?
+             WHERE o.room_id = ? AND o.is_non_cspc = 0
                AND (o.check_out_date IS NULL OR o.check_out_date > CURDATE()) AND ${RESIDENT}
-             ORDER BY o.is_non_cspc, o.check_in_date, o.id`,
+             ORDER BY o.check_in_date, o.id`,
             [req.params.roomId]
         );
         res.json({ success: true, occupants });
@@ -912,7 +915,7 @@ router.post('/reject/:id', authenticateToken, verifyAdmin, validateBody('rejecti
             }
             const revisionRequested = Boolean(house[0].application_status) && !closeApplication;
             const rejectMsg = revisionRequested
-                ? `REVISION REQUIRED: SASO requested corrections for "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''}. Feedback: ${admin_comments}. Open Track My Application to update and resubmit.`
+                ? `REVISION REQUIRED: SASO requested corrections for "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''}. Feedback: ${admin_comments}. ${house[0].reference_no ? 'Open Track My Application to update and resubmit.' : 'Open Legal documents in your owner dashboard to update and resubmit.'}`
                 : `NOTICE: Your application for "${house[0].name}"${house[0].reference_no ? ` (reference ${house[0].reference_no})` : ''} was REJECTED by SASO. Reason: ${admin_comments}`;
             await connection.query('INSERT INTO notifications (user_id, message) VALUES (?, ?)',
                 [owner_id, rejectMsg]);
@@ -1345,10 +1348,9 @@ router.get('/reports/emergency-registry', authenticateToken, verifyAdmin, async 
             ORDER BY house_name ASC, resident_name ASC
         `, queryParams);
 
-        // Always return all accredited boarding houses for the filter dropdown
-        // AND so the frontend can show empty houses too
+        // Match the registry scope: archived houses may still have residents who need safety tracking.
         const [boardingHouses] = await pool.query(
-            "SELECT id, name, location, barangay FROM boarding_houses WHERE house_status = 'accredited' ORDER BY name ASC"
+            "SELECT id, name, location, barangay, house_status FROM boarding_houses WHERE house_status IN ('accredited', 'archived') ORDER BY name ASC"
         );
 
         res.json({

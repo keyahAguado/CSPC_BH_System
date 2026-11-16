@@ -42,6 +42,20 @@ router.get('/application-requirements', async (req, res) => {
 });
 
 // Helper: upload a single named field buffer, return URL/path or fallback
+// An owner who corrects a property SASO returned for revision resubmits it for review.
+const markRevisionResubmitted = async (connection, houseId, ownerId) => {
+    const [result] = await connection.query(
+        'UPDATE boarding_houses SET application_status = ?, is_resubmission = 1, resubmitted_at = NOW() WHERE id = ? AND owner_id = ? AND application_status = ?',
+        [APPLICATION_STATUS.RESUBMITTED, houseId, ownerId, APPLICATION_STATUS.REVISION_REQUIRED]
+    );
+    if (result.affectedRows > 0) {
+        await recordStatusChange(connection, {
+            houseId, from: APPLICATION_STATUS.REVISION_REQUIRED, to: APPLICATION_STATUS.RESUBMITTED,
+            remarks: 'Revised application resubmitted for review', actorType: 'applicant', actorId: ownerId
+        });
+    }
+};
+
 const uploadField = async (files, fieldName, folder) => {
     if (files && files[fieldName] && files[fieldName][0]) {
         const f = files[fieldName][0];
@@ -536,6 +550,7 @@ router.post('/documents/update/:id', authenticateToken, upload.array('permit_fil
         }
         console.log(`[DOC UPDATE] Admin alerts dispatched to ${admins.length} administrators.`);
 
+        await markRevisionResubmitted(connection, houseId, req.user.id);
         await connection.commit();
 
         // Evaluate the new expiry date immediately instead of waiting for the next
@@ -885,6 +900,8 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                     houseId: house_id, from: before, to: after, actorType: 'applicant', actorId: ownerId, withSnapshot: true,
                     remarks: after === APPLICATION_STATUS.RESUBMITTED ? 'Revised application resubmitted for review' : 'Application edited before review'
                 });
+            } else {
+                await markRevisionResubmitted(connection, house_id, ownerId);
             }
             await commitApplicationTransaction();
 
@@ -923,8 +940,8 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 permit_building, permit_zoning, permit_sanitary, permit_fire,
                 expiry_permit_business_form, expiry_permit_cedula, expiry_permit_dti, expiry_permit_barangay,
                 expiry_permit_building, expiry_permit_zoning, expiry_permit_sanitary, expiry_permit_fire,
-                latitude, longitude, advance_months, deposit_months, deposit_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                latitude, longitude, advance_months, deposit_months, deposit_type, application_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 ownerId, house_name, house_img, img_1, img_2, img_3,
                 location, req.body.barangay || null, map_link, parseFloat(price) || 0, (contact_number || '').toString().trim().slice(0, 200), description,
@@ -940,7 +957,10 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
                 parseSafeDate(getExpiry('sanitary')),
                 parseSafeDate(getExpiry('fire')),
                 latitude ? parseFloat(latitude) : null, longitude ? parseFloat(longitude) : null,
-                parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || null
+                parseInt(advance_months) || 0, parseInt(deposit_months) || 0, deposit_type || null,
+                // A signed-in owner's new property is tracked from the owner dashboard and needs no
+                // reference number; public registrations get both from markApplicationSubmitted().
+                req.publicRegistration ? null : APPLICATION_STATUS.SUBMITTED
             ]
         );
 
@@ -954,6 +974,10 @@ router.post('/accreditation', authenticateToken, uploadAccreditationFiles, valid
         }
         await savePermitFileList(newHouseId, { permit_business_form, permit_cedula, permit_dti, permit_barangay, permit_building, permit_zoning, permit_sanitary, permit_fire });
         await saveCustomDocuments(connection, newHouseId, customCriteria, req.files, req.body, uploadedFile);
+        if (!req.publicRegistration) {
+            submissionStep = 'application-status-save';
+            await recordStatusChange(connection, { houseId: newHouseId, to: APPLICATION_STATUS.SUBMITTED, remarks: 'Application submitted', actorType: 'applicant', actorId: ownerId, withSnapshot: true });
+        }
 
         await commitApplicationTransaction();
 
@@ -1008,6 +1032,8 @@ export async function submitAccreditationAs(req, ownerId) {
         json(body) { captured.body = body; return this; }
     };
     req.user = { id: ownerId, role: 'owner', status: 'pending' };
+    // markApplicationSubmitted() gives this application its reference number and SUBMITTED status.
+    req.publicRegistration = true;
     try {
         await submitAccreditation(req, capture);
     } catch (err) {

@@ -1,12 +1,17 @@
 <script setup>
 import { ref } from 'vue';
 import axios from 'axios';
-const token = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
-// Do not leave the verification secret in the address bar after reading it.
-window.history.replaceState(window.history.state, '', window.location.pathname);
+// Keep the link state in this history entry so a phone reload does not lose it.
+// This is display/retry state only; the server still validates the token and its expiry.
+const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
+const verificationState = fragmentToken ? { token: fragmentToken, verified: false } : (window.history.state?.applicantEmailVerification || {});
+const token = typeof verificationState.token === 'string' ? verificationState.token : '';
 const busy = ref(false);
 const error = ref('');
-const verified = ref(false);
+const verified = ref(verificationState.verified === true);
+const saveVerificationState = (state) => window.history.replaceState({ ...window.history.state, applicantEmailVerification: state }, '', window.location.pathname);
+// Remove the secret from the address bar, while preserving retry state across reloads.
+saveVerificationState(verified.value ? { verified: true } : { token, verified: false });
 const verify = async () => {
   busy.value = true; error.value = '';
   try {
@@ -14,6 +19,7 @@ const verify = async () => {
     // so this device (often a phone) is not taken into the application form.
     await axios.post('/api/applications/email/verify', { token });
     verified.value = true;
+    saveVerificationState({ verified: true });
   } catch (err) { error.value = err.response?.data?.message || 'Verification could not finish. Please check your connection and try again.'; }
   finally { busy.value = false; }
 };
@@ -30,7 +36,7 @@ const verify = async () => {
       </div>
       <p v-if="error" role="alert" class="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 mt-5 verify-wrap">{{ error }}</p>
       <button v-if="token && !verified" @click="verify" :disabled="busy" class="verify-focus w-full min-h-[44px] mt-5 bg-[#1e4a8d] hover:bg-[#163870] text-white text-sm font-semibold rounded-lg px-4 py-3 disabled:bg-slate-200 disabled:text-slate-600 disabled:cursor-not-allowed">{{ busy ? 'Verifying…' : 'Verify my email' }}</button>
-      <p v-else-if="!token" role="alert" class="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 mt-5">The verification link is incomplete. Request a new link.</p>
+      <p v-else-if="!token && !verified" role="alert" class="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2.5 mt-5">The verification link is incomplete. Request a new link.</p>
       <p v-if="!verified" class="mt-5 pt-4 border-t border-slate-100 text-sm">
         <router-link to="/track" class="verify-focus rounded font-medium text-[#245b99] hover:text-[#142b4a] underline underline-offset-2">Request another verification link</router-link>
       </p>

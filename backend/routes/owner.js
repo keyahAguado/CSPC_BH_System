@@ -1641,7 +1641,7 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
 
         // 1. Pre-verify ownership of booking before mutating
         const [bookingRows] = await connection.query(
-            `SELECT b.student_id, b.room_id, b.payment_method, b.move_in_required, b.move_in_confirmed_at
+            `SELECT b.student_id, b.room_id, b.status, b.payment_method, b.move_in_required, b.move_in_confirmed_at
              FROM bookings b
              JOIN rooms r ON b.room_id = r.id
              JOIN boarding_houses bh ON r.house_id = bh.id
@@ -1652,6 +1652,11 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
         if (bookingRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ success: false, message: 'Booking not found or access denied.' });
+        }
+
+        if (bookingRows[0].status !== 'confirmed') {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'Only an active approved booking can have its cash payment status updated. Cancelled, rejected, or completed bookings cannot be changed.' });
         }
 
         if (!['paid', 'unpaid'].includes(targetStatus)) {
@@ -1668,10 +1673,14 @@ router.post('/bookings/payment/:id', authenticateToken, verifyOwner, validateBod
         }
 
         // 2. Update the cash booking's payment status in bookings table
-        await connection.query(
-            'UPDATE bookings SET payment_status = ? WHERE id = ?',
+        const [updated] = await connection.query(
+            "UPDATE bookings SET payment_status = ? WHERE id = ? AND status = 'confirmed'",
             [targetStatus, req.params.id]
         );
+        if (!updated.affectedRows) {
+            await connection.rollback();
+            return res.status(409).json({ success: false, message: 'This booking has changed. Refresh it before updating payment.' });
+        }
 
         if (bookingRows[0].student_id) {
             const { student_id, room_id } = bookingRows[0];

@@ -522,7 +522,7 @@ const viewBoarderDetails = async (room) => {
     const response = await axios.get(`/api/admin/rooms/occupants/${room.id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    activeRoomOccupants.value = response.data.occupants || [];
+    activeRoomOccupants.value = (response.data.occupants || []).filter(occ => Number(occ.is_non_cspc) === 0);
     isOccupantsView.value = true;
   } catch (error) {
     console.error('Failed to load occupants:', error);
@@ -1010,7 +1010,7 @@ const loadError = ref('');
                   </div>
                 </div>
 
-                <OwnerRoomGroup v-for="group in roomGroups" :key="group.key" :rooms="group.rooms" :title="group.title" :tone="group.key" :summary="group.summary">
+                <OwnerRoomGroup show-resident-breakdown v-for="group in roomGroups" :key="group.key" :rooms="group.rooms" :title="group.title" :tone="group.key" :summary="group.summary">
                   <template #top>
                     <TablePager position="top" noun="rooms" :page="group.page" :total-pages="group.totalPages" :start="group.start" :end="group.end" :total="group.total" :per-page="group.perPage" :options="ROOM_PAGE_SIZES" @update:page="roomPages[group.key] = $event" @update:per-page="setRoomPerPage(group.key, $event)" />
                   </template>
@@ -1053,7 +1053,7 @@ const loadError = ref('');
                 <h2 class="rp-card-title !mb-0">Room {{ activeRoomData ? activeRoomData.room_number : '' }} occupants</h2>
                 <button type="button" class="ro-primary" @click="isOccupantsView = false"><i class="fa-solid fa-door-open" aria-hidden="true"></i> View rooms</button>
               </div>
-              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active occupants in this room.</div>
+              <div v-if="activeRoomOccupants.length === 0" class="rp-empty">No active CSPC occupants in this room.</div>
               <div v-else class="admin-table-card ro-occ-card">
                 <TablePager position="top" noun="occupants" :page="occupantPaged.page" :total-pages="occupantPaged.totalPages" :start="occupantPaged.start" :end="occupantPaged.end" :total="occupantPaged.total" :per-page="occupantPerPage" @update:page="occupantPage = $event" @update:per-page="occupantPerPage = $event; occupantPage = 1" />
                 <div class="overflow-x-auto">

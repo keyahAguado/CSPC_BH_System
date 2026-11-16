@@ -1210,7 +1210,7 @@ const loadError = ref('');
             <legend class="text-slate-700 font-semibold text-sm mb-2">What should happen to this application?</legend>
             <label class="flex items-start gap-3 border rounded-xl p-3 cursor-pointer" :class="rejectDecision === 'revision' ? 'border-amber-400 bg-amber-50' : 'border-slate-200'">
               <input v-model="rejectDecision" type="radio" value="revision" class="mt-1 accent-amber-500" />
-              <span class="text-sm"><strong class="text-slate-800">Request revision</strong><span class="block text-[12px] text-slate-500">The applicant corrects it and resubmits from Track My Application.</span></span>
+              <span class="text-sm"><strong class="text-slate-800">Request revision</strong><span class="block text-[12px] text-slate-500">The applicant corrects it and resubmits it for review.</span></span>
             </label>
             <label class="flex items-start gap-3 border rounded-xl p-3 cursor-pointer" :class="rejectDecision === 'reject' ? 'border-red-400 bg-red-50' : 'border-slate-200'">
               <input v-model="rejectDecision" type="radio" value="reject" class="mt-1 accent-red-500" />

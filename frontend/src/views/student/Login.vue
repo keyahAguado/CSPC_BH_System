@@ -5,11 +5,14 @@ import axios from 'axios';
 import { getApiBaseUrl } from '../../config/api';
 import LoginCaptcha from '../../components/LoginCaptcha.vue';
 import PrivacyPolicyModal from '../../components/partials/PrivacyPolicyModal.vue';
+import LoginBrowserNotice from '../../components/LoginBrowserNotice.vue';
+import { isEmbeddedLoginBrowser, GOOGLE_LOGIN_FAILURE } from '../../utils/loginBrowser.js';
 
 const router = useRouter();
 const route  = useRoute();
 const showPrivacyModal = ref(false);
 const pendingAction    = ref(null);
+const embeddedBrowser = ref(isEmbeddedLoginBrowser(navigator.userAgent));
 
 // ── Form state ──
 const email           = ref('');
@@ -41,7 +44,7 @@ const oauthErrors = {
   idle_timeout:        'You were logged out after 30 minutes of inactivity. Please log in again.',
   unauthorized:        'Access denied. You do not have permission to view that page.',
   unauthorized_domain: 'That Google account isn\'t authorized. Use your CSPC or personal Gmail.',
-  oauth_failed:        'Google authentication timed out or was interrupted. Please try logging in again.',
+  oauth_failed:        GOOGLE_LOGIN_FAILURE,
   suspended:           'Your account has been suspended. Please contact SASO.',
   server_error:        'Something went wrong. Please try again.',
   invalid_payload:     'Authentication failed. Please try again.',
@@ -175,6 +178,10 @@ const handleLogin = async () => {
 
 // ── Google OAuth ──
 const proceedGoogleLogin = () => {
+  if (embeddedBrowser.value) {
+    errorMsg.value = 'Open the login link in Chrome or Safari to continue with Google.';
+    return;
+  }
   if (isGoogleLoading.value) return;
   errorMsg.value        = '';
   isGoogleLoading.value = true;
@@ -314,6 +321,8 @@ const handleOwnerRegister = () => handleGoogleLogin();
             Access your CSPC Boarding House account.
           </p>
         </div>
+
+        <LoginBrowserNotice :visible="embeddedBrowser" />
 
         <!-- System Error / Success Alerts -->
         <transition name="fade">

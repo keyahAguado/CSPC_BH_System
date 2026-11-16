@@ -76,7 +76,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
   t.maleRooms += Number(h.male_rooms || 0);
   t.femaleRooms += Number(h.female_rooms || 0);
   t.capacity += Number(h.total_capacity || 0);
-  t.occupants += Number(h.occupied_beds ?? h.current_occupants ?? 0);
+  t.occupants += Number(h.current_occupants ?? 0);
   t.boys += Number(h.male_count || 0);
   t.girls += Number(h.female_count || 0);
   return t;
@@ -169,7 +169,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
                   <td>{{ h.total_capacity || 0 }}</td>
                   <td>
                     <span class="ml-mf"><span class="text-blue-600">{{ h.male_count || 0 }} M</span><span class="ml-sep">|</span><span class="text-pink-600">{{ h.female_count || 0 }} F</span></span>
-                    <span class="admin-table-sub">{{ h.occupied_beds ?? h.current_occupants ?? 0 }} / {{ h.total_capacity || 0 }} total</span>
+                    <span class="admin-table-sub">{{ h.current_occupants ?? 0 }} / {{ h.total_capacity || 0 }} total</span>
                   </td>
                   <td>{{ h.approved_at ? formatDay(h.approved_at) : '—' }}</td>
                   <td><span class="ml-status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>{{ h.house_status }}</span></td>
@@ -201,7 +201,7 @@ const totals = computed(() => houses.value.reduce((t, h) => {
             <dl class="ml-card-facts">
               <div><dt>Rooms</dt><dd>{{ h.total_rooms || 0 }} <small>({{ h.male_rooms || 0 }} M · {{ h.female_rooms || 0 }} F)</small></dd></div>
               <div><dt>Capacity</dt><dd>{{ h.total_capacity || 0 }} beds</dd></div>
-              <div><dt>Occupants</dt><dd>{{ h.occupied_beds ?? h.current_occupants ?? 0 }} <small>({{ h.male_count || 0 }} M · {{ h.female_count || 0 }} F)</small></dd></div>
+              <div><dt>Occupants</dt><dd>{{ h.current_occupants ?? 0 }} <small>({{ h.male_count || 0 }} M · {{ h.female_count || 0 }} F)</small></dd></div>
               <div><dt>Approved</dt><dd>{{ h.approved_at ? formatDay(h.approved_at) : '—' }}</dd></div>
             </dl>
           </div>
