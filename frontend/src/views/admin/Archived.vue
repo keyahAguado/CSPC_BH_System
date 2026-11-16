@@ -3,7 +3,7 @@ import DocumentPdfPreview from '../../components/DocumentPdfPreview.vue';
 import { openFileInNewTab } from '../../utils/openFile.js';
 import UserAvatar from "../../components/UserAvatar.vue";
 import { confirmTone } from '../../utils/confirmTone.js';
-import DocumentAttachmentList from '../../components/DocumentAttachmentList.vue';
+import DocumentThumbnail from '../../components/DocumentThumbnail.vue';
 import { documentAttachments, permitAttachments } from '../../utils/documentFiles.js';
 import OwnerRoomGroup from '../../components/OwnerRoomGroup.vue';
 import { roomList } from '../../utils/roomDetails.js';
@@ -357,6 +357,11 @@ const permitSummary = (h) => {
   if (tone === 'danger') return { label: 'Permit expired', tone, icon: 'fa-circle-exclamation' };
   if (tone === 'warning') return { label: 'Expiring soon', tone, icon: 'fa-clock' };
   return { label: 'Permits complete', tone: 'success', icon: 'fa-circle-check' };
+};
+const docCountTone = (group) => {
+  const onFile = group.items.filter(d => d.file).length;
+  if (group.items.length && onFile === group.items.length) return 'is-complete';
+  return group.required && onFile < group.items.length ? 'is-missing' : '';
 };
 const expiryNote = (value) => {
   const days = daysUntil(value);
@@ -904,24 +909,39 @@ const loadError = ref('');
 
         <!-- DOCUMENTS -->
         <div v-else-if="detailTab === 'documents'" class="rp-col">
-          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card">
-            <div class="rp-card-head">
-              <h2 class="rp-card-title !mb-0">{{ group.title }}</h2>
-              <span :class="['rp-chip', group.required ? (requiredOnFile(activeHouse) === requiredCount(activeHouse) ? 'is-success' : 'is-danger') : '']">{{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted</span>
+          <section v-for="group in [{ title: 'Required documents', items: requiredDocs, required: true }, { title: 'Optional documents', items: optionalDocs, required: false }]" :key="group.title" class="rp-card dc-card">
+            <div class="dc-head">
+              <h2 class="dc-title">{{ group.title }}</h2>
+              <span :class="['dc-count', docCountTone(group)]">
+                <i v-if="docCountTone(group) === 'is-complete'" class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                <i v-else-if="docCountTone(group) === 'is-missing'" class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                {{ group.items.filter(d => d.file).length }} of {{ group.items.length }} submitted
+              </span>
             </div>
-            <ul class="rp-doc-grid">
-              <li v-for="doc in group.items" :key="doc.label" :class="['rp-doc', { 'is-missing': !doc.file }]">
-                <div class="min-w-0 flex-1">
-                  <p class="rp-doc-name">{{ doc.label }}</p>
-                  <DocumentAttachmentList v-if="doc.files.length" :files="doc.files" :label="doc.label" @preview="index => openPreviewSet(doc.files, index)" />
-                  <p class="rp-doc-meta">
-                    <span v-if="!doc.file" :class="group.required ? 'text-rose-600 font-semibold' : 'text-slate-400'">Not submitted</span>
-                    <template v-else>
-                      <span class="text-emerald-700 font-semibold"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
-                      <span v-if="doc.expiry" :class="['rp-exp', 'is-' + expiryTone(doc.expiry)]"> · {{ expiryNote(doc.expiry) }}</span>
+            <p v-if="!group.items.length" class="rp-empty">No {{ group.required ? 'required' : 'optional' }} documents for this property.</p>
+            <ul v-else class="dc-grid">
+              <li v-for="doc in group.items" :key="doc.label" :class="['dc-doc', { 'is-missing': !doc.file }]">
+                <button v-if="doc.file" type="button" class="dc-thumb" :aria-label="'View ' + doc.label" @click="openPreviewSet(doc.files)">
+                  <span v-if="isPdfFile(doc.file)" class="dc-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i>PDF</span>
+                  <DocumentThumbnail v-else :file="doc.file" alt="" />
+                  <span v-if="doc.files.length > 1" class="dc-thumb-count">{{ doc.files.length }} files</span>
+                </button>
+                <span v-else class="dc-thumb is-empty" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
+
+                <div class="dc-body">
+                  <p class="dc-name">{{ doc.label }}</p>
+                  <p class="dc-meta">
+                    <template v-if="doc.file">
+                      <span class="dc-status is-submitted"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
+                      <template v-if="doc.expiry"><span class="dc-dot" aria-hidden="true">·</span><span :class="['dc-exp', 'is-' + expiryTone(doc.expiry)]">{{ expiryNote(doc.expiry) }}</span></template>
                     </template>
+                    <span v-else :class="['dc-status', group.required ? 'is-required' : 'is-optional']">
+                      <i :class="['fa-solid', group.required ? 'fa-circle-exclamation' : 'fa-circle-minus']" aria-hidden="true"></i> Not submitted
+                    </span>
                   </p>
-                  <button v-if="doc.file" type="button" class="rp-link-btn" @click="openPreviewSet(doc.files)"><i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View all ${doc.files.length} files` : 'View full screen' }}</button>
+                  <button v-if="doc.file" type="button" class="dc-view" @click="openPreviewSet(doc.files)">
+                    <i class="fa-solid fa-expand" aria-hidden="true"></i> {{ doc.files.length > 1 ? `View documents (${doc.files.length})` : 'View document' }}
+                  </button>
                 </div>
               </li>
             </ul>
@@ -1256,6 +1276,45 @@ const loadError = ref('');
 .rp-review { padding: 12px 14px; border-radius: 12px; background: var(--a-surface-2); border: 1px solid var(--a-border); }
 
 /* Documents */
+/* Documents tab: two-column document cards with a thumbnail, status and a View button */
+.dc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.dc-title { margin: 0; font-size: 21px; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
+.dc-count { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--a-border); background: #f1f5f9; color: #475569; font-size: 13.5px; font-weight: 700; }
+.dc-count.is-complete { background: #ecfdf3; border-color: #bbf7d0; color: #15803d; }
+.dc-count.is-missing { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.dc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .dc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dc-doc { display: flex; align-items: center; gap: 22px; padding: 18px 20px; border: 1px solid var(--a-border); border-radius: 14px; background: #f8fbff; min-width: 0; }
+.dc-doc.is-missing { background: #fff; }
+.dc-thumb { position: relative; width: 116px; height: 124px; flex-shrink: 0; padding: 6px; min-height: 0 !important; display: flex; align-items: center; justify-content: center; border: 1px solid var(--a-border); border-radius: 10px; background: #fff; overflow: hidden; cursor: zoom-in; box-shadow: 0 1px 3px rgba(15, 23, 42, .08); }
+.dc-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+.dc-thumb:hover { border-color: #93c5fd; }
+.dc-thumb:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.dc-thumb.is-empty { background: #f1f5f9; color: #94a3b8; font-size: 30px; cursor: default; box-shadow: none; }
+.dc-pdf { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e11d48; font-size: 12px; font-weight: 700; }
+.dc-pdf i { font-size: 34px; }
+.dc-thumb-count { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.dc-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.dc-name { margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1.35; }
+.dc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-size: 14.5px; }
+.dc-status { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.dc-status i { font-size: 17px; }
+.dc-status.is-submitted { color: #15803d; }
+.dc-status.is-required { color: #be123c; }
+.dc-status.is-optional { color: #94a3b8; font-weight: 600; }
+.dc-dot { color: #94a3b8; }
+.dc-exp { color: #64748b; }
+.dc-exp.is-warning { color: #ea580c; font-weight: 600; }
+.dc-exp.is-danger { color: #be123c; font-weight: 600; }
+.dc-view { display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; min-height: 44px !important; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: #1e3a8a; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.dc-view:hover { border-color: #2563eb; background: #f5f9ff; }
+.dc-view:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 520px) {
+  .dc-doc { gap: 14px; padding: 14px; }
+  .dc-thumb { width: 84px; height: 92px; }
+  .dc-view { width: 100%; justify-content: center; }
+}
+
 .rp-doc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 @media (min-width: 900px) { .rp-doc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rp-doc { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: 16px; border: 1px solid var(--a-border); background: var(--a-surface-2); }

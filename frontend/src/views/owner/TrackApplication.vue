@@ -458,7 +458,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
 .track-meta { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: #334155; }
 .track-meta > div { display: flex; gap: 6px; min-width: 0; }
 .track-meta dt { color: #64748b; }
-.track-meta dd { margin: 0; }
+.track-meta dd { margin: 0; min-width: 0; }
 @media (min-width: 640px) { .track-meta { flex-direction: row; flex-wrap: wrap; gap: 4px 20px; } }
 
 /* Property facts: label above value, laid out across the available width */
@@ -476,7 +476,7 @@ onUnmounted(() => window.removeEventListener('applicant-session-updated', refres
 .track-more:hover { color: #142b4a; }
 
 /* Status badges: colours for this page only (STATUS_INFO.badge is shared with admin screens) */
-.track-badge { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 8px; border: 1px solid; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 1.6; white-space: nowrap; }
+.track-badge { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 8px; border: 1px solid; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 1.6; max-width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .track-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 .tone-submitted { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
 .tone-review { color: #5b21b6; background: #f5f3ff; border-color: #ddd6fe; }
